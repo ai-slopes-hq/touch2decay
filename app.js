@@ -2111,8 +2111,55 @@
   }
 
   let last = performance.now(), chaosAt = 0, sunLevel = 0;
+
+  // ---------- нагрузка: Safari не отдаёт ни CPU, ни память, поэтому три косвенных признака ----------
+  // 1) сколько миллисекунд реально уходит на кадр (не частота кадров — энергосбережение её режет вдвое);
+  // 2) отстают ли звуковые часы от настоящих — звук не успевает считаться, значит трещит;
+  // 3) сколько звукового графа сейчас живо относительно предела. Берём худшее, наливается быстро, отходит медленно
+  const strain = { work: 2, lvl: 0, ctxT: 0, wallT: 0, drift: 1 };
+  function measureStrain(now, workMs) {
+    strain.work += (workMs - strain.work) * 0.05;
+    if (ctx && ctx.state === 'running' && document.visibilityState === 'visible') {
+      if (!strain.wallT) { strain.wallT = now; strain.ctxT = ctx.currentTime; }
+      else if (now - strain.wallT > 2000) {
+        const r = (ctx.currentTime - strain.ctxT) / ((now - strain.wallT) / 1000);
+        strain.drift += (r - strain.drift) * 0.5;
+        strain.wallT = now; strain.ctxT = ctx.currentTime;
+      }
+    } else strain.wallT = 0;
+    const act = V.filter((v) => v.active);
+    const graph = (act.length + 0.15 * act.reduce((n, v) => n + Object.keys(v.lfo).length, 0)) / VOICES;
+    const cap = ctx && typeof ctx.renderCapacity === 'object' && ctx.renderCapacity.averageLoad;   // где есть (Chrome)
+    const target = Math.max(
+      clamp((strain.work - 6) / 10),                // кадр дороже 6 мс — тревожно, 16 — плохо
+      clamp((0.995 - strain.drift) / 0.03),         // звук отстаёт на 0.5…3.5 %
+      0.8 * clamp((graph - 0.7) / 0.45),            // граф у предела
+      cap ? clamp((cap - 0.6) / 0.35) : 0,
+    );
+    strain.lvl += (target - strain.lvl) * (target > strain.lvl ? 0.08 : 0.01);
+  }
+
+  // злые глаза в правом верхнем углу поля: еле видны, а под нагрузкой раскрываются и наливаются красным
+  function drawEyes(now) {
+    const L = strain.lvl, y = geo.top + 16;
+    const blink = (now % 7300) < 140 ? 0.15 : 1;  // моргают
+    for (const [x, side] of [[W - 50, -1], [W - 24, 1]]) {
+      const w = 9, h = (1.6 + 4.5 * L) * blink;
+      g.beginPath();                            // миндалина: внутренний угол ниже наружного — злой прищур
+      g.moveTo(x - w, y + side * 1.5); g.quadraticCurveTo(x, y - h * 1.6, x + w, y - side * 1.5);
+      g.quadraticCurveTo(x, y + h * 1.2, x - w, y + side * 1.5);
+      if (L > 0.02) { g.fillStyle = `rgba(215,28,28,${0.85 * L})`; g.fill(); }
+      const c = Math.round(237 * (1 - L));
+      g.strokeStyle = `rgba(237,${c},${c},${0.1 + 0.6 * L})`;
+      g.lineWidth = 1; g.stroke();
+      g.beginPath();                            // бровь: к переносице вниз
+      g.moveTo(x + side * w, y - 8 - 2 * L); g.lineTo(x - side * w, y - 4 - L); g.stroke();
+      if (blink === 1) dot(x - side * 1.5, y, 1 + L, 0.12 + 0.6 * L);
+    }
+  }
   function frame(now) {
     requestAnimationFrame(frame);
+    const t0 = performance.now();
     const dtMs = now - last;
     const dt = Math.min(0.05, dtMs / 1000);
     last = now;
@@ -2222,6 +2269,8 @@
     const tg = modTarget(null);
     if (tg) drawLfoPanel(tg, now);
     drawUI();
+    drawEyes(now);
+    measureStrain(now, performance.now() - t0);
   }
 
   // ---------- события ----------
@@ -2247,7 +2296,7 @@
 
   window.t2d = {
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
-    get ctx() { return ctx; }, get editor() { return editor; },
+    get ctx() { return ctx; }, strain, get editor() { return editor; },
   };   // для отладки из консоли
 
   resize();
