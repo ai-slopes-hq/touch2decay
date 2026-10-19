@@ -8,11 +8,18 @@
   const BG = '#000';
 
   // ---------- звук ----------
-  const F_LO = 27.5;        // нижняя нота поля (A0)
-  const OCT = 3;            // ширина поля, октав (до A3 = 220 Гц)
-  const BEAT_MIN = 0.12, BEAT_MAX = 24;      // детюн: от фазирования до треска
+  const F_LO = 55;          // нижняя нота поля (A1)
+  const OCT = 4;            // ширина поля, октав (до A5 = 880 Гц)
+  const BEAT_MIN = 0.05, BEAT_MAX = 24;      // детюн: от фазирования до треска
+  const BEAT_DEF = 0.35;    // по умолчанию пара медленно «дышит»
   const FB_BASE = 0.3, FB_MAX = 0.93;        // резонанс гребёнки
-  const SHARP_DEF = 0.4;    // волна: 0 — треугольник, 1 — меандр
+  const WAVES = [                            // волна пары осцилляторов: четыре ступени
+    { type: 'sine', label: 'синус', level: 0.5 },
+    { type: 'triangle', label: 'треугольник', level: 0.42 },
+    { type: 'sawtooth', label: 'пила', level: 0.24 },
+    { type: 'square', label: 'меандр', level: 0.18 },
+  ];
+  const WAVE_DEF = 1;
   const TAIL_DEF = 1.6;     // хвост после отпускания (τ, с)
   const TAIL_MIN = 0.25, TAIL_MAX = 8;
   const UNPIN_TAIL = 0.8;   // хвост после снятия с закрепления
@@ -32,11 +39,11 @@
 
   const deg = (d) => (d * Math.PI) / 180;
   const SECTORS = [                          // кольцо свойств: пять лучей
-    { key: 'sharp', ang: deg(-90) },        // волна
-    { key: 'tail', ang: deg(-18) },         // хвост
-    { key: 'beat', ang: deg(54) },          // детюн
-    { key: 'fm', ang: deg(126) },           // собственная FM
-    { key: 'fb', ang: deg(198) },           // резонанс
+    { key: 'wave', label: 'волна', ang: deg(-90) },
+    { key: 'tail', label: 'хвост', ang: deg(-18) },
+    { key: 'beat', label: 'детюн', ang: deg(54) },
+    { key: 'fm', label: 'фм', ang: deg(126) },        // собственная FM
+    { key: 'fb', label: 'резон', ang: deg(198) },     // резонанс гребёнки
   ];
 
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -53,7 +60,7 @@
   // ---------- голоса (кружки) ----------
   const V = Array.from({ length: VOICES }, (_, i) => ({
     i, x: 0.35, y: 0.22, ox: 0, oy: 0, dock: null,
-    beat: BEAT_MIN, fb: FB_BASE, sharp: SHARP_DEF, tail: TAIL_DEF, fm: 0, mods: [],
+    beat: BEAT_DEF, fb: FB_BASE, wave: WAVE_DEF, tail: TAIL_DEF, fm: 0, mods: [],
     fingers: [], pinned: false, active: false,
     env: 0, envT: 0, envTau: 0.05, emit: 0, t: 0,
     dirty: true, snap: true, nodes: null,
@@ -65,8 +72,7 @@
   const rings = [];
 
   const freq = (v) => F_LO * 2 ** (v.x * OCT);
-  const noiseAmt = (v) => v.y ** 1.3;
-  const cutoff = (v) => 160 * 2 ** (v.y * 5.6);
+  const cutoff = (v) => 260 * 2 ** (v.y * 5);      // низ поля — тёмный, верх — открытый
   const lfoRate = (v) => LFO_MIN * 2 ** ((v.dock ? v.dock.pos : 0) * LFO_OCT);
   const fieldX = (px) => clamp((px - POCKET) / (W - POCKET));
   // где кружок нарисован: в кармане — на его полосе, иначе — по своей высоте и шуму
@@ -75,7 +81,7 @@
 
   // значение свойства в долях 0..1 (для дуг и глифов)
   function norm(v, key) {
-    if (key === 'sharp') return v.sharp;
+    if (key === 'wave') return (v.wave + 0.5) / WAVES.length;
     if (key === 'tail') return invLog(TAIL_MIN, TAIL_MAX, v.tail);
     if (key === 'beat') return invLog(BEAT_MIN, BEAT_MAX, v.beat);
     if (key === 'fb') return v.fb / FB_MAX;
@@ -83,7 +89,7 @@
   }
 
   function setNorm(v, key, t) {
-    if (key === 'sharp') v.sharp = t;
+    if (key === 'wave') v.wave = Math.min(WAVES.length - 1, Math.floor(t * WAVES.length));
     else if (key === 'tail') v.tail = lerpLog(TAIL_MIN, TAIL_MAX, t);
     else if (key === 'beat') v.beat = lerpLog(BEAT_MIN, BEAT_MAX, t);
     else if (key === 'fb') v.fb = t * FB_MAX;
@@ -137,7 +143,7 @@
     if (!v) return null;
     unlinkAll(v);
     v.x = fieldX(f.x); v.y = clamp(1 - f.y / H); v.ox = 0; v.oy = 0; v.dock = null;
-    v.beat = BEAT_MIN; v.fb = FB_BASE; v.sharp = SHARP_DEF; v.tail = TAIL_DEF; v.fm = 0;
+    v.beat = BEAT_DEF; v.fb = FB_BASE; v.wave = WAVE_DEF; v.tail = TAIL_DEF; v.fm = 0;
     v.pinned = false; v.fingers = [];
     v.snap = v.env < 0.02; v.dirty = true; v.emit = 1e9;
     attack(v);
@@ -145,10 +151,10 @@
   }
 
   function attack(v) {
-    v.active = true; v.envT = 1; v.envTau = 0.05;
+    v.active = true; v.envT = 1; v.envTau = 0.12;
     if (v.nodes) {
-      v.nodes.env.gain.setTargetAtTime(1, ctx.currentTime, 0.05);
-      v.nodes.mod.gain.setTargetAtTime(1, ctx.currentTime, 0.05);
+      v.nodes.env.gain.setTargetAtTime(1, ctx.currentTime, 0.12);
+      v.nodes.mod.gain.setTargetAtTime(1, ctx.currentTime, 0.12);
     }
     wake();
   }
@@ -300,7 +306,7 @@
     f.menuWas = true;
     f.menu = {
       cx: vx(v), cy: vy(v), sector: null,
-      orig: { sharp: v.sharp, tail: v.tail, beat: v.beat, fb: v.fb, fm: v.fm },
+      orig: { wave: v.wave, tail: v.tail, beat: v.beat, fb: v.fb, fm: v.fm },
     };
     focus = v;
   }
@@ -334,28 +340,88 @@
     return c;
   }
 
+  function noiseBuffer(seconds) {
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return buf;
+  }
+
+  // импульс зала: стерео-шум с плавным спадом, темнеющий к концу хвоста
+  function impulse(seconds, decay) {
+    const sr = ctx.sampleRate, len = Math.floor(sr * seconds);
+    const buf = ctx.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      let y = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / len;
+        y += (0.85 - 0.78 * t) * (Math.random() * 2 - 1 - y);
+        d[i] = y * (1 - t) ** decay;
+      }
+    }
+    return buf;
+  }
+
+  const gainNode = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
+  function filter(type, f, q) {
+    const n = ctx.createBiquadFilter(); n.type = type; n.frequency.value = f;
+    if (q != null) n.Q.value = q;
+    return n;
+  }
+  function lfo(rate, depth, ...params) {
+    const o = ctx.createOscillator(); o.frequency.value = rate; o.start();
+    const a = gainNode(depth); o.connect(a);
+    for (const p of params) a.connect(p);
+    return { o, a };
+  }
+
   function build() {
     const AC = window.AudioContext || window.webkitAudioContext;
     ctx = new AC({ latencyHint: 'interactive' });
-
-    const len = ctx.sampleRate * 3;
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     const noise = ctx.createBufferSource();
-    noise.buffer = buf; noise.loop = true; noise.start();
+    noise.buffer = noiseBuffer(4); noise.loop = true; noise.start();
 
-    // общая шина: сатурация суммы голосов даёт гармоники, слышные даже из динамика айфона
+    // шина голосов → мягкий перегруз
     bus = ctx.createGain();
-    const sat = ctx.createWaveShaper(); sat.curve = soft(2.6, true); sat.oversample = '4x';
-    const post = ctx.createGain(); post.gain.value = 0.5;
-    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 24;
+    const pre = gainNode(0.8);
+    const drive = ctx.createWaveShaper(); drive.curve = soft(1.6, true); drive.oversample = '4x';
+    bus.connect(pre).connect(drive);
+    const mix = gainNode(1);
+    drive.connect(mix);
+
+    // стерео-дилей: две линии крест-накрест, время слегка плавает, как у ленты
+    const dSend = gainNode(0.32);
+    const dL = ctx.createDelay(2), dR = ctx.createDelay(2);
+    dL.delayTime.value = 0.37; dR.delayTime.value = 0.53;
+    const fbL = gainNode(0.46), fbR = gainNode(0.46);
+    const lpL = filter('lowpass', 2600, -3), lpR = filter('lowpass', 2100, -3);
+    drive.connect(dSend);
+    dSend.connect(dL);
+    dL.connect(lpL).connect(fbL).connect(dR);
+    dR.connect(lpR).connect(fbR).connect(dL);
+    lfo(0.13, 0.004, dL.delayTime);
+    lfo(0.087, 0.005, dR.delayTime);
+    const merge = ctx.createChannelMerger(2);
+    dL.connect(merge, 0, 0); dR.connect(merge, 0, 1);
+    const dRet = gainNode(0.8);
+    merge.connect(dRet).connect(mix);
+
+    // зал
+    const verb = ctx.createConvolver(); verb.buffer = impulse(5.5, 2.4);
+    const vSend = gainNode(0.5);
+    drive.connect(vSend); merge.connect(vSend);
+    vSend.connect(verb);
+    const vRet = gainNode(0.6);
+    verb.connect(vRet).connect(mix);
+
+    const hp = filter('highpass', 30);
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -16; comp.knee.value = 10; comp.ratio.value = 5;
-    comp.attack.value = 0.008; comp.release.value = 0.35;
-    const master = ctx.createGain(); master.gain.value = 0.9;
+    comp.threshold.value = -14; comp.knee.value = 12; comp.ratio.value = 4;
+    comp.attack.value = 0.01; comp.release.value = 0.4;
+    const master = gainNode(0.85);
     an = ctx.createAnalyser(); an.fftSize = 2048; scopeBuf = new Float32Array(an.fftSize);
-    bus.connect(sat).connect(post).connect(hp).connect(comp).connect(master);
+    mix.connect(hp).connect(comp).connect(master);
     master.connect(ctx.destination);
     master.connect(an);
 
@@ -363,85 +429,72 @@
   }
 
   function voiceNodes(v, noise, bus) {
-    const k = 1 + v.i * 0.13;
-    const panTo = (node, p, dest) => {
-      if (!ctx.createStereoPanner) { node.connect(dest); return; }
-      const s = ctx.createStereoPanner(); s.pan.value = p; node.connect(s).connect(dest);
-    };
-    const tone = ctx.createGain();
-    const nz = ctx.createGain(); nz.gain.value = 0;
-    const env = ctx.createGain(); env.gain.value = 0;
-    tone.connect(env); nz.connect(env);
+    const k = 1 + v.i * 0.137;                  // у каждого кружка свои скорости дыхания
+    const pan = (p) => { if (!ctx.createStereoPanner) return gainNode(1); const s = ctx.createStereoPanner(); s.pan.value = p; return s; };
 
-    const osc = (type, gain, pan) => {
-      const o = ctx.createOscillator(), a = ctx.createGain();
-      o.type = type; a.gain.value = gain; o.connect(a); panTo(a, pan, tone); o.start();
-      o.level = a.gain;
-      return o;
-    };
-    const drift = (param, rate, depth) => {
-      const l = ctx.createOscillator(), a = ctx.createGain();
-      l.frequency.value = rate * k; a.gain.value = depth; l.connect(a).connect(param); l.start();
-    };
+    // пара осцилляторов, разведённая по стерео; второй сдвинут на детюн
+    const c1 = ctx.createOscillator(), c2 = ctx.createOscillator();
+    const sub = ctx.createOscillator(), m = ctx.createOscillator();
+    c1.type = 'triangle'; c2.type = 'triangle'; sub.type = 'sine'; m.type = 'sine';
+    const c1g = gainNode(0), c2g = gainNode(0), subg = gainNode(0.32);
+    const tone = gainNode(1);
+    c1.connect(c1g).connect(pan(-0.5)).connect(tone);
+    c2.connect(c2g).connect(pan(0.5)).connect(tone);
+    sub.connect(subg).connect(tone);
+    for (const o of [c1, c2, sub, m]) o.start();
 
-    // группа A — основная, B — сдвинута на детюн.
-    // «волна» = перетекание треугольника в меандр у главных осцилляторов
-    const a1t = osc('triangle', 0, -0.35), a1s = osc('square', 0, -0.35);
-    const a2 = osc('sine', 0.55, 0);          // саб, октавой ниже (источник FM и мостов)
-    const a3 = osc('sawtooth', 0.09, -0.2);   // квинта
-    const b1t = osc('triangle', 0, 0.35), b1s = osc('square', 0, 0.35);
-    const b2 = osc('sine', 0.35, 0.2);
-    const all = [a1t, a1s, a2, a3, b1t, b1s, b2];
-    for (const o of [a1t, a1s]) drift(o.detune, 0.071, 6);
-    drift(a3.detune, 0.043, 9);
-    for (const o of [b1t, b1s]) drift(o.detune, 0.057, 7);
+    // живость: каждый осциллятор плавает в строе по-своему
+    lfo(0.071 * k, 5, c1.detune); lfo(0.19 * k, 2.5, c1.detune);
+    lfo(0.053 * k, 6, c2.detune); lfo(0.23 * k, 2, c2.detune);
 
-    // саб (a2, b2) частотой не модулируется — так в графе не бывает петель без задержки
-    const fmTargets = [a1t, a1s, a3, b1t, b1s].map((o) => o.frequency);
-
-    // собственная FM: саб кружка гнёт его же основные осцилляторы
-    const sfm = ctx.createGain(); sfm.gain.value = 0;
-    a2.connect(sfm);
+    // модулятор: собственная FM (фм) и выход для мостов. Сам он ничем не модулируется — петель нет
+    const sfm = gainNode(0); m.connect(sfm);
+    const fmTargets = [c1.frequency, c2.frequency];
     for (const p of fmTargets) sfm.connect(p);
+    const mod = gainNode(0); m.connect(mod);
 
-    // выход для мостов: тот же саб, гаснет вместе с кружком
-    const mod = ctx.createGain(); mod.gain.value = 0;
-    a2.connect(mod);
+    // перегруз внутри голоса → фильтр, который сам медленно гуляет
+    const driveIn = gainNode(0.5);
+    const shaper = ctx.createWaveShaper(); shaper.curve = soft(3, true); shaper.oversample = '2x';
+    const lp = filter('lowpass', 800, 5);
+    tone.connect(driveIn).connect(shaper).connect(lp);
+    lfo(0.043 * k, 280, lp.detune);
 
-    // шум: узкая полоса, привязанная к высоте, + сырое шипение наверху поля
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
-    const bpg = ctx.createGain(); bpg.gain.value = 2.2;
-    noise.connect(bp).connect(bpg).connect(nz);
-    const hiss = ctx.createGain(); hiss.gain.value = 0;
-    noise.connect(hiss).connect(nz);
+    // дыхание шумом: полоса на гармонике кружка, вверху поля — шипение
+    const nz = gainNode(0);
+    const bp = filter('bandpass', 400, 6);
+    noise.connect(bp).connect(gainNode(2.4)).connect(nz);
+    const hiss = gainNode(0);
+    noise.connect(filter('highpass', 3000)).connect(hiss).connect(nz);
 
-    // гребёнка, настроенная на высоту: резонанс = обратная связь, tanh в петле держит её в узде
-    const sum = ctx.createGain();
+    const env = gainNode(0);
+    lp.connect(env); nz.connect(env);
+
+    // гребёнка, настроенная на высоту: «резон»
+    const sum = gainNode(1);
     env.connect(sum);
     const dl = ctx.createDelay(1);
-    const loopLP = ctx.createBiquadFilter(); loopLP.type = 'lowpass'; loopLP.frequency.value = 2400; loopLP.Q.value = -3;
+    const loopLP = filter('lowpass', 3000, -3);
     const loopSat = ctx.createWaveShaper(); loopSat.curve = soft(1.6, false);
-    const fb = ctx.createGain(); fb.gain.value = FB_BASE;
+    const fb = gainNode(FB_BASE);
     env.connect(dl);
     dl.connect(loopLP).connect(loopSat).connect(fb).connect(dl);
-    const wet = ctx.createGain(); wet.gain.value = 0.6;
+    const wet = gainNode(0.45);
     dl.connect(wet).connect(sum);
 
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 3;
-    const lvl = ctx.createGain();
-    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-    sum.connect(lp).connect(lvl);
-    (pan ? lvl.connect(pan) : lvl).connect(bus);
+    const lvl = gainNode(0.55);
+    lfo(0.09 * k, 0.07, lvl.gain);               // громкость чуть дышит
+    const out = pan(0);
+    sum.connect(lvl).connect(out).connect(bus);
 
-    // дрожь (левый карман): LFO на строй всех осцилляторов и на громкость
-    const lfo = ctx.createOscillator(); lfo.frequency.value = LFO_MIN; lfo.start();
-    const vib = ctx.createGain(); vib.gain.value = 0;
-    const trem = ctx.createGain(); trem.gain.value = 0;
-    lfo.connect(vib); lfo.connect(trem);
-    for (const o of all) vib.connect(o.detune);
+    // дрожь (левый карман): LFO на строй и громкость
+    const pl = ctx.createOscillator(); pl.frequency.value = LFO_MIN; pl.start();
+    const vib = gainNode(0), trem = gainNode(0);
+    pl.connect(vib); pl.connect(trem);
+    for (const o of [c1, c2, sub]) vib.connect(o.detune);
     trem.connect(lvl.gain);
 
-    return { a1t, a1s, a2, a3, b1t, b1s, b2, tone, nz, env, mod, sfm, bp, hiss, dl, fb, lp, lvl, pan, lfo, vib, trem, fmTargets };
+    return { c1, c2, sub, m, c1g, c2g, sfm, mod, driveIn, lp, bp, nz, hiss, env, dl, fb, lvl, out, pl, vib, trem, fmTargets };
   }
 
   function apply(v) {
@@ -450,29 +503,28 @@
     const t = ctx.currentTime, s = v.snap;
     v.snap = false;
     const T = (p, val, tau) => p.setTargetAtTime(val, t, s ? 0.004 : tau);
-    const f = freq(v), ny = noiseAmt(v), G = 0.16;
-    T(n.a1t.frequency, f, G); T(n.a1s.frequency, f, G);
-    T(n.a2.frequency, f / 2, G);
-    T(n.a3.frequency, f * 1.5, G);
-    T(n.b1t.frequency, f + v.beat, G); T(n.b1s.frequency, f + v.beat, G);
-    T(n.b2.frequency, f / 2 + v.beat, G);
-    const tri = (1 - v.sharp) * 0.42, sq = v.sharp * 0.2;
-    T(n.a1t.level, tri, 0.05); T(n.a1s.level, sq, 0.05);
-    T(n.b1t.level, tri * 0.9, 0.05); T(n.b1s.level, sq * 0.9, 0.05);
-    T(n.tone.gain, 1 - 0.78 * ny, 0.08);
-    T(n.nz.gain, ny * 1.1, 0.08);
-    T(n.bp.frequency, Math.min(f * 2 * 2 ** (v.y * 3.6), 9000), 0.1);
-    T(n.bp.Q, 16 - 13 * v.y, 0.1);
-    T(n.hiss.gain, v.y ** 3 * 0.22, 0.1);
+    const f = freq(v), y = v.y, G = 0.14;
+    T(n.c1.frequency, f, G);
+    T(n.c2.frequency, f + v.beat, G);
+    T(n.sub.frequency, f / 2, G);
+    T(n.m.frequency, f, G);
+    const w = WAVES[v.wave];
+    if (n.c1.type !== w.type) { n.c1.type = w.type; n.c2.type = w.type; }
+    T(n.c1g.gain, w.level, 0.05); T(n.c2g.gain, w.level, 0.05);
+    // вверх по полю: ярче, грязнее, больше шума
+    T(n.driveIn.gain, 0.35 + 2.4 * y * y, 0.1);
     T(n.lp.frequency, cutoff(v), 0.1);
+    T(n.nz.gain, 0.04 + 0.5 * y ** 2.2, 0.1);
+    T(n.bp.frequency, Math.min(f * 3 * 2 ** (y * 2), 9000), 0.1);
+    T(n.bp.Q, 9 - 6 * y, 0.1);
+    T(n.hiss.gain, 0.12 * y ** 4, 0.1);
     let d = 1 / f;
     while (d < 0.006) d *= 2;
     T(n.dl.delayTime, d, G);
     T(n.fb.gain, v.fb, 0.12);
-    T(n.lvl.gain, 0.35 + 0.55 * v.y, 0.1);
-    if (n.pan) T(n.pan.pan, (v.x - 0.5) * 0.7, 0.2);
+    if (n.out.pan) T(n.out.pan, (v.x - 0.5) * 0.6, 0.2);
     T(n.sfm.gain, f * FM_MAX * v.fm, 0.08);
-    T(n.lfo.frequency, lfoRate(v), 0.1);
+    T(n.pl.frequency, lfoRate(v), 0.1);
     T(n.vib.gain, v.dock ? LFO_CENTS : 0, 0.15);
     T(n.trem.gain, v.dock ? LFO_TREM : 0, 0.15);
     for (const m of v.mods) if (m.g) T(m.g.gain, f * FM_MAX * m.depth, 0.08);
@@ -539,40 +591,32 @@
   function glowRing(x, y, r, a) {
     g.save(); g.shadowColor = ink(0.9); g.shadowBlur = 24; ring(x, y, r, a, 2); g.restore();
   }
-  // метка закреплённого кружка: форма показывает «волну» — круг у треугольника, квадрат у меандра
-  function pinMark(x, y, s, sharp, a) {
-    const r = s * (1 - sharp);
+  // метка закреплённого кружка — силуэт его волны
+  function pinMark(x, y, s, wave, a) {
     g.fillStyle = ink(a);
     g.beginPath();
-    if (g.roundRect) g.roundRect(x - s, y - s, 2 * s, 2 * s, r);
-    else g.rect(x - s, y - s, 2 * s, 2 * s);
+    const t = WAVES[wave].type;
+    if (t === 'sine') g.arc(x, y, s, 0, Math.PI * 2);
+    else if (t === 'triangle') { g.moveTo(x, y - s); g.lineTo(x + s, y + s * 0.8); g.lineTo(x - s, y + s * 0.8); g.closePath(); }
+    else if (t === 'sawtooth') { g.moveTo(x - s, y + s * 0.8); g.lineTo(x + s, y - s); g.lineTo(x + s, y + s * 0.8); g.closePath(); }
+    else g.rect(x - s * 0.85, y - s * 0.85, s * 1.7, s * 1.7);
     g.fill();
   }
 
-  // глифы свойств: рисуют сам параметр, без слов
-  function glyph(key, x, y, a, v) {
-    const w = 24, h = 8, N = 48, t0 = norm(v, key);
+  // одна-две волны выбранной формы — над пальцем, пока выбираешь
+  function drawWave(type, x, y, w, h, a) {
     g.save();
-    g.translate(x, y);
-    g.strokeStyle = ink(a); g.lineWidth = 1.4; g.lineJoin = 'round';
+    g.strokeStyle = ink(a); g.lineWidth = 1.6; g.lineJoin = 'round';
     g.beginPath();
+    const N = 80;
     for (let i = 0; i <= N; i++) {
-      const t = i / N, px = -w / 2 + t * w;
-      let py = 0;
-      if (key === 'sharp') {                   // треугольник → меандр
-        const ph = (t * 2) % 1;
-        const tri = 1 - 4 * Math.abs(ph - 0.5), sq = ph < 0.5 ? 1 : -1;
-        py = -h * (tri * (1 - t0) + sq * t0);
-      } else if (key === 'tail') {             // затухающее колебание
-        py = -h * Math.exp(-t * (7 - 6 * t0)) * Math.cos(t * 30);
-      } else if (key === 'beat') {             // биения: огибающая двух близких частот
-        py = -h * Math.sin(t * Math.PI * 12) * Math.cos(t * Math.PI * (0.5 + t0 * 4));
-      } else if (key === 'fm') {               // синус, который гнёт модуляция
-        py = -h * Math.sin(2 * Math.PI * (t * 2 + (0.08 + t0 * 0.6) * Math.sin(2 * Math.PI * t * 3)));
-      } else {                                 // резонанс: пик АЧХ, острее с ростом
-        const k = 3 + t0 * 26;
-        py = h - 2 * h * (1 / (1 + ((t - 0.55) * k) ** 2)) * (0.45 + 0.55 * t0);
-      }
+      const t = i / N, ph = (t * 2) % 1;
+      let v;
+      if (type === 'sine') v = Math.sin(ph * Math.PI * 2);
+      else if (type === 'triangle') v = 1 - 4 * Math.abs(ph - 0.5);
+      else if (type === 'sawtooth') v = 1 - 2 * ph;
+      else v = ph < 0.5 ? 1 : -1;
+      const px = x - w / 2 + t * w, py = y - (v * h) / 2;
       if (i) g.lineTo(px, py); else g.moveTo(px, py);
     }
     g.stroke();
@@ -589,7 +633,7 @@
       mark = 5;
     }
     if (held) glowRing(x, y, r, a); else ring(x, y, r, a, 2);
-    if (v.pinned) { pinMark(x, y, mark, v.sharp, a); ring(x, y, r + 10, a * 0.45, 1); }
+    if (v.pinned) { pinMark(x, y, mark, v.wave, a); ring(x, y, r + 10, a * 0.45, 1); }
     else dot(x, y, 3.5, a);
   }
 
@@ -599,7 +643,7 @@
     const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1;
     const nx = -dy / L, ny = dx / L;
     const amp = 3 + br.m.depth * 16, waves = 1.5 + L / 70;
-    const ph = (now / 1000) * (1.5 + freq(br.B) / 30) * Math.PI * 2;
+    const ph = (now / 1000) * (1.5 + freq(br.B) / 120) * Math.PI * 2;
     const N = 120, A = [], B = [];
     for (let i = 0; i <= N; i++) {
       const t = i / N, env = Math.sin(t * Math.PI);
@@ -621,7 +665,7 @@
     for (const [v, f] of [[br.A, p], [br.B, q]]) {
       const x = vx(v), y = vy(v);
       glowRing(x, y, v.dock ? 15 : 36, 1);
-      if (v.pinned) pinMark(x, y, v.dock ? 5 : 9, v.sharp, 1);
+      if (v.pinned) pinMark(x, y, v.dock ? 5 : 9, v.wave, 1);
       if (Math.hypot(f.x - x, f.y - y) > 24) {
         g.strokeStyle = ink(0.3); g.lineWidth = 1;
         g.beginPath(); g.moveTo(x, y); g.lineTo(f.x, f.y); g.stroke();
@@ -645,7 +689,7 @@
         g.lineDashOffset = -now * 0.02;
         g.strokeStyle = ink(a);
         g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
-        const t = ((now / 1000) * (0.3 + freq(s) / 400)) % 1;
+        const t = ((now / 1000) * (0.3 + freq(s) / 1600)) % 1;
         dot(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, 2.5, a);
       }
     }
@@ -675,32 +719,58 @@
     g.stroke();
   }
 
-  // кольцо свойств: пять лучей, на каждом глиф и метка текущего значения
+  const MONO = '"IBM Plex Mono", ui-monospace, Menlo, monospace';
+
+  function valueText(v, key) {
+    if (key === 'wave') return WAVES[v.wave].label;
+    if (key === 'tail') return (v.tail * 3).toFixed(v.tail * 3 < 10 ? 1 : 0) + ' с';
+    if (key === 'beat') return v.beat.toFixed(v.beat < 10 ? 2 : 1) + ' Гц';
+    if (key === 'fm') return Math.round(v.fm * 100) + '%';
+    return Math.round((v.fb / FB_MAX) * 100) + '%';
+  }
+
+  // кольцо свойств: пять лучей с подписями; дуга на луче — текущее значение
   function drawMenu(f) {
     const m = f.menu, v = f.voice;
     const R1 = MENU_DEAD, R2 = MENU_DEAD + MENU_SPAN;
-    g.fillStyle = 'rgba(0,0,0,0.62)';
-    g.beginPath(); g.arc(m.cx, m.cy, R2 + 42, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.66)';
+    g.beginPath(); g.arc(m.cx, m.cy, R2 + 44, 0, Math.PI * 2); g.fill();
     g.save(); g.setLineDash([2, 5]); ring(m.cx, m.cy, R1, 0.5, 1); ring(m.cx, m.cy, R2, 0.16, 1); g.restore();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
 
-    for (const s of SECTORS) {
-      const on = m.sector === s, a = on ? 1 : m.sector ? 0.22 : 0.7;
-      const c = Math.cos(s.ang), sn = Math.sin(s.ang);
+    for (const sc of SECTORS) {
+      const on = m.sector === sc, a = on ? 1 : m.sector ? 0.25 : 0.8;
+      const c = Math.cos(sc.ang), sn = Math.sin(sc.ang);
       g.strokeStyle = ink(a * 0.25); g.lineWidth = 1;
       g.beginPath(); g.moveTo(m.cx + c * R1, m.cy + sn * R1); g.lineTo(m.cx + c * R2, m.cy + sn * R2); g.stroke();
-      const rv = R1 + norm(v, s.key) * MENU_SPAN;  // где сейчас значение
+      if (sc.key === 'wave') {                  // у волны — четыре ступени на луче
+        for (let i = 1; i < WAVES.length; i++) {
+          const r = R1 + (i / WAVES.length) * MENU_SPAN;
+          g.beginPath(); g.arc(m.cx, m.cy, r, sc.ang - 0.06, sc.ang + 0.06); g.stroke();
+        }
+      }
+      const rv = R1 + norm(v, sc.key) * MENU_SPAN;
       g.strokeStyle = ink(a); g.lineWidth = on ? 3 : 2;
-      g.beginPath(); g.arc(m.cx, m.cy, rv, s.ang - 0.17, s.ang + 0.17); g.stroke();
-      const gx = clamp(m.cx + c * (R2 + 22), 20, W - 20), gy = clamp(m.cy + sn * (R2 + 22), 20, H - 20);
-      glyph(s.key, gx, gy, a, v);
+      g.beginPath(); g.arc(m.cx, m.cy, rv, sc.ang - 0.17, sc.ang + 0.17); g.stroke();
+      const lx = clamp(m.cx + c * (R2 + 24), 30, W - 30), ly = clamp(m.cy + sn * (R2 + 24), 16, H - 16);
+      if (!on) {                                // у выбранного луча подпись уходит в значение над пальцем
+        g.fillStyle = ink(a);
+        g.font = `400 13px ${MONO}`;
+        g.fillText(sc.label, lx, ly);
+      }
     }
     if (m.sector) {
       g.strokeStyle = ink(0.5); g.lineWidth = 1;
       g.beginPath(); g.moveTo(m.cx, m.cy); g.lineTo(f.x, f.y); g.stroke();
-      glyph(m.sector.key, clamp(f.x, 24, W - 24), f.y - 62, 1, v);   // крупно над пальцем
+      const tx = clamp(f.x, 80, W - 80), ty = f.y - 70;
+      if (m.sector.key === 'wave') drawWave(WAVES[v.wave].type, tx, ty - 28, 56, 20, 1);
+      g.fillStyle = ink(1);
+      g.font = `500 15px ${MONO}`;
+      g.fillText(`${m.sector.label} · ${valueText(v, m.sector.key)}`, tx, ty);
     }
+    g.textAlign = 'start'; g.textBaseline = 'alphabetic';
     glowRing(m.cx, m.cy, v.dock ? 15 : 36, 1);
-    if (v.pinned) pinMark(m.cx, m.cy, v.dock ? 5 : 9, v.sharp, 1); else dot(m.cx, m.cy, 3.5, 1);
+    if (v.pinned) pinMark(m.cx, m.cy, v.dock ? 5 : 9, v.wave, 1); else dot(m.cx, m.cy, 3.5, 1);
   }
 
   function drawScope() {
@@ -766,7 +836,7 @@
       v.emit += dt;
       if (v.emit >= period) {
         v.emit = 0;
-        if (rings.length < 220) rings.push({ x: vx(v), y: vy(v), r: v.dock ? 16 : 34, a: v.env, sp: 70 + freq(v) * 1.1 });
+        if (rings.length < 220) rings.push({ x: vx(v), y: vy(v), r: v.dock ? 16 : 34, a: v.env, sp: 60 + freq(v) * 0.28 });
       }
     }
     const Rmax = Math.hypot(W, H) * 0.75;
