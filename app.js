@@ -616,7 +616,7 @@
   const btnPos = (k) => {
     if (k === 'clr') return { x: W - 34, y: scopeY + 20 };
     if (k === 'undo') return { x: W - 34 - 46, y: scopeY + 20 };
-    return { x: k === 'rev' ? W - 48 : 48, y: H - safeBot - 48 };
+    return { x: k === 'rev' ? W - 48 : W - 48 - 76, y: H - safeBot - 48 };   // лад — рядом с FX, угол свободен для солнца
   };
   // панель LFO внизу, под большой палец: полоса формы и пад — вправо скорость, вверх глубина
   const lfoPanel = () => {
@@ -630,13 +630,16 @@
   const rateX = (p, hz) => p.x + PAD_IN + invLog(LFO_RATE_MIN, LFO_RATE_MAX, hz) * (p.w - 2 * PAD_IN);
   const depthY = (p, d) => p.pad.y + PAD_IN + (1 - d) * (p.pad.h - 2 * PAD_IN);
   // список ладов: строки снизу вверх — off, лады; справа от них — тоники в две колонки
+  // список ладов над кнопкой (прижат к ней справа), тоники — левее списка
+  const LIST_W = 190;
   const sclList = () => {
     const b = btnPos('scl'), rows = SCALES.length + 1, top = b.y - 40 - rows * ITEM_H;
-    const rx = b.x + 172, cw = Math.min(46, (W - 12 - rx) / 2), ch = (rows * ITEM_H) / 6;
-    return { b, rows, top, rx, cw, ch };
+    const bx = b.x + 30 - LIST_W;               // левый край списка
+    const cw = Math.min(46, (bx - 20) / 2), rx = bx - 8 - 2 * cw, ch = (rows * ITEM_H) / 6;
+    return { b, rows, top, bx, rx, cw, ch };
   };
-  // тулбокс вдоль низа от кнопки лада: карандаш, за ним кубик
-  const dicePos = () => { const b = btnPos('scl'); return { x: b.x + 146, y: b.y }; };
+  // тулбокс вдоль низа влево от кнопки лада: карандаш, за ним кубик
+  const dicePos = () => { const b = btnPos('scl'); return { x: b.x - 146, y: b.y }; };
   const overDice = (f) => { const d = dicePos(); return Math.abs(f.x - d.x) < 30 && Math.abs(f.y - d.y) < 34; };
 
   // кубик: случайный тембр выделенным кружкам (или всем) — волна, фильтр, detune, fm, сдвиг;
@@ -689,7 +692,7 @@
       if (performance.now() < gh.until && Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 14) return { k: 'pin', ghost: gh.menu };
     }
     for (const k of ['rev', 'scl', 'clr', 'undo']) {
-      const b = btnPos(k), r = k === 'clr' || k === 'undo' ? CLR_R + 6 : BTN_R + 16;
+      const b = btnPos(k), r = k === 'clr' || k === 'undo' ? CLR_R + 6 : BTN_R + 12;
       if (Math.hypot(f.x - b.x, f.y - b.y) < r) return { k };
     }
     for (const o of F.values()) {             // булавка на кольце, открытом на весу
@@ -840,8 +843,8 @@
     if (f.ui === 'ring') { ringTouch(f, false); return; }
     if (f.ui !== 'scl') return;
     const L = sclList(), b = L.b;
-    // повёл палец вправо вдоль низа — карандаш: обводишь кружки
-    if (!f.lasso && !f.picked && f.x > b.x + 56 && f.y > b.y - 50) {
+    // повёл палец влево вдоль низа — карандаш: обводишь кружки
+    if (!f.lasso && !f.picked && f.x < b.x - 56 && f.y > b.y - 50) {
       f.lasso = [];
       if (scl.on !== f.wasOn) { scl.on = f.wasOn; scl.slideUntil = performance.now() + 500; allDirty(); }
     }
@@ -858,7 +861,7 @@
     const r = rootAt(L, f.x, f.y);
     if (r >= 0) {                               // колонка тоник справа
       root = r; on = true;
-    } else if (f.x < L.rx - 6) {                // строки снизу вверх: off, затем лады — с задержкой,
+    } else if (f.x > L.rx + 2 * L.cw + 6) {     // строки снизу вверх: off, затем лады — с задержкой,
       const row = clamp(Math.floor((b.y - 40 - f.y) / ITEM_H), 0, SCALES.length);   // чтобы пролёт пальцем ничего не менял
       const now = performance.now();
       if (row !== f.row) { f.row = row; f.rowAt = now; return; }
@@ -2167,28 +2170,28 @@
       if (on) g.restore();
     }
     if (sclF && !sclF.lasso) {
-      // справа от кнопки — карандаш: туда повести палец, чтобы обвести кружки
-      const px = b.x + 74, py = b.y;
-      g.save(); g.translate(px, py); g.rotate(-Math.PI / 4);
+      // слева от кнопки — карандаш: туда повести палец, чтобы обвести кружки
+      const px = b.x - 74, py = b.y;
+      g.save(); g.translate(px, py); g.rotate((-3 * Math.PI) / 4);
       g.strokeStyle = ink(0.8); g.lineWidth = 1.4;
       g.strokeRect(-12, -3.5, 20, 7);
       g.beginPath(); g.moveTo(8, -3.5); g.lineTo(14, 0); g.lineTo(8, 3.5); g.stroke();
       g.restore();
       g.strokeStyle = ink(0.4); g.lineWidth = 1;
-      g.beginPath(); g.moveTo(b.x + BTN_R + 8, py); g.lineTo(px - 18, py); g.stroke();
+      g.beginPath(); g.moveTo(b.x - BTN_R - 8, py); g.lineTo(px + 18, py); g.stroke();
 
       // список: off и лады — строки с тонкими разделителями
       const rows = ['off', ...SCALES.map((sc) => sc.label)];
       g.fillStyle = 'rgba(0,0,0,0.9)';
-      g.fillRect(b.x - 30, L.top - 8, 190, L.rows * ITEM_H + 16);
-      hairBox(b.x - 30, L.top - 8, 190, L.rows * ITEM_H + 16, 0.3);
+      g.fillRect(L.bx, L.top - 8, LIST_W, L.rows * ITEM_H + 16);
+      hairBox(L.bx, L.top - 8, LIST_W, L.rows * ITEM_H + 16, 0.3);
       rows.forEach((label, i) => {
         const y = b.y - 40 - ITEM_H * (i + 0.5), on = i === 0 ? !scl.on : scl.on && i - 1 === scl.idx;
-        text(label, b.x - 8, y, 15, on ? 1 : 0.45, on ? 500 : 400);
-        if (on) dot(b.x - 18, y, 3, 1);
-        if (i) { g.strokeStyle = ink(0.1); g.beginPath(); g.moveTo(b.x - 22, Math.round(y + ITEM_H / 2) + 0.5); g.lineTo(b.x + 152, Math.round(y + ITEM_H / 2) + 0.5); g.stroke(); }
+        text(label, L.bx + 22, y, 15, on ? 1 : 0.45, on ? 500 : 400);
+        if (on) dot(L.bx + 12, y, 3, 1);
+        if (i) { g.strokeStyle = ink(0.1); g.beginPath(); g.moveTo(L.bx + 8, Math.round(y + ITEM_H / 2) + 0.5); g.lineTo(L.bx + LIST_W - 8, Math.round(y + ITEM_H / 2) + 0.5); g.stroke(); }
       });
-      // тоники: две колонки по шесть справа от списка
+      // тоники: две колонки по шесть слева от списка
       g.fillStyle = 'rgba(0,0,0,0.9)';
       g.fillRect(L.rx - 4, L.top - 8, 2 * L.cw + 8, L.rows * ITEM_H + 16);
       hairBox(L.rx - 4, L.top - 8, 2 * L.cw + 8, L.rows * ITEM_H + 16, 0.3);
@@ -2199,7 +2202,7 @@
         text(nm, x, y, 13, on ? 1 : 0.5, on ? 500 : 400, 'center');
       });
     } else if (scl.on && !sclF) {               // лад включён — его имя рядом с кнопкой
-      text(`${NOTES[scl.root]} ${SCALES[scl.idx].label}`, b.x + BTN_R + 12, b.y, 12, 0.55);
+      text(`${NOTES[scl.root]} ${SCALES[scl.idx].label}`, b.x - BTN_R - 12, b.y, 12, 0.55, 400, 'right');
     }
     if (scl.on) { g.fillStyle = ink(0.9); g.beginPath(); g.arc(b.x, b.y, BTN_R, 0, Math.PI * 2); g.fill(); }
     else ring(b.x, b.y, BTN_R, 0.45, 1.2);
