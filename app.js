@@ -1359,35 +1359,17 @@
     x.fillStyle = `rgba(${INK},0.03)`;
     const step = Math.max(2, Math.round(4 * DPR)), hl = Math.max(1, Math.round(DPR * 0.75));
     for (let y = 0; y < c.height; y += step) x.fillRect(0, y, c.width, hl);
-    // оси без слов: ряды волн. Слева волна редкая, справа частая — высота;
-    // внизу гладкая, вверху рассыпается в шум — характер звука
+    // ось Y без слов: зерно густеет к верху — там шум, внизу чисто
     x.setTransform(DPR, 0, 0, DPR, 0, 0);
-    const top = scopeY + 60, bot = H - safeBot - 100, rows = 13;
+    const top = scopeY + 50, bot = H - safeBot - 96;
     let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
-    for (let r = 0; r < rows; r++) {
-      const yy = top + ((bot - top) * r) / (rows - 1);
-      const nzA = 1 - r / (rows - 1);                       // 1 вверху, 0 внизу
-      x.strokeStyle = `rgba(${INK},${0.07 + 0.03 * (1 - nzA)})`; x.lineWidth = 1;
-      x.beginPath();
-      let ph = r * 0.37;
-      for (let px = 0; px <= W; px += 2) {
-        const cyc = (1 / 170) * 32 ** (semi(px / W) / SEMIS);   // циклов на пиксель растут слева направо
-        ph += cyc * 2 * Math.PI * 2;
-        const py = yy + 4.5 * Math.sin(ph) * (1 - 0.6 * nzA) + rnd() * 6 * nzA * nzA;
-        if (px) x.lineTo(px, py); else x.moveTo(px, py);
-      }
-      x.stroke();
-      for (let k = 0; k < 40 * nzA * nzA; k++) {            // вверху — пыль шума вокруг ряда
-        x.fillStyle = `rgba(${INK},${0.06 + 0.06 * Math.random()})`;
-        x.fillRect(Math.random() * W, yy + rnd() * 16, 1.2, 1.2);
-      }
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let k = 0, n = Math.round((W * (bot - top)) / 140); k < n; k++) {
+      const yy = top + rnd() * (bot - top), up = 1 - (yy - top) / (bot - top);   // 1 вверху
+      if (rnd() > up * up * 0.9 + 0.04) continue;
+      x.fillStyle = `rgba(${INK},${0.05 + 0.1 * rnd() * up})`;
+      x.fillRect(rnd() * W, yy, 1.1, 1.1);
     }
-    // риски на каждой ноте ля внизу — видно, как октавы растягиваются к низу
-    x.strokeStyle = `rgba(${INK},0.3)`; x.lineWidth = 1;
-    x.beginPath();
-    for (let n = 0; n <= SEMIS; n += 12) { const px = Math.round(xOf(n) * W) + 0.5; x.moveTo(px, H - safeBot - 92); x.lineTo(px, H - safeBot - 84); }
-    x.stroke();
     scan = c;
   }
 
@@ -1778,19 +1760,63 @@
     dot(cx, cy, 2.5, 1);
   }
 
-  // сетка нот лада: внизу шире, вверху плотнее; тоники ярче
-  function drawScaleGrid(held) {
-    const k = held ? 1 : 0.5;
-    g.save();
-    g.setLineDash([2, 6]);
+  // поле по горизонтали — вертикальные полосы в оттенках серого. Без лада — диапазоны частот,
+  // как на эквалайзере; с ладом — октавы от тоники и ноты лада. Пока тянешь кружок, его полоса
+  // светлеет, внизу подписи; в ладу — ещё и нота, к которой он притянут
+  const BANDS = [[55, 'sub'], [90, 'bass'], [250, 'low-mid'], [500, 'mid'], [1000, 'upper']];
+  const semiOf = (hz) => 12 * Math.log2(hz / F_LO);
+  const noteName = (n) => { const m = 33 + n; return NOTES[((n % 12) + 12) % 12] + (Math.floor(m / 12) - 1); };   // n — полутоны от A1
+  function fieldCols() {
+    const cols = [];
+    if (scl.on) {
+      const first = (((scl.root % 12) + 12) % 12);
+      if (first > 0) cols.push({ s0: 0, s1: first, label: '' });
+      for (let n = first; n < SEMIS; n += 12) cols.push({ s0: n, s1: Math.min(SEMIS, n + 12), label: noteName(n) });
+    } else {
+      BANDS.forEach(([hz, label], i) => {
+        const s1 = i + 1 < BANDS.length ? semiOf(BANDS[i + 1][0]) : SEMIS;
+        cols.push({ s0: semiOf(hz), s1, label, hz: i ? hz : null });
+      });
+    }
+    for (const c of cols) { c.x0 = xOf(c.s0) * W; c.x1 = xOf(c.s1) * W; }
+    return cols;
+  }
+
+  function drawField() {
+    const top = scopeY + 50, bot = H - safeBot - 96;
+    const held = [];
+    for (const f of F.values()) if (f.voice && !f.ui && !f.parked && !f.bridge && !f.menu) held.push(f.voice);
+    const drag = held.length > 0;
+    const heldS = held.map((v) => semi(soundX(v)));
+    const cols = fieldCols();
+    cols.forEach((c, i) => {
+      const on = heldS.some((s) => s >= c.s0 && s < c.s1 + (c.s1 >= SEMIS ? 1 : 0));
+      g.fillStyle = ink(on ? 0.075 : i % 2 ? 0.028 : 0.012);
+      g.fillRect(c.x0, top, c.x1 - c.x0, bot - top);
+      if (i) {                                   // граница: тонкая линия
+        const x = Math.round(c.x0) + 0.5;
+        g.strokeStyle = ink(drag ? 0.2 : 0.09); g.lineWidth = 1;
+        g.beginPath(); g.moveTo(x, top); g.lineTo(x, bot); g.stroke();
+      }
+      if (drag && c.label && c.x1 - c.x0 > 18) {
+        text(c.label, (c.x0 + c.x1) / 2, bot + 9, 10, on ? 0.95 : 0.4, on ? 500 : 400, 'center');
+      }
+      if (drag && c.hz) text(c.hz >= 1000 ? `${c.hz / 1000}k` : `${c.hz}`, c.x0 + 3, top + 8, 9, 0.35);
+    });
+    if (!scl.on) return;
+    // ноты лада: тоники ярче; при перетаскивании — нота, к которой притянут кружок
+    const tgt = new Set(heldS.map((s) => Math.round(s)));
+    g.save(); g.setLineDash([2, 6]);
     for (let n = 0; n <= SEMIS; n++) {
       if (!inScale(n)) continue;
       const x = Math.round(xOf(n) * W) + 0.5;
       const root = (((n - scl.root) % 12) + 12) % 12 === 0;
-      g.strokeStyle = ink((root ? 0.3 : 0.12) * k); g.lineWidth = 1;
-      g.beginPath(); g.moveTo(x, scopeY + 50); g.lineTo(x, H - safeBot - 96); g.stroke();
+      const hit = tgt.has(n);
+      g.strokeStyle = ink(hit ? 0.7 : (root ? 0.28 : 0.12) * (drag ? 1.3 : 1)); g.lineWidth = hit ? 1.4 : 1;
+      g.beginPath(); g.moveTo(x, top); g.lineTo(x, bot); g.stroke();
     }
     g.restore();
+    for (const n of tgt) if (inScale(n)) text(noteName(n), xOf(n) * W, top + 8, 11, 1, 500, 'center');
   }
 
   // долгое касание пойманного кружка: дуга дорисовывается — и открывается кольцо
@@ -1959,16 +1985,10 @@
     }
     if (!anyActive && lock) { lock.release().catch(() => {}); lock = null; }
 
-    // фон: оси видны едва-едва, а вокруг пальца, который ведёт кружок, проявляются ярче
+    // фон: зерно (ось шума) и полосы частот или октав (ось высоты)
     g.fillStyle = BG; g.fillRect(0, 0, W, H);
-    if (scan) {
-      g.globalAlpha = 0.45; g.drawImage(scan, 0, 0, W, H); g.globalAlpha = 1;
-      for (const f of F.values()) {
-        if (!f.voice || f.ui) continue;
-        g.save(); g.beginPath(); g.arc(f.x, f.y, 170, 0, Math.PI * 2); g.clip();
-        g.drawImage(scan, 0, 0, W, H); g.restore();
-      }
-    }
+    if (scan) g.drawImage(scan, 0, 0, W, H);
+    drawField();
 
     // волны от кружков — в ритме биений detune: что видно, то и слышно
     for (const v of V) {
@@ -1996,7 +2016,6 @@
 
     let fxF = null, heldF = null, bridge = null;
     for (const f of F.values()) { if (f.menu) { if (f.menu.fx) fxF = f; else heldF = f; } if (f.bridge) bridge = f.bridge; }
-    if (scl.on) drawScaleGrid([...F.values()].some((f) => f.ui === 'scl'));
     drawLinks(now, bridge && bridge.m);
     for (const v of V) {
       if (!v.active) continue;
