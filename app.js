@@ -9,13 +9,13 @@
 
   // ---------- звук ----------
   const F_LO = 55;          // нижняя нота поля (A1)
-  const OCT = 4;            // ширина поля, октав (до A5 = 880 Гц)
+  const OCT = 5;            // ширина поля, октав (до A6 = 1760 Гц)
   const SEMIS = OCT * 12;
   const WARP = 1.45;        // как у эквалайзеров: нижним октавам больше места, верхним меньше
   const BEAT_MIN = 0.05, BEAT_MAX = 24;      // detune: от фазирования до треска
   const BEAT_DEF = 0.35;    // по умолчанию пара медленно «дышит»
   const FB_BASE = 0.3;      // гребёнка-резонатор: постоянная фоновая окраска
-  const CUT_LO = 40, CUT_HI = 18000, CUT_DEF = 0.59;   // cutoff — на весь слышимый диапазон
+  const CUT_LO = 40, CUT_HI = 18000, CUT_DEF = 0.68;   // cutoff — на весь слышимый диапазон
   const RES_DEF = 0.21, RES_MAX = 24;        // res: Q фильтра в дБ
   const TAIL = 1.6;         // хвост после отпускания (τ, с)
   const UNPIN_TAIL = 0.8;   // хвост после снятия с закрепления
@@ -132,8 +132,10 @@
   }
   const soundX = (v) => (scl.on ? quantX(v.x) : v.x);
   const freq = (v) => F_LO * 2 ** (semi(soundX(v)) / 12);
-  // cutoff кружка — на весь диапазон; ось Y наклоняет его на ±1.5 октавы
-  const cutoff = (v) => clamp(lerpLog(CUT_LO, CUT_HI, v.cut) * 2 ** ((v.y - 0.5) * 3), 20, 20000);
+  // сколько FM на кружке: пока она есть, фильтр приоткрывается — иначе он съедает боковые полосы
+  const fmOpen = (v) => Math.min(1, v.fm + v.mods.reduce((s, m) => s + (m.type === 'fm' || m.type === 'tzfm' ? m.depth : 0), 0));
+  // cutoff кружка — на весь диапазон; ось Y ведёт его ещё на ±2.25 октавы: внизу тёмно, вверху открыто
+  const cutoff = (v) => clamp(lerpLog(CUT_LO, CUT_HI, v.cut) * 2 ** ((v.y - 0.5) * 4.5) * 2 ** (1.5 * fmOpen(v)), 20, 20000);
   // dx — где кружок виден (с ладом он съезжает к ноте); wob — сдвиг от LFO на высоте
   const vx = (v) => (v.dx + v.wob) * W;
   const vy = (v) => (1 - v.y) * H;
@@ -890,7 +892,7 @@
 
     const hp = filter('highpass', 30);
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -14; comp.knee.value = 12; comp.ratio.value = 4;
+    comp.threshold.value = -10; comp.knee.value = 10; comp.ratio.value = 2.5;
     comp.attack.value = 0.01; comp.release.value = 0.4;
     const master = gainNode(0.8);
     // мягкий потолок на выходе: вдвое больше запаса по входу, чем по выходу
@@ -975,7 +977,7 @@
     const out = pan(0);
     sum.connect(vca).connect(lvl).connect(out);  // к шине подключается, только пока кружок звучит
 
-    return { c1, c2, sub, m, morph, sfm, mod, driveIn, lp, bp, nz, hiss, env, dl, vca, out, fmTargets, lfo: {}, live: false };
+    return { c1, c2, sub, m, morph, tone, sfm, mod, driveIn, lp, bp, nz, hiss, env, dl, vca, out, fmTargets, lfo: {}, live: false };
   }
 
   function apply(v) {
@@ -990,14 +992,15 @@
     T(n.sub.frequency, f / 2, G);
     T(n.m.frequency, f, G);
     T(n.morph.pos, 2 * v.wave - 1, 0.04);
-    // вверх по полю: ярче, грязнее, больше шума
-    T(n.driveIn.gain, 0.35 + 2.4 * y * y, 0.1);
+    // ось Y: внизу чистые колебания, вверху перегруз и шум, вытесняющий тон
+    T(n.driveIn.gain, 0.22 + 3.6 * y * y, 0.1);
+    T(n.tone.gain, 1 - 0.65 * y ** 1.5, 0.1);
     T(n.lp.frequency, cutoff(v), 0.1);
     T(n.lp.Q, v.res * RES_MAX, 0.1);
-    T(n.nz.gain, 0.04 + 0.5 * y ** 2.2, 0.1);
+    T(n.nz.gain, 0.95 * y ** 1.8, 0.1);
     T(n.bp.frequency, Math.min(f * 3 * 2 ** (y * 2), 9000), 0.1);
     T(n.bp.Q, 9 - 6 * y, 0.1);
-    T(n.hiss.gain, 0.12 * y ** 4, 0.1);
+    T(n.hiss.gain, 0.25 * y ** 3, 0.1);
     let d = 1 / f;
     while (d < 0.006) d *= 2;
     T(n.dl.delayTime, d, G);
@@ -1007,7 +1010,9 @@
     let rm = 0;
     for (const m of v.mods) {
       if (!m.g) continue;
-      const dd = m.type === 'fm' ? m.depth * 1200 : m.type === 'tzfm' ? m.depth * f * 2.2 : m.type === 'am' ? m.depth * 0.9 : m.depth;
+      // fm — до ±2 октав; tzfm — индекс до 5 от частоты источника (как в настоящей FM); am — полная; rm — громкий
+      const dd = m.type === 'fm' ? m.depth * 2400 : m.type === 'tzfm' ? m.depth * 5 * freq(m.src)
+        : m.type === 'am' ? m.depth : m.depth * 1.6;
       if (m.type === 'rm') rm += m.depth;
       T(m.g.gain, dd, 0.08);
     }
@@ -1090,9 +1095,38 @@
     const c = document.createElement('canvas');
     c.width = cv.width; c.height = cv.height;
     const x = c.getContext('2d');
-    x.fillStyle = `rgba(${INK},0.035)`;
+    x.fillStyle = `rgba(${INK},0.03)`;
     const step = Math.max(2, Math.round(4 * DPR)), hl = Math.max(1, Math.round(DPR * 0.75));
     for (let y = 0; y < c.height; y += step) x.fillRect(0, y, c.width, hl);
+    // оси без слов: ряды волн. Слева волна редкая, справа частая — высота;
+    // внизу гладкая, вверху рассыпается в шум — характер звука
+    x.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const top = scopeY + 60, bot = H - safeBot - 100, rows = 13;
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+    for (let r = 0; r < rows; r++) {
+      const yy = top + ((bot - top) * r) / (rows - 1);
+      const nzA = 1 - r / (rows - 1);                       // 1 вверху, 0 внизу
+      x.strokeStyle = `rgba(${INK},${0.05 + 0.025 * (1 - nzA)})`; x.lineWidth = 1;
+      x.beginPath();
+      let ph = r * 0.37;
+      for (let px = 0; px <= W; px += 2) {
+        const cyc = (1 / 170) * 32 ** (semi(px / W) / SEMIS);   // циклов на пиксель растут слева направо
+        ph += cyc * 2 * Math.PI * 2;
+        const py = yy + 4.5 * Math.sin(ph) * (1 - 0.6 * nzA) + rnd() * 6 * nzA * nzA;
+        if (px) x.lineTo(px, py); else x.moveTo(px, py);
+      }
+      x.stroke();
+      for (let k = 0; k < 40 * nzA * nzA; k++) {            // вверху — пыль шума вокруг ряда
+        x.fillStyle = `rgba(${INK},${0.05 + 0.05 * Math.random()})`;
+        x.fillRect(Math.random() * W, yy + rnd() * 16, 1.2, 1.2);
+      }
+    }
+    // риски на каждой ноте ля внизу — видно, как октавы растягиваются к низу
+    x.strokeStyle = `rgba(${INK},0.25)`; x.lineWidth = 1;
+    x.beginPath();
+    for (let n = 0; n <= SEMIS; n += 12) { const px = Math.round(xOf(n) * W) + 0.5; x.moveTo(px, H - safeBot - 92); x.lineTo(px, H - safeBot - 84); }
+    x.stroke();
     scan = c;
   }
 
@@ -1466,6 +1500,7 @@
     }
 
     let anyActive = false;
+    for (const v of V) if (v.dirty) for (const u of V) if (u.mods.some((m) => m.src === v && m.type === 'tzfm')) u.dirty = true;
     for (const v of V) {
       if (v.dirty) { v.dirty = false; apply(v); }
       v.env += (v.envT - v.env) * (1 - Math.exp(-dt / v.envTau));
