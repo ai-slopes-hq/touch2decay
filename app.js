@@ -160,16 +160,17 @@
   // Координата высоты (0..1) — доля площади поля ближе к углу, поэтому полутоны делят площадь так же,
   // как прежде делили ширину: нижним октавам — больше всего места (sub и bass — около двух третей)
   const EDGE = 26;            // отступ кружков от краёв поля
+  const EDGE_B = 64;          // снизу — выше ряда кнопок
   const geo = { ox: 0, oy: 0, top: 0, bot: 0, step: 2, r: [0], a: [0] };
   function arcSpan(r) {
     const w = W - EDGE, h = geo.oy - geo.top - EDGE;
-    if (r <= EDGE) return null;
-    const lo = Math.max(Math.asin(Math.min(1, EDGE / r)), Math.acos(Math.min(1, w / r)));
+    if (r <= EDGE_B) return null;
+    const lo = Math.max(Math.asin(Math.min(1, EDGE_B / r)), Math.acos(Math.min(1, w / r)));
     const hi = Math.min(Math.acos(Math.min(1, EDGE / r)), Math.asin(Math.min(1, h / r)));
     return hi > lo ? [lo, hi] : null;
   }
   function buildGeo() {
-    geo.top = scopeY + 44; geo.bot = H - safeBot - 96; geo.ox = 0; geo.oy = geo.bot;
+    geo.top = scopeY - 12; geo.bot = H - safeBot - 4; geo.ox = 0; geo.oy = geo.bot;   // карта — на весь экран, кнопки поверх
     geo.r = []; geo.a = [];
     let acc = 0;
     for (let r = EDGE; r < Math.hypot(W, geo.bot - geo.top) + 4; r += geo.step) {
@@ -2119,6 +2120,9 @@
     for (const f of F.values()) { if (f.ui === 'rev') revF = f; if (f.ui === 'scl') sclF = f; }
 
     // FX: три кольца; дуга вокруг — сколько зала
+    // кнопки лежат поверх карты — у каждой тёмная подложка
+    const pad = (p, rr) => { g.fillStyle = 'rgba(0,0,0,0.88)'; g.beginPath(); g.arc(p.x, p.y, rr, 0, Math.PI * 2); g.fill(); };
+    pad(btnPos('rev'), BTN_R + 1); pad(btnPos('scl'), BTN_R + 1); pad(btnPos('undo'), CLR_R + 1); pad(btnPos('clr'), CLR_R + 1);
     const r = btnPos('rev');
     ring(r.x, r.y, BTN_R, revF ? 1 : 0.45, 1.2);
     for (const [rr, a] of [[6, 0.9], [11, 0.55], [16, 0.3]]) ring(r.x, r.y, rr, a * (revF ? 1 : 0.8), 1);
@@ -2253,7 +2257,7 @@
   // индикатор нагрузки — маленький Сатурн в правом верхнем углу поля. До 80 % почти не виден,
   // дальше проступает гуще; краснеет постепенно, вместе с нагрузкой
   function drawStrain() {
-    const L = strain.lvl, x = W - 30, y = geo.top + 18;
+    const L = strain.lvl, x = W - 34 - 46 - 50, y = scopeY + 20;   // в верхнем ряду, левее отмены
     const vis = L < 0.8 ? 0.07 + 0.05 * (L / 0.8) : 0.12 + 0.88 * ((L - 0.8) / 0.2);
     const gb = Math.round(237 * (1 - L));
     const col = (a) => `rgba(237,${gb},${gb},${a})`;
