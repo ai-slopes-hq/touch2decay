@@ -9,7 +9,7 @@
 
   // ---------- звук ----------
   const F_LO = 55;          // нижняя нота поля (A1)
-  const OCT = 5;            // ширина поля, октав (до A6 = 1760 Гц)
+  const OCT = 4;            // ширина поля, октав (до A5 = 880 Гц): верх почти не нужен, место — низу
   const SEMIS = OCT * 12;
   const WARP = 1.45;        // как у эквалайзеров: нижним октавам больше места, верхним меньше
   const BEAT_MIN = 0.05, BEAT_MAX = 24;      // detune: от фазирования до треска
@@ -151,8 +151,58 @@
   // cutoff кружка — на весь диапазон; ось Y ведёт его ещё на ±2.25 октавы: внизу тёмно, вверху открыто
   const cutoff = (v) => clamp(lerpLog(CUT_LO, CUT_HI, v.cut) * 2 ** ((v.y - 0.5) * 4.5) * 2 ** (1.5 * fmOpen(v)), 20, 20000);
   // dx — где кружок виден (с ладом он съезжает к ноте); wob — сдвиг от LFO на высоте
-  const vx = (v) => (v.dx + v.wob) * W;
-  const vy = (v) => (1 - v.y) * H;
+  const vx = (v) => place(v.dx + v.wob, v.y).x;
+  const vy = (v) => place(v.dx + v.wob, v.y).y;
+
+  // ---------- поле: полярные координаты от нижнего левого угла ----------
+  // высота — расстояние от угла, характер — место на дуге: у нижнего/правого края чисто, у левого/верхнего шум.
+  // Координата высоты (0..1) — доля площади поля ближе к углу, поэтому полутоны делят площадь так же,
+  // как прежде делили ширину: нижним октавам — больше всего места (sub и bass — около двух третей)
+  const EDGE = 26;            // отступ кружков от краёв поля
+  const geo = { ox: 0, oy: 0, top: 0, bot: 0, step: 2, r: [0], a: [0] };
+  function arcSpan(r) {
+    const w = W - EDGE, h = geo.oy - geo.top - EDGE;
+    if (r <= EDGE) return null;
+    const lo = Math.max(Math.asin(Math.min(1, EDGE / r)), Math.acos(Math.min(1, w / r)));
+    const hi = Math.min(Math.acos(Math.min(1, EDGE / r)), Math.asin(Math.min(1, h / r)));
+    return hi > lo ? [lo, hi] : null;
+  }
+  function buildGeo() {
+    geo.top = scopeY + 50; geo.bot = H - safeBot - 96; geo.ox = 0; geo.oy = geo.bot;
+    geo.r = []; geo.a = [];
+    let acc = 0;
+    for (let r = EDGE; r < Math.hypot(W, geo.bot - geo.top) + 4; r += geo.step) {
+      const sp = arcSpan(r);
+      if (sp) acc += (sp[1] - sp[0]) * r * geo.step;
+      geo.r.push(r); geo.a.push(acc);
+    }
+    for (let i = 0; i < geo.a.length; i++) geo.a[i] /= acc || 1;
+  }
+  function rOfP(p) {                          // доля площади → радиус
+    const a = geo.a, t = Math.min(1, Math.max(1e-4, p));
+    let lo = 0, hi = a.length - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < t) lo = m + 1; else hi = m; }
+    if (!lo) return geo.r[0];
+    const k = (t - a[lo - 1]) / Math.max(1e-9, a[lo] - a[lo - 1]);
+    return geo.r[lo - 1] + k * geo.step;
+  }
+  function pOfR(r) {                          // радиус → доля площади
+    const x = (r - geo.r[0]) / geo.step, i = Math.floor(x);
+    if (i < 0) return 0;
+    if (i >= geo.a.length - 1) return 1;
+    return geo.a[i] + (geo.a[i + 1] - geo.a[i]) * (x - i);
+  }
+  function place(p, c) {
+    const r = rOfP(p), sp = arcSpan(r) || [Math.PI / 4, Math.PI / 4];
+    const th = sp[0] + clamp(c) * (sp[1] - sp[0]);
+    return { x: geo.ox + r * Math.cos(th), y: geo.oy - r * Math.sin(th) };
+  }
+  function unplace(x, y) {
+    const dx = x - geo.ox, dy = geo.oy - y;
+    const p = pOfR(Math.hypot(dx, dy)), sp = arcSpan(rOfP(p));
+    const th = Math.atan2(dy, dx);
+    return { p, c: sp ? clamp((th - sp[0]) / (sp[1] - sp[0])) : 0.5 };
+  }
 
   // значение свойства в долях 0..1 (для дуг на лучах)
   function norm(v, key) {
@@ -223,8 +273,8 @@
     if (v.fingers.length !== 1) return;
     const f = F.get(v.fingers[0]);
     if (!f || f.menu || f.parked || f.bridge) return;
-    v.x = clamp((f.x + v.ox) / W);
-    v.y = clamp(1 - (f.y + v.oy) / H);
+    const q = unplace(f.x + v.ox, f.y + v.oy);
+    v.x = q.p; v.y = q.c;
     v.dirty = true;
     focus = v;
     if (f.group) for (const m of f.group) {     // выделенные едут следом, сохраняя расстановку
@@ -273,7 +323,8 @@
     unlinkAll(v);
     clearLfos(v);
     sel.delete(v);
-    v.x = clamp(f.x / W); v.dx = v.x; v.y = clamp(1 - f.y / H); v.ox = 0; v.oy = 0;
+    const q = unplace(f.x, f.y);
+    v.x = q.p; v.dx = v.x; v.y = q.c; v.ox = 0; v.oy = 0;
     v.beat = BEAT_DEF; v.wave = WAVE_DEF; v.fm = 0; v.cut = CUT_DEF; v.res = RES_DEF; v.shift = SHIFT_DEF;
     v.pinned = false; v.fingers = [];
     v.snap = v.env < 0.02; v.dirty = true; v.emit = 1e9;
@@ -451,8 +502,7 @@
   // тап мимо — закрыть
   let editor = null;          // закреплённое кольцо кружка или связи
   const PIN_R = 17;
-  const PIN_ANG = deg(-60);   // между первыми двумя лучами
-  const pinPos = (cx, cy) => ({ x: cx + Math.cos(PIN_ANG) * (MENU_DEAD + MENU_SPAN * 0.72), y: cy + Math.sin(PIN_ANG) * (MENU_DEAD + MENU_SPAN * 0.72) });
+  const pinPos = (cx, cy) => ({ x: cx, y: cy });   // булавка — в центре кольца, под пальцем
   const kept = (v) => !!editor && editor.kind === 'voice' && editor.group.includes(v);
   // отпустил палец — кольцо ещё гаснет полторы секунды, и булавку можно тапнуть
   const GHOST_MS = 1600;
@@ -640,8 +690,6 @@
       if (Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 12) return { k: 'pin', holder: o };
     }
     if (editor) {
-      const p = pinPos(editor.cx, editor.cy);
-      if (Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 12) return { k: 'pin', holder: null };
       if (editor.kind === 'voice') { const l = lfoHit(f); if (l) return l; }
       if (Math.hypot(f.x - editor.cx, f.y - editor.cy) < ringR()) return { k: 'ring' };
       return { k: 'void' };                   // тап мимо — закрыть
@@ -814,7 +862,7 @@
     const origs = group.map((u) => ({ u, o: { wave: u.wave, cut: u.cut, res: u.res, beat: u.beat, fm: u.fm, shift: u.shift } }));
     const rc = ringCenter(vx(v), vy(v), lfoPanel().top - 26);   // низ занят панелью LFO; подпись нижнего луча — над ней
     f.menu = {
-      cx: rc.cx, cy: rc.cy, gx: f.x, gy: f.y, sector: null, sectors: SECTORS, span: MENU_SPAN, voice: v, group,
+      cx: rc.cx, cy: rc.cy, gx: f.x, gy: f.y, sector: null, sectors: SECTORS, span: MENU_SPAN, voice: v, group, overPin: true,
       get: (k) => norm(v, k),
       set: (k, t) => { for (const u of group) setNorm(u, k, t); },
       text: (k) => valueText(v, k) + (group.length > 1 ? `  ×${group.length}` : ''),
@@ -831,7 +879,7 @@
     const setType = (t) => { if (m.type !== t) { m.type = t; wire(dst, m); } };
     const rc = ringCenter(c.x, c.y);
     f.menu = {
-      cx: rc.cx, cy: rc.cy, gx: f.x, gy: f.y, sector: null, sectors: LINK_SECTORS, span: MENU_SPAN, link: m, dst,
+      cx: rc.cx, cy: rc.cy, gx: f.x, gy: f.y, sector: null, sectors: LINK_SECTORS, span: MENU_SPAN, link: m, dst, overPin: true,
       get: (k) => (k === 'cut' ? (m.cutting ? 1 : 0) : m.type === k ? m.depth : 0),
       set: (k, t) => {
         m.cutting = k === 'cut' && t > 0.35;
@@ -848,18 +896,12 @@
     const m = f.menu;
     const dx = f.x - m.gx, dy = f.y - m.gy, d = Math.hypot(dx, dy);   // от точки, где лежал палец
     m.overPin = false;
-    if (d < MENU_DEAD) {                      // вернулся в центр — отмена
-      if (m.sector) m.restore();
+    if (d < MENU_DEAD) {
+      // в центре кольца — булавка: отпустишь палец здесь — кольцо закрепится; выбранный луч освобождается,
+      // заданное значение остаётся. У веера FX центр — отмена
+      if (m.fx) { if (m.sector) m.restore(); } else m.overPin = true;
       m.sector = null;
       return;
-    }
-    if (!m.fx && !m.sector) {                 // к булавке тем же пальцем: в её коридоре луч не выбирается
-      const a = Math.atan2(dy, dx);
-      if (Math.abs(Math.atan2(Math.sin(a - PIN_ANG), Math.cos(a - PIN_ANG))) < deg(15)) {
-        const p = pinPos(m.cx, m.cy);
-        m.overPin = Math.hypot(m.cx + dx - p.x, m.cy + dy - p.y) < PIN_R + 18;
-        return;
-      }
     }
     if (!m.sector && d > MENU_DEAD + 16) {
       const a = Math.atan2(dy, dx);
@@ -1347,16 +1389,16 @@
     x.fillStyle = `rgba(${INK},0.03)`;
     const step = Math.max(2, Math.round(4 * DPR)), hl = Math.max(1, Math.round(DPR * 0.75));
     for (let y = 0; y < c.height; y += step) x.fillRect(0, y, c.width, hl);
-    // ось Y без слов: зерно густеет к верху — там шум, внизу чисто
+    // характер без слов: зерно густеет к шумной стороне дуг (влево-вверх), у чистой — почти нет
     x.setTransform(DPR, 0, 0, DPR, 0, 0);
-    const top = scopeY + 50, bot = H - safeBot - 96;
+    buildGeo();
     let seed = 7;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    for (let k = 0, n = Math.round((W * (bot - top)) / 140); k < n; k++) {
-      const yy = top + rnd() * (bot - top), up = 1 - (yy - top) / (bot - top);   // 1 вверху
+    for (let k = 0, n = Math.round((W * (geo.bot - geo.top)) / 140); k < n; k++) {
+      const px = rnd() * W, py = geo.top + rnd() * (geo.bot - geo.top), up = unplace(px, py).c;
       if (rnd() > up * up * 0.9 + 0.04) continue;
       x.fillStyle = `rgba(${INK},${0.05 + 0.1 * rnd() * up})`;
-      x.fillRect(rnd() * W, yy, 1.1, 1.1);
+      x.fillRect(px, py, 1.1, 1.1);
     }
     scan = c;
   }
@@ -1598,7 +1640,7 @@
 
   // закреплённое кольцо кружка или связи
   function drawEditor() {
-    const e = editor, pin = pinPos(e.cx, e.cy);
+    const e = editor;
     if (e.kind === 'voice') {
       const v = e.v, x = vx(v), y = vy(v);
       tether(e.cx, e.cy, x, y);
@@ -1613,7 +1655,6 @@
       });
       if (e.key === 'wave') drawCurve(morphFn(clamp(v.wave + v.wv)), e.cx, e.cy, 30, 18, 1, 2, 1.4);
       contour(v, x, y, 34, 1, 2, true);
-      drawPin(pin.x, pin.y, true);
       return;
     }
     const m = e.m, mid = linkMid(e.dst, m);
@@ -1625,7 +1666,6 @@
       readoutAt: readoutAt(e.cx, e.cy),
     });
     diamond(e.cx, e.cy, 6, 1, true);
-    drawPin(pin.x, pin.y, true);
   }
 
   // кольцо на весу: указатель — движение пальца, перенесённое в кольцо; булавка — закрепить
@@ -1641,7 +1681,7 @@
         pointer: m.sector && pointer ? pointer : null,
         readout: m.sector ? `${m.sector.label} · ${m.text(m.sector.key)}` : null, readoutAt: at,
       });
-      if (m.sector && m.sector.key === 'wave') drawCurve(morphFn(clamp(v.wave + v.wv)), m.cx, m.cy, 30, 18, 1, 2, 1.4);
+      if (m.sector && m.sector.key === 'wave') drawCurve(morphFn(clamp(v.wave + v.wv)), at.x, at.y - 30, 60, 22, 1);
       contour(v, vx(v), vy(v), 34, 1, 2, true);
     } else {
       const mid = linkMid(m.dst, m.link);
@@ -1751,7 +1791,7 @@
   // поле по горизонтали — вертикальные полосы в оттенках серого. Без лада — диапазоны частот,
   // как на эквалайзере; с ладом — октавы от тоники и ноты лада. Пока тянешь кружок, его полоса
   // светлеет, внизу подписи; в ладу — ещё и нота, к которой он притянут
-  const BANDS = [[55, 'sub'], [90, 'bass'], [250, 'low-mid'], [500, 'mid'], [1000, 'upper']];
+  const BANDS = [[55, 'sub'], [90, 'bass'], [250, 'low-mid'], [500, 'mid']];
   const semiOf = (hz) => 12 * Math.log2(hz / F_LO);
   const noteName = (n) => { const m = 33 + n; return NOTES[((n % 12) + 12) % 12] + (Math.floor(m / 12) - 1); };   // n — полутоны от A1
   function fieldCols() {
@@ -1766,45 +1806,68 @@
         cols.push({ s0: semiOf(hz), s1, label, hz: i ? hz : null });
       });
     }
-    for (const c of cols) { c.x0 = xOf(c.s0) * W; c.x1 = xOf(c.s1) * W; }
+    const far = Math.hypot(W, geo.bot - geo.top) + 8;
+    cols.forEach((c, i) => { c.r0 = i ? rOfP(xOf(c.s0)) : 0; c.r1 = c.s1 >= SEMIS ? far : rOfP(xOf(c.s1)); });
     return cols;
   }
 
+  // где дуга радиуса r пересекает край поля: чистый конец (низ или правый край) и шумный (левый или верхний)
+  function arcEnds(r) {
+    const { oy, top, bot } = geo, h = oy - top;
+    const clean = r < W - 4 ? { x: r, y: bot } : { x: W, y: oy - Math.sqrt(Math.max(0, r * r - W * W)) };
+    const noisy = r < h ? { x: 0, y: oy - r } : { x: Math.sqrt(Math.max(0, r * r - h * h)), y: top };
+    return { clean, noisy };
+  }
+
   function drawField() {
-    const top = scopeY + 50, bot = H - safeBot - 96;
+    const { ox, oy, top, bot } = geo;
     const held = [];
     for (const f of F.values()) if (f.voice && !f.ui && !f.parked && !f.bridge && !f.menu) held.push(f.voice);
     const drag = held.length > 0;
     const heldS = held.map((v) => semi(soundX(v)));
     const cols = fieldCols();
-    cols.forEach((c, i) => {
+    const Q = -Math.PI / 2;
+    g.save();
+    g.beginPath(); g.rect(0, top, W, bot - top); g.clip();
+    cols.forEach((c, i) => {                    // кольцевые полосы вокруг угла
       const on = heldS.some((s) => s >= c.s0 && s < c.s1 + (c.s1 >= SEMIS ? 1 : 0));
       g.fillStyle = ink(on ? 0.075 : i % 2 ? 0.028 : 0.012);
-      g.fillRect(c.x0, top, c.x1 - c.x0, bot - top);
-      if (i) {                                   // граница: тонкая линия
-        const x = Math.round(c.x0) + 0.5;
-        g.strokeStyle = ink(drag ? 0.2 : 0.09); g.lineWidth = 1;
-        g.beginPath(); g.moveTo(x, top); g.lineTo(x, bot); g.stroke();
-      }
-      if (drag && c.label && c.x1 - c.x0 > 18) {
-        text(c.label, (c.x0 + c.x1) / 2, bot + 9, 10, on ? 0.95 : 0.4, on ? 500 : 400, 'center');
-      }
-      if (drag && c.hz) text(c.hz >= 1000 ? `${c.hz / 1000}k` : `${c.hz}`, c.x0 + 3, top + 8, 9, 0.35);
+      g.beginPath(); g.arc(ox, oy, c.r1, Q, 0); g.arc(ox, oy, c.r0, 0, Q, true); g.closePath(); g.fill();
+      if (i) { g.strokeStyle = ink(drag ? 0.2 : 0.09); g.lineWidth = 1; g.beginPath(); g.arc(ox, oy, c.r0, Q, 0); g.stroke(); }
     });
-    if (!scl.on) return;
-    // ноты лада: тоники ярче; при перетаскивании — нота, к которой притянут кружок
-    const tgt = new Set(heldS.map((s) => Math.round(s)));
-    g.save(); g.setLineDash([2, 6]);
-    for (let n = 0; n <= SEMIS; n++) {
-      if (!inScale(n)) continue;
-      const x = Math.round(xOf(n) * W) + 0.5;
-      const root = (((n - scl.root) % 12) + 12) % 12 === 0;
-      const hit = tgt.has(n);
-      g.strokeStyle = ink(hit ? 0.7 : (root ? 0.28 : 0.12) * (drag ? 1.3 : 1)); g.lineWidth = hit ? 1.4 : 1;
-      g.beginPath(); g.moveTo(x, top); g.lineTo(x, bot); g.stroke();
+    const tgt = new Map();                      // нота, к которой притянут кружок → сам кружок
+    if (scl.on) {
+      held.forEach((v, i) => tgt.set(Math.round(heldS[i]), v));
+      g.setLineDash([2, 6]);
+      for (let n = 0; n <= SEMIS; n++) {
+        if (!inScale(n)) continue;
+        const root = (((n - scl.root) % 12) + 12) % 12 === 0, hit = tgt.has(n);
+        g.strokeStyle = ink(hit ? 0.7 : (root ? 0.28 : 0.12) * (drag ? 1.3 : 1)); g.lineWidth = hit ? 1.4 : 1;
+        g.beginPath(); g.arc(ox, oy, rOfP(xOf(n)), Q, 0); g.stroke();
+      }
     }
     g.restore();
-    for (const n of tgt) if (inScale(n)) text(noteName(n), xOf(n) * W, top + 8, 11, 1, 500, 'center');
+    if (!drag) return;
+    // подписи: имя полосы — у чистого конца её дуги, граница в герцах — у шумного
+    cols.forEach((c) => {
+      const on = heldS.some((s) => s >= c.s0 && s < c.s1 + (c.s1 >= SEMIS ? 1 : 0));
+      const rm = c.s1 >= SEMIS ? (c.r0 + Math.min(c.r1, Math.hypot(W, bot - top))) / 2 : (c.r0 + c.r1) / 2;
+      if (c.label && c.r1 - c.r0 > 16) {
+        const e = arcEnds(rm).clean;
+        if (e.y >= bot - 1) text(c.label, e.x, bot - 9, 10, on ? 0.95 : 0.45, on ? 500 : 400, 'center');
+        else text(c.label, W - 6, e.y, 10, on ? 0.95 : 0.45, on ? 500 : 400, 'right');
+      }
+      if (c.hz) {
+        const e = arcEnds(c.r0).noisy;
+        text(c.hz >= 1000 ? `${c.hz / 1000}k` : `${c.hz}`, e.x + 4, e.x < 1 ? e.y - 7 : top + 8, 9, 0.4);
+      }
+    });
+    // в ладу — имя ноты рядом с кружком, снаружи по радиусу
+    for (const [n, v] of tgt) {
+      if (!inScale(n)) continue;
+      const pt = place(xOf(n), v.y), a = Math.atan2(pt.y - oy, pt.x - ox);
+      text(noteName(n), clamp(pt.x + Math.cos(a) * 52, 16, W - 16), clamp(pt.y + Math.sin(a) * 52, top + 8, bot - 8), 11, 1, 500, 'center');
+    }
   }
 
   // долгое касание пойманного кружка: дуга дорисовывается — и открывается кольцо
@@ -2053,7 +2116,7 @@
   if (document.fonts && document.fonts.load) document.fonts.load(`13px ${MONO}`).catch(() => {});
 
   window.t2d = {
-    voices: V, fx, scl, sel, freq, cutoff, applyFx,
+    voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
     get ctx() { return ctx; }, get editor() { return editor; },
   };   // для отладки из консоли
 
