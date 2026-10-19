@@ -1477,6 +1477,7 @@
       if (best) { x.moveTo(a.x, a.y); x.lineTo(best.x, best.y); }
     }
     x.stroke();
+    geo.stars = bright;
     for (const st of bright) {                  // звёздочка-гравюра: четыре луча и точка
       const l = 2 + rnd() * 2.2, al = 0.25 + 0.3 * rnd();
       x.strokeStyle = `rgba(${INK},${al})`; x.lineWidth = 0.8;
@@ -1575,7 +1576,8 @@
       }
     }
     g.save();
-    if (glow) { g.shadowColor = ink(0.9); g.shadowBlur = 20; }
+    const blur = glow ? 20 : fx.dirt > 0.25 ? 18 * (fx.dirt - 0.25) : 0;   // drive — планеты раскаляются
+    if (blur) { g.shadowColor = ink(0.9); g.shadowBlur = blur; }
     g.lineWidth = lw; g.strokeStyle = ink(a); g.lineJoin = 'round';
     g.beginPath();
     if (pts) { for (let i = 0; i < pts.length; i += 2) (i ? g.lineTo(pts[i], pts[i + 1]) : g.moveTo(pts[i], pts[i + 1])); g.closePath(); }
@@ -1605,6 +1607,12 @@
         g.strokeStyle = gr; g.lineWidth = k ? 1 : 1.4;
         g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + Math.cos(ang + k * 1.6) * len, y0 + Math.sin(ang + k * 1.6) * len); g.stroke();
       }
+    }
+    if (fx.rev > 0.03) {                        // hall: туманность вокруг планеты, decay — её размер
+      const R = 48 + 80 * invLog(DECAY_MIN, DECAY_MAX, fx.decay);
+      const neb = g.createRadialGradient(x, y, 28, x, y, R);
+      neb.addColorStop(0, ink(0.1 * fx.rev * a)); neb.addColorStop(1, ink(0));
+      g.fillStyle = neb; g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.fill();
     }
     g.fillStyle = 'rgba(0,0,0,0.82)';            // планета закрывает орбиты за собой
     g.beginPath(); g.arc(x, y, 31, 0, Math.PI * 2); g.fill();
@@ -1971,27 +1979,29 @@
   // Медленно поворачивается; с громкостью лучи вытягиваются, а свечение за ним чуть ярче
   function drawSun() {
     const { ox, oy } = geo, L = sunLevel, rot = performance.now() * 0.00004;
-    const glow = g.createRadialGradient(ox, oy, 0, ox, oy, 90 + 50 * L);
-    glow.addColorStop(0, ink(0.16 + 0.2 * L)); glow.addColorStop(1, ink(0));
-    g.fillStyle = glow; g.beginPath(); g.arc(ox, oy, 90 + 50 * L, -Math.PI / 2, 0); g.lineTo(ox, oy); g.closePath(); g.fill();
+    const GR = 90 + 50 * L + 60 * fx.dirt;
+    const glow = g.createRadialGradient(ox, oy, 0, ox, oy, GR);
+    glow.addColorStop(0, ink(0.16 + 0.2 * L + 0.2 * fx.dirt)); glow.addColorStop(1, ink(0));
+    g.fillStyle = glow; g.beginPath(); g.arc(ox, oy, GR, -Math.PI / 2, 0); g.lineTo(ox, oy); g.closePath(); g.fill();
     const N = 28;
     g.lineWidth = 0.9;
     for (let k = 0; k < N; k++) {
       const a = (k / N) * Math.PI * 2 + rot;
       if (Math.sin(a) > 0.05 || Math.cos(a) < -0.05) continue;   // видна только четверть
       const c = Math.cos(a), s = Math.sin(a), px = -s, py = c;
+      const D = fx.dirt, jag = D > 0.2 ? (Math.random() - 0.3) * 14 * (D - 0.2) : 0;   // drive — лучи рвутся
       if (k % 2) {                              // прямой луч — узкий клин
-        const l = 50 + 22 * L, w = 2.6;
+        const l = 50 + 22 * L + 34 * D + jag, w = 2.6;
         g.strokeStyle = ink(0.42 + 0.3 * L);
         g.beginPath();
         g.moveTo(ox + c * 17 + px * w, oy + s * 17 + py * w); g.lineTo(ox + c * l, oy + s * l);
         g.lineTo(ox + c * 17 - px * w, oy + s * 17 - py * w); g.stroke();
       } else {                                  // волнистый — пламя
-        const l = 38 + 16 * L;
+        const l = 38 + 16 * L + 26 * D + jag;
         g.strokeStyle = ink(0.3 + 0.3 * L);
         g.beginPath();
         for (let i = 0; i <= 14; i++) {
-          const t = i / 14, r = 17 + t * (l - 17), wv = Math.sin(t * Math.PI * 3 + rot * 40) * 2.2 * (1 - t * 0.5);
+          const t = i / 14, r = 17 + t * (l - 17), wv = Math.sin(t * Math.PI * (3 + 3 * D) + rot * 40) * 2.2 * (1 + 2 * D) * (1 - t * 0.5);
           const X = ox + c * r + px * wv, Y = oy + s * r + py * wv;
           if (i) g.lineTo(X, Y); else g.moveTo(X, Y);
         }
@@ -2005,6 +2015,7 @@
   // гравированная орбита: двойная линия и засечки по внешней
   function engraved(r, a) {
     const { ox, oy } = geo, Q = -Math.PI / 2;
+    if (fx.chaos > 0.02) r += Math.sin(performance.now() * 0.0023 + r * 0.7) * 2.2 * fx.chaos;   // chaos — орбиты дрожат
     g.strokeStyle = ink(a); g.lineWidth = 1;
     g.beginPath(); g.arc(ox, oy, r, Q, 0); g.stroke();
     g.strokeStyle = ink(a * 0.5);
@@ -2037,6 +2048,12 @@
     g.save();
     g.beginPath(); g.rect(0, top, W, bot - top); g.clip();
     drawSun();
+    if (fx.chaos > 0.02 && geo.stars) {         // chaos — звёзды мерцают
+      for (let k = 0, n = Math.round(fx.chaos * 14); k < n; k++) {
+        const st = geo.stars[Math.floor(Math.random() * geo.stars.length)];
+        if (st) dot(st.x, st.y, 1 + Math.random() * 1.4, Math.random() * 0.7 * fx.chaos + 0.1);
+      }
+    }
     cols.forEach((c, i) => {                    // орбиты на границах; полоса под кружком — едва светлее
       const on = heldS.some((s) => s >= c.s0 && s < c.s1 + (c.s1 >= SEMIS ? 1 : 0));
       if (on) { g.fillStyle = ink(0.045); g.beginPath(); g.arc(ox, oy, c.r1, Q, 0); g.arc(ox, oy, c.r0, 0, Q, true); g.closePath(); g.fill(); }
@@ -2325,15 +2342,25 @@
       v.emit += dt;
       if (v.emit >= clamp(1 / v.beat, 0.7, 4)) {      // быстрые биения — не чаще ~1.4 импульса в секунду
         v.emit = 0;
-        if (rings.length < 160) rings.push({ x: vx(v), y: vy(v), r: 36, a: v.env * 0.7, sp: 40 + freq(v) * 0.1 });
+        const p = { x: vx(v), y: vy(v), r: 36, a: v.env * 0.7, sp: 40 + freq(v) * 0.1 };
+        if (rings.length < 160) rings.push(p);
+        // delay: тот же импульс повторяется пунктиром через время задержки, каждый повтор бледнее
+        if (fx.dly > 0.04) for (let k = 1; k <= 3; k++) {
+          const a = p.a * fx.dly * 1.6 * DLY_REPEATS ** (k - 1);
+          if (a > 0.04 && rings.length < 160) rings.push({ ...p, a, wait: 0.45 * k, echo: true });
+        }
       }
     }
-    const Rmax = Math.hypot(W, H) * (0.45 + 0.5 * fx.rev);    // больше зала — дольше гаснут волны
+    // hall и decay: чем больше зала и длиннее хвост, тем дальше уходят и дольше гаснут волны
+    const Rmax = Math.hypot(W, H) * (0.3 + 0.35 * fx.rev + 0.35 * invLog(DECAY_MIN, DECAY_MAX, fx.decay));
     for (let i = rings.length - 1; i >= 0; i--) {
       const r = rings[i];
+      if (r.wait > 0) { r.wait -= dt; continue; }
       r.r += r.sp * dt;
       if (r.r > Rmax) { rings.splice(i, 1); continue; }
-      ring(r.x, r.y, r.r, Math.min(1, r.a * 0.28 * (1 - r.r / Rmax) ** 1.6), 1);
+      const al = Math.min(1, r.a * 0.28 * (1 - r.r / Rmax) ** 1.6);
+      if (r.echo) { g.save(); g.setLineDash([2, 5]); ring(r.x, r.y, r.r, al, 1); g.restore(); }
+      else ring(r.x, r.y, r.r, al, 1);
     }
 
     if (!touchedOnce) {                         // до первого касания — призрак кружка
