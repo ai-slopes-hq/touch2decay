@@ -102,7 +102,7 @@
   let focus = V[0];
   let touchedOnce = false;
   let lastTap = null;       // { v, t } — для двойного тапа
-  let voiceCap = VOICES;    // снижается, если устройство не справляется
+  const full = [];          // касания, которым не хватило голоса — для рисования отказа
   const F = new Map();      // pointerId -> палец
   const sel = new Set();    // кружки, обведённые лассо: двигаются и правятся вместе
   const rings = [];
@@ -258,13 +258,18 @@
     for (const v of V) if (v.active && pointIn(loop, vx(v), vy(v))) sel.add(v);
   }
 
+  // мест нет — уступает только затухающий кружок (самый тихий). Закреплённые, удерживаемые
+  // и открытые в кольце не трогаются никогда; если заняты все — касание не звучит, видно отказ
   function spawn(f) {
-    let v = V.filter((u) => u.active).length < voiceCap ? V.find((u) => !u.active) : null;
-    if (!v) {                               // нет места — уступает самый старый кружок, которого никто не держит
-      for (const u of V) if (u.active && !u.fingers.length && (!editor || editor.v !== u) && (!v || u.t < v.t)) v = u;
-      if (v) deleteVoice(v);
+    let v = V.filter((u) => u.active).length < VOICES ? V.find((u) => !u.active) : null;
+    if (!v) {
+      for (const u of V) {
+        if (!u.active || u.pinned || u.fingers.length || kept(u) || u.envT !== 0) continue;
+        if (!v || u.env < v.env) v = u;
+      }
+      if (v && lastTap && lastTap.v === v) lastTap = null;
     }
-    if (!v) return null;
+    if (!v) { full.push({ x: f.x, y: f.y, t: performance.now() }); return null; }
     unlinkAll(v);
     clearLfos(v);
     sel.delete(v);
@@ -1327,23 +1332,6 @@
   }
 
   // нагрузка: если кадры стабильно тормозят — меньше кружков; когда отпустит — постепенно обратно
-  const load = { ema: 16, badSince: 0, goodSince: 0 };
-  function watchLoad(now, dtMs) {
-    load.ema += (Math.min(dtMs, 200) - load.ema) * 0.05;
-    const active = V.filter((v) => v.active).length;
-    if (load.ema > 34 && active > 3) {
-      if (!load.badSince) load.badSince = now;
-      if (now - load.badSince > 2000) {
-        voiceCap = Math.max(3, active - 1);       // новые кружки будут вытеснять старые
-        load.badSince = now;
-      }
-    } else load.badSince = 0;
-    if (load.ema < 22 && voiceCap < VOICES) {
-      if (!load.goodSince) load.goodSince = now;
-      if (now - load.goodSince > 20000) { voiceCap++; load.goodSince = now; }
-    } else load.goodSince = 0;
-  }
-
   // ---------- рисование ----------
   function resize() {
     DPR = Math.min(window.devicePixelRatio || 1, 3);
@@ -1936,7 +1924,6 @@
     const dtMs = now - last;
     const dt = Math.min(0.05, dtMs / 1000);
     last = now;
-    if (ctx) watchLoad(now, dtMs);
 
     // долгое касание пойманного кружка — кольцо свойств на весу
     for (const f of F.values()) {
@@ -2023,6 +2010,11 @@
       drawVoice(v, now);
     }
     drawHold(now);
+    for (let i = full.length - 1; i >= 0; i--) {   // все голоса заняты: пунктирный кружок сжимается и гаснет
+      const k = (now - full[i].t) / 600;
+      if (k >= 1) { full.splice(i, 1); continue; }
+      g.save(); g.setLineDash([3, 5]); ring(full[i].x, full[i].y, 34 * (1 - 0.4 * k), 0.7 * (1 - k), 1.2); g.restore();
+    }
     if (bridge) drawBridge(bridge, now);
     if (editor) drawEditor();
     if (ghost && now > ghost.until) ghost = null;
@@ -2062,7 +2054,7 @@
 
   window.t2d = {
     voices: V, fx, scl, sel, freq, cutoff, applyFx,
-    get ctx() { return ctx; }, get voiceCap() { return voiceCap; }, get editor() { return editor; },
+    get ctx() { return ctx; }, get editor() { return editor; },
   };   // для отладки из консоли
 
   resize();
