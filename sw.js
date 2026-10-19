@@ -1,6 +1,6 @@
 // Офлайн: приложение открывается и без сети. Сразу отдаём из кэша, а в фоне тянем свежую версию —
 // после деплоя новая версия подхватится со следующего запуска.
-const CACHE = 't2d-v2';
+const CACHE = 't2d-v3';
 const FILES = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
