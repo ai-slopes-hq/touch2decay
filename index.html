@@ -24,71 +24,39 @@
     touch-action: none;
   }
   #field { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-
-  #hud {
-    position: absolute; left: 0; right: 0; top: 0; pointer-events: none;
-    padding: calc(env(safe-area-inset-top) + 16px) 22px 0;
-    display: flex; justify-content: space-between; align-items: flex-end;
-  }
-  #hz { font-size: 44px; font-weight: 500; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-  .unit { font-size: 13px; color: var(--dim); margin-left: 6px; }
-  .stats { font-size: 12px; line-height: 1.55; color: var(--dim); text-align: right; }
-  .stats span { color: var(--ink); }
+  #safe-top { position: absolute; left: 0; top: 0; width: 1px; height: env(safe-area-inset-top, 0px); pointer-events: none; }
 
   .axis { position: absolute; font-size: 11px; letter-spacing: 0.14em; color: var(--dim); pointer-events: none; }
-  .ax-noise { right: 14px; top: calc(env(safe-area-inset-top) + 150px); }
-  .ax-tone { right: 14px; bottom: calc(env(safe-area-inset-bottom) + 112px); }
+  .ax-noise { right: 14px; top: calc(env(safe-area-inset-top, 0px) + 74px); }
+  .ax-tone { right: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 46px); }
   .ax-row {
-    left: 22px; right: 22px; bottom: calc(env(safe-area-inset-bottom) + 50px);
+    left: 22px; right: 22px; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
     display: flex; justify-content: space-between;
   }
 
   #hint {
-    position: absolute; left: 0; right: 0; top: 50%; text-align: center;
-    font-size: 13px; letter-spacing: 0.24em; color: var(--dim);
+    position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    font-size: 12px; letter-spacing: 0.08em; color: var(--dim);
     pointer-events: none; transition: opacity 1.2s;
   }
-
-  #hold {
-    position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 22px);
-    transform: translateX(-50%);
-    width: 68px; height: 68px; padding: 0; border-radius: 50%;
-    border: 1.5px solid #3a3a3a; background: rgba(0, 0, 0, 0.6);
-    display: flex; align-items: center; justify-content: center;
-    transition: border-color 0.2s, background-color 0.12s;
-    touch-action: none;
-  }
-  #hold::after {
-    content: ''; width: 10px; height: 10px; border-radius: 50%;
-    background: #5a5a5a; transition: background-color 0.2s, transform 0.12s;
-  }
-  #hold.armed { border-color: var(--ink); }
-  #hold.armed::after { background: var(--ink); }
-  #hold.flash { background: var(--ink); }
-  #hold.flash::after { background: var(--bg); transform: scale(1.6); }
-  #hold:focus-visible { outline: 1px dashed var(--dim); outline-offset: 4px; }
+  #hint b { font-weight: 400; font-size: 13px; letter-spacing: 0.24em; color: var(--ink); margin-bottom: 6px; }
+  @media (prefers-reduced-motion: reduce) { #hint { transition: none; } }
 </style>
 </head>
 <body>
-<canvas id="field" aria-label="Поле: касание звучит, ведение пальцем меняет звук"></canvas>
-
-<div id="hud">
-  <div><span id="hz">—</span><span class="unit">Гц</span></div>
-  <div class="stats">
-    <div>шум <span id="v-noise">—</span></div>
-    <div>срез <span id="v-cut">—</span></div>
-    <div>биения <span id="v-beat">—</span></div>
-    <div>резон <span id="v-fb">—</span></div>
-  </div>
-</div>
+<canvas id="field" aria-label="Поле синтезатора: касание звучит, ведение пальцем меняет звук"></canvas>
+<div id="safe-top"></div>
 
 <div class="axis ax-noise">шум ↑</div>
 <div class="axis ax-tone">тон ↓</div>
 <div class="axis ax-row"><span>← глубже</span><span>выше →</span></div>
 
-<div id="hint">коснись</div>
-
-<button id="hold" aria-label="Держать: закрепить или отпустить пойманный кружок"></button>
+<div id="hint">
+  <b>коснись</b>
+  <span>два тапа — закрепить</span>
+  <span>держи кружок — свойства</span>
+</div>
 
 <script src="app.js"></script>
 </body>
