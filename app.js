@@ -409,6 +409,9 @@
   const PIN_ANG = deg(-54);   // между первыми двумя лучами
   const pinPos = (cx, cy) => ({ x: cx + Math.cos(PIN_ANG) * (MENU_DEAD + MENU_SPAN * 0.72), y: cy + Math.sin(PIN_ANG) * (MENU_DEAD + MENU_SPAN * 0.72) });
   const kept = (v) => !!editor && editor.kind === 'voice' && editor.group.includes(v);
+  // отпустил палец — кольцо ещё гаснет полторы секунды, и булавку можно тапнуть
+  const GHOST_MS = 1600;
+  let ghost = null;           // { menu, until }
 
   function deleteVoice(v) {
     if (editor && (editor.v === v || editor.dst === v || (editor.m && editor.m.src === v))) editor = null;
@@ -419,6 +422,7 @@
     release(v, 0.25);
     burst(v);
     if (lastTap && lastTap.v === v) lastTap = null;
+    ghost = null;
   }
 
   // закрыть закреплённое кольцо; кружки, которые держало только оно, гаснут
@@ -483,6 +487,7 @@
     if (f.bridge) endBridge(f.bridge);
     F.delete(e.pointerId);
     if (f.ui) { uiUp(f); return; }
+    if (f.menu) leaveMenu(f.menu);
     f.menu = null;
     const v = f.voice;
     if (!v) return;
@@ -544,6 +549,11 @@
   }
 
   function uiHit(f) {
+    if (ghost) {                              // любое касание гасит призрак; по булавке — закрепляет
+      const gh = ghost, p = pinPos(gh.menu.cx, gh.menu.cy);
+      ghost = null;
+      if (performance.now() < gh.until && Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 14) return { k: 'pin', ghost: gh.menu };
+    }
     for (const k of ['rev', 'scl', 'clr']) {
       const b = btnPos(k), r = k === 'clr' ? CLR_R + 14 : BTN_R + 16;
       if (Math.hypot(f.x - b.x, f.y - b.y) < r) return { k };
@@ -585,7 +595,14 @@
   function uiDown(f) {
     if (f.ui === 'clr') { clearAll(); return; }
     if (f.ui === 'rev') { openFx(f); return; }
-    if (f.ui === 'pin') { if (f.hit.holder) pinMenu(f.hit.holder); else closeEditor(); return; }
+    if (f.ui === 'pin') {
+      if (f.hit.ghost) {                      // кольцо уже гасло — кружки снова звучат
+        pinFrom(f.hit.ghost);
+        if (f.hit.ghost.voice) for (const u of f.hit.ghost.group) if (u.active && !u.pinned && !u.fingers.length) attack(u);
+      } else if (f.hit.holder) pinMenu(f.hit.holder);
+      else closeEditor();
+      return;
+    }
     if (f.ui === 'void') { closeEditor(); return; }
     if (f.ui === 'link') { openLink(f, f.hit.dst, f.hit.m); return; }
     if (f.ui === 'ring') { ringTouch(f, true); return; }
@@ -656,7 +673,7 @@
   }
 
   function uiUp(f) {
-    if (f.menu && f.menu.commit) f.menu.commit();
+    if (f.menu && !f.menu.fx) leaveMenu(f.menu);
     if (f.ui === 'lfo') {
       if (!f.tg) return;
       for (const u of f.tg.group) {
@@ -752,10 +769,19 @@
   function menuMove(f) {
     const m = f.menu;
     const dx = f.x - m.gx, dy = f.y - m.gy, d = Math.hypot(dx, dy);   // от точки, где лежал палец
+    m.overPin = false;
     if (d < MENU_DEAD) {                      // вернулся в центр — отмена
       if (m.sector) m.restore();
       m.sector = null;
       return;
+    }
+    if (!m.fx && !m.sector) {                 // к булавке тем же пальцем: в её коридоре луч не выбирается
+      const a = Math.atan2(dy, dx);
+      if (Math.abs(Math.atan2(Math.sin(a - PIN_ANG), Math.cos(a - PIN_ANG))) < deg(15)) {
+        const p = pinPos(m.cx, m.cy);
+        m.overPin = Math.hypot(m.cx + dx - p.x, m.cy + dy - p.y) < PIN_R + 18;
+        return;
+      }
     }
     if (!m.sector && d > MENU_DEAD + 16) {
       const a = Math.atan2(dy, dx);
@@ -769,17 +795,29 @@
   }
 
   // булавка: кольцо на весу становится закреплённым — дальше касания любым пальцем, тап мимо закрывает
-  function pinMenu(f) {
-    const m = f.menu;
-    if (!m) return;
+  function pinFrom(m) {
+    ghost = null;
     if (m.voice) {
       editor = { kind: 'voice', v: m.voice, group: m.group, key: m.sector ? m.sector.key : null, cx: m.cx, cy: m.cy, sectors: SECTORS };
     } else {
       m.link.cutting = false;
       editor = { kind: 'link', dst: m.dst, m: m.link, key: m.link.type, cx: m.cx, cy: m.cy, sectors: LINK_SECTORS, cutting: false };
     }
+  }
+
+  function pinMenu(f) {
+    if (!f.menu) return;
+    pinFrom(f.menu);
     f.menu = null;
     f.parked = true;                          // этот палец больше ничего не двигает
+  }
+
+  // палец с кольца на весу отпущен: отпустил на булавке — закрепить; иначе кольцо гаснет призраком
+  function leaveMenu(m) {
+    if (m.overPin) { pinFrom(m); return; }
+    if (m.commit) m.commit();
+    if (m.link && !m.dst.mods.includes(m.link)) return;   // связь только что удалена
+    ghost = { menu: m, until: performance.now() + GHOST_MS };
   }
 
   // касание закреплённого кольца: луч — по направлению от центра, значение — расстояние от центра;
@@ -1507,9 +1545,8 @@
   }
 
   // кольцо на весу: указатель — движение пальца, перенесённое в кольцо; булавка — закрепить
-  function drawHeld(f) {
-    const m = f.menu, pin = pinPos(m.cx, m.cy);
-    const pointer = { x: m.cx + (f.x - m.gx), y: m.cy + (f.y - m.gy) };
+  function drawHeld(m, pointer) {
+    const pin = pinPos(m.cx, m.cy);
     const at = readoutAt(m.cx, m.cy);         // значение — над кольцом, где его не закрывает ни палец, ни булавка
     if (m.voice) {
       const v = m.voice;
@@ -1517,7 +1554,7 @@
       drawRing({
         cx: m.cx, cy: m.cy, span: m.span, sectors: m.sectors, sel: m.sector ? m.sector.key : null,
         get: m.get, lfoOn: (k) => !!v.lfo[k], centerOn: !m.sector, centerLabel: m.sector ? null : 'pitch',
-        pointer: m.sector ? pointer : null,
+        pointer: m.sector && pointer ? pointer : null,
         readout: m.sector ? `${m.sector.label} · ${m.text(m.sector.key)}` : null, readoutAt: at,
       });
       if (m.sector && m.sector.key === 'wave') drawCurve(morphFn(clamp(v.wave + v.wv)), m.cx, m.cy, 30, 18, 1, 2, 1.4);
@@ -1527,13 +1564,19 @@
       tether(m.cx, m.cy, mid.x, mid.y);
       drawRing({
         cx: m.cx, cy: m.cy, span: m.span, sectors: m.sectors, sel: m.sector ? m.sector.key : m.link.type, link: true,
-        get: m.get, pointer: m.sector ? pointer : null,
+        get: m.get, pointer: m.sector && pointer ? pointer : null,
         readout: m.sector ? `${m.sector.label} · ${m.text(m.sector.key)}` : `${m.link.type} · ${Math.round(m.link.depth * 100)}%`,
         readoutAt: at,
       });
       diamond(m.cx, m.cy, 6, 1, true);
     }
-    drawPin(pin.x, pin.y, false);
+    if (pointer && !m.sector) {               // путь пальца, пока луч не выбран (например, к булавке)
+      g.strokeStyle = ink(0.4); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(m.cx, m.cy); g.lineTo(pointer.x, pointer.y); g.stroke();
+      dot(pointer.x, pointer.y, 3, 0.8);
+    }
+    if (m.overPin) { g.save(); g.shadowColor = ink(0.9); g.shadowBlur = 18; drawPin(pin.x, pin.y, true); g.restore(); }
+    else drawPin(pin.x, pin.y, false);
   }
 
   // веер FX: тот же прибор, жест с удержанием
@@ -1837,7 +1880,12 @@
     drawHold(now);
     if (bridge) drawBridge(bridge, now);
     if (editor) drawEditor();
-    if (heldF) drawHeld(heldF);
+    if (ghost && now > ghost.until) ghost = null;
+    if (ghost && !editor) {                     // отпущенное кольцо гаснет; булавку ещё можно тапнуть
+      g.save(); g.globalAlpha = 0.85 * ((ghost.until - now) / GHOST_MS) ** 0.6;
+      drawHeld(ghost.menu, null); g.restore();
+    }
+    if (heldF) drawHeld(heldF.menu, { x: heldF.menu.cx + (heldF.x - heldF.menu.gx), y: heldF.menu.cy + (heldF.y - heldF.menu.gy) });
     if (fxF) drawFx(fxF);
 
     drawScope();

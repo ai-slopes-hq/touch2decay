@@ -1,6 +1,6 @@
 // Офлайн: приложение открывается и без сети. Сразу отдаём из кэша, а в фоне тянем свежую версию —
 // после деплоя новая версия подхватится со следующего запуска.
-const CACHE = 't2d-v5';
+const CACHE = 't2d-v6';
 const FILES = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png',
   './fonts/ibm-plex-mono-latin-400-normal.woff2', './fonts/ibm-plex-mono-latin-500-normal.woff2'];
 
