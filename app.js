@@ -2115,7 +2115,7 @@
   // ---------- нагрузка: Safari не отдаёт ни CPU, ни память, поэтому три косвенных признака ----------
   // 1) сколько миллисекунд реально уходит на кадр (не частота кадров — энергосбережение её режет вдвое);
   // 2) отстают ли звуковые часы от настоящих — звук не успевает считаться, значит трещит;
-  // 3) сколько звукового графа сейчас живо относительно предела. Берём худшее, наливается быстро, отходит медленно
+  // 3) сколько звукового графа сейчас живо относительно предела. Берём худшее, растёт быстро, отходит медленно
   const strain = { work: 2, lvl: 0, ctxT: 0, wallT: 0, drift: 1 };
   function measureStrain(now, workMs) {
     strain.work += (workMs - strain.work) * 0.05;
@@ -2139,24 +2139,28 @@
     strain.lvl += (target - strain.lvl) * (target > strain.lvl ? 0.08 : 0.01);
   }
 
-  // злые глаза в правом верхнем углу поля: еле видны, а под нагрузкой раскрываются и наливаются красным
-  function drawEyes(now) {
-    const L = strain.lvl, y = geo.top + 16;
-    const blink = (now % 7300) < 140 ? 0.15 : 1;  // моргают
-    for (const [x, side] of [[W - 50, -1], [W - 24, 1]]) {
-      const w = 9, h = (1.6 + 4.5 * L) * blink;
-      g.beginPath();                            // миндалина: внутренний угол ниже наружного — злой прищур
-      g.moveTo(x - w, y + side * 1.5); g.quadraticCurveTo(x, y - h * 1.6, x + w, y - side * 1.5);
-      g.quadraticCurveTo(x, y + h * 1.2, x - w, y + side * 1.5);
-      if (L > 0.02) { g.fillStyle = `rgba(215,28,28,${0.85 * L})`; g.fill(); }
-      const c = Math.round(237 * (1 - L));
-      g.strokeStyle = `rgba(237,${c},${c},${0.1 + 0.6 * L})`;
-      g.lineWidth = 1; g.stroke();
-      g.beginPath();                            // бровь: к переносице вниз
-      g.moveTo(x + side * w, y - 8 - 2 * L); g.lineTo(x - side * w, y - 4 - L); g.stroke();
-      if (blink === 1) dot(x - side * 1.5, y, 1 + L, 0.12 + 0.6 * L);
-    }
+  // индикатор нагрузки — маленький Сатурн в правом верхнем углу поля. До 80 % почти не виден,
+  // дальше проступает гуще; краснеет постепенно, вместе с нагрузкой
+  function drawStrain() {
+    const L = strain.lvl, x = W - 30, y = geo.top + 18;
+    const vis = L < 0.8 ? 0.07 + 0.05 * (L / 0.8) : 0.12 + 0.88 * ((L - 0.8) / 0.2);
+    const gb = Math.round(237 * (1 - L));
+    const col = (a) => `rgba(237,${gb},${gb},${a})`;
+    g.save(); g.translate(x, y); g.rotate(-0.42);
+    g.lineWidth = 1;
+    g.strokeStyle = col(vis * 0.6);             // задняя половина кольца
+    g.beginPath(); g.ellipse(0, 0, 15, 4, 0, Math.PI, Math.PI * 2); g.stroke();
+    g.restore();
+    g.fillStyle = L > 0.8 ? `rgba(200,24,24,${0.9 * (L - 0.8) / 0.2})` : BG;
+    g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = col(vis); g.lineWidth = 1 + 0.6 * clamp((L - 0.8) / 0.2);
+    g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.stroke();
+    g.save(); g.translate(x, y); g.rotate(-0.42);
+    g.strokeStyle = col(vis); g.lineWidth = 1;  // передняя половина — поверх планеты
+    g.beginPath(); g.ellipse(0, 0, 15, 4, 0, 0, Math.PI); g.stroke();
+    g.restore();
   }
+
   function frame(now) {
     requestAnimationFrame(frame);
     const t0 = performance.now();
@@ -2269,7 +2273,7 @@
     const tg = modTarget(null);
     if (tg) drawLfoPanel(tg, now);
     drawUI();
-    drawEyes(now);
+    drawStrain();
     measureStrain(now, performance.now() - t0);
   }
 
