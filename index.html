@@ -31,5 +31,9 @@
 <div id="safe-top"></div>
 <div id="safe-bot"></div>
 <script src="app.js"></script>
+<script>
+  // офлайн-кэш: только на настоящем сайте (https), не в превью и не с диска
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
 </body>
 </html>
