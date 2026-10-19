@@ -34,10 +34,26 @@
 <canvas id="field" aria-label="Synth field: touch to sound, drag to shape"></canvas>
 <div id="safe-top"></div>
 <div id="safe-bot"></div>
-<script src="app.js"></script>
+<script src="app.js?v=9"></script>
 <script>
   // офлайн-кэш: только на настоящем сайте (https), не в превью и не с диска
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  // новая версия: проверка при каждом возврате в приложение (иконка на «Домой» не перезапускается, а разворачивается);
+  // пришла — страница перезагружается, но только когда ничего не звучит
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    const hadController = !!navigator.serviceWorker.controller;
+    let pending = false;
+    const quiet = () => !(window.t2d && t2d.voices.some((v) => v.active));
+    const reloadWhenQuiet = () => { if (quiet()) location.reload(); else pending = true; };
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') return;
+        if (pending) reloadWhenQuiet();
+        else reg.update().catch(() => {});
+      });
+    }).catch(() => {});
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) reloadWhenQuiet(); });
+    setInterval(() => { if (pending && quiet()) location.reload(); }, 3000);
+  }
 </script>
 </body>
 </html>

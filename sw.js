@@ -1,11 +1,14 @@
-// Офлайн: приложение открывается и без сети. Сразу отдаём из кэша, а в фоне тянем свежую версию —
-// после деплоя новая версия подхватится со следующего запуска.
-const CACHE = 't2d-v8';
-const FILES = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png',
+// Офлайн без залипания старой версии.
+// Код и страница — сначала из сети (мимо HTTP-кеша), кеш — только запасной вариант без сети.
+// Шрифты и иконки не меняются — сразу из кеша.
+const CACHE = 't2d-v9';   // при выкладке менять вместе с app.js?v= в index.html
+const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest'];
+const STATIC = ['./icon-180.png', './icon-192.png', './icon-512.png',
   './fonts/ibm-plex-mono-latin-400-normal.woff2', './fonts/ibm-plex-mono-latin-500-normal.woff2'];
+const NET_WAIT = 3500;      // плохая сеть — не ждать дольше, отдать кеш
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll([...SHELL, ...STATIC].map((u) => new Request(u, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
@@ -17,13 +20,36 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+const isStatic = (url) => /\.(png|woff2)$/.test(url.pathname);
+
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== self.location.origin) return;
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(caches.open(CACHE).then(async (c) => {
-    const hit = await c.match(e.request, { ignoreSearch: true });
-    const net = fetch(e.request)
-      .then((r) => { if (r.ok) c.put(e.request, r.clone()); return r; })
-      .catch(() => hit);
-    return hit || net;
+    if (isStatic(url)) {
+      const hit = await c.match(e.request, { ignoreSearch: true });
+      if (hit) return hit;
+      const r = await fetch(e.request);
+      if (r.ok) c.put(e.request, r.clone());
+      return r;
+    }
+    const cached = async () => {
+      let hit = await c.match(e.request, { ignoreSearch: true });
+      if (!hit && e.request.mode === 'navigate') hit = await c.match('./index.html');
+      return hit;
+    };
+    // запрос страницы (navigate) переопределять нельзя — берём по адресу, мимо HTTP-кеша
+    const net = fetch(url.href, { cache: 'no-store', credentials: 'same-origin' }).then((r) => {
+      if (r.ok) c.put(e.request, r.clone());
+      return r;
+    });
+    const timeout = new Promise((res) => setTimeout(res, NET_WAIT));
+    try {
+      const r = await Promise.race([net, timeout]);
+      if (r) return r;
+      return (await cached()) || (await net);   // сеть тормозит: кеш, а если его нет — всё-таки ждём сеть
+    } catch (_) {
+      return (await cached()) || Response.error();
+    }
   }));
 });
