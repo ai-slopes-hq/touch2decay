@@ -46,7 +46,8 @@
   const LFO_RATE_MIN = 0.03, LFO_RATE_MAX = 20;
 
   // ---------- жесты ----------
-  const VOICES = 6;         // сколько кружков может звучать одновременно
+  const VOICES = 6;         // сколько кружков может звучать одновременно: 3 закреплённых + 3 временных
+  const PIN_MAX = 3, TEMP_MAX = 3;
   const GRAB_R = 52;        // радиус, в котором палец «ловит» кружок, px
   const TAP_MS = 220, TAP_MOVE = 14;   // что считается тапом
   const DTAP_MS = 320;      // окно двойного тапа: закрепить / открепить кружок
@@ -168,7 +169,7 @@
     return hi > lo ? [lo, hi] : null;
   }
   function buildGeo() {
-    geo.top = scopeY + 50; geo.bot = H - safeBot - 96; geo.ox = 0; geo.oy = geo.bot;
+    geo.top = scopeY + 44; geo.bot = H - safeBot - 96; geo.ox = 0; geo.oy = geo.bot;
     geo.r = []; geo.a = [];
     let acc = 0;
     for (let r = EDGE; r < Math.hypot(W, geo.bot - geo.top) + 4; r += geo.step) {
@@ -308,10 +309,12 @@
     for (const v of V) if (v.active && pointIn(loop, vx(v), vy(v))) sel.add(v);
   }
 
-  // мест нет — уступает только затухающий кружок (самый тихий). Закреплённые, удерживаемые
-  // и открытые в кольце не трогаются никогда; если заняты все — касание не звучит, видно отказ
+  // временных — не больше трёх. Мест нет — уступает только затухающий временный (самый тихий).
+  // Закреплённые, удерживаемые и открытые в кольце не трогаются никогда; если заняты все — касание
+  // не звучит, видно отказ
   function spawn(f) {
-    let v = V.filter((u) => u.active).length < VOICES ? V.find((u) => !u.active) : null;
+    const temps = V.filter((u) => u.active && !u.pinned).length;
+    let v = temps < TEMP_MAX ? V.find((u) => !u.active) : null;
     if (!v) {
       for (const u of V) {
         if (!u.active || u.pinned || u.fingers.length || kept(u) || u.envT !== 0) continue;
@@ -595,7 +598,10 @@
         lastTap = null;
         burst(v);
         if (v.pinned) { v.pinned = false; if (!kept(v)) release(v, UNPIN_TAIL); }
-        else v.pinned = true;
+        else if (V.filter((u) => u.active && u.pinned).length >= PIN_MAX) {   // закреплённых уже три — отказ
+          full.push({ x: vx(v), y: vy(v), t: now });
+          if (!v.fingers.length && !kept(v)) release(v, TAIL);
+        } else v.pinned = true;
         return;
       }
       lastTap = { v, t: now };
@@ -2200,23 +2206,13 @@
     g.stroke();
   }
 
-  function drawScope() {
-    const sx = 18, sw = W - sx - 116, sh = 40, mid = scopeY + sh / 2;
-    g.strokeStyle = ink(0.7); g.lineWidth = 1; g.beginPath();
-    if (an) {
-      an.getFloatTimeDomainData(scopeBuf);
-      let e = 0;
-      for (let i = 0; i < 1024; i += 4) e += scopeBuf[i] * scopeBuf[i];
-      sunLevel += (Math.min(1, Math.sqrt(e / 256) * 2.2) - sunLevel) * 0.08;
-      let s0 = 0;
-      for (let i = 1; i < 1024; i++) if (scopeBuf[i - 1] < 0 && scopeBuf[i] >= 0) { s0 = i; break; }
-      const N = 900;
-      for (let i = 0; i < N; i++) {
-        const x = sx + (i / (N - 1)) * sw, y = mid - clamp(scopeBuf[s0 + i] * 1.4, -1, 1) * (sh / 2);
-        if (i) g.lineTo(x, y); else g.moveTo(x, y);
-      }
-    } else { g.moveTo(sx, mid); g.lineTo(sx + sw, mid); }
-    g.stroke();
+  // уровень выхода — для солнца (сам осциллограф не рисуется)
+  function readLevel() {
+    if (!an) return;
+    an.getFloatTimeDomainData(scopeBuf);
+    let e = 0;
+    for (let i = 0; i < 1024; i += 4) e += scopeBuf[i] * scopeBuf[i];
+    sunLevel += (Math.min(1, Math.sqrt(e / 256) * 2.2) - sunLevel) * 0.08;
   }
 
   let last = performance.now(), chaosAt = 0, sunLevel = 0;
@@ -2394,7 +2390,7 @@
     if (heldF) drawHeld(heldF.menu, { x: heldF.menu.cx + (heldF.x - heldF.menu.gx), y: heldF.menu.cy + (heldF.y - heldF.menu.gy) });
     if (fxF) drawFx(fxF);
 
-    drawScope();
+    readLevel();
     const tg = modTarget(null);
     if (tg) drawLfoPanel(tg, now);
     drawUI();
