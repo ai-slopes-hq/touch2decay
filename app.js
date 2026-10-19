@@ -174,6 +174,30 @@
     v.dirty = true;
   }
 
+  // где параметр с учётом LFO, в долях луча: lfo — текущий выход LFO (−depth…+depth);
+  // единицы те же, что у LFO в звуке (см. apply)
+  const shiftT = (hz) => {
+    const a = Math.abs(hz);
+    if (a < 1e-3) return 0.5;
+    return clamp(0.5 + Math.sign(hz) * (0.04 + (0.96 * Math.log2((a * 2047) / SHIFT_MAX + 1)) / 11) / 2);
+  };
+  function normAt(v, key, lfo) {
+    if (key === 'wave') return clamp(v.wave + lfo);
+    if (key === 'cut') return clamp(v.cut + (lfo * 4) / Math.log2(CUT_HI / CUT_LO));
+    if (key === 'res') return clamp(v.res + (lfo * 20) / RES_MAX);
+    if (key === 'beat') return invLog(BEAT_MIN, BEAT_MAX, clamp(v.beat + lfo * 16, BEAT_MIN, BEAT_MAX));
+    if (key === 'shift') return shiftT(shiftHz(v.shift) + lfo * 300);
+    return clamp(v.fm + lfo);
+  }
+  // для луча с LFO: где значение сейчас и в каких пределах гуляет
+  function liveRange(v, key) {
+    const spec = v.lfo[key];
+    if (!spec) return null;
+    const now = morphFn(spec.morph)(spec.ph || 0) * spec.depth;
+    const a = normAt(v, key, -spec.depth), b = normAt(v, key, spec.depth);
+    return { now: normAt(v, key, now), lo: Math.min(a, b), hi: Math.max(a, b) };
+  }
+
   // с кем правится кружок: если он выделен — вся выделенная группа
   const groupOf = (v) => (sel.has(v) ? [...sel].filter((u) => u.active) : [v]);
 
@@ -1567,12 +1591,21 @@
         g.moveTo(cx + c * r - px * 7, cy + s * r - py * 7); g.lineTo(cx + c * r + px * 7, cy + s * r + py * 7);
       }
       g.strokeStyle = ink(a * 0.35); g.stroke();
-      const val = d.get(sc.key);
-      if (val > 0 || !d.link) {                 // значение — яркая поперечная риска
-        const r = R1 + val * d.span, l = on ? 10 : 7;
-        g.strokeStyle = ink(a); g.lineWidth = on ? 2.5 : 1.6;
+      const val = d.get(sc.key), lv = d.live && d.live(sc.key);
+      const tick = (t, l, w, al) => {
+        const r = R1 + t * d.span;
+        g.strokeStyle = ink(al); g.lineWidth = w;
         g.beginPath(); g.moveTo(cx + c * r - px * l, cy + s * r - py * l); g.lineTo(cx + c * r + px * l, cy + s * r + py * l); g.stroke();
-      }
+      };
+      if (lv) {                                 // под LFO: полоса размаха, база — тусклая риска, значение едет
+        const r1 = R1 + lv.lo * d.span, r2 = R1 + lv.hi * d.span;
+        g.save(); g.lineCap = 'round'; g.strokeStyle = ink(0.16); g.lineWidth = 7;
+        g.beginPath(); g.moveTo(cx + c * r1, cy + s * r1); g.lineTo(cx + c * r2, cy + s * r2); g.stroke(); g.restore();
+        tick(val, 5, 1.2, a * 0.5);
+        tick(lv.now, on ? 10 : 8, on ? 2.5 : 2, Math.max(a, 0.85));
+        const rn = R1 + lv.now * d.span;
+        dot(cx + c * rn, cy + s * rn, 2.2, 1);
+      } else if (val > 0 || !d.link) tick(val, on ? 10 : 7, on ? 2.5 : 1.6, a);   // значение — яркая поперечная риска
       const lx = clamp(cx + c * (R2 + 22), 30, W - 30), ly = clamp(cy + s * (R2 + 22), 14, H - 14);
       text(sc.label + (d.lfoOn && d.lfoOn(sc.key) ? ' ~' : ''), lx, ly, 12, a, on ? 500 : 400, 'center');
     }
@@ -1603,7 +1636,7 @@
       const sc = e.sectors.find((s) => s.key === e.key);
       drawRing({
         cx: e.cx, cy: e.cy, span: MENU_SPAN, sectors: e.sectors, sel: e.key,
-        get: (k) => norm(v, k), lfoOn: (k) => !!v.lfo[k], centerOn: !e.key,
+        get: (k) => norm(v, k), live: (k) => liveRange(v, k), lfoOn: (k) => !!v.lfo[k], centerOn: !e.key,
         centerLabel: e.key ? null : 'pitch',
         readout: sc ? `${sc.label} · ${valueText(v, sc.key)}${many}` : null,
         readoutAt: readoutAt(e.cx, e.cy),
@@ -1634,7 +1667,7 @@
       tether(m.cx, m.cy, vx(v), vy(v));
       drawRing({
         cx: m.cx, cy: m.cy, span: m.span, sectors: m.sectors, sel: m.sector ? m.sector.key : null,
-        get: m.get, lfoOn: (k) => !!v.lfo[k], centerOn: !m.sector, centerLabel: m.sector ? null : 'pitch',
+        get: m.get, live: (k) => liveRange(v, k), lfoOn: (k) => !!v.lfo[k], centerOn: !m.sector, centerLabel: m.sector ? null : 'pitch',
         pointer: m.sector && pointer ? pointer : null,
         readout: m.sector ? `${m.sector.label} · ${m.text(m.sector.key)}` : null, readoutAt: at,
       });
