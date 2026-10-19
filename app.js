@@ -608,6 +608,7 @@
   const BTN_R = 26, ITEM_H = 46, CLR_R = 17;
   const btnPos = (k) => {
     if (k === 'clr') return { x: W - 34, y: scopeY + 20 };
+    if (k === 'undo') return { x: W - 34 - 46, y: scopeY + 20 };
     return { x: k === 'rev' ? W - 48 : 48, y: H - safeBot - 48 };
   };
   // панель LFO внизу, под большой палец: полоса формы и пад — вправо скорость, вверх глубина
@@ -680,8 +681,8 @@
       ghost = null;
       if (performance.now() < gh.until && Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 14) return { k: 'pin', ghost: gh.menu };
     }
-    for (const k of ['rev', 'scl', 'clr']) {
-      const b = btnPos(k), r = k === 'clr' ? CLR_R + 14 : BTN_R + 16;
+    for (const k of ['rev', 'scl', 'clr', 'undo']) {
+      const b = btnPos(k), r = k === 'clr' || k === 'undo' ? CLR_R + 6 : BTN_R + 16;
       if (Math.hypot(f.x - b.x, f.y - b.y) < r) return { k };
     }
     for (const o of F.values()) {             // булавка на кольце, открытом на весу
@@ -708,6 +709,71 @@
 
   function allDirty() { for (const v of V) v.dirty = true; }
 
+  // ---------- отмена: 10 шагов. Шаг — законченный жест, после которого изменилось сохраняемое:
+  // закреплённые кружки (место, тембр, LFO, связи между ними), FX и лад. Временные кружки не в счёт ----------
+  const UNDO_MAX = 10;
+  const hist = [];
+  let lastState = null;
+  const r4 = (x) => Math.round(x * 1e4) / 1e4;
+  function snapshot() {
+    const pins = V.filter((v) => v.active && v.pinned);
+    const ids = new Set(pins.map((v) => v.i));
+    return JSON.stringify({
+      v: pins.map((v) => ({
+        i: v.i, x: r4(v.x), y: r4(v.y), wave: r4(v.wave), cut: r4(v.cut), res: r4(v.res), beat: r4(v.beat), fm: r4(v.fm), shift: r4(v.shift),
+        lfo: Object.fromEntries(Object.entries(v.lfo).map(([k, sp]) => [k, { morph: r4(sp.morph), rate: r4(sp.rate), depth: r4(sp.depth) }])),
+        mods: v.mods.filter((m) => !m.auto && ids.has(m.src.i)).map((m) => ({ src: m.src.i, type: m.type, depth: r4(m.depth) })),
+      })),
+      fx: Object.fromEntries(Object.entries(fx).map(([k, x]) => [k, r4(x)])),
+      scl: { on: scl.on, idx: scl.idx, root: scl.root },
+    });
+  }
+  // после каждого жеста: если сохраняемое изменилось — прежнее состояние в историю
+  function commit() {
+    if (F.size) return;                         // ждём, пока отпущены все пальцы — один жест, один шаг
+    const now = snapshot();
+    if (lastState !== null && now !== lastState) {
+      hist.push(lastState);
+      if (hist.length > UNDO_MAX) hist.shift();
+    }
+    lastState = now;
+  }
+  function restore(js) {
+    const st = JSON.parse(js);
+    editor = null; ghost = null;
+    sel.clear();
+    const keep = new Set(st.v.map((d) => d.i));
+    for (const v of V) if (v.active && v.pinned && !keep.has(v.i)) deleteVoice(v);
+    for (const d of st.v) {
+      const v = V[d.i];
+      for (const f of F.values()) if (f.voice === v) { f.voice = null; f.menu = null; }
+      v.fingers = [];
+      unlinkAll(v);
+      clearLfos(v);
+      v.snap = !v.active || v.env < 0.02;
+      Object.assign(v, { x: d.x, dx: d.x, y: d.y, wave: d.wave, cut: d.cut, res: d.res, beat: d.beat, fm: d.fm, shift: d.shift });
+      v.pinned = true; v.dirty = true;
+      if (!v.active || v.envT === 0) attack(v);
+      burst(v);
+    }
+    for (const d of st.v) {
+      const v = V[d.i];
+      for (const m of d.mods) addLink(v, V[m.src], m.depth, m.type);
+      for (const [k, sp] of Object.entries(d.lfo)) setLfo(v, k, { ...sp });
+    }
+    Object.assign(fx, st.fx); applyFx();
+    if (scl.on !== st.scl.on || scl.idx !== st.scl.idx || scl.root !== st.scl.root) {
+      Object.assign(scl, st.scl); scl.slideUntil = performance.now() + 500; allDirty();
+    }
+  }
+  function undo() {
+    if (!hist.length) return;
+    restore(hist.pop());
+    lastState = snapshot();
+    undoAt = performance.now();
+  }
+  let undoAt = -1e9;
+
   // все кружки, включая закреплённые, гаснут за полсекунды; связи, LFO и выделение снимаются
   function clearAll() {
     editor = null;
@@ -718,6 +784,7 @@
 
   function uiDown(f) {
     if (f.ui === 'clr') { clearAll(); return; }
+    if (f.ui === 'undo') { undo(); return; }
     if (f.ui === 'rev') { openFx(f); return; }
     if (f.ui === 'pin') {
       if (f.hit.ghost) {                      // кольцо уже гасло — кружки снова звучат
@@ -1893,6 +1960,15 @@
     g.strokeStyle = ink(0.9); g.lineWidth = 2;
     g.beginPath(); g.arc(r.x, r.y, BTN_R + 5, -Math.PI / 2, -Math.PI / 2 + fx.rev * Math.PI * 2); g.stroke();
 
+    // отмена: стрелка по дуге; под ней — точки по числу шагов в запасе
+    const u = btnPos('undo'), can = hist.length > 0, flash = performance.now() - undoAt < 250;
+    ring(u.x, u.y, CLR_R, flash ? 1 : can ? 0.45 : 0.18, flash ? 2 : 1.2);
+    g.strokeStyle = ink(can ? 0.8 : 0.25); g.lineWidth = 1.4; g.lineCap = 'round';
+    g.beginPath(); g.arc(u.x + 1, u.y + 1, 6, Math.PI * 1.05, Math.PI * 2.35); g.stroke();
+    g.beginPath(); g.moveTo(u.x - 8.5, u.y - 3.5); g.lineTo(u.x - 5, u.y + 1.5); g.lineTo(u.x - 1, u.y - 2); g.stroke();
+    g.lineCap = 'butt';
+    for (let i = 0; i < hist.length; i++) dot(u.x - ((hist.length - 1) * 4) / 2 + i * 4, u.y + CLR_R + 7, 1.1, 0.5);
+
     // убрать всё: крестик вверху справа
     const c = btnPos('clr');
     const live = V.some((v) => v.active);
@@ -1966,7 +2042,7 @@
   }
 
   function drawScope() {
-    const sx = 18, sw = W - sx - 70, sh = 40, mid = scopeY + sh / 2;
+    const sx = 18, sw = W - sx - 116, sh = 40, mid = scopeY + sh / 2;
     g.strokeStyle = ink(0.7); g.lineWidth = 1; g.beginPath();
     if (an) {
       an.getFloatTimeDomainData(scopeBuf);
@@ -2097,8 +2173,8 @@
   // ---------- события ----------
   cv.addEventListener('pointerdown', down, { passive: false });
   cv.addEventListener('pointermove', move);
-  cv.addEventListener('pointerup', up);
-  cv.addEventListener('pointercancel', up);
+  cv.addEventListener('pointerup', (e) => { up(e); commit(); });
+  cv.addEventListener('pointercancel', (e) => { up(e); commit(); });
 
   // в iOS звук разрешается на «полноценных» жестах — ловим все
   document.addEventListener('pointerdown', unlock, { capture: true });
@@ -2121,5 +2197,6 @@
   };   // для отладки из консоли
 
   resize();
+  lastState = snapshot();
   requestAnimationFrame(frame);
 })();
