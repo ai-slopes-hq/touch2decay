@@ -20,6 +20,7 @@
     { type: 'square', label: 'меандр', level: 0.18 },
   ];
   const WAVE_DEF = 1;
+  const CUT_DEF = 0.5, RES_DEF = 0.21, RES_MAX = 24;   // резо: Q фильтра в дБ
   const TAIL_DEF = 1.6;     // хвост после отпускания (τ, с)
   const TAIL_MIN = 0.25, TAIL_MAX = 8;
   const UNPIN_TAIL = 0.8;   // хвост после снятия с закрепления
@@ -27,6 +28,7 @@
   const LINK_NEW = 0.5;     // глубина нового моста
   const LFO_MIN = 0.06, LFO_OCT = 8;         // дрожь: от 0.06 до ~15 Гц
   const LFO_CENTS = 38, LFO_TREM = 0.22;     // глубина дрожи по высоте и громкости
+  const REV_WET = 1.15;      // уровень зала на полном миксе
 
   // ---------- жесты ----------
   const VOICES = 8;         // сколько кружков может звучать одновременно
@@ -40,10 +42,10 @@
   const deg = (d) => (d * Math.PI) / 180;
   const SECTORS = [                          // кольцо свойств: пять лучей
     { key: 'wave', label: 'волна', ang: deg(-90) },
-    { key: 'tail', label: 'хвост', ang: deg(-18) },
-    { key: 'beat', label: 'детюн', ang: deg(54) },
-    { key: 'fm', label: 'фм', ang: deg(126) },        // собственная FM
-    { key: 'fb', label: 'резон', ang: deg(198) },     // резонанс гребёнки
+    { key: 'cut', label: 'срез', ang: deg(-18) },     // срез фильтра: ±3 октавы поверх оси Y
+    { key: 'res', label: 'резо', ang: deg(54) },      // резонанс фильтра
+    { key: 'beat', label: 'детюн', ang: deg(126) },
+    { key: 'fm', label: 'фм', ang: deg(198) },        // собственная FM
   ];
 
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -59,8 +61,8 @@
 
   // ---------- голоса (кружки) ----------
   const V = Array.from({ length: VOICES }, (_, i) => ({
-    i, x: 0.35, y: 0.22, ox: 0, oy: 0, dock: null,
-    beat: BEAT_DEF, fb: FB_BASE, wave: WAVE_DEF, tail: TAIL_DEF, fm: 0, mods: [],
+    i, x: 0.35, dx: 0.35, y: 0.22, ox: 0, oy: 0, dock: null,
+    beat: BEAT_DEF, fb: FB_BASE, wave: WAVE_DEF, tail: TAIL_DEF, fm: 0, cut: CUT_DEF, res: RES_DEF, mods: [],
     fingers: [], pinned: false, active: false,
     env: 0, envT: 0, envTau: 0.05, emit: 0, t: 0,
     dirty: true, snap: true, nodes: null,
@@ -71,28 +73,53 @@
   const F = new Map();      // pointerId -> палец
   const rings = [];
 
-  const freq = (v) => F_LO * 2 ** (v.x * OCT);
-  const cutoff = (v) => 260 * 2 ** (v.y * 5);      // низ поля — тёмный, верх — открытый
+  // ---------- лад: пока держишь кнопку, кружки встают на ноты ----------
+  const SCALES = [                            // ступени от ля, в полутонах
+    { label: 'мажор', steps: [0, 2, 4, 5, 7, 9, 11] },
+    { label: 'минор', steps: [0, 2, 3, 5, 7, 8, 10] },
+    { label: 'дорийский', steps: [0, 2, 3, 5, 7, 9, 10] },
+    { label: 'фригийский', steps: [0, 1, 3, 5, 7, 8, 10] },
+    { label: 'лидийский', steps: [0, 2, 4, 6, 7, 9, 11] },
+    { label: 'миксолидийский', steps: [0, 2, 4, 5, 7, 9, 10] },
+  ];
+  const SEMIS = OCT * 12;
+  const scl = { idx: 0, on: false, slideUntil: 0 };
+  const rev = { mix: 0.35 };                  // реверб: 0 — сухо, 1 — только зал
+
+  function quantX(x) {
+    const st = SCALES[scl.idx].steps, s = x * SEMIS;
+    let best = s, bd = 99;
+    for (let n = Math.floor(s) - 7; n <= Math.ceil(s) + 7; n++) {
+      if (n < 0 || n > SEMIS || !st.includes(((n % 12) + 12) % 12)) continue;
+      const d = Math.abs(n - s);
+      if (d < bd) { bd = d; best = n; }
+    }
+    return best / SEMIS;
+  }
+  const soundX = (v) => (scl.on ? quantX(v.x) : v.x);
+  const freq = (v) => F_LO * 2 ** (soundX(v) * OCT);
+  // низ поля — тёмный, верх — открытый; «срез» кружка сдвигает это на ±3 октавы
+  const cutoff = (v) => Math.min(16000, 260 * 2 ** (v.y * 5) * 2 ** ((v.cut - 0.5) * 6));
   const lfoRate = (v) => LFO_MIN * 2 ** ((v.dock ? v.dock.pos : 0) * LFO_OCT);
   const fieldX = (px) => clamp((px - POCKET) / (W - POCKET));
   // где кружок нарисован: в кармане — на его полосе, иначе — по своей высоте и шуму
-  const vx = (v) => (v.dock ? POCKET / 2 : POCKET + v.x * (W - POCKET));
+  const vx = (v) => (v.dock ? POCKET / 2 : POCKET + v.dx * (W - POCKET));   // dx — где кружок виден (с ладом он съезжает к ноте)
   const vy = (v) => (v.dock ? (1 - v.dock.pos) * H : (1 - v.y) * H);
 
   // значение свойства в долях 0..1 (для дуг и глифов)
   function norm(v, key) {
     if (key === 'wave') return (v.wave + 0.5) / WAVES.length;
-    if (key === 'tail') return invLog(TAIL_MIN, TAIL_MAX, v.tail);
+    if (key === 'cut') return v.cut;
+    if (key === 'res') return v.res;
     if (key === 'beat') return invLog(BEAT_MIN, BEAT_MAX, v.beat);
-    if (key === 'fb') return v.fb / FB_MAX;
     return v.fm;
   }
 
   function setNorm(v, key, t) {
     if (key === 'wave') v.wave = Math.min(WAVES.length - 1, Math.floor(t * WAVES.length));
-    else if (key === 'tail') v.tail = lerpLog(TAIL_MIN, TAIL_MAX, t);
+    else if (key === 'cut') v.cut = t;
+    else if (key === 'res') v.res = t;
     else if (key === 'beat') v.beat = lerpLog(BEAT_MIN, BEAT_MAX, t);
-    else if (key === 'fb') v.fb = t * FB_MAX;
     else v.fm = t;
     v.dirty = true;
   }
@@ -142,8 +169,8 @@
     }
     if (!v) return null;
     unlinkAll(v);
-    v.x = fieldX(f.x); v.y = clamp(1 - f.y / H); v.ox = 0; v.oy = 0; v.dock = null;
-    v.beat = BEAT_DEF; v.fb = FB_BASE; v.wave = WAVE_DEF; v.tail = TAIL_DEF; v.fm = 0;
+    v.x = fieldX(f.x); v.dx = v.x; v.y = clamp(1 - f.y / H); v.ox = 0; v.oy = 0; v.dock = null;
+    v.beat = BEAT_DEF; v.fb = FB_BASE; v.wave = WAVE_DEF; v.tail = TAIL_DEF; v.fm = 0; v.cut = CUT_DEF; v.res = RES_DEF;
     v.pinned = false; v.fingers = [];
     v.snap = v.env < 0.02; v.dirty = true; v.emit = 1e9;
     attack(v);
@@ -241,6 +268,9 @@
     };
     F.set(e.pointerId, f);
 
+    const ui = uiHit(f.x, f.y);
+    if (ui) { f.ui = ui; uiDown(f); return; }
+
     let v = hit(f.x, f.y);
     if (v) {
       // другой палец уже держит кружок — это мост
@@ -268,6 +298,7 @@
     const f = F.get(e.pointerId);
     if (!f) return;
     f.x = e.clientX; f.y = e.clientY;
+    if (f.ui) { uiMove(f); return; }
     if (!f.moved && Math.hypot(f.x - f.x0, f.y - f.y0) > HOLD_MOVE) f.moved = true;
     if (f.bridge) bridgeMove(f.bridge);
     else if (f.menu) menuMove(f);
@@ -279,6 +310,7 @@
     if (!f) return;
     if (f.bridge) endBridge(f.bridge);
     F.delete(e.pointerId);
+    if (f.ui) { uiUp(f); return; }
     f.menu = null;
     const v = f.voice;
     if (!v) return;
@@ -300,13 +332,54 @@
     else if (!v.pinned) release(v, v.tail);
   }
 
+  // ---------- кнопки внизу: реверб (держишь — слайдер) и лад (держишь — список ладов) ----------
+  const BTN_R = 26, SLIDER_H = 260, ITEM_H = 46;
+  let safeBot = 0;
+  const btnPos = (k) => ({ x: k === 'rev' ? W - 48 : POCKET + 48, y: H - safeBot - 48 });
+
+  function uiHit(x, y) {
+    for (const k of ['rev', 'scl']) {
+      const b = btnPos(k);
+      if (Math.hypot(x - b.x, y - b.y) < BTN_R + 16) return k;
+    }
+    return null;
+  }
+
+  function allDirty() { for (const v of V) v.dirty = true; }
+
+  function uiDown(f) {
+    if (f.ui === 'rev') { f.y0 = f.y; f.mix0 = rev.mix; return; }
+    scl.on = true;
+    scl.slideUntil = performance.now() + 500;
+    allDirty();
+  }
+
+  function uiMove(f) {
+    const b = btnPos(f.ui);
+    if (f.ui === 'rev') {                       // ведёшь вверх-вниз от точки касания
+      rev.mix = clamp(f.mix0 + (f.y0 - f.y) / SLIDER_H);
+      setRevMix();
+      return;
+    }
+    if (f.y > b.y - 40) return;
+    const i = clamp(Math.floor((b.y - 40 - f.y) / ITEM_H), 0, SCALES.length - 1);
+    if (i !== scl.idx) { scl.idx = i; scl.slideUntil = performance.now() + 500; allDirty(); }
+  }
+
+  function uiUp(f) {
+    if (f.ui !== 'scl') return;
+    scl.on = false;
+    scl.slideUntil = performance.now() + 500;
+    allDirty();
+  }
+
   // ---------- кольцо свойств ----------
   function openMenu(f) {
     const v = f.voice;
     f.menuWas = true;
     f.menu = {
       cx: vx(v), cy: vy(v), sector: null,
-      orig: { wave: v.wave, tail: v.tail, beat: v.beat, fb: v.fb, fm: v.fm },
+      orig: { wave: v.wave, cut: v.cut, res: v.res, beat: v.beat, fm: v.fm },
     };
     focus = v;
   }
@@ -347,20 +420,34 @@
     return buf;
   }
 
-  // импульс зала: стерео-шум с плавным спадом, темнеющий к концу хвоста
-  function impulse(seconds, decay) {
+  // импульс зала: ранние отражения + плотный хвост, который темнеет по мере спада
+  function impulse(seconds) {
     const sr = ctx.sampleRate, len = Math.floor(sr * seconds);
     const buf = ctx.createBuffer(2, len, sr);
+    const t60 = seconds * 0.85;
     for (let ch = 0; ch < 2; ch++) {
       const d = buf.getChannelData(ch);
+      for (let r = 0; r < 16; r++) {
+        const i = Math.floor(sr * (0.006 + Math.random() * 0.09));
+        d[i] += (Math.random() < 0.5 ? -1 : 1) * (0.55 - r * 0.025);
+      }
       let y = 0;
       for (let i = 0; i < len; i++) {
-        const t = i / len;
-        y += (0.85 - 0.78 * t) * (Math.random() * 2 - 1 - y);
-        d[i] = y * (1 - t) ** decay;
+        const t = i / sr;
+        const damp = 0.7 * Math.exp(-t / (seconds * 0.3)) + 0.05;
+        y += damp * (Math.random() * 2 - 1 - y);
+        d[i] += y * 10 ** ((-3 * t) / t60) * Math.min(1, t / 0.025) * 1.4;
       }
     }
     return buf;
+  }
+
+  let revDry = null, revWet = null;
+  function setRevMix() {
+    if (!ctx) return;
+    const t = ctx.currentTime, m = rev.mix;
+    revDry.gain.setTargetAtTime(Math.cos((m * Math.PI) / 2), t, 0.05);
+    revWet.gain.setTargetAtTime(Math.sin((m * Math.PI) / 2) * REV_WET, t, 0.05);
   }
 
   const gainNode = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
@@ -387,8 +474,8 @@
     const pre = gainNode(0.8);
     const drive = ctx.createWaveShaper(); drive.curve = soft(1.6, true); drive.oversample = '4x';
     bus.connect(pre).connect(drive);
-    const mix = gainNode(1);
-    drive.connect(mix);
+    const dryBus = gainNode(1);
+    drive.connect(dryBus);
 
     // стерео-дилей: две линии крест-накрест, время слегка плавает, как у ленты
     const dSend = gainNode(0.32);
@@ -404,26 +491,34 @@
     lfo(0.087, 0.005, dR.delayTime);
     const merge = ctx.createChannelMerger(2);
     dL.connect(merge, 0, 0); dR.connect(merge, 0, 1);
-    const dRet = gainNode(0.8);
-    merge.connect(dRet).connect(mix);
+    merge.connect(gainNode(0.8)).connect(dryBus);
 
-    // зал
-    const verb = ctx.createConvolver(); verb.buffer = impulse(5.5, 2.4);
-    const vSend = gainNode(0.5);
-    drive.connect(vSend); merge.connect(vSend);
-    vSend.connect(verb);
-    const vRet = gainNode(0.6);
-    verb.connect(vRet).connect(mix);
+    // зал: пред-задержка → свёртка → лёгкий хорус на хвосте; кнопка реверба крутит сухое/зал
+    const out = gainNode(1);
+    revDry = gainNode(1);
+    dryBus.connect(revDry).connect(out);
+    const preDelay = ctx.createDelay(0.2); preDelay.delayTime.value = 0.035;
+    const verb = ctx.createConvolver(); verb.buffer = impulse(7);
+    dryBus.connect(preDelay).connect(verb);
+    const wetSum = gainNode(1);
+    verb.connect(wetSum);
+    const ch = ctx.createDelay(0.05); ch.delayTime.value = 0.012;
+    lfo(0.23, 0.0025, ch.delayTime);
+    verb.connect(ch).connect(gainNode(0.6)).connect(wetSum);
+    revWet = gainNode(0);
+    wetSum.connect(revWet).connect(out);
+    setRevMix();
 
     const hp = filter('highpass', 30);
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14; comp.knee.value = 12; comp.ratio.value = 4;
     comp.attack.value = 0.01; comp.release.value = 0.4;
-    const master = gainNode(0.85);
+    const master = gainNode(0.8);
+    const limit = ctx.createWaveShaper(); limit.curve = soft(1.3, true); limit.oversample = '4x';   // мягкий потолок на выходе
     an = ctx.createAnalyser(); an.fftSize = 2048; scopeBuf = new Float32Array(an.fftSize);
-    mix.connect(hp).connect(comp).connect(master);
-    master.connect(ctx.destination);
-    master.connect(an);
+    out.connect(hp).connect(comp).connect(master).connect(limit);
+    limit.connect(ctx.destination);
+    limit.connect(an);
 
     for (const v of V) { v.nodes = voiceNodes(v, noise, bus); v.snap = true; v.dirty = true; }
   }
@@ -514,6 +609,7 @@
     // вверх по полю: ярче, грязнее, больше шума
     T(n.driveIn.gain, 0.35 + 2.4 * y * y, 0.1);
     T(n.lp.frequency, cutoff(v), 0.1);
+    T(n.lp.Q, v.res * RES_MAX, 0.1);
     T(n.nz.gain, 0.04 + 0.5 * y ** 2.2, 0.1);
     T(n.bp.frequency, Math.min(f * 3 * 2 ** (y * 2), 9000), 0.1);
     T(n.bp.Q, 9 - 6 * y, 0.1);
@@ -570,6 +666,7 @@
     cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
     g.setTransform(DPR, 0, 0, DPR, 0, 0);
     scopeY = safeTop.offsetHeight + 18;
+    safeBot = document.getElementById('safe-bot').offsetHeight;
     const c = document.createElement('canvas');
     c.width = cv.width; c.height = cv.height;
     const x = c.getContext('2d');
@@ -723,10 +820,10 @@
 
   function valueText(v, key) {
     if (key === 'wave') return WAVES[v.wave].label;
-    if (key === 'tail') return (v.tail * 3).toFixed(v.tail * 3 < 10 ? 1 : 0) + ' с';
+    if (key === 'cut') { const c = cutoff(v); return c >= 1000 ? (c / 1000).toFixed(1) + ' кГц' : Math.round(c) + ' Гц'; }
+    if (key === 'res') return Math.round(v.res * 100) + '%';
     if (key === 'beat') return v.beat.toFixed(v.beat < 10 ? 2 : 1) + ' Гц';
-    if (key === 'fm') return Math.round(v.fm * 100) + '%';
-    return Math.round((v.fb / FB_MAX) * 100) + '%';
+    return Math.round(v.fm * 100) + '%';
   }
 
   // кольцо свойств: пять лучей с подписями; дуга на луче — текущее значение
@@ -773,6 +870,68 @@
     if (v.pinned) pinMark(m.cx, m.cy, v.dock ? 5 : 9, v.wave, 1); else dot(m.cx, m.cy, 3.5, 1);
   }
 
+  // сетка нот лада — пока кнопка лада зажата
+  function drawScaleGrid() {
+    const st = SCALES[scl.idx].steps;
+    g.save();
+    g.setLineDash([2, 6]);
+    for (let n = 0; n <= SEMIS; n++) {
+      if (!st.includes(n % 12)) continue;
+      const x = Math.round(POCKET + (n / SEMIS) * (W - POCKET)) + 0.5;
+      g.strokeStyle = ink(n % 12 === 0 ? 0.3 : 0.12); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, scopeY + 50); g.lineTo(x, H - safeBot - 96); g.stroke();
+    }
+    g.restore();
+  }
+
+  function drawUI() {
+    let revF = null, sclF = null;
+    for (const f of F.values()) { if (f.ui === 'rev') revF = f; if (f.ui === 'scl') sclF = f; }
+    g.textBaseline = 'middle';
+
+    // реверб: кольцо-индикатор микса; держишь — вертикальный слайдер
+    const r = btnPos('rev');
+    if (revF) {
+      const top = r.y - BTN_R - 14 - SLIDER_H, bot = r.y - BTN_R - 14;
+      g.fillStyle = 'rgba(0,0,0,0.88)';
+      g.beginPath(); g.roundRect ? g.roundRect(r.x - 24, top, 48, SLIDER_H, 24) : g.rect(r.x - 24, top, 48, SLIDER_H); g.fill();
+      g.strokeStyle = ink(0.35); g.lineWidth = 1; g.stroke();
+      const fy = bot - rev.mix * SLIDER_H;
+      g.fillStyle = ink(0.85);
+      g.beginPath(); g.roundRect ? g.roundRect(r.x - 18, fy, 36, Math.max(0, bot - fy - 6), 18) : g.rect(r.x - 18, fy, 36, bot - fy - 6); g.fill();
+      g.textAlign = 'right'; g.fillStyle = ink(1); g.font = `500 15px ${MONO}`;
+      g.fillText(`реверб ${Math.round(rev.mix * 100)}%`, r.x - 36, fy);
+    }
+    ring(r.x, r.y, BTN_R, revF ? 1 : 0.45, 1.5);
+    for (const [rr, a] of [[6, 0.9], [11, 0.55], [16, 0.3]]) ring(r.x, r.y, rr, a * (revF ? 1 : 0.8), 1);
+    g.strokeStyle = ink(0.9); g.lineWidth = 2;
+    g.beginPath(); g.arc(r.x, r.y, BTN_R + 5, -Math.PI / 2, -Math.PI / 2 + rev.mix * Math.PI * 2); g.stroke();
+
+    // лад: лесенка; зажата — список ладов над кнопкой
+    const b = btnPos('scl');
+    if (sclF) {
+      const n = SCALES.length, top = b.y - 40 - n * ITEM_H;
+      g.fillStyle = 'rgba(0,0,0,0.88)';
+      g.beginPath(); g.roundRect ? g.roundRect(b.x - 30, top - 8, 210, n * ITEM_H + 16, 14) : g.rect(b.x - 30, top - 8, 210, n * ITEM_H + 16); g.fill();
+      g.textAlign = 'left';
+      SCALES.forEach((sc, i) => {
+        const y = b.y - 40 - ITEM_H * (i + 0.5), on = i === scl.idx;
+        g.fillStyle = ink(on ? 1 : 0.45);
+        g.font = `${on ? 500 : 400} 15px ${MONO}`;
+        g.fillText(sc.label, b.x - 8, y);
+        if (on) dot(b.x - 18, y, 3, 1);
+      });
+    }
+    if (scl.on) { g.fillStyle = ink(0.9); g.beginPath(); g.arc(b.x, b.y, BTN_R, 0, Math.PI * 2); g.fill(); }
+    else ring(b.x, b.y, BTN_R, 0.45, 1.5);
+    g.strokeStyle = scl.on ? BG : ink(0.8); g.lineWidth = 1.6; g.lineJoin = 'round';
+    g.beginPath();
+    g.moveTo(b.x - 11, b.y + 8);
+    for (let i = 0; i < 4; i++) { const x = b.x - 11 + i * 6, y = b.y + 8 - i * 5; g.lineTo(x, y - 5); g.lineTo(x + 6, y - 5); }
+    g.stroke();
+    g.textBaseline = 'alphabetic'; g.textAlign = 'start';
+  }
+
   function drawScope() {
     const sx = POCKET + 18, sw = W - sx - 22, sh = 40, mid = scopeY + sh / 2;
     g.strokeStyle = ink(0.7); g.lineWidth = 1; g.beginPath();
@@ -799,6 +958,13 @@
     for (const f of F.values()) {
       if (f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
       if (now - f.t0 > HOLD_MS) openMenu(f);
+    }
+
+    // с ладом кружки плавно съезжают к нотам и обратно
+    const sliding = now < scl.slideUntil;
+    for (const v of V) {
+      const tx = soundX(v);
+      v.dx = sliding || scl.on ? v.dx + (tx - v.dx) * (1 - Math.exp(-dt / 0.07)) : v.x;
     }
 
     let anyActive = false;
@@ -839,7 +1005,7 @@
         if (rings.length < 220) rings.push({ x: vx(v), y: vy(v), r: v.dock ? 16 : 34, a: v.env, sp: 60 + freq(v) * 0.28 });
       }
     }
-    const Rmax = Math.hypot(W, H) * 0.75;
+    const Rmax = Math.hypot(W, H) * (0.5 + 0.6 * rev.mix);   // больше зала — дольше гаснут волны
     for (let i = rings.length - 1; i >= 0; i--) {
       const r = rings[i];
       r.r += r.sp * dt;
@@ -856,6 +1022,7 @@
 
     let menuF = null, bridge = null;
     for (const f of F.values()) { if (f.menu) menuF = f; if (f.bridge) bridge = f.bridge; }
+    if (scl.on) drawScaleGrid();
     drawLinks(now, bridge && bridge.m);
     for (const v of V) {
       if (!v.active) continue;
@@ -863,11 +1030,12 @@
       if (bridge && (bridge.A === v || bridge.B === v)) continue;
       drawVoice(v, now);
     }
-    for (const f of F.values()) if (!f.voice) dot(f.x, f.y, 3, 0.35);
+    for (const f of F.values()) if (!f.voice && !f.ui) dot(f.x, f.y, 3, 0.35);
     if (bridge) drawBridge(bridge, now);
     if (menuF) drawMenu(menuF);
 
     drawScope();
+    drawUI();
   }
 
   // ---------- события ----------
@@ -890,7 +1058,7 @@
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
 
-  window.t2d = { voices: V, get ctx() { return ctx; } };   // для отладки из консоли
+  window.t2d = { voices: V, rev, scl, freq, setRevMix, get ctx() { return ctx; } };   // для отладки из консоли
 
   resize();
   requestAnimationFrame(frame);
