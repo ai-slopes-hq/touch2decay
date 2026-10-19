@@ -28,16 +28,12 @@
     { label: 'pulse', fn: (t) => Math.tanh(9 * (Math.sin(2 * Math.PI * t) - 0.35)) },              // узкий импульс со скруглёнными фронтами
     { label: 'fold', fn: (t) => Math.sin(2.8 * Math.sin(2 * Math.PI * t) + 0.4) },                 // волнофолдер
   ];
-  const WAVE_DEF = 1;
+  const WAVE_DEF = 0.25;    // позиция морфинга: 0 — triangle … 1 — fold
+  const NW = WAVES.length;
 
   // ---------- LFO: вторым пальцем на панели сверху, пока крутишь параметр ----------
-  const LFO_SHAPES = [
-    { key: 'sine', label: 'sine' },
-    { key: 'triangle', label: 'tri' },
-    { key: 'square', label: 'square' },
-    { key: 'random', label: 's&h' },
-  ];
-  const LFO_TARGET_LABEL = { pitch: 'pitch', cut: 'cutoff', res: 'res', beat: 'detune', fm: 'fm' };
+  // форма LFO — те же таблицы с тем же морфингом
+  const LFO_TARGET_LABEL = { pitch: 'pitch', wave: 'wave', cut: 'cutoff', res: 'res', beat: 'detune', fm: 'fm' };
   const LFO_RATE_MIN = 0.03, LFO_RATE_MAX = 20;
 
   // ---------- жесты ----------
@@ -70,7 +66,7 @@
 
   // ---------- голоса (кружки) ----------
   const V = Array.from({ length: VOICES }, (_, i) => ({
-    i, x: 0.35, dx: 0.35, y: 0.22, ox: 0, oy: 0,
+    i, x: 0.35, dx: 0.35, wob: 0, wv: 0, y: 0.22, ox: 0, oy: 0,
     beat: BEAT_DEF, wave: WAVE_DEF, fm: 0, cut: CUT_DEF, res: RES_DEF,
     mods: [], lfo: {},
     fingers: [], pinned: false, active: false,
@@ -81,6 +77,7 @@
   let touchedOnce = false;
   let lastTap = null;       // { v, t } — для двойного тапа
   const F = new Map();      // pointerId -> палец
+  const sel = new Set();    // кружки, обведённые лассо: двигаются вместе
   const rings = [];
 
   // ---------- лад: пока держишь кнопку, кружки встают на ноты ----------
@@ -120,12 +117,13 @@
   const freq = (v) => F_LO * 2 ** (soundX(v) * OCT);
   // низ поля — тёмный, верх — открытый; cutoff кружка сдвигает это на ±3 октавы
   const cutoff = (v) => Math.min(16000, 260 * 2 ** (v.y * 5) * 2 ** ((v.cut - 0.5) * 6));
-  const vx = (v) => v.dx * W;               // dx — где кружок виден (с ладом он съезжает к ноте)
+  // dx — где кружок виден (с ладом он съезжает к ноте); wob — сдвиг от LFO на высоте
+  const vx = (v) => (v.dx + v.wob) * W;
   const vy = (v) => (1 - v.y) * H;
 
   // значение свойства в долях 0..1 (для дуг на лучах)
   function norm(v, key) {
-    if (key === 'wave') return (v.wave + 0.5) / WAVES.length;
+    if (key === 'wave') return v.wave;
     if (key === 'cut') return v.cut;
     if (key === 'res') return v.res;
     if (key === 'beat') return invLog(BEAT_MIN, BEAT_MAX, v.beat);
@@ -133,7 +131,7 @@
   }
 
   function setNorm(v, key, t) {
-    if (key === 'wave') v.wave = Math.min(WAVES.length - 1, Math.floor(t * WAVES.length));
+    if (key === 'wave') v.wave = t;
     else if (key === 'cut') v.cut = t;
     else if (key === 'res') v.res = t;
     else if (key === 'beat') v.beat = lerpLog(BEAT_MIN, BEAT_MAX, t);
@@ -167,6 +165,35 @@
     v.y = clamp(1 - (f.y + v.oy) / H);
     v.dirty = true;
     focus = v;
+    if (f.group) for (const m of f.group) {     // выделенные едут следом, сохраняя расстановку
+      if (!m.u.active) continue;
+      m.u.x = clamp(v.x + m.ox); m.u.y = clamp(v.y + m.oy);
+      if (!scl.on) m.u.dx = m.u.x;
+      m.u.dirty = true;
+    }
+  }
+
+  function pointIn(poly, x, y) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j];
+      if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+  }
+
+  // петля без «подхода» от кнопки: с той точки, где обводка вернулась к себе, до конца
+  function loopOf(path) {
+    const n = path.length, e = path[n - 1];
+    for (let i = 0; i < n - 8; i++) if (Math.hypot(path[i].x - e.x, path[i].y - e.y) < 40) return path.slice(i);
+    return path;
+  }
+
+  function finishLasso(path) {
+    sel.clear();
+    const loop = loopOf(path);
+    if (loop.length < 3) return;
+    for (const v of V) if (v.active && pointIn(loop, vx(v), vy(v))) sel.add(v);
   }
 
   function spawn(f) {
@@ -240,31 +267,25 @@
   // ---------- LFO на параметрах кружка ----------
   function lfoTargets(n, key) {
     if (key === 'pitch') return [n.c1.detune, n.c2.detune, n.sub.detune];
+    if (key === 'wave') return [n.morph.pos];
     if (key === 'cut') return [n.lp.detune];
     if (key === 'res') return [n.lp.Q];
-    if (key === 'beat') return [n.c2.frequency];
+    if (key === 'beat') return [n.c2.freq];
     return [n.sfm.gain];
   }
 
-  function lfoSource(shape, phase) {
-    if (shape === 'random') {                 // s&h: петля из 16 случайных ступеней
-      const s = ctx.createBufferSource();
-      s.buffer = shBuf; s.loop = true;
-      s.start(0, phase * shBuf.duration);
-      return s;
-    }
-    const o = ctx.createOscillator(); o.type = shape; o.start();
-    return o;
-  }
-
   function setLfo(v, key, spec) {
+    if (!v.lfo[key]) spec.ph = 0;              // фаза для рисования: генератор тоже стартует с нуля
     v.lfo[key] = spec;
     const n = v.nodes;
-    if (n) {
-      let L = n.lfo[key];
-      if (L && L.shape !== spec.shape) { L.src.stop(); L.src.disconnect(); L.src = null; }
-      if (!L) { L = { g: gainNode(0), src: null, shape: null }; for (const p of lfoTargets(n, key)) L.g.connect(p); n.lfo[key] = L; }
-      if (!L.src) { L.src = lfoSource(spec.shape, Math.random()); L.src.connect(L.g); L.shape = spec.shape; }
+    if (n && !n.lfo[key]) {
+      const out = gainNode(0);
+      for (const p of lfoTargets(n, key)) out.connect(p);
+      const sum = gainNode(1);
+      const mp = morphPos(spec.morph, false);
+      const mo = morphOsc(mp.shapers, sum);
+      sum.connect(out);
+      n.lfo[key] = { out, mp, mo };
     }
     v.dirty = true;
   }
@@ -273,10 +294,12 @@
     delete v.lfo[key];
     const n = v.nodes, L = n && n.lfo[key];
     if (!L) return;
-    L.g.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-    const src = L.src, gn = L.g;
-    setTimeout(() => { try { src.stop(); } catch (_) { /* ok */ } src.disconnect(); gn.disconnect(); }, 400);
+    L.out.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
     delete n.lfo[key];
+    setTimeout(() => {
+      for (const o of [...L.mo.oscs, L.mp.src]) { try { o.stop(); } catch (_) { /* ok */ } o.disconnect(); }
+      L.out.disconnect();
+    }, 400);
   }
 
   function clearLfos(v) { for (const key of Object.keys(v.lfo)) removeLfo(v, key); }
@@ -288,10 +311,7 @@
     }
     for (const f of F.values()) {
       if (f === except || f.ui || !f.voice || f.bridge) continue;
-      if (f.menu) {
-        const k = f.menu.sector ? f.menu.sector.key : 'pitch';
-        return k === 'wave' ? null : { v: f.voice, key: k };
-      }
+      if (f.menu) return { v: f.voice, key: f.menu.sector ? f.menu.sector.key : 'pitch' };
       return { v: f.voice, key: 'pitch' };
     }
     return null;
@@ -337,7 +357,7 @@
     F.set(e.pointerId, f);
 
     const ui = uiHit(f);
-    if (ui) { f.ui = ui.k; f.shape = ui.shape; uiDown(f); return; }
+    if (ui) { f.ui = ui.k; uiDown(f); return; }
 
     let v = hit(f.x, f.y);
     if (v) {
@@ -350,6 +370,7 @@
       }
       f.caught = true;
       if (!v.pinned) attack(v);
+      if (sel.has(v)) f.group = [...sel].filter((u) => u !== v).map((u) => ({ u, ox: u.x - v.x, oy: u.y - v.y }));
     } else {
       v = spawn(f);                           // пустое место — новый кружок
       if (!v) return;
@@ -405,11 +426,8 @@
     if (k === 'clr') return { x: W - 34, y: scopeY + 20 };
     return { x: k === 'rev' ? W - 48 : 48, y: H - safeBot - 48 };
   };
-  // панель LFO: четыре плитки под осциллографом
-  const lfoPanel = () => {
-    const y = scopeY + 54, h = 58, gap = 8, x0 = 16, w = (W - 32 - gap * 3) / 4;
-    return { y, h, tiles: LFO_SHAPES.map((s, i) => ({ ...s, x: x0 + i * (w + gap), w })) };
-  };
+  // панель LFO: полоса морфинга под осциллографом
+  const lfoPanel = () => ({ x: 16, y: scopeY + 54, w: W - 32, h: 58 });
 
   function uiHit(f) {
     for (const k of ['rev', 'scl', 'clr']) {
@@ -418,9 +436,7 @@
     }
     if (modTarget(f)) {
       const p = lfoPanel();
-      if (f.y > p.y - 6 && f.y < p.y + p.h + 6) {
-        for (const t of p.tiles) if (f.x > t.x - 4 && f.x < t.x + t.w + 4) return { k: 'lfo', shape: t.key };
-      }
+      if (f.y > p.y - 6 && f.y < p.y + p.h + 6 && f.x > p.x - 6 && f.x < p.x + p.w + 6) return { k: 'lfo' };
     }
     return null;
   }
@@ -433,11 +449,13 @@
     for (const v of V) {
       if (!v.active) continue;
       v.fingers = []; v.pinned = false;
+      sel.delete(v);
       unlinkAll(v);
       release(v, 0.35);
       burst(v);
     }
     lastTap = null;
+    sel.clear();
   }
 
   function uiDown(f) {
@@ -447,9 +465,9 @@
       const tg = modTarget(f);
       if (!tg) return;
       f.tg = tg;
-      const cur = tg.v.lfo[tg.key];
-      f.toggleOff = !!cur && cur.shape === f.shape;   // тап по уже включённой форме — выключить
-      const spec = cur ? { ...cur, shape: f.shape } : { shape: f.shape, rate: 1.2, depth: 0.35 };
+      const p = lfoPanel(), cur = tg.v.lfo[tg.key];
+      const morph = clamp((f.x - p.x) / p.w);       // куда лёг палец — та форма
+      const spec = cur ? { ...cur, morph } : { morph, rate: 1.2, depth: 0.35 };
       f.rate0 = spec.rate; f.depth0 = spec.depth;
       setLfo(tg.v, tg.key, spec);
       return;
@@ -466,7 +484,6 @@
       if (!f.tg) return;
       const spec = f.tg.v.lfo[f.tg.key];
       if (!spec) return;
-      if (f.moved) f.toggleOff = false;
       spec.rate = clamp(f.rate0 * 2 ** ((f.x - f.x0) / 70), LFO_RATE_MIN, LFO_RATE_MAX);   // вбок — скорость
       spec.depth = clamp(f.depth0 + (f.y - f.y0) / 220);                                 // вниз — глубина
       f.tg.v.dirty = true;
@@ -474,6 +491,16 @@
     }
     if (f.ui !== 'scl') return;
     const b = btnPos('scl');
+    // повёл палец вправо вдоль низа — карандаш: обводишь кружки
+    if (!f.lasso && !f.picked && f.x > b.x + 56 && f.y > b.y - 50) {
+      f.lasso = [];
+      if (scl.on !== f.wasOn) { scl.on = f.wasOn; scl.slideUntil = performance.now() + 500; allDirty(); }
+    }
+    if (f.lasso) {
+      const lp = f.lasso[f.lasso.length - 1];
+      if (!lp || Math.hypot(f.x - lp.x, f.y - lp.y) > 4) f.lasso.push({ x: f.x, y: f.y });
+      return;
+    }
     if (f.y > b.y - 40) return;
     // строки списка снизу вверх: off, затем лады
     const row = clamp(Math.floor((b.y - 40 - f.y) / ITEM_H), 0, SCALES.length);
@@ -490,10 +517,11 @@
     if (f.ui === 'lfo') {
       if (!f.tg) return;
       const spec = f.tg.v.lfo[f.tg.key];
-      if (spec && (f.toggleOff || spec.depth < 0.03)) removeLfo(f.tg.v, f.tg.key);
+      if (spec && spec.depth < 0.03) removeLfo(f.tg.v, f.tg.key);   // глубину увёл в ноль — LFO снят
       return;
     }
     if (f.ui !== 'scl') return;
+    if (f.lasso) { finishLasso(f.lasso); return; }
     // короткий тап по уже включённому ладу — выключить; выбор из списка остаётся как есть
     if (!f.picked && f.wasOn && performance.now() - f.t0 < 300) {
       scl.on = false;
@@ -562,7 +590,7 @@
   }
 
   // ---------- аудио ----------
-  let ctx = null, an = null, scopeBuf = null, bus = null, fxN = null, shBuf = null;
+  let ctx = null, an = null, scopeBuf = null, bus = null, fxN = null;
 
   // tanh-кривая: normed=true — выход до ±1 (мастер), false — наклон 1 в нуле (петля обратной связи)
   function soft(k, normed) {
@@ -578,11 +606,25 @@
     return buf;
   }
 
-  function stepsBuffer(steps) {               // для s&h: секунда из ступеней
-    const sr = ctx.sampleRate, buf = ctx.createBuffer(1, sr, sr), d = buf.getChannelData(0);
-    const per = Math.floor(sr / steps);
-    for (let s = 0; s < steps; s++) { const v = Math.random() * 2 - 1; d.fill(v, s * per, (s + 1) * per); }
-    return buf;
+  // вес таблицы i при позиции морфинга: треугольный, соседние таблицы перетекают линейно
+  const weight = (i, p) => Math.max(0, 1 - Math.abs(clamp(p) * (NW - 1) - i));
+  // кривая для WaveShaper: вход −1..1 — это позиция 0..1, выход — вес (с громкостью таблицы или без)
+  function weightCurve(i, level, shape = 1) {
+    const n = 1024, c = new Float32Array(n);
+    for (let j = 0; j < n; j++) c[j] = weight(i, j / (n - 1)) ** shape * level;
+    return c;
+  }
+  // форма в точке t при позиции p — для рисования
+  const morphFn = (p) => (t) => {
+    let y = 0;
+    for (let i = 0; i < NW; i++) { const k = weight(i, p); if (k) y += k * WAVES[i].samp[Math.floor((((t % 1) + 1) % 1) * 1024) % 1024]; }
+    return y;
+  };
+  function morphName(p) {
+    const x = clamp(p) * (NW - 1), i = Math.min(NW - 2, Math.floor(x)), fr = x - i;
+    if (fr < 0.08) return WAVES[i].label;
+    if (fr > 0.92) return WAVES[i + 1].label;
+    return `${WAVES[i].label} → ${WAVES[i + 1].label}`;
   }
 
   // цикл волны → гармоники → PeriodicWave; громкость выравнивается по RMS
@@ -602,6 +644,45 @@
     }
     w.pw = ctx.createPeriodicWave(re, im);
     w.level = 0.24 / Math.sqrt(rms);
+  }
+
+  // нормированные циклы для рисования считаются сразу, без звука
+  for (const w of WAVES) {
+    const N = 1024, smp = new Float32Array(N);
+    let mean = 0, peak = 0;
+    for (let i = 0; i < N; i++) { smp[i] = w.fn(i / N); mean += smp[i] / N; }
+    for (let i = 0; i < N; i++) { smp[i] -= mean; peak = Math.max(peak, Math.abs(smp[i])); }
+    for (let i = 0; i < N; i++) smp[i] /= peak;
+    w.samp = smp;
+  }
+
+  // генератор с морфингом: по осциллятору на таблицу, их веса — из позиции (позиция — звуковой сигнал,
+  // поэтому её можно модулировать хоть на звуковой скорости). Частота и строй — общие на весь набор.
+  function morphOsc(shapers, dest) {
+    const fq = ctx.createConstantSource(); fq.offset.value = 0;
+    const dt = ctx.createConstantSource(); dt.offset.value = 0;
+    const oscs = [fq, dt];
+    WAVES.forEach((w, i) => {
+      const o = ctx.createOscillator(); o.setPeriodicWave(w.pw); o.frequency.value = 0;
+      fq.connect(o.frequency); dt.connect(o.detune);
+      const gn = gainNode(0);
+      shapers[i].connect(gn.gain);
+      o.connect(gn).connect(dest);
+      oscs.push(o);
+    });
+    for (const o of oscs) o.start();
+    return { freq: fq.offset, detune: dt.offset, oscs };
+  }
+
+  // позиция морфинга → веса таблиц
+  function morphPos(p, withLevel) {
+    const c = ctx.createConstantSource(); c.offset.value = 2 * p - 1; c.start();
+    const shapers = WAVES.map((w, i) => {
+      const sh = ctx.createWaveShaper(); sh.curve = withLevel ? weightCurve(i, w.level, 0.72) : weightCurve(i, 1);
+      c.connect(sh);
+      return sh;
+    });
+    return { pos: c.offset, src: c, shapers };
   }
 
   const gainNode = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
@@ -661,7 +742,6 @@
     ctx = new AC({ latencyHint: 'interactive' });
     for (const w of WAVES) makeWave(w);
     noiseBuf = noiseBuffer(4);
-    shBuf = stepsBuffer(16);
     const noise = ctx.createBufferSource();
     noise.buffer = noiseBuf; noise.loop = true; noise.start();
 
@@ -723,16 +803,16 @@
     const pan = (p) => { if (!ctx.createStereoPanner) return gainNode(1); const s = ctx.createStereoPanner(); s.pan.value = p; return s; };
 
     // пара осцилляторов, разведённая по стерео; второй сдвинут на detune
-    const c1 = ctx.createOscillator(), c2 = ctx.createOscillator();
-    const sub = ctx.createOscillator(), m = ctx.createOscillator();
-    c1.setPeriodicWave(WAVES[WAVE_DEF].pw); c2.setPeriodicWave(WAVES[WAVE_DEF].pw);
-    sub.type = 'sine'; m.type = 'sine';
-    const c1g = gainNode(0), c2g = gainNode(0), subg = gainNode(0.28);
+    // обе половины пары морфят по таблицам из одной позиции
     const tone = gainNode(1);
-    c1.connect(c1g).connect(pan(-0.5)).connect(tone);
-    c2.connect(c2g).connect(pan(0.5)).connect(tone);
-    sub.connect(subg).connect(tone);
-    for (const o of [c1, c2, sub, m]) o.start();
+    const morph = morphPos(v.wave, true);
+    const p1 = pan(-0.5), p2 = pan(0.5);
+    p1.connect(tone); p2.connect(tone);
+    const c1 = morphOsc(morph.shapers, p1), c2 = morphOsc(morph.shapers, p2);
+    const sub = ctx.createOscillator(), m = ctx.createOscillator();
+    sub.type = 'sine'; m.type = 'sine';
+    sub.connect(gainNode(0.28)).connect(tone);
+    for (const o of [sub, m]) o.start();
 
     // живость: медленный дрейф строя у каждого осциллятора по-своему…
     lfo(0.071 * k, 5, c1.detune); lfo(0.19 * k, 2.5, c1.detune);
@@ -745,7 +825,7 @@
 
     // модулятор: собственная FM и выход для мостов. Сам он ничем не модулируется — петель нет
     const sfm = gainNode(0); m.connect(sfm);
-    const fmTargets = [c1.frequency, c2.frequency];
+    const fmTargets = [c1.freq, c2.freq];
     for (const p of fmTargets) sfm.connect(p);
     const mod = gainNode(0); m.connect(mod);
 
@@ -782,7 +862,7 @@
     const out = pan(0);
     sum.connect(lvl).connect(out).connect(bus);
 
-    return { c1, c2, sub, m, c1g, c2g, sfm, mod, driveIn, lp, bp, nz, hiss, env, dl, out, fmTargets, lfo: {}, wave: -1 };
+    return { c1, c2, sub, m, morph, sfm, mod, driveIn, lp, bp, nz, hiss, env, dl, out, fmTargets, lfo: {} };
   }
 
   function apply(v) {
@@ -792,13 +872,11 @@
     v.snap = false;
     const T = (p, val, tau) => p.setTargetAtTime(val, t, s ? 0.004 : tau);
     const f = freq(v), y = v.y, G = 0.14;
-    T(n.c1.frequency, f, G);
-    T(n.c2.frequency, f + v.beat, G);
+    T(n.c1.freq, f, G);
+    T(n.c2.freq, f + v.beat, G);
     T(n.sub.frequency, f / 2, G);
     T(n.m.frequency, f, G);
-    const w = WAVES[v.wave];
-    if (n.wave !== v.wave) { n.c1.setPeriodicWave(w.pw); n.c2.setPeriodicWave(w.pw); n.wave = v.wave; }
-    T(n.c1g.gain, w.level, 0.05); T(n.c2g.gain, w.level, 0.05);
+    T(n.morph.pos, 2 * v.wave - 1, 0.04);
     // вверх по полю: ярче, грязнее, больше шума
     T(n.driveIn.gain, 0.35 + 2.4 * y * y, 0.1);
     T(n.lp.frequency, cutoff(v), 0.1);
@@ -817,11 +895,12 @@
     for (const [key, spec] of Object.entries(v.lfo)) {
       const L = n.lfo[key];
       if (!L) continue;
-      if (spec.shape === 'random') L.src.playbackRate.setTargetAtTime(spec.rate / 16, t, 0.05);
-      else L.src.frequency.setTargetAtTime(spec.rate, t, 0.05);
+      L.mo.freq.setTargetAtTime(spec.rate, t, 0.05);
+      L.mp.pos.setTargetAtTime(2 * spec.morph - 1, t, 0.05);
       const d2 = spec.depth;
-      const depth = key === 'pitch' ? d2 * 700 : key === 'cut' ? d2 * 4800 : key === 'res' ? d2 * 20 : key === 'beat' ? d2 * 16 : d2 * f * FM_MAX;
-      L.g.gain.setTargetAtTime(depth, t, 0.05);
+      const depth = key === 'pitch' ? d2 * 700 : key === 'wave' ? d2 * 2 : key === 'cut' ? d2 * 4800
+        : key === 'res' ? d2 * 20 : key === 'beat' ? d2 * 16 : d2 * f * FM_MAX;
+      L.out.gain.setTargetAtTime(depth, t, 0.05);
     }
   }
 
@@ -907,22 +986,20 @@
     g.stroke();
     g.restore();
   }
-  const SH_STEPS = [0.2, -0.7, 0.9, -0.1, 0.6, -0.9, 0.3, -0.4];
-  const lfoFn = (shape) => (shape === 'sine' ? (t) => Math.sin(2 * Math.PI * t)
-    : shape === 'triangle' ? (t) => tri(t)
-      : shape === 'square' ? (t) => (t < 0.5 ? 1 : -1)
-        : (t) => SH_STEPS[Math.floor(t * SH_STEPS.length) % SH_STEPS.length]);
-
   function drawVoice(v, now) {
     const x = vx(v), y = vy(v);
     const held = v.fingers.length > 0;
     const a = held ? 1 : Math.min(1, v.env * 1.2);
     if (held) glowRing(x, y, 36, a); else ring(x, y, 36, a, 2);
-    if (v.pinned) { drawCurve(WAVES[v.wave].fn, x, y, 22, 12, a, 1, 1.8); ring(x, y, 46, a * 0.45, 1); }
+    if (sel.has(v)) {                           // выделен лассо — бегущий пунктир
+      g.save(); g.setLineDash([4, 5]); g.lineDashOffset = -now * 0.03;
+      ring(x, y, 44, Math.max(0.5, a), 1.2); g.restore();
+    }
+    if (v.pinned) { drawCurve(morphFn(clamp(v.wave + v.wv)), x, y, 22, 12, a, 1, 1.8); ring(x, y, 46, a * 0.45, 1); }
     else dot(x, y, 3.5, a);
     // у каждого LFO своя орбита: точка бежит со скоростью LFO
     Object.values(v.lfo).forEach((spec, i) => {
-      const r = 52 + i * 7, ph = (now / 1000) * spec.rate * Math.PI * 2;
+      const r = 52 + i * 7, ph = (spec.ph || 0) * Math.PI * 2;
       dot(x + Math.cos(ph) * r, y + Math.sin(ph) * r, 2.2, a * (0.4 + 0.6 * spec.depth));
     });
   }
@@ -955,7 +1032,7 @@
     for (const [v, f] of [[br.A, p], [br.B, q]]) {
       const x = vx(v), y = vy(v);
       glowRing(x, y, 36, 1);
-      if (v.pinned) drawCurve(WAVES[v.wave].fn, x, y, 22, 12, 1, 1, 1.8);
+      if (v.pinned) drawCurve(morphFn(clamp(v.wave + v.wv)), x, y, 22, 12, 1, 1, 1.8);
       if (Math.hypot(f.x - x, f.y - y) > 24) {
         g.strokeStyle = ink(0.3); g.lineWidth = 1;
         g.beginPath(); g.moveTo(x, y); g.lineTo(f.x, f.y); g.stroke();
@@ -987,7 +1064,7 @@
   }
 
   function valueText(v, key) {
-    if (key === 'wave') return WAVES[v.wave].label;
+    if (key === 'wave') return morphName(v.wave);
     if (key === 'cut') { const c = cutoff(v); return c >= 1000 ? (c / 1000).toFixed(1) + ' kHz' : Math.round(c) + ' Hz'; }
     if (key === 'res') return Math.round(v.res * 100) + '%';
     if (key === 'beat') return v.beat.toFixed(v.beat < 10 ? 2 : 1) + ' Hz';
@@ -1008,9 +1085,9 @@
       const c = Math.cos(sc.ang), sn = Math.sin(sc.ang);
       g.strokeStyle = ink(a * 0.25); g.lineWidth = 1;
       g.beginPath(); g.moveTo(m.cx + c * R1, m.cy + sn * R1); g.lineTo(m.cx + c * R2, m.cy + sn * R2); g.stroke();
-      if (sc.key === 'wave') {                  // у волны — ступени на луче
-        for (let i = 1; i < WAVES.length; i++) {
-          const r = R1 + (i / WAVES.length) * MENU_SPAN;
+      if (sc.key === 'wave') {                  // у волны — метки таблиц на луче
+        for (let i = 0; i < NW; i++) {
+          const r = R1 + (i / (NW - 1)) * MENU_SPAN;
           g.beginPath(); g.arc(m.cx, m.cy, r, sc.ang - 0.06, sc.ang + 0.06); g.stroke();
         }
       }
@@ -1030,7 +1107,7 @@
       // у кружка значение над пальцем; у веера FX — над веером, где его ничто не перекрывает
       const tx = m.fx ? m.cx - R2 * 0.55 : clamp(f.x, 80, W - 80);
       const ty = m.fx ? m.cy - R2 - 70 : f.y - 70;
-      if (m.sector.key === 'wave') drawCurve(WAVES[v.wave].fn, tx, ty - 30, 60, 22, 1);
+      if (m.sector.key === 'wave') drawCurve(morphFn(clamp(v.wave + v.wv)), tx, ty - 30, 60, 22, 1);
       g.fillStyle = ink(1);
       g.font = `500 15px ${MONO}`;
       g.fillText(`${m.sector.label} · ${m.text(m.sector.key)}`, tx, ty);
@@ -1038,31 +1115,34 @@
     g.textAlign = 'start'; g.textBaseline = 'alphabetic';
     if (v) {
       glowRing(m.cx, m.cy, 36, 1);
-      if (v.pinned) drawCurve(WAVES[v.wave].fn, m.cx, m.cy, 22, 12, 1, 1, 1.8); else dot(m.cx, m.cy, 3.5, 1);
+      if (v.pinned) drawCurve(morphFn(clamp(v.wave + v.wv)), m.cx, m.cy, 22, 12, 1, 1, 1.8); else dot(m.cx, m.cy, 3.5, 1);
     }
   }
 
-  // панель LFO: появляется, пока палец крутит параметр; второй палец — форма, вниз — глубина, вбок — скорость
+  // панель LFO: полоса морфинга из тех же таблиц; маркер — форма LFO; вниз — глубина, вбок — скорость
   function drawLfoPanel(tg) {
     const p = lfoPanel(), spec = tg.v.lfo[tg.key];
     let lf = null;
     for (const f of F.values()) if (f.ui === 'lfo') lf = f;
     g.fillStyle = 'rgba(0,0,0,0.85)';
     g.fillRect(0, p.y - 10, W, p.h + 44);
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    for (const t of p.tiles) {
-      const on = spec && spec.shape === t.key;
-      rrect(t.x, p.y, t.w, p.h, 10);
-      if (on) { g.fillStyle = ink(0.14); g.fill(); }
-      g.strokeStyle = ink(on ? 0.9 : 0.35); g.lineWidth = on ? 1.5 : 1; g.stroke();
-      drawCurve(lfoFn(t.key), t.x + t.w / 2, p.y + 22, t.w * 0.6, 16, on ? 1 : 0.6, 1.5, 1.4);
-      g.fillStyle = ink(on ? 1 : 0.55); g.font = `400 11px ${MONO}`;
-      g.fillText(t.label, t.x + t.w / 2, p.y + p.h - 12);
+    rrect(p.x, p.y, p.w, p.h, 10);
+    g.strokeStyle = ink(lf ? 0.8 : 0.4); g.lineWidth = 1; g.stroke();
+    for (let i = 0; i < NW; i++) {             // таблицы на своих местах полосы
+      const x = p.x + 18 + (i / (NW - 1)) * (p.w - 36);
+      drawCurve(WAVES[i].fn, x, p.y + p.h / 2, 30, 18, 0.35, 1, 1.2);
     }
-    g.textAlign = 'left';
+    if (spec) {
+      const mx = p.x + 18 + spec.morph * (p.w - 36);
+      g.fillStyle = ink(0.12); rrect(mx - 26, p.y + 4, 52, p.h - 8, 8); g.fill();
+      drawCurve(morphFn(spec.morph), mx, p.y + p.h / 2, 40, 22, 1, 1.5, 1.6);
+    }
+    g.textAlign = 'left'; g.textBaseline = 'middle';
     g.fillStyle = ink(lf ? 1 : 0.6); g.font = `${lf ? 500 : 400} 12px ${MONO}`;
     const what = `LFO → ${LFO_TARGET_LABEL[tg.key]}`;
-    const tail = spec ? `  ·  ${spec.rate.toFixed(spec.rate < 10 ? 2 : 1)} Hz  ·  ${Math.round(spec.depth * 100)}%` : '  ·  2nd finger on a shape';
+    const tail = spec
+      ? `  ·  ${morphName(spec.morph)}  ·  ${spec.rate.toFixed(spec.rate < 10 ? 2 : 1)} Hz  ·  ${Math.round(spec.depth * 100)}%`
+      : '  ·  2nd finger here';
     g.fillText(what + tail, 16, p.y + p.h + 18);
     g.textBaseline = 'alphabetic'; g.textAlign = 'start';
   }
@@ -1102,7 +1182,25 @@
 
     // лад: лесенка; зажата — список ладов над кнопкой
     const b = btnPos('scl');
-    if (sclF) {
+    if (sclF && sclF.lasso) {                   // обводка карандашом
+      g.save(); g.setLineDash([3, 4]); g.strokeStyle = ink(0.85); g.lineWidth = 1.4;
+      g.beginPath(); sclF.lasso.forEach((pt, i) => (i ? g.lineTo(pt.x, pt.y) : g.moveTo(pt.x, pt.y)));
+      if (sclF.lasso.length > 2) g.closePath();
+      g.stroke(); g.restore();
+      const loop = loopOf(sclF.lasso);
+      for (const v of V) if (v.active && loop.length > 2 && pointIn(loop, vx(v), vy(v))) ring(vx(v), vy(v), 44, 0.9, 1.5);
+    } else if (sclF) {
+      // справа от кнопки — карандаш: туда повести палец, чтобы обвести кружки
+      const px = b.x + 74, py = b.y;
+      g.save(); g.translate(px, py); g.rotate(-Math.PI / 4);
+      g.strokeStyle = ink(0.8); g.lineWidth = 1.4;
+      g.strokeRect(-12, -3.5, 20, 7);
+      g.beginPath(); g.moveTo(8, -3.5); g.lineTo(14, 0); g.lineTo(8, 3.5); g.stroke();
+      g.restore();
+      g.strokeStyle = ink(0.4); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(b.x + BTN_R + 8, py); g.lineTo(px - 18, py); g.stroke();
+    }
+    if (sclF && !sclF.lasso) {
       const rows = ['off', ...SCALES.map((sc) => sc.label)];
       const n = rows.length, top = b.y - 40 - n * ITEM_H;
       g.fillStyle = 'rgba(0,0,0,0.88)';
@@ -1115,7 +1213,7 @@
         g.fillText(label, b.x - 8, y);
         if (on) dot(b.x - 18, y, 3, 1);
       });
-    } else if (scl.on) {                        // лад включён — его имя рядом с кнопкой
+    } else if (scl.on && !sclF) {               // лад включён — его имя рядом с кнопкой
       g.textAlign = 'left'; g.fillStyle = ink(0.55); g.font = `400 12px ${MONO}`;
       g.fillText(SCALES[scl.idx].label, b.x + BTN_R + 12, b.y);
     }
@@ -1164,12 +1262,24 @@
       v.dx = sliding || scl.on ? v.dx + (tx - v.dx) * (1 - Math.exp(-dt / 0.07)) : v.x;
     }
 
+    // LFO видно: высота качает кружок по полю, волна — форму в метке
+    for (const v of V) {
+      v.wob = 0; v.wv = 0;
+      for (const [key, spec] of Object.entries(v.lfo)) {
+        spec.ph = ((spec.ph || 0) + dt * spec.rate) % 1;
+        const val = morphFn(spec.morph)(spec.ph) * spec.depth;
+        if (key === 'pitch') v.wob = (val * 700) / 100 / SEMIS;
+        else if (key === 'wave') v.wv = val;
+      }
+    }
+
     let anyActive = false;
     for (const v of V) {
       if (v.dirty) { v.dirty = false; apply(v); }
       v.env += (v.envT - v.env) * (1 - Math.exp(-dt / v.envTau));
       if (v.active && !v.pinned && !v.fingers.length && v.envT === 0 && v.env < 0.004) {
         v.active = false;
+        sel.delete(v);
         unlinkAll(v);
         clearLfos(v);
       }
@@ -1253,7 +1363,7 @@
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
 
-  window.t2d = { voices: V, fx, scl, freq, applyFx, get ctx() { return ctx; } };   // для отладки из консоли
+  window.t2d = { voices: V, fx, scl, sel, freq, applyFx, get ctx() { return ctx; } };   // для отладки из консоли
 
   resize();
   requestAnimationFrame(frame);
