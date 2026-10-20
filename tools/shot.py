@@ -779,6 +779,10 @@ async def sc_natura(p):                           # Natura: лодочка — �
     l0 = await p.js('()=>t2d.nat.pads.len'); q = await p.js('()=>t2d.nat.bridge()')
     pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'], q['y'] - 90, steps=8); await p.up()
     assert await p.js('()=>t2d.nat.pads.len') < l0, 'drag the bridge upstream — shorter loop'
+    await p.js('()=>{t2d.nat.pads.len = 16}'); await p.pg.wait_for_timeout(100)   # на 16 запруда видна и тянется обратно
+    q = await p.js('()=>t2d.nat.bridge()'); assert 13 < q['x'] < W - 13 and q['y'] < H - 40, f'weir at 16 is on screen: {q}'
+    pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] - 60, q['y'] - 60, steps=8); await p.up()
+    assert await p.js('()=>t2d.nat.pads.len') < 16, 'from 16 the weir drags back'
     b0 = await p.js('()=>t2d.nat.seq.bpm'); b = await p.js('()=>t2d.nat.boat()')
     pid = await p.hold(b['x'], b['y'], ms=60); await p.drag(pid, b['x'], b['y'], b['x'] + 40, b['y'], steps=6); await p.up()
     assert await p.js('()=>t2d.nat.seq.bpm') == b0 + 20 and not await p.js('()=>t2d.nat.seq.playing'), 'drag the boat — tempo, no start'

@@ -54,7 +54,9 @@
     }
     return best;
   }
-  const slotT = (i) => 0.16 + ((i + 0.5) / 16) * 0.82;
+  // 16 мест — в видимой части реки (дальше она уходит за правый край): запруду при любой длине видно и можно схватить
+  const T0 = 0.14, TS = 0.72;
+  const slotT = (i) => T0 + ((i + 0.5) / 16) * TS;
   function padXY(G, i, note) {
     const t = slotT(i), r = river(G, t), p = across(r, (note / 14 - 0.5) * 0.78);
     return { x: p.x, y: p.y, t, s: 0.6 + 0.8 * t };
@@ -314,7 +316,7 @@
   function boatXY(G, now) {                         // лист-лодочка: плывёт по течению между местами; стоит — у причала
     const ph = phase();
     if (ph == null) { const q = pierXY(G); return { x: q.x + 16, y: q.y + 3, s: 0.8 }; }
-    const t = 0.16 + ((ph % pads.len) / 16) * 0.82, p = across(river(G, t), Math.sin(now * 0.0015) * 0.06);
+    const t = T0 + ((ph % pads.len) / 16) * TS, p = across(river(G, t), Math.sin(now * 0.0015) * 0.06);
     return { x: p.x, y: p.y - 2, s: 0.75 + 1.0 * t };
   }
   // причал у истока, на левом берегу: тап — пуск/стоп, вбок — темп
@@ -327,7 +329,7 @@
     c.lineWidth = 1.4; c.beginPath(); c.moveTo(x + 14, y - 12); c.lineTo(x + 14, y + 8); c.moveTo(x - 12, y + 3); c.lineTo(x - 12, y + 9); c.stroke();   // столб и свая
     if (!seq.playing) { c.lineWidth = 0.8; c.beginPath(); c.moveTo(x + 14, y - 8); c.quadraticCurveTo(x + 20, y, x + 24, y + 2); c.stroke(); }   // верёвка к лодочке
   }
-  const bridgeT = () => Math.min(0.99, slotT(pads.len - 1) + (0.82 / 16) * 0.75);
+  const bridgeT = () => slotT(pads.len - 1) + (TS / 16) * 0.75;
   // дождь по воде — кружки (гуще с time)
   function drawRainRings(c, G, now) {
     const n = Math.round(4 + 14 * fx.time);
@@ -568,13 +570,13 @@
 
   // ---------- касания: кувшинки, запруда, лодочка ----------
   const touches = new Map();
-  const slotOf = (o) => clamp(Math.round(((o.t - 0.16) / 0.82) * 16 - 0.5), 0, 15);
+  const slotOf = (o) => clamp(Math.round(((o.t - T0) / TS) * 16 - 0.5), 0, 15);
   const noteOf = (o) => clamp(Math.round((o.q / 0.78 + 0.5) * 14), 0, 14);
   const inRiver = (G, x, y) => { const o = onRiver(G, x, y); return o && o.t > 0.1 && o.t < 0.995 && Math.abs(o.q) < 0.5 + 6 / river(G, o.t).w; };
   function down(f) {
     const G = geo(), now = performance.now(), pq = pierXY(G);
     const br = river(G, bridgeT()), bdx = f.x - br.x, bdy = f.y - br.y, al = bdx * br.tx + bdy * br.ty, ac = bdx * br.nx + bdy * br.ny;
-    if (Math.abs(al) < 22 && f.y < br.y + br.ty * 0 + 10 && Math.abs(ac) < br.w / 2 + 22) { touches.set(f.id, { kind: 'bridge' }); return; }
+    if (Math.abs(al) < 24 && Math.abs(ac) < br.w / 2 + 22) { touches.set(f.id, { kind: 'bridge' }); return; }
     for (let i = 0; i < 16; i++) {                    // кувшинки — раньше лодочки: та плывёт мимо и не должна перехватывать
       const pd = pads.at[i];
       if (!pd) continue;
