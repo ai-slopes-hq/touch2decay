@@ -26,9 +26,13 @@
     melody: { len: 7, steps: Array(SLOTS).fill(null) },    // полутоны от 55 Гц; null — текущий размер пластины
   };
   let lastStep = null, lastHit = { x: 0.3, y: 0 };          // последний тик { r, m, atMs }; место последнего удара
+  let echoBpm = 0;
   function sendSeq() {
     send({ t: 'seq', bpm: seq.bpm, playing: seq.playing, rhythm: seq.rhythm, melody: seq.melody });
-    if (nodes) for (const d of [nodes.dL, nodes.dR]) d.delayTime.setTargetAtTime((0.75 * 60) / seq.bpm, T.ctx.currentTime, 0.05);   // эхо — восьмая с точкой
+    if (nodes && echoBpm !== seq.bpm) {         // эхо — восьмая с точкой
+      echoBpm = seq.bpm;
+      for (const d of [nodes.dL, nodes.dR]) d.delayTime.setTargetAtTime((0.75 * 60) / seq.bpm, T.ctx.currentTime, 0.05);
+    }
   }
   // ритм по Евклиду: k ударов на n шагов как можно ровнее, первый — удар
   function euclid(k, n) { return Array.from({ length: n }, (_, i) => (i * k) % n < k); }
@@ -191,10 +195,12 @@
   }
 
   // ---------- геометрия: пластина посередине; радиус по высоте: f ∝ 1/r² ----------
+  // по высоте — пластина, кольца астролябии над ней (+36) и ▶/● под ней (+82): весь блок по центру между строкой и низом
   function plateGeo() {
     const top = T.topY, bot = T.H - T.safeBot;
-    const rMax = Math.min(T.W / 2 - 44, (bot - top) / 2 - 44);
-    return { cx: T.W / 2, cy: top + (bot - top) / 2, rMax, r: rMax * Math.sqrt(F_MIN / plate.f0) };
+    const rMax = Math.max(40, Math.min(T.W / 2 - 44, (bot - top - 126) / 2));
+    const cy = top + (bot - top - (2 * rMax + 118)) / 2 + rMax + 36;
+    return { cx: T.W / 2, cy, rMax, r: rMax * Math.sqrt(F_MIN / plate.f0) };
   }
   const toPlate = (f, g) => ({ x: (f.x - g.cx) / g.r, y: (f.y - g.cy) / g.r });
   const fromPlate = (b, g) => ({ x: g.cx + b.x * g.r, y: g.cy + b.y * g.r });
@@ -270,8 +276,13 @@
     touches.set(f.id, f);
     const b = bowAt(f, g);
     if (b) { f.cb = b; return; }
-    const mk = markAt(f, g);
-    if (mk >= 0) { f.mk = mk; return; }
+    const mk = seq.rec ? -1 : markAt(f, g);   // при записи метки не мешают: барабанишь в одну точку — каждый тап пишется
+    if (mk >= 0) {                              // тап по метке звучит сразу; повёл — тащишь метку
+      f.mk = mk;
+      const st = seq.rhythm.steps[mk];
+      send({ t: 'strike', x: st.x, y: st.y, vel: 1, hard: 0.5 });
+      return;
+    }
     for (const o of touches.values()) {      // второй палец почти разом — щипок
       if (o !== f && !o.cb && !o.moved && f.t0 - o.t0 < 250 && !pinch) {
         pinch = { a: o, b: f, d0: Math.max(20, Math.hypot(f.x - o.x, f.y - o.y)), f0: plate.f0 };
@@ -284,7 +295,7 @@
     const p = toPlate(f, g);
     if (Math.hypot(p.x, p.y) > 1) return;    // вне пластины (но на столе) — только для щипка
     f.live = true; f.bid = `t${f.id}`;
-    send({ t: 'strike', x: p.x, y: p.y, vel: 1, hard: 0.5 });
+    send({ t: 'strike', x: p.x, y: p.y, vel: 1, hard: 0.5, rec: seq.rec && seq.playing });
     recordHit(p.x, p.y);
   }
   function move(f) {
@@ -314,7 +325,6 @@
     if (f.mk != null) {
       const st = seq.rhythm.steps[f.mk];
       if (st && f.moved && Math.hypot(st.x, st.y) > 1.05) { seq.rhythm.steps[f.mk] = null; sendSeq(); }   // за край — удар удалён
-      else if (st && !f.moved) send({ t: 'strike', x: st.x, y: st.y, vel: 1, hard: 0.5 });
       return;
     }
     if (f.pinch) { if (pinch && (pinch.a === f || pinch.b === f)) pinch = null; return; }

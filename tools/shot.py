@@ -270,6 +270,10 @@ async def sc_seq(p):                               # астролябия: пу�
         await p.tap(cx + dx, cy + dy); await p.pg.wait_for_timeout(300)
     n = await p.js('()=>t2d.cym.seq.rhythm.steps.filter(Boolean).length')
     assert n >= 2, f'taps recorded: {n}'
+    for _ in range(3):                                                     # барабанишь в одну точку — каждый тап пишется
+        await p.tap(cx - 20, cy - 60); await p.pg.wait_for_timeout(320)
+    m = await p.js('()=>t2d.cym.seq.rhythm.steps.filter(Boolean).length')
+    assert m >= n + 2, f'same-spot taps recorded: {n} -> {m}'
     await p.tap(cx + 30, ty); await p.pg.wait_for_timeout(100)              # запись выкл
     s8 = await p.js('()=>!!t2d.cym.seq.rhythm.steps[8]')
     await p.tap(*slot(8, R2)); await p.pg.wait_for_timeout(100)
@@ -293,6 +297,11 @@ async def sc_seq(p):                               # астролябия: пу�
     assert await p.js('()=>t2d.cym.seq.rhythm.steps.some(Boolean)'), 'undo brings the pattern back'
     await p.js('()=>t2d.go(1)'); await p.pg.wait_for_timeout(500)
     assert await p.js('()=>t2d.sounding()'), 'pattern keeps playing from the other world'
+    for vw, vh in [(844, 390), (1280, 720), (375, 667)]:                   # пуск и запись — на экране при любой раскладке
+        await p.pg.set_viewport_size({'width': vw, 'height': vh}); await p.pg.wait_for_timeout(300)
+        a = await p.js('()=>t2d.cym.astro'); top = await p.js('()=>T2D.topY')
+        assert a['ty'] + 18 < vh, f'transport on screen at {vw}x{vh}: {a["ty"]}'
+        assert a['cy'] - a['R2'] - 6 > top, f'rings under the top row at {vw}x{vh}'
 
 
 SCENARIOS = {'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}

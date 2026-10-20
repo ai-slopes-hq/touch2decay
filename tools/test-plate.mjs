@@ -263,11 +263,32 @@ test('no double hit after a live strike', () => {
   const a = plate();
   a.send(pattern);
   blocks(a.proc, 35);                                // 4480 отсчётов — 0.0317 с до тика шага 1 (6000)
-  a.send({ t: 'strike', x: 0.5, y: 0, vel: 1, hard: 0.5 });
+  a.send({ t: 'strike', x: 0.5, y: 0, vel: 1, hard: 0.5, rec: true });   // удар при записи
   blocks(a.proc, 12);                                // до 6016: тик только что прошёл
   assert.equal(a.proc.strikes.length, 0, 'step 1 skipped after a live strike');
   const b = plate();
   b.send(pattern);
   blocks(b.proc, 47);
   assert.equal(b.proc.strikes.length, 1, 'step 1 plays without a live strike');
+});
+
+test('live strike without recording keeps the pattern', () => {   // играешь поверх узора — его удары не пропадают
+  const { proc, send } = plate();
+  send(seqMsg({ rhythm: { len: 16, steps: slots((i) => (i < 2 ? hit : null)) } }));
+  blocks(proc, 35);
+  send({ t: 'strike', x: 0.5, y: 0, vel: 1, hard: 0.5 });
+  blocks(proc, 12);
+  assert.equal(proc.strikes.length, 1, 'step 1 still plays');
+});
+
+test('tempo change does not recompute strike gains', () => {   // тянешь темп или длину — в звуковом потоке ничего тяжёлого
+  const { ctx, reg } = load();
+  const proc = new reg.plate(), send = (data) => proc.port.onmessage({ data });
+  send(seqMsg({ rhythm: { len: 16, steps: slots(() => hit) } }));
+  let calls = 0; const orig = ctx.strikeGains;
+  ctx.strikeGains = (x, y) => { calls++; return orig(x, y); };
+  send(seqMsg({ bpm: 90, rhythm: { len: 8, steps: slots(() => hit) } }));
+  assert.equal(calls, 0, 'same points — gains reused');
+  send(seqMsg({ bpm: 90, rhythm: { len: 8, steps: slots((i) => (i === 3 ? { x: 0.1, y: 0.2, vel: 1 } : hit)) } }));
+  assert.equal(calls, 1, 'one moved step — one recompute');
 });

@@ -178,7 +178,12 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       const was = this.seq.playing, stepN = stepSamples(d.bpm, this.fs);
       this.seq = {
         bpm: d.bpm, playing: !!d.playing,
-        rhythm: { len: d.rhythm.len, steps: d.rhythm.steps.map((st) => (st ? { vel: st.vel == null ? 1 : st.vel, g: strikeGains(st.x, st.y) } : null)) },
+        // веса мод — заново только у шагов, чьё место изменилось: тянешь темп или длину — в звуковом потоке ничего тяжёлого
+        rhythm: { len: d.rhythm.len, steps: d.rhythm.steps.map((st, i) => {
+          if (!st) return null;
+          const old = this.seq.rhythm.steps[i];
+          return { x: st.x, y: st.y, vel: st.vel == null ? 1 : st.vel, g: old && old.x === st.x && old.y === st.y ? old.g : strikeGains(st.x, st.y) };
+        }) },
         melody: { len: d.melody.len, steps: d.melody.steps.slice() },
       };
       if (this.seq.playing && !was) { this.r = -1; this.m = -1; this.toNext = 0; }
@@ -199,7 +204,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       if (d.t === 'params') { Object.assign(this.fx, d); this.retune(); return; }
       if (d.t === 'f0') { this.f0 = Math.min(880, Math.max(55, d.hz)); return; }
       if (d.t === 'strike') {
-        this.lastLive = this.t;                     // живой удар: ближайший тик ритма его не повторит
+        if (d.rec) this.lastLive = this.t;          // удар при записи: ближайший тик ритма его не повторит (без записи — играешь поверх)
         this.strike(strikeGains(d.x, d.y), d.hz || this.f0, d.vel == null ? 1 : d.vel, d.hard == null ? 0.5 : d.hard);
         return;
       }
