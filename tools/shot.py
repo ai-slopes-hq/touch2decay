@@ -73,6 +73,20 @@ async def sc_ring(p):
     print('ring:', await p.js("()=>({editor:t2d.editor&&t2d.editor.key, lfo:t2d.voices.filter(v=>v.pinned).map(v=>Object.keys(v.lfo))})"))
 
 
+
+async def sc_ampoff(p):                            # левый край полосы amp — off: планета молчит, но модулирует
+    await p.pin(200, 450)
+    await p.hold(200, 450); await p.up(); await p.pg.wait_for_timeout(200)   # закреплённое кольцо — под ним полоса amp
+    a = await p.js('()=>t2d.ampStrip()')
+    await p.tap(a['x'] + 3, a['y'] + a['h'] / 2); await p.pg.wait_for_timeout(100)
+    amp = await p.js('()=>t2d.voices.find(v=>v.pinned).amp')
+    await p.shot('ampoff')
+    assert amp == 0, f'left edge of the amp strip is off: {amp}'
+    await p.tap(a['x'] + a['w'] * 0.25, a['y'] + a['h'] / 2); await p.pg.wait_for_timeout(100)
+    amp = await p.js('()=>t2d.voices.find(v=>v.pinned).amp')
+    assert 0.05 <= amp < 0.5, f'a bit to the right it plays again, quietly: {amp}'
+
+
 async def sc_worlds(p):                            # карта, Cymatica в четверти II, III и IV не открываются
     await p.pin(150, 600)                                  # Tenebrae: закреплённая планета
     a, b = {'x': 200, 'y': 450, 'id': 1}, {'x': 10, 'y': H - 8, 'id': 2}
@@ -533,7 +547,7 @@ async def sc_echo(p):                              # эхо по долям те
     assert abs(e['sec'] - 2.25) < 1e-3 and await p.js('()=>t2d.cym.echoMax') > 2.2, f'slow dotted quarter fits the delay line: {e}'
 
 
-SCENARIOS = {'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

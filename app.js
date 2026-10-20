@@ -809,6 +809,11 @@
 
   // полоса громкости над панелью LFO — в опциях планеты, без лишнего луча
   const ampStrip = () => { const p = lfoPanel(); return { x: p.x, w: p.w, y: p.top - 52, h: 34 }; };
+  const ampText = (amp) => {
+    if (!amp) return 'off';
+    const db = 20 * Math.log10(amp);
+    return `${Math.abs(db) < 0.05 ? '0' : (db > 0 ? '+' : '−') + Math.abs(db).toFixed(1)} dB`;
+  };
   const ampT = (amp) => invLog(AMP_MIN, AMP_MAX, amp);          // шкала в децибелах
   // «off» в заголовке панели LFO — снять LFO; «close» над полосой amp — закрыть закреплённое кольцо
   const offChip = () => { const p = lfoPanel(); return { x: p.x + p.w - 46, y: p.top - 6, w: 46, h: 24 }; };
@@ -1004,8 +1009,8 @@
 
   function ampSet(f) {
     if (!f.tg) return;
-    const a = ampStrip(), amp = lerpLog(AMP_MIN, AMP_MAX, clamp((f.x - a.x - PAD_IN) / (a.w - 2 * PAD_IN)));
-    for (const u of f.tg.group) { u.amp = Math.abs(20 * Math.log10(amp)) < 0.6 ? 1 : amp; u.dirty = true; }   // у 0 дБ — защёлка
+    const a = ampStrip(), t = (f.x - a.x - PAD_IN) / (a.w - 2 * PAD_IN), amp = lerpLog(AMP_MIN, AMP_MAX, clamp(t));
+    for (const u of f.tg.group) { u.amp = t <= 0 ? 0 : Math.abs(20 * Math.log10(amp)) < 0.6 ? 1 : amp; u.dirty = true; }   // у 0 дБ — защёлка; левее шкалы — off
   }
 
   // панель LFO: форма — где палец на полосе; на паде одним жестом скорость (вправо) и глубина (вверх)
@@ -1922,7 +1927,8 @@
       g.beginPath(); g.ellipse(0, 0, R + 16, 12 * R / 34, 0, Math.PI, Math.PI * 2); g.stroke();
       g.restore();
     }
-    contour(v, x, y, R, held || editing ? a : a * 0.85, held ? 2 : 1.4, held || editing);
+    const mute = v.amp > 0 ? 1 : 0.4;            // amp off: планета молчит (только модулирует) — контур бледный
+    contour(v, x, y, R, (held || editing ? a : a * 0.85) * mute, held ? 2 : 1.4, held || editing);
     if (v.pinned) {
       g.save(); g.translate(x, y); g.rotate(-0.42);
       g.strokeStyle = ink(a * 0.55); g.lineWidth = 1.1;
@@ -2136,7 +2142,7 @@
         cx: e.cx, cy: e.cy, span: MENU_SPAN, sectors: e.sectors, sel: e.key,
         get: (k) => norm(v, k), live: (k) => liveRange(v, k), lfoOn: (k) => !!v.lfo[k], centerOn: !e.key,
         centerLabel: e.key === 'amp' ? 'amp' : e.key ? null : 'pitch',
-        readout: sc ? `${sc.label} · ${valueText(v, sc.key)}${many}` : e.key === 'amp' ? `amp · ${(20 * Math.log10(v.amp)).toFixed(1)} dB${many}` : null,
+        readout: sc ? `${sc.label} · ${valueText(v, sc.key)}${many}` : e.key === 'amp' ? `amp · ${ampText(v.amp)}${many}` : null,
         readoutAt: readoutAt(e.cx, e.cy),
       });
       if (e.key === 'wave') drawCurve(morphFn(clamp(v.wave + v.wv)), e.cx, e.cy, 30, 18, 1, 2, 1.4);
@@ -2289,16 +2295,16 @@
     for (const db of [-24, -18, -12, -6, 0]) { const x = Math.round(X(10 ** (db / 20))) + 0.5; g.moveTo(x, by); g.lineTo(x, by - (db === 0 ? 8 : 4)); }
     g.stroke();
     const spec = v.lfo.amp;
-    if (spec) {                                  // тремоло: размах
+    if (spec && v.amp > 0) {                     // тремоло: размах
       const lo = Math.max(AMP_MIN, v.amp * (1 - spec.depth)), hi = Math.min(AMP_MAX, v.amp * (1 + spec.depth));
       g.fillStyle = ink(0.12); g.fillRect(X(lo), a.y + 4, X(hi) - X(lo), a.h - 8);
     }
-    const x = X(v.amp);
+    const x = v.amp > 0 ? X(v.amp) : a.x + 4;
     g.strokeStyle = ink(1); g.lineWidth = 2;
     g.beginPath(); g.moveTo(a.x + PAD_IN, by + 0.5); g.lineTo(x, by + 0.5); g.moveTo(x, a.y + 5); g.lineTo(x, by + 3); g.stroke();
-    const db = 20 * Math.log10(v.amp), many = tg.group && tg.group.length > 1 ? ` ×${tg.group.length}` : '';
+    const many = tg.group && tg.group.length > 1 ? ` ×${tg.group.length}` : '';
     text('amp' + (spec ? ' ~' : ''), a.x + 10, a.y + 12, 11, 0.55);
-    text(`${Math.abs(db) < 0.05 ? '0' : (db > 0 ? '+' : '−') + Math.abs(db).toFixed(1)} dB${many}`, a.x + a.w - 10, a.y + 12, 13, 1, 500, 'right');
+    text(ampText(v.amp) + many, a.x + a.w - 10, a.y + 12, 13, 1, 500, 'right');
   }
 
   // поле по горизонтали — вертикальные полосы в оттенках серого. Без лада — диапазоны частот,
@@ -3350,7 +3356,7 @@
     get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
     hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
-    get ctx() { return ctx; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; },
+    get ctx() { return ctx; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
   };   // для отладки из консоли
 
   resize();
