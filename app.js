@@ -2971,7 +2971,14 @@
   ];
   const WORLDS_ON = true;
   const ENTER = new Set([1, 2]);                          // куда можно влететь; III и IV — пока бледные nondum
-  const nav = { view: 'play', world: 1, anim: null };
+  const nav = { view: 'map', world: 1, anim: null, settings: false };   // приложение открывается на карте
+  // общие настройки (тап по солнцу на карте): связать часы (темп и пуск/стоп) и/или лад всех миров
+  const link = { clock: false, scale: true };
+  try { Object.assign(link, JSON.parse(localStorage.getItem('t2d-link') || '{}')); } catch (_) { /* приватный режим */ }
+  const saveLink = () => { try { localStorage.setItem('t2d-link', JSON.stringify(link)); } catch (_) { /* приватный режим */ } };
+  const perScl = {};                                      // свой лад у каждого мира, когда лад не общий
+  function tempoFrom(n, bpm) { if (link.clock) for (const [k, w] of Object.entries(worlds)) if (+k !== n && w.tempo) w.tempo.set(bpm); }
+  function transportFrom(n, on) { if (link.clock) for (const [k, w] of Object.entries(worlds)) if (+k !== n && w.tempo) w.tempo.play(on); }
   const worlds = {};                                      // номер четверти → мир
   const cur = () => worlds[nav.world];   // view: play | map; anim: { t0, dir: 'out' | 'in', w }
   const NAV_MS = 520;
@@ -3017,8 +3024,12 @@
     nav.view = 'map';
   }
   function goWorld(w) {
+    if (!link.scale && w !== nav.world) {                 // лад не общий: у каждого мира свой
+      perScl[nav.world] = { on: scl.on, idx: scl.idx, root: scl.root };
+      if (perScl[w]) { Object.assign(scl, perScl[w]); allDirty(); }
+    }
     nav.anim = { t0: performance.now(), dir: 'in', w };
-    nav.world = w;
+    nav.world = w; nav.settings = false;
   }
 
   // касание, пока на экране карта или другой мир
@@ -3026,7 +3037,12 @@
     if (nav.anim) return;
     if (nav.view === 'map') {
       const dx = f.x - W / 2, dy = f.y - H / 2;
-      if (Math.hypot(dx, dy) < 44) { goWorld(nav.world); return; }   // солнце — обратно в свой мир
+      if (nav.settings) {                                 // открыты общие настройки: строки — переключить, мимо — закрыть
+        const S = settingsBox(), row = S.rows.findIndex((r) => f.x > S.x && f.x < S.x + S.w && Math.abs(f.y - r.y) < 20);
+        if (row >= 0) { const k = S.rows[row].key; link[k] = !link[k]; saveLink(); return; }
+        nav.settings = false; return;
+      }
+      if (Math.hypot(dx, dy) < 44) { nav.settings = true; return; }   // солнце — общие настройки
       const w = dx >= 0 ? (dy < 0 ? 1 : 4) : dy < 0 ? 2 : 3;
       if (ENTER.has(w) && worlds[w]) goWorld(w);       // III и IV — nondum: не открываются
     }
@@ -3034,6 +3050,84 @@
 
   const easeIO = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
   function worldImage(w) { return ENTER.has(w) ? snaps[w] : artFor(w); }
+  // эмблемы звука на карте: гравюрный знак генератора каждого мира и латинская строка; рисуются один раз на размер экрана
+  const emblems = {};
+  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen'];
+  function emblemFor(w) {
+    const pw = W / 2, ph = H / 2, key = `${pw}x${ph}|${DPR}`;
+    if (emblems[w] && emblems[w].key === key) return emblems[w].c;
+    const c = document.createElement('canvas'); c.width = Math.round(pw * DPR); c.height = Math.round(ph * DPR);
+    const x = c.getContext('2d'); x.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const th = worlds[w] && worlds[w].theme, ink2 = (a) => `rgba(${(th && th.ink) || INK0},${a})`;
+    x.fillStyle = (th && th.bg) || BG0; x.fillRect(0, 0, pw, ph);
+    const cx = pw / 2, cy = ph / 2 + (w <= 2 ? 18 : -18), R = Math.min(pw, ph) * 0.2, T2 = Math.PI * 2;
+    x.lineWidth = 1; x.strokeStyle = ink2(0.85);
+    if (w === 1) {                                          // планета: контур — осциллограмма по кругу, внутри двойная звезда, спутник
+      x.beginPath();
+      for (let i = 0; i <= 240; i++) { const a = (i / 240) * T2, wv = ((a * 5 / T2) % 1) * 2 - 1, r = R + R * 0.1 * wv; i ? x.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r) : x.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); }
+      x.stroke();
+      x.strokeStyle = ink2(0.4); x.beginPath(); x.arc(cx, cy, R * 0.72, 0, T2); x.stroke();
+      for (const d of [-1, 1]) { x.fillStyle = ink2(0.9); x.beginPath(); x.arc(cx + d * R * 0.16, cy, 2.2, 0, T2); x.fill(); }
+      x.setLineDash([2, 4]); x.strokeStyle = ink2(0.45); x.beginPath(); x.ellipse(cx, cy, R * 1.55, R * 0.5, -0.35, 0, T2); x.stroke(); x.setLineDash([]);
+      x.fillStyle = ink2(0.9); x.beginPath(); x.arc(cx + Math.cos(0.6) * R * 1.55 * Math.cos(-0.35) - Math.sin(0.6) * R * 0.5 * Math.sin(-0.35), cy + Math.cos(0.6) * R * 1.55 * Math.sin(-0.35) + Math.sin(0.6) * R * 0.5 * Math.cos(-0.35), 3, 0, T2); x.fill();
+    } else if (w === 2) {                                   // пластина Хладни: клетки ханга бледно, узловые линии ярко
+      x.strokeStyle = ink2(0.3);
+      for (const k of [1, Math.sqrt(2 / 3), Math.sqrt(1 / 3)]) { x.beginPath(); x.arc(cx, cy, R * 1.2 * k, 0, T2); x.stroke(); }
+      x.beginPath(); for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + (i / 5) * T2; x.moveTo(cx, cy); x.lineTo(cx + Math.cos(a) * R * 1.2, cy + Math.sin(a) * R * 1.2); } x.stroke();
+      x.strokeStyle = ink2(0.9); x.lineWidth = 1.4; x.beginPath();
+      for (let i = 0; i <= 200; i++) { const a = (i / 200) * T2, r = R * 1.2 * (0.62 + 0.25 * Math.cos(3 * a)); i ? x.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r) : x.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); }
+      x.stroke(); x.lineWidth = 1;
+      x.strokeStyle = ink2(0.9); x.beginPath(); x.arc(cx, cy, R * 1.2, 0, T2); x.stroke(); x.beginPath(); x.arc(cx, cy, R * 1.2 + 3, 0, T2); x.strokeStyle = ink2(0.35); x.stroke();
+    } else if (w === 3) {                                   // колба: поверхность жидкости — FM-волна
+      const r = R * 0.95, by = cy + R * 0.3;
+      x.save(); x.beginPath(); x.arc(cx, by, r, 0, T2); x.clip();
+      x.fillStyle = 'rgba(206,62,42,0.8)'; x.beginPath(); x.moveTo(cx - r, by + r);
+      for (let i = 0; i <= 80; i++) { const u = i / 80, ph = u * T2 * 2; x.lineTo(cx - r + u * 2 * r, by - r * 0.05 - Math.sin(ph + 2.2 * Math.sin(3 * ph)) * r * 0.12); }
+      x.lineTo(cx + r, by + r); x.closePath(); x.fill(); x.restore();
+      x.strokeStyle = ink2(0.9); x.lineWidth = 1.2; x.beginPath(); x.arc(cx, by, r, -Math.PI / 2 + 0.28, -Math.PI / 2 - 0.28 + T2); x.stroke();
+      x.beginPath(); x.moveTo(cx - r * 0.27, by - r * 0.96); x.lineTo(cx - r * 0.27, by - r * 1.8); x.moveTo(cx + r * 0.27, by - r * 0.96); x.lineTo(cx + r * 0.27, by - r * 1.8); x.stroke();
+      x.beginPath(); x.ellipse(cx, by - r * 1.8, r * 0.36, 2.5, 0, 0, T2); x.stroke();
+      x.strokeStyle = ink2(0.35); x.beginPath(); x.arc(cx - r * 0.2, by, r * 0.62, Math.PI * 1.08, Math.PI * 1.4); x.stroke();
+    } else if (w === 4) {                                   // кувшинка с цветком; под ней три волны: sine, square, triangle
+      const rx = R * 1.1, ry = rx * 0.45, ly = cy - R * 0.1;
+      x.fillStyle = `rgba(${(th && th.paper) || PAPER0},1)`; x.lineWidth = 1.2;
+      x.beginPath(); x.ellipse(cx, ly, rx, ry, 0, 0.35, T2 - 0.05); x.lineTo(cx, ly); x.closePath(); x.fill(); x.stroke();
+      x.lineWidth = 0.7; x.strokeStyle = ink2(0.45); x.beginPath();
+      for (const q of [1.2, 2.1, 3.0, 3.9, 4.8]) { x.moveTo(cx, ly); x.lineTo(cx + Math.cos(q) * rx * 0.8, ly + Math.sin(q) * ry * 0.8); } x.stroke();
+      x.strokeStyle = ink2(0.9); x.lineWidth = 1.1; x.fillStyle = `rgba(${(th && th.paper) || PAPER0},1)`;
+      const fx0 = cx - rx * 0.15, fy0 = ly - ry * 0.45, s = R * 0.36;
+      for (let k = 0; k < 8; k++) { x.save(); x.translate(fx0, fy0); x.rotate((k / 8) * T2); x.beginPath(); x.ellipse(0, -s * 0.62, s * 0.24, s * 0.5, 0, 0, T2); x.fill(); x.stroke(); x.restore(); }
+      x.fillStyle = ink2(0.85); x.beginPath(); x.arc(fx0, fy0, s * 0.26, 0, T2); x.fill();
+      const wy = cy + R * 0.95, ww = R * 0.55;
+      x.strokeStyle = ink2(0.8); x.lineWidth = 1.1;
+      [[-1, (u) => Math.sin(u * T2)], [0, (u) => (u < 0.5 ? 1 : -1)], [1, (u) => 1 - 4 * Math.abs(u - 0.5)]].forEach(([k, fn]) => {
+        const ox = cx + k * ww * 1.35 - ww / 2; x.beginPath();
+        for (let i = 0; i <= 30; i++) { const u = i / 30, y = wy - fn(u) * ww * 0.3; i ? x.lineTo(ox + u * ww, y) : x.moveTo(ox + u * ww, y); }
+        x.stroke();
+      });
+    }
+    x.font = `italic 14px ${MAP}`; x.fillStyle = ink2(0.7); x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(EMB_LINE[w], cx, cy + R * (w === 4 ? 1.55 : 1.75));
+    emblems[w] = { key, c };
+    return c;
+  }
+  function settingsBox() {
+    const w = Math.min(260, W - 40), h = 120, x = W / 2 - w / 2, y = H / 2 + 70;
+    return { x, y, w, h, rows: [{ key: 'clock', label: 'shared clock', sub: 'tempo · play / stop', y: y + 46 }, { key: 'scale', label: 'shared scale', sub: 'one scale in every world', y: y + 90 }] };
+  }
+  function drawSettings() {
+    const S = settingsBox();
+    g.fillStyle = paper(0.94); g.fillRect(S.x, S.y, S.w, S.h);
+    hairBox(S.x, S.y, S.w, S.h, 0.6); hairBox(S.x + 3, S.y + 3, S.w - 6, S.h - 6, 0.25);
+    mapText('concordia', S.x + S.w / 2, S.y + 18, 15, 0.85, 'center');
+    for (const r of S.rows) {
+      const on = link[r.key], bx = S.x + S.w - 28;
+      mapText(r.label, S.x + 16, r.y - 6, 15, on ? 0.95 : 0.6, 'left');
+      mapText(r.sub, S.x + 16, r.y + 10, 11, 0.45, 'left');
+      ring(bx, r.y, 9, on ? 0.9 : 0.45, 1.1);
+      if (on) dot(bx, r.y, 4.5, 0.9);
+    }
+  }
 
   function drawNav(now) {
     setTheme(null);                             // карта — чёрная, как Tenebrae
@@ -3051,18 +3145,17 @@
     // карта: доля «отъезда» камеры — 0 во весь экран мира, 1 — карта
     const out = a ? (a.dir === 'out' ? easeIO(k) : 1 - easeIO(k)) : 1;
     const focus = a ? a.w : 0;
-    for (let w = 1; w <= 4; w++) {
-      const p = panel(w), img = worldImage(w);
-      if (!img) continue;
-      if (w === focus) {
+    for (let w = 1; w <= 4; w++) {                       // в четвертях — эмблемы звука; мир, в который летим / из которого вышли, — его снимок, тает
+      const p = panel(w), em = worlds[w] ? emblemFor(w) : worldImage(w);
+      if (em) { g.globalAlpha = out * (ENTER.has(w) ? 1 : 0.35); g.drawImage(em, p[0], p[1], p[2], p[3]); g.globalAlpha = 1; }
+      const shot = snaps[w];
+      if (w === focus && shot && out < 1) {
         const r = [p[0] * out, p[1] * out, W + (p[2] - W) * out, H + (p[3] - H) * out];
-        g.drawImage(img, r[0], r[1], r[2], r[3]);
-      } else {
-        g.globalAlpha = out * (ENTER.has(w) ? 1 : 0.35);   // nondum — бледно
-        g.drawImage(img, p[0], p[1], p[2], p[3]); g.globalAlpha = 1;
+        g.globalAlpha = 1 - out; g.drawImage(shot, r[0], r[1], r[2], r[3]); g.globalAlpha = 1;
       }
     }
     if (out > 0.02) drawMapChrome(out, now);
+    if (nav.settings && !a) drawSettings();
     return true;
   }
 
@@ -3091,7 +3184,7 @@
     // солнце целиком
     g.fillStyle = BG; g.beginPath(); g.arc(cx, cy, 40, 0, Math.PI * 2); g.fill();
     sunGlyph(g, cx, cy, 0, Math.PI * 2, 1, now);
-    mapText('tap a world', cx, cy + 62, 13, 0.5, 'center');
+    if (!nav.settings) mapText('tap a world · the sun — concordia', cx, cy + 62, 13, 0.5, 'center');
     g.fillStyle = paper(0.7); g.fillRect(cx - 92, scopeY - 6, 184, 34);   // имя всей карты
     g.font = `20px ${MAP}`; g.fillStyle = ink(0.95); g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText('U N I V E R S U M', cx, scopeY + 11);
@@ -3132,13 +3225,14 @@
 
   // солнце Таро четвертью из верхнего угла (миры III и IV): выходит из-под верхней строки, лицо смотрит в картинку,
   // лучи прямые и волнистые через один. side: 1 — угол слева (лучи вправо-вниз), −1 — справа. col — rgb линий, disc — заливка
-  function quarterSun(x, ox, oy, r, side, now, col = INK, disc = BG) {
-    const ink2 = (a) => `rgba(${col},${a})`, rot = now * 0.00003, N = 28;
-    x.save(); x.beginPath(); x.rect(side > 0 ? ox : 0, oy, side > 0 ? W : ox, H); x.clip();
+  // top — верх видимой части (по умолчанию oy — ровно четверть); выше — солнце садится, видна и верхняя половина диска с лучами
+  function quarterSun(x, ox, oy, r, side, now, col = INK, disc = BG, top = oy) {
+    const ink2 = (a) => `rgba(${col},${a})`, rot = now * 0.00003, N = 28, half = top < oy - 1;
+    x.save(); x.beginPath(); x.rect(side > 0 ? ox : 0, top, side > 0 ? W : ox, H); x.clip();
     x.translate(ox, oy); x.scale(side, 1);
     for (let k = 0; k < N; k++) {
       const a = (k / N) * Math.PI * 2 + rot, aa = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-      if (aa > Math.PI / 2 + 0.1) continue;
+      if (aa > Math.PI / 2 + 0.1 && !(half && aa > Math.PI * 1.5 - 0.1)) continue;
       const cs = Math.cos(a), sn = Math.sin(a), px = -sn, py = cs;
       if (k % 2) {
         const l = r * 2.05, w = 5;
@@ -3164,7 +3258,7 @@
     x.moveTo(f0, f0 - 4 * k); x.lineTo(f0 - 2 * k * side, f0 + 5 * k); x.lineTo(f0 + 1.5 * k * side, f0 + 5.5 * k);
     x.moveTo(f0 - 7 * k, f0 + 11 * k); x.quadraticCurveTo(f0, f0 + 15 * k, f0 + 7 * k, f0 + 11 * k);
     x.stroke();
-    x.strokeStyle = ink2(0.8); x.lineWidth = 1.2; x.beginPath(); x.moveTo(0, 0.5); x.lineTo(r * 2.1, 0.5); x.stroke();   // кромка
+    if (!half) { x.strokeStyle = ink2(0.8); x.lineWidth = 1.2; x.beginPath(); x.moveTo(0, 0.5); x.lineTo(r * 2.1, 0.5); x.stroke(); }   // кромка
     x.restore();
   }
 
@@ -3389,7 +3483,7 @@
 
   // общее для миров из других файлов (cymatica.js): регистрация и помощники рисования
   window.T2D = {
-    registerWorld, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,
+    registerWorld, tempoFrom, transportFrom, get link() { return { ...link }; }, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,
     get g() { return g; }, get W() { return W; }, get H() { return H; }, get DPR() { return DPR; },
     get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
     get ctx() { return ctx; }, hall, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,
@@ -3400,7 +3494,8 @@
 
   window.t2d = {
     worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return strikes; },
-    go(w) { nav.world = w; nav.view = 'play'; nav.anim = null; if (worlds[w].enter) worlds[w].enter(); },   // сразу в мир, без касаний (тесты)
+    go(w) { nav.world = w; nav.view = 'play'; nav.anim = null; nav.settings = false; if (worlds[w].enter) worlds[w].enter(); },
+    get nav() { return { ...nav }; }, link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }),   // сразу в мир, без касаний (тесты)
     get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
     hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,

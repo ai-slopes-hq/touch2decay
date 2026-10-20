@@ -369,21 +369,60 @@
     const b = furnBox(G), hot = fire && fx.athanor > 0.85, home = b.x0 - 34, away = Math.max(28, b.x0 - 96);
     if (catX == null) catX = home;
     if (catLeave) {                                  // достали — уходит за край, насовсем (до перезагрузки)
-      if (catX < -40) return;
+      if (catX < -60) return;
       catX -= dt * 60;
     } else catX += ((hot ? away : home) - catX) * (1 - Math.exp(-dt / 0.9));
-    const x = catX, y = b.y1, s = 11, walking = !!catLeave || Math.abs((hot ? away : home) - catX) > 2, up = now - catUp < 2200 || walking;
-    c.save(); c.translate(x, y); c.fillStyle = T.BG; c.strokeStyle = T.ink(0.8); c.lineWidth = 1;
-    c.beginPath(); c.ellipse(0, -s * 0.55, s * 1.25, s * 0.6, 0, 0, TAU); c.fill(); c.stroke();   // тело клубком
-    c.beginPath(); c.moveTo(s * 1.1, -s * 0.2); c.quadraticCurveTo(s * 1.6, s * 0.05, s * 0.2, s * 0.02); c.stroke();   // хвост обёрнут
-    const hx = -s * 1.05, hy = up ? -s * 1.35 : -s * 0.6;                       // голова: на лапах или поднята
-    c.beginPath(); c.arc(hx, hy, s * 0.45, 0, TAU); c.fill(); c.stroke();
-    c.beginPath(); c.moveTo(hx - s * 0.38, hy - s * 0.2); c.lineTo(hx - s * 0.32, hy - s * 0.62); c.lineTo(hx - s * 0.08, hy - s * 0.4);
-    c.moveTo(hx + s * 0.08, hy - s * 0.42); c.lineTo(hx + s * 0.3, hy - s * 0.62); c.lineTo(hx + s * 0.38, hy - s * 0.2); c.stroke();   // уши
-    if (up) { T.dot(hx - s * 0.16, hy - s * 0.02, 1.1, 0.9); T.dot(hx + s * 0.16, hy - s * 0.02, 1.1, 0.9); }   // глаза открыты
-    else { c.beginPath(); c.moveTo(hx - s * 0.26, hy); c.lineTo(hx - s * 0.06, hy); c.moveTo(hx + s * 0.06, hy); c.lineTo(hx + s * 0.26, hy); c.stroke(); }
-    if (!up) { c.strokeStyle = T.ink(0.35); c.beginPath(); const zt = (now / 2400) % 1; c.arc(hx - s * 0.2, hy - s - zt * 14, 1.5 + zt * 2, Math.PI, TAU); c.stroke(); }   // сопит
+    const x = catX, y = b.y1, s = 13, target = catLeave ? -999 : hot ? away : home, walking = !!catLeave || Math.abs(target - catX) > 2, up = now - catUp < 2200;
+    c.save(); c.translate(x, y); c.fillStyle = T.BG; c.strokeStyle = T.ink(0.8); c.lineWidth = 1; c.lineCap = 'round'; c.lineJoin = 'round';
+    if (walking) {                                   // идёт: профиль, ноги переступают, хвост трубой
+      const dir = target < catX ? -1 : 1, ph = now * 0.012;
+      c.scale(dir, 1);
+      for (const [lx, o] of [[0.75, 0], [0.55, Math.PI], [-0.55, Math.PI], [-0.75, 0]]) {   // ноги: дальние бледнее
+        const sw = Math.sin(ph + o) * 0.25;
+        c.strokeStyle = T.ink(o ? 0.5 : 0.8); c.beginPath(); c.moveTo(lx * s, -0.7 * s); c.quadraticCurveTo((lx + sw * 0.5) * s, -0.35 * s, (lx + sw) * s, 0); c.stroke();
+      }
+      c.strokeStyle = T.ink(0.8);
+      c.beginPath(); c.moveTo(-0.95 * s, -0.75 * s); c.bezierCurveTo(-0.7 * s, -1.25 * s, 0.6 * s, -1.2 * s, 0.95 * s, -0.95 * s);   // спина
+      c.bezierCurveTo(1.15 * s, -0.75 * s, 1.0 * s, -0.5 * s, 0.75 * s, -0.55 * s); c.bezierCurveTo(0.2 * s, -0.45 * s, -0.4 * s, -0.45 * s, -0.8 * s, -0.55 * s); c.closePath(); c.fill(); c.stroke();
+      c.lineWidth = s * 0.22; c.beginPath(); c.moveTo(-0.95 * s, -0.85 * s); c.bezierCurveTo(-1.5 * s, -1.0 * s, -1.4 * s, -1.9 * s, -1.75 * s, -2.0 * s); c.stroke();   // хвост трубой
+      c.strokeStyle = T.BG; c.lineWidth = s * 0.22 - 2; c.stroke(); c.lineWidth = 1; c.strokeStyle = T.ink(0.8);
+      catHead(c, 1.15 * s, -1.25 * s, s, true, 1);
+    } else {                                          // спит клубком (или поднял голову): спина дугой, хвост обёрнут вокруг
+      c.beginPath(); c.moveTo(-1.0 * s, 0); c.bezierCurveTo(-1.35 * s, -0.75 * s, -0.55 * s, -1.2 * s, 0.25 * s, -1.08 * s);
+      c.bezierCurveTo(1.05 * s, -0.98 * s, 1.5 * s, -0.45 * s, 1.3 * s, 0); c.closePath(); c.fill(); c.stroke();
+      c.strokeStyle = T.ink(0.35); c.beginPath();                                       // шерсть — короткие штрихи по спине
+      for (let k = 0; k < 6; k++) { const t = 0.15 + k * 0.13, ax = (-0.9 + t * 2.1) * s, ay = -(0.95 - 1.6 * (t - 0.55) ** 2) * s; c.moveTo(ax, ay + 2); c.quadraticCurveTo(ax + 2, ay + 4, ax + 1, ay + 7); }
+      c.stroke(); c.strokeStyle = T.ink(0.8);
+      c.lineWidth = s * 0.26; c.beginPath(); c.moveTo(1.2 * s, -0.12 * s); c.bezierCurveTo(1.5 * s, 0.25 * s, 0.2 * s, 0.22 * s, -0.75 * s, 0.05 * s); c.stroke();   // хвост вокруг лап
+      c.strokeStyle = T.BG; c.lineWidth = s * 0.26 - 2; c.stroke(); c.lineWidth = 1; c.strokeStyle = T.ink(0.8);
+      c.beginPath(); c.ellipse(-1.25 * s, -0.04 * s, 0.28 * s, 0.1 * s, 0, 0, TAU); c.fill(); c.stroke();   // лапы
+      const hx = up ? -0.95 * s : -1.1 * s, hy = up ? -1.25 * s : -0.42 * s;
+      if (up) { c.beginPath(); c.moveTo(-0.7 * s, -0.95 * s); c.quadraticCurveTo(-0.95 * s, -1.0 * s, hx + 0.1 * s, hy + 0.3 * s); c.stroke(); }   // шея
+      catHead(c, hx, hy, s, up, -1);
+      if (!up) { c.strokeStyle = T.ink(0.35); const zt = (now / 2600) % 1; c.beginPath(); c.arc(hx - 0.1 * s, hy - 0.7 * s - zt * 14, 1.5 + zt * 2, Math.PI, TAU); c.stroke(); }   // сопит
+    }
     c.restore();
+  }
+  // голова кота: круглая, уши — изогнутые треугольники, глаза — прищур или открытые, нос и усы; face: −1 — мордой влево
+  function catHead(c, hx, hy, s, open, face) {
+    const r = 0.46 * s;
+    c.strokeStyle = T.ink(0.8); c.fillStyle = T.BG;
+    for (const e of [-1, 1]) {                        // уши: под головой, видна верхняя часть
+      const bx = hx + e * 0.26 * s, by = hy - 0.25 * s;
+      c.beginPath(); c.moveTo(bx - 0.17 * s, by + 0.05 * s); c.quadraticCurveTo(bx - 0.06 * s + e * 0.04 * s, by - 0.42 * s, bx + e * 0.06 * s, by - 0.5 * s);
+      c.quadraticCurveTo(bx + 0.12 * s, by - 0.25 * s, bx + 0.19 * s, by + 0.02 * s); c.closePath(); c.fill(); c.stroke();
+    }
+    c.beginPath(); c.ellipse(hx, hy, r * 1.08, r, 0, 0, TAU); c.fill(); c.stroke();
+    const ex = hx + face * 0.1 * s;
+    if (open) {
+      for (const e of [-1, 1]) { c.beginPath(); c.ellipse(ex + e * 0.17 * s, hy - 0.05 * s, 0.09 * s, 0.06 * s, 0, 0, TAU); c.stroke(); T.dot(ex + e * 0.17 * s, hy - 0.05 * s, 0.9, 0.9); }
+    } else {
+      c.beginPath(); for (const e of [-1, 1]) { c.moveTo(ex + e * 0.17 * s - 0.08 * s, hy - 0.03 * s); c.quadraticCurveTo(ex + e * 0.17 * s, hy + 0.04 * s, ex + e * 0.17 * s + 0.08 * s, hy - 0.03 * s); } c.stroke();
+    }
+    c.beginPath(); c.moveTo(ex - 0.05 * s, hy + 0.12 * s); c.lineTo(ex + 0.05 * s, hy + 0.12 * s); c.lineTo(ex, hy + 0.18 * s); c.closePath(); c.stroke();   // нос
+    c.strokeStyle = T.ink(0.4); c.beginPath();
+    for (const e of [-1, 1]) for (const d of [-0.04, 0.05]) { c.moveTo(ex + e * 0.12 * s, hy + 0.17 * s); c.lineTo(ex + e * 0.55 * s, hy + (0.12 + d) * s); }
+    c.stroke(); c.strokeStyle = T.ink(0.8);
   }
 
   // кувшин с водой у печи: тап — заливает огонь, всё в лаборатории затихает (пар и шипение)
@@ -998,7 +1037,7 @@
   T.registerWorld(3, lab);
   window.t2d.lab = {
     OPS, fx, geo, mixed, jars, waveOf, waveOut, get focus() { return focusI; }, setFx: (k, v) => fxw.set(k, v), get solveOn() { return !!(bus && bus.sc.tick); }, get mods() { return mods; }, get fire() { return fire; }, get live() { return voices.has('fire'); },
-    get broken() { return broken.slice(); }, get soot() { return soot; }, get catX() { return catX; }, get catGone() { return !!catLeave; }, get catUp() { return catUp; }, lamp: () => { const b = lampBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
+    get broken() { return broken.slice(); }, get soot() { return soot; }, get catX() { return catX; }, poke: () => pokeCat(performance.now()), get catGone() { return !!catLeave; }, get catUp() { return catUp; }, lamp: () => { const b = lampBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
     get voices() { return [...voices].map(([k, v]) => ({ k, on: v.on, latched: v.latched })); },
     jar: (i) => { const b = jarBox(geo(), i); return { x: b.X, y: b.y - b.h / 2 }; },
     at: (i) => { const q = flaskGeo(geo(), i); return { x: q.p.x, y: (q.yTop + q.yBot) / 2, neckY: q.neckTop + 4 }; },

@@ -198,7 +198,7 @@
   let noSun = false;                                // снимок для карты — без солнца: на карте солнце одно, в центре
   // смена дня по темпу: медленно — солнце клонится к горам (за ними и садится), быстро — в зените
   const sunAt = (G) => ({ x: G.sun.x, y: G.sun.y + clamp((96 - seq.bpm) / 56) * (G.hor - G.sun.y - G.sun.r * 0.35), r: G.sun.r });
-  function drawSun(c, G, now) { if (!noSun) { const S = sunAt(G); T.quarterSun(c, S.x, S.y, S.r, 1, now, INK, pap(1)); } }
+  function drawSun(c, G, now) { if (!noSun) { const S = sunAt(G); T.quarterSun(c, S.x, S.y, S.r, 1, now, INK, pap(1), Math.min(S.y, G.sun.y)); } }   // садится — виден весь диск над краем рамки
   function drawFog(c, G, now) {                      // туман — reverb: дальние холмы тонут
     const r = fx.reverb;
     if (r < 0.03) return;
@@ -400,15 +400,28 @@
     }
   }
   let splash = null;
-  function flyer(c, x, y, s, dir, flap) {            // утка в полёте: тело, шея вперёд, крылья машут
+  function flyer(c, x, y, s, dir, flap) {            // утка в полёте, профиль: шея вытянута, крылья машут (дальнее бледнее)
     c.save(); c.translate(x, y); c.scale(dir * s, s);
-    c.lineWidth = 1.1 / s; c.strokeStyle = ink(0.9); c.fillStyle = pap(1);
-    c.beginPath(); c.ellipse(0, 0, 0.75, 0.24, 0, 0, TAU); c.fill(); c.stroke();
-    c.beginPath(); c.moveTo(0.6, -0.08); c.quadraticCurveTo(0.95, -0.2, 1.15, -0.18); c.stroke();
-    c.beginPath(); c.arc(1.2, -0.2, 0.13, 0, TAU); c.fill(); c.stroke();
-    c.beginPath(); c.moveTo(1.3, -0.2); c.lineTo(1.48, -0.16); c.stroke();
-    const wy = flap * 0.9;
-    c.beginPath(); c.moveTo(-0.15, -0.1); c.quadraticCurveTo(-0.05, -0.1 - wy * 0.6, 0.25, -0.1 - wy); c.moveTo(-0.15, -0.1); c.quadraticCurveTo(-0.45, -0.1 - wy * 0.5, -0.4, -0.1 - wy * 0.9); c.stroke();
+    c.lineWidth = 1.1 / s; c.lineJoin = 'round'; c.fillStyle = pap(1);
+    const wing = (f, a) => {                          // крыло от плеча: f — взмах (1 вверх, −1 вниз)
+      const tipX = -0.45, tipY = -0.1 - 1.15 * f;
+      c.strokeStyle = ink(a); c.beginPath(); c.moveTo(0.35, -0.12);
+      c.bezierCurveTo(0.5, -0.12 - 0.7 * f, 0.1, tipY + 0.15 * f, tipX, tipY);
+      c.bezierCurveTo(-0.2, -0.1 - 0.55 * f, -0.15, -0.12 - 0.15 * f, -0.2, -0.08); c.closePath(); c.fill(); c.stroke();
+      c.beginPath();                                  // маховые перья у кончика
+      for (let k = 1; k <= 3; k++) { const u = k / 4; c.moveTo(tipX + 0.18 * u, tipY + (0.25 + 0.2 * u) * f); c.lineTo(tipX + 0.05 + 0.3 * u, tipY + (0.55 + 0.1 * u) * f); }
+      c.strokeStyle = ink(a * 0.5); c.stroke();
+    };
+    wing(flap * 0.85, 0.5);
+    c.strokeStyle = ink(0.9);
+    c.beginPath(); c.moveTo(0.95, -0.06); c.bezierCurveTo(0.55, 0.3, -0.55, 0.28, -0.95, 0.04); c.bezierCurveTo(-0.6, -0.2, 0.45, -0.26, 0.95, -0.06); c.fill(); c.stroke();   // тело
+    c.beginPath(); c.moveTo(-0.92, 0.0); c.lineTo(-1.2, -0.08); c.lineTo(-1.14, 0.1); c.closePath(); c.fill(); c.stroke();   // хвост
+    c.beginPath(); c.moveTo(0.85, -0.12); c.quadraticCurveTo(1.15, -0.2, 1.36, -0.2); c.moveTo(0.92, 0.04); c.quadraticCurveTo(1.18, -0.02, 1.38, -0.06); c.stroke();   // шея
+    c.beginPath(); c.ellipse(1.47, -0.14, 0.15, 0.12, -0.2, 0, TAU); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(1.58, -0.17); c.quadraticCurveTo(1.75, -0.16, 1.84, -0.09); c.quadraticCurveTo(1.72, -0.07, 1.6, -0.08); c.fill(); c.stroke();   // клюв
+    c.fillStyle = ink(0.9); c.beginPath(); c.arc(1.5, -0.17, 0.025, 0, TAU); c.fill(); c.fillStyle = pap(1);
+    c.strokeStyle = ink(0.5); c.beginPath(); c.moveTo(0.88, -0.1); c.lineTo(0.94, 0.03); c.stroke();   // белый ошейник
+    wing(flap, 0.9);
     c.restore();
   }
   function drawDucks(c, G, now) {
@@ -434,8 +447,9 @@
         if (k < 0.995) for (const [d, side] of [[D.A, 0], [D.R, 1]]) {
           const x = d.x + (far.x + side * 22 - d.x) * k, y = d.y - 10 + (far.y + side * 8 - (d.y - 10)) * k - Math.sin(Math.PI * k) * 30;
           const back = e > GONE.back, dir = (far.x - d.x) * (back ? -1 : 1) > 0 ? 1 : -1;
-          flyer(c, x, y, d.s * (1 - 0.65 * k), dir, Math.sin(now * 0.03 + side));
+          flyer(c, x, y, d.s * 1.1 * (1 - 0.6 * k), dir, Math.sin(now * 0.018 + side * 1.3));
         }
+        for (const d of ducklings(G, now, D)) duck(c, d, 0);   // утята не летают — ждут в заводи
         return;
       }
     }
@@ -905,7 +919,7 @@
     }
     if (t.kind === 'plant' && t.moved) { t.path.push([f.x, f.y]); return; }   // рисуем по воде
     if (!t.moved) return;
-    if (t.kind === 'boat') { seq.bpm = Math.round(clamp(t.bpm0 + dx / 2, 40, 200)); applyFx(); }
+    if (t.kind === 'boat') { seq.bpm = Math.round(clamp(t.bpm0 + dx / 2, 40, 200)); applyFx(); T.tempoFrom(4, seq.bpm); }
     else if (t.kind === 'bridge') { const o = onRiver(G, f.x, f.y); if (o) pads.len = clamp(slotOf({ t: o.t + 0.02 }) + 1, 2, 16); }
     else if (t.kind === 'pad') {                      // поперёк — нота, вдоль — на другое место (если свободно)
       const o = onRiver(G, f.x, f.y), pd = pads.at[t.i], j = slotOf(o), n = noteOf(o);
@@ -946,7 +960,7 @@
       return;
     }
     if (t.kind === 'frog' && !t.moved) { croak(); return; }
-    if (t.kind === 'boat' && !t.moved) play();
+    if (t.kind === 'boat' && !t.moved) { play(); T.tempoFrom(4, seq.bpm); T.transportFrom(4, seq.playing); }
     else if (t.kind === 'pad' && !t.moved && !t.cycled) pads.at[t.i] = null;      // тап по кувшинке — убрать
     else if (t.kind === 'birds' && !t.moved) { birdsAt = performance.now(); laser(); }   // спугнули — лазер
     else if (t.kind === 'plant' && t.moved) {                                      // провёл по воде через кувшинки — глайд в них
@@ -1254,6 +1268,7 @@
       drawLilyRing(c, G);
     },
     build, tick, down, move, up,
+    tempo: { set: (bpm) => { seq.bpm = bpm; applyFx(); }, play: (on) => { if (on !== seq.playing) play(on); } },   // общие часы (карта → concordia)
     mapShot(on) { noSun = on; },
     dice() {                                        // кувшинки по Евклиду, ноты — блуждание по ступеням, цветы — случайно; лодочка плывёт
       const R = Math.random, n = 8 + Math.floor(R() * 9), k = 3 + Math.floor(R() * (n - 4));
@@ -1273,7 +1288,7 @@
       });
       Object.assign(fx, { chance: 1, cutoff: 0.35 + R() * 0.5, res: R() * 0.6, att: R() * R() * 0.5, rel: 0.2 + R() * 0.6 });   // туча, горы и мельница тоже
       applyFx();
-      if (!seq.playing) play(true);
+      if (!seq.playing) { play(true); T.transportFrom(4, true); }
     },
     clear() { pads.at = Array(16).fill(null); ring = null; },
     snapshot: () => JSON.stringify({ fx, len: pads.len, at: pads.at, bpm: seq.bpm }),
@@ -1290,6 +1305,7 @@
     skiff: () => ({ x: skiff.x, y: skiff.y - 4, playing: !!skiff.voice, home: skiff.home }),
     ring: () => ring && { i: ring.i, pinned: ring.pinned, cx: ring.cx, cy: ring.cy, dead: T.MENU_DEAD, span: T.MENU_SPAN, sector: ring.sector && ring.sector.key },
     frog: () => frog.at && frog.i >= 0 && { x: frog.at.x, y: frog.at.y, i: frog.i, croak: frog.croak }, sun: () => sunAt(geo()), get fish() { return !!fish; },
+    scare: () => { ducksGone = { t0: performance.now() }; },
     get ducksGone() { return !!ducksGone; }, get envOpen() { return envOpen(); }, pond: () => pondAt(geo()),
     cloud: () => { const cl = cloudAt(geo()); return { x: cl.cx, y: cl.cy }; },
     menu: () => menu && { open: true, held: menu.held, opts: menuOpts(geo()) },

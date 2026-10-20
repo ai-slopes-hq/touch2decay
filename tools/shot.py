@@ -889,7 +889,32 @@ async def sc_cymx(p):                              # Cymatica: запись по
     assert not await p.js('()=>t2d.cym.drift.on') and abs(await p.js('()=>t2d.cym.effF0') - await p.js('()=>t2d.cym.f0')) < 0.01, 'moon off — plate back to its size'
 
 
-SCENARIOS = {'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_startmap(p):                          # карта — стартовая; солнце — concordia: общие часы и лад
+    assert await p.js('()=>t2d.view') == 'map', 'the app opens on the map'
+    await p.shot('startmap')
+    await p.tap(W / 2, H / 2); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.nav.settings'), 'tap the sun on the map — concordia'
+    c0 = await p.js('()=>t2d.link.clock')
+    await p.tap(W / 2, H / 2 + 70 + 46); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.link.clock') != c0, 'tap a row — toggled'
+    await p.shot('concordia')
+    if not await p.js('()=>t2d.link.clock'): await p.tap(W / 2, H / 2 + 70 + 46); await p.pg.wait_for_timeout(100)
+    await p.tap(20, 20 + H / 4); await p.pg.wait_for_timeout(100)
+    assert not await p.js('()=>t2d.nav.settings'), 'tap outside — closed'
+    await p.tap(100, 200); await p.pg.wait_for_timeout(900)              # II — Cymatica
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 2], 'quadrant II opens Cymatica'
+    g = await p.js('()=>t2d.cym.astro')
+    pid = await p.hold(g['playX'], g['ty'], ms=60); await p.drag(pid, g['playX'], g['ty'], g['playX'] + 60, g['ty'], steps=8); await p.up(); await p.pg.wait_for_timeout(100)
+    b2 = await p.js('()=>t2d.cym.seq.bpm'); assert b2 > 110, f'tempo up in Cymatica: {b2}'
+    assert await p.js('()=>t2d.nat.seq.bpm') == b2, 'shared clock — Natura follows the tempo'
+    await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.cym.seq.playing && t2d.nat.seq.playing'), 'shared clock — play starts Natura too'
+    await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(200)
+    assert not await p.js('()=>t2d.nat.seq.playing'), 'stop stops both'
+    await p.js('()=>{t2d.link.clock = false}')
+
+
+SCENARIOS = {'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
@@ -902,6 +927,7 @@ async def main(names):
             errs = []
             pg.on('pageerror', lambda e: errs.append(str(e)))
             await pg.goto(URL); await pg.wait_for_timeout(600)
+            if n != 'startmap': await pg.evaluate('()=>t2d.go(1)')   # приложение открывается на карте; сценарии начинают в Tenebrae
             try:
                 await SCENARIOS[n](Phone(pg, await c.new_cdp_session(pg)))
             except Exception as e:                  # проверка не прошла или сценарий упал

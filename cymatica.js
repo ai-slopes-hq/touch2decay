@@ -392,7 +392,7 @@
     const h = f.astro;
     if (h.k === 'play' && f.moved) {             // зажал ▶ и ведёшь — темп
       const bpm = Math.round(clamp(f.bpm0 + (f.x - f.x0) * 0.5, 40, 200));
-      if (bpm !== seq.bpm) { seq.bpm = bpm; sendSeq(); }
+      if (bpm !== seq.bpm) { seq.bpm = bpm; sendSeq(); T.tempoFrom(2, bpm); }
       bpmUntil = performance.now() + 1000;
     } else if (h.k === 'len') {
       const len = Math.round(clamp(slotOf(f, g) + 0.5, 1, SLOTS));
@@ -415,7 +415,7 @@
   function astroUp(f) {
     const h = f.astro;
     if (h.k === 'grid' && !f.combed) grid = grid === 1 ? 2 : grid === 2 ? 4 : 1;   // тап — сетка 1/16 → 1/8 → 1/4
-    if (h.k === 'play' && !f.moved) { cursor = null; play(); }
+    if (h.k === 'play' && !f.moved) { cursor = null; play(); T.tempoFrom(2, seq.bpm); T.transportFrom(2, seq.playing); }
     else if (h.k === 'rec') { cursor = null; if (seq.playing) rec(); else stepRecToggle(); }   // часы стоят — запись по шагам
     else if (h.k === 'rtick' && !f.moved) { seq.rhythm.steps[h.i] = seq.rhythm.steps[h.i] ? null : { vel: 1 }; fillMelody(); sendSeq(); }
     else if (h.k === 'drift' && !f.moved && !f.menu) { drift.on = !drift.on; drift.k = 0; drift.t0 = performance.now(); drift.last = -1; send({ t: 'f0', hz: effF0() }); sendSeq(); }
@@ -682,8 +682,8 @@
       { key: 'brightness', label: 'brightness', ang: deg(150) },
       { key: 'hall', label: 'hall', ang: deg(135) },
       { key: 'echo', label: 'echo', ang: deg(120) },
-      { key: 'time', label: 'time', ang: deg(105), marks: ECHO_DIVS.map((d) => d[0]) },
-      { key: 'chance', label: 'chance', ang: deg(90) },
+      { key: 'chance', label: 'chance', ang: deg(105) },
+      { key: 'time', label: 'time', ang: deg(90), marks: ECHO_DIVS.map((d) => d[0]) },
     ],
     get: (k) => plate.fx[k],
     set: (k, t) => { plate.fx[k] = t; if (k === 'chance') sendSeq(); else if (k === 'hall' || k === 'echo' || k === 'time') applyFx(); else sendParams(); },
@@ -975,6 +975,7 @@
     corner: { hit: (f) => Math.hypot(f.x - T.W, f.y - (T.H - T.safeBot)) < 46, draw: drawResonator },
     fx: fxw,
     build, tick,
+    tempo: { set: (bpm) => { seq.bpm = bpm; sendSeq(); }, play: (on) => { if (on !== seq.playing) play(on); } },   // общие часы (карта → concordia)
     enter() { entered = true; start(); },
     draw(now, dt) {
       const c = T.g, g = plateGeo();
@@ -1014,8 +1015,8 @@
         const r = Math.hypot(p.x, p.y) + (R() - 0.5) * 0.1, a = Math.atan2(p.y, p.x) + (R() - 0.5) * 0.6 * ((Math.PI * 2) / dn);   // сдвиг внутри клетки — тембр разный
         return { x: r * Math.cos(a), y: r * Math.sin(a) };
       }) };
-      seq.playing = true;
-      sendSeq();
+      seq.playing = true; stepRec = null;
+      sendSeq(); T.transportFrom(2, true);
     },
     clear() {                                    // узор и смычки — прочь; длины колец и часы остаются
       detach(); for (const b of plate.bows) sendBow(b, false); plate.bows = [];
