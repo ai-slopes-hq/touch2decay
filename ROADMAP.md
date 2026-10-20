@@ -42,6 +42,23 @@
 - **Картинка:** средневековая живопись (часословы, Джотто, Дуччо — не Босх): солнце светит из угла на всё небо, ультрамариновое небо, сусальное золото, малахитовые холмы, охряная земля, свинцовые белила; три волны в небе, горы и их отражение в озере, круги на воде — это эхо: каждое повторение делея — новый круг, хвост реверба — туман над водой.
 - **FX:** раздельные ручки «расстояние» (pre-delay + затухание) и «погода» (модуляция ленты).
 
+## Настоящие гравюры вместо векторных рисунков
+
+Векторный лев — заглушка. Вставить в миры настоящие старинные гравюры и символы (XVI–XVII век — общественное достояние) и привести их к палитре мира.
+
+**Где взять** (Wikimedia Commons; облачная сессия Claude туда не ходит — скачивать в локальной сессии или руками):
+
+- Rosarium: [Green lion consuming the sun](https://commons.wikimedia.org/wiki/File:Green_lion_consuming_the_sun.jpg), [Lion devouring the sun](https://commons.wikimedia.org/wiki/File:Lion_devouring_the_sun.jpg), вся [категория Rosarium philosophorum](https://commons.wikimedia.org/wiki/Category:Rosarium_philosophorum) (ртутный фонтан, брак Солнца и Луны, ферментация…), [Marriage Sun Moon](https://commons.wikimedia.org/wiki/File:Marriage_Sun_Moon_-_Rosarium_Philosophorum_Griemiller.jpg), [Pelican in her piety](https://commons.wikimedia.org/wiki/File:Pelican-in-her-piety.jpg), [сосуды из «Алхимии» Либавия](https://commons.wikimedia.org/wiki/File:Alembics_from_Andreas_Libavius_Alchymia.png) (там и сосуд-«пеликан»), [Ouroboros](https://commons.wikimedia.org/wiki/File:Ouroboros.png), [Double Sun](https://commons.wikimedia.org/wiki/File:Double_Sun_in_alchemical_emblem.png), эмблемы [Atalanta Fugiens](https://commons.wikimedia.org/wiki/Category:Atalanta_Fugiens) (Майер, 1618), [алхимические символы](https://commons.wikimedia.org/wiki/Category:Alchemical_symbols). Ещё: [Source Library — green lion](https://sourcelibrary.org/artwork/green-lion-consuming-the-sun).
+- Cabbala: [Kircher Tree of Life](https://commons.wikimedia.org/wiki/File:Kircher_Tree_of_Life.png), [Tree of Life (Kircher 1653)](https://commons.wikimedia.org/wiki/File:Tree_of_Life_(Kircher_1653).jpg); ещё подойдут гравюры Роберта Фладда (*Utriusque Cosmi*, 1617).
+- Terra: миниатюры «Великолепного часослова герцога Беррийского» (братья Лимбург), Джотто, Дуччо — для неба, холмов, полей.
+
+**Как встраивать:**
+
+1. Скачать в `art/<мир>/`, записать источник и лицензию каждой картинки в `art/CREDITS.md`.
+2. Обработать один раз скриптом (`tools/ink.py`, Pillow): обрезать сюжет; для чёрно-белых гравюр — оттенки серого → уровни → слой «чернил» с прозрачной бумагой (альфа = темнота линии) → покрасить в чернила мира (сепия / золото) и, если надо, подложить раскраску пятнами палитры; для цветных миниатюр — только кадрирование и мягкая подгонка к палитре. Размер ≤ 1200 px по длинной стороне, PNG/WebP, лучше < 300 КБ на картинку.
+3. Положить в `STATIC` в `sw.js` (офлайн), рисовать в `artFor` через `drawImage` поверх фона мира, рамки и подписи оставить векторными.
+4. Солнце остаётся участником: в Rosarium солнцем становится солнце с гравюры льва — точку касания для выхода на карту перенести на него (сейчас `sunCorner`).
+
 ## Остальное
 
 - **Сцены:** сохранять и загружать расстановку (планеты, тембры, связи, LFO, FX, лад); делиться сценой ссылкой.
