@@ -511,7 +511,26 @@ async def sc_scalepinch(p):                        # с ладом щипок и
     assert shown != f0, 'plate size eases to the new note'
 
 
-SCENARIOS = {'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+
+async def sc_echo(p):                              # эхо по долям темпа: луч time 1/16t … 1/4d, повторов больше с echo
+    await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
+    g = await p.js('()=>t2d.cym.geo'); await p.tap(g['cx'], g['cy']); await p.pg.wait_for_timeout(700)
+    rv = await p.js("()=>t2d.btnPos('rev')")
+    pid = await p.hold(rv['x'], rv['y'], ms=120); await p.drag(pid, rv['x'], rv['y'], rv['x'], rv['y'] + 400, steps=12)
+    e = await p.js('()=>t2d.cym.echo'); await p.shot('echo'); await p.up()
+    bpm = await p.js('()=>t2d.cym.seq.bpm')
+    assert e['label'] == '1/4d', f'time ray at the end is a dotted quarter: {e}'
+    assert abs(e['sec'] - 1.5 * 60 / bpm) < 1e-3, f'delay follows the tempo: {e}'
+    await p.js("()=>t2d.cym.load({bpm: 120, fx: {time: 2 / 8, echo: 0.2}})"); await p.pg.wait_for_timeout(100)
+    e = await p.js('()=>t2d.cym.echo')
+    assert e['label'] == '1/8t' and abs(e['sec'] - 60 / 120 / 3) < 1e-3, f'eighth triplet at 120: {e}'
+    fb0 = e['fb']; await p.js("()=>t2d.cym.load({fx: {echo: 0.9}})"); e = await p.js('()=>t2d.cym.echo')
+    assert e['fb'] > fb0 + 0.2, f'more echo, more repeats: {fb0} -> {e}'
+    await p.js("()=>t2d.cym.load({bpm: 40, fx: {time: 1}})"); e = await p.js('()=>t2d.cym.echo')
+    assert abs(e['sec'] - 2.25) < 1e-3 and await p.js('()=>t2d.cym.echoMax') > 2.2, f'slow dotted quarter fits the delay line: {e}'
+
+
+SCENARIOS = {'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

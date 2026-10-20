@@ -16,7 +16,7 @@
   const r4 = (x) => Math.round(x * 1e4) / 1e4;
 
   // ---------- состояние: высота, пластина (веер FX), закреплённые смычки ----------
-  const plate = { f0: F_DEF, fx: { structure: 2 / 7, damping: 0.5, brightness: 0.5, hall: 0.25, echo: 0.15 }, bows: [] };
+  const plate = { f0: F_DEF, fx: { structure: 2 / 7, damping: 0.5, brightness: 0.5, hall: 0.25, echo: 0.15, time: 6 / 8 }, bows: [] };
   let bowId = 1;
   const touches = new Map();                 // палец → касание пластины
   let ringF = null, two = null, lastTap = null, labelUntil = 0, gesture = null, twistLabel = null;
@@ -46,10 +46,7 @@
     sent.r = seq.rhythm.steps.slice(); sent.m = seq.melody.steps.slice();
     const melody = { len: seq.melody.len, steps: seq.melody.steps.map((o) => (o == null ? null : clamp(fs() + o, 0, 48))) };
     send({ t: 'seq', bpm: seq.bpm, playing: seq.playing, rhythm: seq.rhythm, melody });
-    if (nodes && echoBpm !== seq.bpm) {         // эхо — восьмая с точкой
-      echoBpm = seq.bpm;
-      for (const d of [nodes.dL, nodes.dR]) d.delayTime.setTargetAtTime((0.75 * 60) / seq.bpm, T.ctx.currentTime, 0.05);
-    }
+    if (nodes && echoBpm !== seq.bpm) { echoBpm = seq.bpm; applyFx(); }   // эхо идёт за темпом
   }
   // ритм по Евклиду: k ударов на n шагов как можно ровнее, первый — удар
   function euclid(k, n) { return Array.from({ length: n }, (_, i) => (i * k) % n < k); }
@@ -144,7 +141,9 @@
     if (!nodes) return;
     const t = T.ctx.currentTime;
     nodes.hallSend.gain.setTargetAtTime(plate.fx.hall * plate.fx.hall * 1.4, t, 0.05);
-    nodes.echoSend.gain.setTargetAtTime(plate.fx.echo * 0.7, t, 0.05);
+    nodes.echoSend.gain.setTargetAtTime(plate.fx.echo * 0.8, t, 0.05);
+    for (const d of [nodes.dL, nodes.dR]) d.delayTime.setTargetAtTime(echoSec(), t, 0.05);
+    for (const f of nodes.fb) f.gain.setTargetAtTime(echoFb(), t, 0.05);
   }
   function build(ctx, input) {
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
@@ -154,15 +153,16 @@
     const h = T.hall(), hallSend = g(0);
     for (const l of h.lines) l.g.gain.value = 10 ** ((-3 * l.len) / 4);
     hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-    // эхо: две линии крест-накрест, восьмая с точкой (0.375 с) — до секвенсера
-    const echoSend = g(0), dL = ctx.createDelay(2), dR = ctx.createDelay(2), merge = ctx.createChannelMerger(2);
-    dL.delayTime.value = (0.75 * 60) / seq.bpm; dR.delayTime.value = (0.75 * 60) / seq.bpm;   // восьмая с точкой
+    // эхо: две линии крест-накрест, доля темпа с луча time (1/4d на 40 BPM — 2.25 с)
+    const echoSend = g(0), dL = ctx.createDelay(3), dR = ctx.createDelay(3), merge = ctx.createChannelMerger(2);
+    dL.delayTime.value = dR.delayTime.value = echoSec();
     const lp = (n) => { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3000; return n.connect(f); };
+    const fb = [g(echoFb()), g(echoFb())];
     echoSend.connect(dL);
-    lp(dL).connect(g(0.4)).connect(dR);
-    lp(dR).connect(g(0.4)).connect(dL);
+    lp(dL).connect(fb[0]).connect(dR);
+    lp(dR).connect(fb[1]).connect(dL);
     dL.connect(merge, 0, 0); dR.connect(merge, 0, 1); merge.connect(out);
-    nodes = { out, hallSend, echoSend, dL, dR };
+    nodes = { out, hallSend, echoSend, dL, dR, fb };
     actx = ctx;
     applyFx();
     if (entered) start();
@@ -591,20 +591,27 @@
 
   // ---------- веер FX: пластина и пространство ----------
   const deg = (d) => (d * Math.PI) / 180;
+  // доли эха в четвертях: t — триоль, d — с точкой
+  const ECHO_DIVS = [['1/16t', 1 / 6], ['1/16', 1 / 4], ['1/8t', 1 / 3], ['1/16d', 3 / 8], ['1/8', 1 / 2], ['1/4t', 2 / 3], ['1/8d', 3 / 4], ['1/4', 1], ['1/4d', 3 / 2]];
+  const echoDiv = () => ECHO_DIVS[Math.round(plate.fx.time * (ECHO_DIVS.length - 1))];
+  const echoSec = () => (echoDiv()[1] * 60) / seq.bpm;
+  const echoFb = () => 0.35 + 0.45 * plate.fx.echo;   // больше эха — дольше тянутся повторы
   const STRUCT = ['string', 'membrane', 'plate', 'bell', 'bowl', 'handpan', 'marimba', 'kalimba'];   // тела по лучу structure
   const fxw = {
     sectors: [
       { key: 'structure', label: 'structure', ang: deg(180) },
-      { key: 'damping', label: 'damping', ang: deg(157.5) },
-      { key: 'brightness', label: 'brightness', ang: deg(135) },
-      { key: 'hall', label: 'hall', ang: deg(112.5) },
-      { key: 'echo', label: 'echo', ang: deg(90) },
+      { key: 'damping', label: 'damping', ang: deg(162) },
+      { key: 'brightness', label: 'brightness', ang: deg(144) },
+      { key: 'hall', label: 'hall', ang: deg(126) },
+      { key: 'echo', label: 'echo', ang: deg(108) },
+      { key: 'time', label: 'time', ang: deg(90) },
     ],
     get: (k) => plate.fx[k],
-    set: (k, t) => { plate.fx[k] = t; if (k === 'hall' || k === 'echo') applyFx(); else sendParams(); },
+    set: (k, t) => { plate.fx[k] = t; if (k === 'hall' || k === 'echo' || k === 'time') applyFx(); else sendParams(); },
     text: (k) => {
       const v = plate.fx[k];
       if (k === 'structure') return STRUCT[Math.round(v * (STRUCT.length - 1))];
+      if (k === 'time') return echoDiv()[0];
       if (k === 'damping') { const s = 0.08 * 150 ** v; return `${s.toFixed(s < 10 ? 1 : 0)} s`; }
       return `${Math.round(v * 100)}%`;
     },
@@ -885,7 +892,8 @@
     get bows() { return plate.bows.map((b) => ({ ...b })); }, get energy() { return Array.from(energy); },
     get ringOpen() { return !!ringF; }, get live() { return [...touches.values()].filter((f) => f.bowing).length; },
     get geo() { return plateGeo(); },
-    get seq() { const s = JSON.parse(JSON.stringify(seq)); s.melody.steps = seq.melody.steps.map(absM); return s; },   // мелодия — абсолютная get lastStep() { return lastStep; },
+    get seq() { const s = JSON.parse(JSON.stringify(seq)); s.melody.steps = seq.melody.steps.map(absM); return s; },   // мелодия — абсолютная
+    get lastStep() { return lastStep; },
     play, rec,
     get astro() { const g = plateGeo(); return { ...astro(g), cx: g.cx, cy: g.cy }; },
     load(o) {                                    // готовый узор (рендер, отладка)
@@ -893,9 +901,11 @@
       if (o.bpm) seq.bpm = o.bpm;
       if (o.rhythm) seq.rhythm = { len: o.rhythm.len, steps: pad(o.rhythm.steps) };
       if (o.melody) seq.melody = { len: o.melody.len, steps: pad(o.melody.steps).map(relM) };   // в load — абсолютные
+      if (o.fx) fxw.load(o.fx);
       sendSeq();
     },
     core: { euclid, nearestStep, walkMelody, rotateSteps, transposeMelody, keyNotes, twistOrPinch, scaleSemis, snapToGrid, quantizeRhythm },
+    get echo() { return { label: echoDiv()[0], sec: echoSec(), fb: echoFb() }; }, get echoMax() { return nodes ? nodes.dL.delayTime.maxValue : 0; },
     get gesture() { return gesture; }, get shownF0() { return shownF0; }, bowsOn: BOWS_ON, get ringTurn() { return { ...ringTurn }; }, get grid() { return grid; }, get waveStep() { return waveStep(); },
     get keys() { return keys(plateGeo()); }, get cursor() { return cursor; }, get lastStrike() { return lastStrike; },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
