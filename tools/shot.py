@@ -98,8 +98,9 @@ async def sc_hole(p):                              # касание в чёрн�
     pid = await p.hold(200, 420, ms=60)
     await p.drag(pid, 200, 420, c['x'] + 30, c['y'] + 10, steps=16)
     await p.pg.wait_for_timeout(500); await p.shot('hole-drag')
-    await p.up(); await p.pg.wait_for_timeout(600); await p.shot('hole')
-    print('hole drag:', await p.js("()=>t2d.voices.filter(v=>v.active).map(v=>+v.holeT.toFixed(2))"))
+    print('hole held:', await p.js("()=>t2d.voices.filter(v=>v.active).map(v=>[+v.holeT.toFixed(2), v.pinned])"))
+    await p.up(); await p.pg.wait_for_timeout(600); await p.shot('hole'); await p.pg.wait_for_timeout(2600)
+    print('hole released (eaten one dies):', await p.js("()=>t2d.voices.filter(v=>v.active).map(v=>+v.holeT.toFixed(2))"))
 
 
 async def sc_vol(p):                               # фейдер громкости: зажал — длинная шкала, повёл вниз — тише

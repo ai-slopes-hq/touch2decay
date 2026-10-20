@@ -163,10 +163,11 @@
   const EDGE_B = EDGE;        // снизу кнопок нет
   const SUN_R = 100;          // зона солнца: лучи (до ~70) + планета (до 34) — планеты на солнце не наезжают; 55 Гц — на её краю
   const EDGE_T = 64;          // сверху — ниже строки с заголовком и кнопками
-  // чёрная дыра — в дальнем шумном углу (вверху слева): за горизонтом событий тон съеден, остаётся шум, глубже — темнее.
+  // чёрная дыра — в дальнем шумном углу (вверху слева), выступает на четверть, как солнце: за горизонтом событий тон
+  // съеден и уходит в шум, глубже шум глохнет — звук умирает; отпущенная там планета гаснет насовсем.
   // Касанием туда не попасть (планета встаёт снаружи) — только затащить. Глубина запоминается, пока тащишь: звук от зума не меняется
   const HOLE_R = 84;
-  const holeAt = () => ({ x: 0, y: geo.top + EDGE_T + 44 });   // у левого края, под строкой заголовка
+  const holeAt = () => ({ x: 0, y: geo.top + EDGE_T });   // угол поля под строкой кнопок
   // краешек дыры — вдоль всего шумного края поля (там кончаются все орбиты), по касательной к ней: слабо съедает тон на любой высоте
   const RIM_H = 0.35, RIM_W = 16;
   function holeDepth(x, y) {
@@ -1619,7 +1620,8 @@
       T(m.g.gain, dd, 0.08);
     }
     T(n.vca.gain, Math.max(0, 1 - rm), 0.08);
-    T(n.lvl.gain, 0.55 * v.amp, 0.05);           // громкость генератора — щипок по планете
+    const alive = 1 - clamp((h - 0.5) / 0.45);  // в глубине дыры звук умирает
+    T(n.lvl.gain, 0.55 * v.amp * alive, 0.15);   // громкость генератора — щипок по планете
     // LFO: скорость и глубина в единицах своей цели
     for (const [key, spec] of Object.entries(v.lfo)) {
       const L = n.lfo[key];
@@ -1630,7 +1632,7 @@
       useTables(L.mo, la, lb);
       const d2 = spec.depth;
       const depth = key === 'pitch' ? d2 * 700 : key === 'wave' ? d2 * 2 : key === 'cut' ? d2 * 4800
-        : key === 'res' ? d2 * 20 : key === 'beat' ? d2 * 16 : key === 'shift' ? d2 * 300 : key === 'amp' ? d2 * 0.55 * v.amp : d2 * f * FM_MAX;
+        : key === 'res' ? d2 * 20 : key === 'beat' ? d2 * 16 : key === 'shift' ? d2 * 300 : key === 'amp' ? d2 * 0.55 * v.amp * alive : d2 * f * FM_MAX;
       L.out.gain.setTargetAtTime(depth, t, 0.05);
     }
   }
@@ -2278,6 +2280,7 @@
   // Тихо; диск разгорается и крутится быстрее, пока дыра ест; горизонт событий проявляется, когда тащишь планету рядом
   function drawHole(now) {
     const c = holeAt();
+    g.save(); g.beginPath(); g.rect(c.x, c.y, W, H); g.clip();   // видна четверть
     let feed = 0, near = 0;
     for (const v of V) if (v.active) feed = Math.max(feed, v.hole * v.env);
     for (const f of F.values()) {
@@ -2300,6 +2303,7 @@
     ring(c.x, c.y, S + 4, 0.12 + 0.15 * feed, 0.8);
     disk(true);
     g.setLineDash([1, 6]); ring(c.x, c.y, HOLE_R, 0.1 + 0.35 * near, 1); g.setLineDash([]);
+    g.restore();
   }
 
   // удар солнца: отдача — планету отбрасывает от солнца и она возвращается
@@ -2774,6 +2778,7 @@
       if (v.dirty) { v.dirty = false; apply(v); }
       v.env += (v.envT - v.env) * (1 - Math.exp(-dt / v.envTau));
       v.hole += (v.holeT - v.hole) * (1 - Math.exp(-dt / 0.15));
+      if (v.active && v.holeT > 0.9 && !v.fingers.length && v.envT !== 0) { v.pinned = false; release(v, 0.4); }   // отпущена в глубине дыры — умирает
       if (v.active && !v.pinned && !v.fingers.length && v.envT === 0 && v.env < 0.004) {
         v.active = false;
         sel.delete(v);
