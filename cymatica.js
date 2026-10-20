@@ -388,6 +388,7 @@
     get ringOpen() { return !!ringF; }, get live() { return [...touches.values()].filter((f) => f.bowing).length; },
     get geo() { return plateGeo(); },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
+    bow(x, y, on = true) { send({ t: 'bow', id: 'dbg', x, y, on, exciter: 0, pressure: 0.5, amp: 0.8 }); },
     sandSpread() {                               // среднее поле под крупинками: песок в узлах — меньше
       if (!field) return 1;
       let s = 0;

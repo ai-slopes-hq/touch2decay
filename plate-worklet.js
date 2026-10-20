@@ -115,7 +115,7 @@ function shapeGrid(n) {
 }
 
 // ---------- процессор ----------
-var NV = 4, GRID_N = 96, SLEEP = 1e-14, MAX_STRIKES = 16, OUT_GAIN = 0.2, STRIKE_GAIN = 5;   // удар — громкость одного касания примерно как у смычка
+var NV = 4, GRID_N = 96, SLEEP = 1e-14, BOW_TILT = 1.5, BOW_GAIN = 6, MAX_STRIKES = 16, OUT_GAIN = 0.2, STRIKE_GAIN = 5;   // удар — громкость одного касания примерно как у смычка
 // смычок: трение по разности скоростей смычка и пластины в точке (кривая как у bowed-string), нормировано на покой
 function bowTable(d) { return Math.min(1, (Math.abs(d) * 5 + 0.75) ** -4); }
 
@@ -129,7 +129,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       this.voices = Array.from({ length: NV }, () => ({
         hz: 110, level: 0, awake: false,
         y1: new Float64Array(NM), y2: new Float64Array(NM), b1: new Float64Array(NM), b2: new Float64Array(NM),
-        gs: new Float64Array(NM), gb: new Float64Array(NM), en: new Float64Array(NM), x: new Float64Array(NM),
+        gs: new Float64Array(NM), wb: new Float64Array(NM), en: new Float64Array(NM), x: new Float64Array(NM),
       }));
       this.strikes = [];
       this.bows = new Map();
@@ -145,14 +145,15 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       this.t60 = t60s(this.ratios, this.fx.damping, this.fx.brightness);
       for (const v of this.voices) this.tune(v, v.hz);
     }
-    // коэффициенты голоса: усиление удара — sin ω (импульс даёт амплитуду ~1), смычка — ещё ·√(1−R²) (шум даёт ~1)
+    // коэффициенты голоса: усиление удара — sin ω (импульс даёт амплитуду ~1), смычка — ещё ·√(1−R²) (шум даёт ~1) и спад по модам
     tune(v, hz) {
       v.hz = hz;
       for (let k = 0; k < NM; k++) {
         const f = hz * this.ratios[k];
-        if (f > 18000 || f > 0.45 * this.fs) { v.b1[k] = 0; v.b2[k] = 0; v.gs[k] = 0; v.gb[k] = 0; v.y1[k] = 0; v.y2[k] = 0; continue; }
+        if (f > 18000 || f > 0.45 * this.fs) { v.b1[k] = 0; v.b2[k] = 0; v.gs[k] = 0; v.wb[k] = 0; v.y1[k] = 0; v.y2[k] = 0; continue; }
         const c = resCoefs(f, this.t60[k], this.fs), s = Math.sin((2 * Math.PI * f) / this.fs);
-        v.b1[k] = c.b1; v.b2[k] = c.b2; v.gs[k] = s; v.gb[k] = s * Math.sqrt(1 + c.b2);
+        // смычок и дыхание — шум: без спада по модам верх режет уши; вес ratio^−1.5, как у настоящего смычка
+        v.b1[k] = c.b1; v.b2[k] = c.b2; v.gs[k] = s; v.wb[k] = Math.sqrt(1 + c.b2) * this.ratios[k] ** -BOW_TILT;
       }
     }
     msg(d) {
@@ -212,8 +213,8 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
             for (let k = 0; k < NM; k++) vp += b.g[k] * (v.y1[k] - v.y2[k]);
             const vb = 0.25, fric = bowTable(vb - vp) / bowTable(vb);
             const bow = (Math.random() * 2 - 1) * fric, breath = this.lp * 3;
-            const e = ((1 - b.exciter) * bow + b.exciter * breath) * b.amp * (0.5 + b.pressure);
-            for (let k = 0; k < NM; k++) v.x[k] += (b.g[k] * e * v.gb[k]) / (v.gs[k] || 1);
+            const e = ((1 - b.exciter) * bow + b.exciter * breath) * b.amp * (0.5 + b.pressure) * BOW_GAIN;
+            for (let k = 0; k < NM; k++) v.x[k] += b.g[k] * e * v.wb[k];
           }
         }
         let l = 0, r = 0;
