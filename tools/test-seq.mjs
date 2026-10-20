@@ -68,3 +68,10 @@ test('twistOrPinch', () => {
   assert.equal(C.twistOrPinch(0, 0.05, 100, 105), null);
   assert.equal(C.twistOrPinch(3.1, -3.1, 100, 100), null);   // через ±180°: ≈4.6°, а не 355°
 });
+
+test('keyNotes never below 55 Hz', () => {          // тоника не A, пластина у самого низа
+  const minorC = [0, 2, 3, 5, 7, 8, 10].map((s) => (s + 3) % 12);
+  const k = Array.from(C.keyNotes(58, minorC, 3));
+  assert.ok(k.every((n) => n >= 0), `keys ${k}`);
+  assert.equal(k[0], 3);
+});

@@ -318,12 +318,21 @@ async def sc_twist(p):                             # два пальца кру�
             a = dict(pt(R + spread * k / 10, -90 - d0 + turn * k / 10), id=i1); b = dict(pt(R + spread * k / 10, -90 + d0 + turn * k / 10), id=i2)
             await p.T('touchMove', [a, b]); await p.pg.wait_for_timeout(16)
         await p.T('touchEnd', [a, b]); await p.pg.wait_for_timeout(150)
-    await twist(g['R2'], 10, 45)
+    await twist(g['R2'], 25, 45)                                           # пальцы на кольце ритма широко — всё равно ритм
     st = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
     assert [i for i, x in enumerate(st) if x] == [2, 6], f'rhythm ring turned by 2: {st}'
-    await twist(g['R1'], 10, 45)
+    await twist(g['R1'], 25, 45)
     m = await p.js('()=>t2d.cym.seq.melody.steps')
     assert m[2] == 12 and m[3] == 15, f'melody ring turned by 2: {m}'
+    await p.js("()=>{const m=t2d.cym.seq.melody.steps; m[5]=13; t2d.cym.load({melody:{len:7, steps:m}})}")   # нота не из лада
+    m13 = await p.js('()=>t2d.cym.seq.melody.steps')
+    a1, b1 = dict(pt(40, -120), id=85), dict(pt(40, -60), id=86)          # повернул и вернул одним жестом — мелодия прежняя
+    await p.T('touchStart', [a1]); await p.T('touchStart', [a1, b1]); await p.pg.wait_for_timeout(30)
+    for k in list(range(1, 11)) + list(range(9, -1, -1)):
+        a1, b1 = dict(pt(40, -120 + 3 * k), id=85), dict(pt(40, -60 + 3 * k), id=86)
+        await p.T('touchMove', [a1, b1]); await p.pg.wait_for_timeout(16)
+    await p.T('touchEnd', [a1, b1]); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.cym.seq.melody.steps') == m13, 'twist there and back restores the melody exactly'
     exp = await p.js('()=>t2d.cym.core.transposeMelody(t2d.cym.seq.melody.steps, 2, t2d.cym.core.scaleSemis())')
     await twist(40, 30, 40)
     assert await p.js('()=>t2d.cym.seq.melody.steps') == exp, 'plate twist transposes by 2 scale steps'
@@ -342,6 +351,12 @@ async def sc_twist(p):                             # два пальца кру�
     await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.cym.live') == 0, 'held bow stops when a twist starts'
     assert await p.js('()=>t2d.cym.gesture') == 'twist'
+    a = {'x': cx + 20, 'y': cy, 'id': 98}                                  # держишь смычок, вторым пальцем — ▶
+    await p.T('touchStart', [a]); await p.pg.wait_for_timeout(300)
+    b = {'x': cx - 30, 'y': g['ty'], 'id': 99}
+    await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60); await p.T('touchEnd', [b]); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.cym.seq.playing') and await p.js('()=>t2d.cym.live') == 1, '▶ by a second finger works, bow keeps going'
+    await p.T('touchEnd', [a]); await p.tap(cx - 30, g['ty']); await p.pg.wait_for_timeout(100)
     r0 = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
     m = p.pg.mouse; s = pt(g['R2'], -90)
     await p.pg.keyboard.down('Shift'); await m.move(s['x'], s['y']); await m.down()

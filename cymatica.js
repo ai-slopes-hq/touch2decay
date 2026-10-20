@@ -70,7 +70,9 @@
   // ноты клавиш: от тоники в октаве основного тона пластины — вверх по классам высот лада, 8 штук
   function keyNotes(f0, pcs, tonic) {
     const s = 12 * Math.log2(f0 / F_MIN), out = [];
-    for (let n = tonic + 12 * Math.floor((s - tonic) / 12); out.length < 8; n++) if (pcs.includes(((n % 12) + 12) % 12)) out.push(n);
+    let n = tonic + 12 * Math.floor((s - tonic) / 12);
+    if (n < 0) n += 12;                          // ниже 55 Гц пластина не звучит — тоника октавой выше
+    for (; out.length < 8; n++) if (pcs.includes(((n % 12) + 12) % 12)) out.push(n);
     return out;
   }
   // два пальца: поворот или щипок — что изменилось сильнее (угол через ±180° — в градусах, расстояние — в px)
@@ -344,10 +346,11 @@
   // ---------- вращение: кольца — сдвиг узора, пластина — транспонирование; два пальца или Shift-мышь ----------
   const wrapDeg = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
   const origOf = () => ({ r: seq.rhythm.steps.slice(), m: seq.melody.steps.slice() });
-  function twistTarget(x, y, g) {
-    const A = astro(g), d = Math.hypot(x - g.cx, y - g.cy);
-    if (Math.abs(d - A.R1) < 14) return 'melody';
-    if (Math.abs(d - A.R2) < 14) return 'rhythm';
+  // что крутим — по расстоянию от центра пластины (у двух пальцев — среднее: оно не меняется при повороте);
+  // кольца пересекаются по допуску — побеждает ближнее
+  function twistTarget(d, g) {
+    const A = astro(g), e1 = Math.abs(d - A.R1), e2 = Math.abs(d - A.R2);
+    if (e1 < 14 || e2 < 14) return e1 <= e2 ? 'melody' : 'rhythm';
     return d < g.rMax ? 'plate' : null;
   }
   function startTwo(o, f, g) {
@@ -357,7 +360,8 @@
     o.two = f.two = true;
     two = {
       a: o, b: f, a0: Math.atan2(f.y - o.y, f.x - o.x), d0: Math.max(20, Math.hypot(f.x - o.x, f.y - o.y)),
-      kind: null, target: twistTarget((o.x + f.x) / 2, (o.y + f.y) / 2, g), f00: plate.f0, orig: origOf(), deg: 0, k: 0,
+      kind: null, target: twistTarget((Math.hypot(o.x - g.cx, o.y - g.cy) + Math.hypot(f.x - g.cx, f.y - g.cy)) / 2, g),
+      f00: plate.f0, orig: origOf(), deg: 0, k: 0,
     };
     two.last = two.a0;
   }
@@ -379,7 +383,7 @@
     t.k = k;
     if (target === 'rhythm') seq.rhythm.steps = rotateSteps(t.orig.r, seq.rhythm.len, k);
     else if (target === 'melody') seq.melody.steps = rotateSteps(t.orig.m, seq.melody.len, k);
-    else seq.melody.steps = transposeMelody(t.orig.m, k, scaleSemis());
+    else seq.melody.steps = k ? transposeMelody(t.orig.m, k, scaleSemis()) : t.orig.m.slice();   // вернул в ноль — мелодия как была
     sendSeq();
   }
   function rotateSand(a) {
@@ -391,9 +395,11 @@
   function down(f, e) {
     const g = plateGeo();
     if (e && e.shiftKey) {                       // Shift + мышь — вращение того, что под курсором
-      const target = twistTarget(f.x, f.y, g);
+      const target = twistTarget(Math.hypot(f.x - g.cx, f.y - g.cy), g);
       if (target) { touches.set(f.id, f); f.twist1 = { target, last: Math.atan2(f.y - g.cy, f.x - g.cx), deg: 0, orig: origOf(), k: 0 }; return; }
     }
+    const h0 = astroHit(f, g);                   // ▶ и ● работают и вторым пальцем — в пару не идут
+    if (h0 && (h0.k === 'play' || h0.k === 'rec')) { touches.set(f.id, f); f.astro = h0; f.bpm0 = seq.bpm; return; }
     const ki = keyAt(f, g);
     if (ki >= 0) { touches.set(f.id, f); f.key = ki; pressKey(ki, g); return; }
     for (const o of touches.values()) {          // второй палец — поворот или щипок (решится по первым ~10° / ~20 px)
