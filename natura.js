@@ -183,17 +183,27 @@
     c.restore();
   }
 
+  // облако, как на картах Таро: пухлые клубы разного размера (сверху крупнее), внутри завитки у краёв клубов,
+  // снизу тень штрихом. Контур — объединение кругов: сначала все обводятся толстой линией, потом заливаются бумагой
+  const LOBES = [[-0.3, -0.02, 0.19], [-0.1, -0.2, 0.25], [0.15, -0.16, 0.23], [0.34, -0.02, 0.17],
+    [0.22, 0.11, 0.15], [0.0, 0.13, 0.17], [-0.22, 0.12, 0.15], [-0.42, 0.05, 0.12]];
   function cloud(c, X, Y, s, a) {
-    const w = 64 * s, h = 16 * s;
+    const w = 64 * s;
     c.save(); c.translate(X, Y);
-    c.beginPath(); c.moveTo(-w / 2, 0);
-    let px = -w / 2;
-    for (const k of [0.75, 1.15, 0.95, 0.7]) { const r = (w / 7) * k; c.arc(px + r, 0, r, Math.PI, 0); px += 2 * r * 0.78; }
-    c.lineTo(-w / 2, 0); c.closePath();
-    c.fillStyle = pap(1); c.fill(); c.strokeStyle = ink(a); c.lineWidth = 1.2; c.stroke();
-    c.clip(); c.strokeStyle = ink(a * 0.45); c.lineWidth = 0.7; c.beginPath();
-    for (let y = -1; y > -h * 0.7; y -= 2.6) { c.moveTo(-w / 2, y); c.lineTo(w / 2, y); }
-    c.stroke(); c.restore();
+    const each = (fn) => { for (const [dx, dy, r] of LOBES) { c.beginPath(); c.arc(dx * w, dy * w, r * w, 0, TAU); fn(); } };
+    c.strokeStyle = ink(a); c.lineWidth = 2.6; each(() => c.stroke());
+    c.fillStyle = pap(1); each(() => c.fill());
+    c.beginPath(); for (const [dx, dy, r] of LOBES) { c.moveTo(dx * w + r * w, dy * w); c.arc(dx * w, dy * w, r * w, 0, TAU); } c.clip();
+    c.strokeStyle = ink(a * 0.3); c.lineWidth = 0.7; c.beginPath();      // тень снизу — короткие дуги-штрихи
+    for (let y = 0.11 * w; y < 0.32 * w; y += 3) { c.moveTo(-0.5 * w, y); c.quadraticCurveTo(0, y + 0.04 * w, 0.5 * w, y); }
+    c.stroke();
+    c.strokeStyle = ink(a * 0.75); c.lineWidth = 1;   // завитки у верхних клубов
+    LOBES.slice(0, 4).forEach(([dx, dy, r], i) => {
+      const cx = dx * w, cy = dy * w + r * w * 0.25, rr = r * w * 0.55;
+      c.beginPath(); c.arc(cx, cy, rr, Math.PI * 1.05, Math.PI * (i % 2 ? 1.75 : 1.85)); c.stroke();
+      c.beginPath(); c.arc(cx + rr * 0.15, cy, rr * 0.45, Math.PI * 1.2, Math.PI * 1.9); c.stroke();
+    });
+    c.restore();
   }
   function rain(c, X, Y, w, toY, a, now, dens) {    // косые штрихи, падают вечно; детерминированно по времени
     c.strokeStyle = ink(a); c.lineWidth = 0.8; c.beginPath();
@@ -338,7 +348,7 @@
       const [dx, dy, k] = EXTRA[i], bob = Math.sin(now * 0.0006 + i * 1.7) * 2;
       cloud(c, cx + dx * G.W, cy + dy * 40 + bob, s * k, 0.55 + 0.1 * (i % 2));
     }
-    rain(c, cx, cy + 2, G.W * 0.3, G.tree.y + 20, 0.42, now, 0.4 + 1.6 * fx.time);
+    rain(c, cx, cy + 0.2 * 64 * s, G.W * 0.3, G.tree.y + 20, 0.42, now, 0.4 + 1.6 * fx.time);
     cloud(c, cx, cy, s, 0.95);
   }
   // птицы — хор: больше chorus — больше птиц; машут крыльями, медленно кружат над горами
