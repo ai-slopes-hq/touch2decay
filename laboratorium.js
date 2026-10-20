@@ -425,7 +425,8 @@
   }
 
   // солнце — четверть из правого верхнего угла (угол к центру карты); белым по чёрному
-  function drawSun(c, G, now) { T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, -1, now); }
+  let noSun = false;                                // снимок для карты — без солнца: на карте солнце одно, в центре
+  function drawSun(c, G, now) { if (!noSun) T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, -1, now); }
 
   // ---------- стена: бледные алхимические рисунки, одна картинка на размер экрана ----------
   // квадратура круга (круг — треугольник — круг — квадрат — круг, как в Atalanta Fugiens), девиз, уроборос, знаки веществ
@@ -873,6 +874,7 @@
       drawTouches(c, G, now);
     },
     down, move, up, dice,
+    mapShot(on) { noSun = on; },
     clear() {
       mods = []; for (const o of OPS) o.fb = 0;
       for (const [k, gr] of [...voices]) if (k !== 'fire') { kill(gr, 0.2); voices.delete(k); }

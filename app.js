@@ -3005,6 +3005,9 @@
     loadArt();
     const n = nav.world;
     if (nav.view === 'play') {
+      if (worlds[n].mapShot) {                      // у миров III и IV солнце в своём углу двоило бы центральное — снимок без него
+        worlds[n].mapShot(true); setTheme(worlds[n].theme); worlds[n].draw(performance.now(), 0); drawUI(); worlds[n].mapShot(false);
+      }
       const c = snaps[n] || (snaps[n] = document.createElement('canvas'));
       c.width = cv.width; c.height = cv.height;
       c.getContext('2d').drawImage(cv, 0, 0);
