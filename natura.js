@@ -27,13 +27,13 @@
     { note: 2, wave: 0 }, null, { note: 7, wave: 1 }, { note: 5, wave: 0 }, null, { note: 11, wave: 2 }, { note: 9, wave: 0 }, null,
     { note: 4, wave: 1 }, { note: 7, wave: 2 }, null, { note: 0, wave: 0 }, null, { note: 12, wave: 1 }, null, null] };
 
-  // ---------- геометрия: река от гор к зрителю и влево — к надгробию, шире к нам; «поперёк» — по нормали к течению ----------
+  // ---------- геометрия: река от гор к зрителю и вправо, надгробие слева — на ближнем берегу, шире к нам; «поперёк» — по нормали к течению ----------
   function geo() {
     const W = T.W, H = T.H, top = T.topY + 26, bot = H - T.safeBot - 40, h = bot - top;
     const hor = top + 0.3 * h, y1 = bot - 6;
     const sun = { x: 13, y: T.topY + 2, r: Math.min(70, W * 0.18) };   // неподвижно: четверть в левом верхнем углу (к центру карты)
     const tree = { x: W * 0.85, y: top + 0.47 * h };
-    const P0 = [W * 0.56, hor], P1 = [W * 0.86, hor + 0.66 * (top + 0.76 * h - hor)], P2 = [-W * 0.12, top + 0.76 * h];
+    const P0 = [W * 0.44, hor], P1 = [W * 0.12, hor + 0.66 * (top + 0.76 * h - hor)], P2 = [W * 1.12, top + 0.76 * h];
     return { W, H, top, bot, h, hor, y1, sun, tree, cloudY: top + 0.06 * h, P: [P0, P1, P2] };
   }
   // точка реки: центр, ширина, нормаль n (к «высокому» берегу) и направление течения
