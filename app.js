@@ -2923,7 +2923,7 @@
     { n: 'I', title: 'Sol Niger', sub: 'orbes · strepitus' },
     { n: 'II', title: 'Cymatica', sub: 'figurae sonorae' },   // подпись — из мира cymatica.js; Cabbala снята с карты
     { n: 'III', title: 'Rosarium', sub: 'operatores quattuor' },
-    { n: 'IV', title: 'Terra', sub: 'echo et reverberatio' },
+    { n: 'IV', title: 'Regnum', sub: 'echo et reverberatio' },
   ];
   const WORLDS_ON = true;
   const ENTER = new Set([1, 2]);                          // куда можно влететь; III и IV — пока бледные nondum
@@ -3084,7 +3084,7 @@
   // ---------- гравюры миров: у каждого своя палитра ----------
   // Cabbala (II) — ночное небо: индиго, сусальное золото, сфиры в традиционных цветах.
   // Rosarium (III) — раскрашенная алхимическая гравюра: пергамент, сепия, киноварь, охра, лазурь, ярь-медянка, золото.
-  // Terra — средневековая живопись (часослов, Джотто, Дуччо): ультрамарин, сусальное золото, малахит, охра, киноварь, свинцовые белила
+  // Regnum — средневековая живопись (часослов, Джотто, Дуччо): ультрамарин, сусальное золото, малахит, охра, киноварь, свинцовые белила
   const PALS = {
     2: { ink: '214,180,96', paper: ['#1f2658', '#060918'], red: '170,40,40', gold: '222,186,96', white: '236,232,220', disc: '#e2b84a', disc2: '#10153a' },
     3: { ink: '62,42,26', paper: ['#efe3c6', '#cdb68a'], red: '178,52,38', gold: '190,140,44', green: '74,122,96', blue: '44,72,128', disc: '#e8c25a' },
@@ -3106,8 +3106,8 @@
     const bg = x.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.2, W / 2, H / 2, Math.hypot(W, H) * 0.6);
     bg.addColorStop(0, PAL.paper[0]); bg.addColorStop(1, PAL.paper[1]);
     x.fillStyle = bg; x.fillRect(0, 0, W, H);
-    ({ 2: artCabbala, 3: artRosarium, 4: artTerra })[w](x);
-    // рамка: двойная линия; у Terra — золотая кайма, как в рукописи
+    ({ 2: artCabbala, 3: artRosarium, 4: artRegnum })[w](x);
+    // рамка: двойная линия; у Regnum — золотая кайма, как в рукописи
     if (w === 4) { x.strokeStyle = C('gold', 0.9); x.lineWidth = 3; x.strokeRect(6, 6, W - 12, H - 12); x.lineWidth = 1; x.strokeStyle = C('red', 0.7); x.strokeRect(11.5, 11.5, W - 23, H - 23); }
     else { x.strokeStyle = P(0.45); x.lineWidth = 1; x.strokeRect(4.5, 4.5, W - 9, H - 9); x.strokeStyle = P(0.2); x.strokeRect(9.5, 9.5, W - 19, H - 19); }
     const sc = sunCorner(w), q = { 2: [Math.PI, Math.PI * 1.5], 3: [Math.PI / 2, Math.PI], 4: [0, Math.PI / 2] }[w];
@@ -3240,9 +3240,9 @@
     itext(x, 'operatores quattuor', bx0 + 8, by + 60, 12, P(0.7), 'left');
   }
 
-  // IV — Terra: «Октябрь» из «Великолепного часослова герцога Беррийского» (братья Лимбург, ок. 1415):
+  // IV — Regnum: «Октябрь» из «Великолепного часослова герцога Беррийского» (братья Лимбург, ок. 1415):
   // ультрамарин, сусальное золото, Лувр над Сеной, пахарь и сеятель. Солнце в углу светит на всё небо
-  function artTerra(x) {
+  function artRegnum(x) {
     const pic = img('terra');
     if (pic) {                                            // во весь экран, по высоте (обрезаются края)
       const k = Math.max(W / pic.naturalWidth, H / pic.naturalHeight), pw = pic.naturalWidth * k, ph = pic.naturalHeight * k;
@@ -3253,7 +3253,7 @@
     const fade = x.createLinearGradient(0, H * 0.8, 0, H);
     fade.addColorStop(0, 'rgba(10,14,34,0)'); fade.addColorStop(0.45, 'rgba(10,14,34,0.75)'); fade.addColorStop(1, 'rgba(10,14,34,0.9)');
     x.fillStyle = fade; x.fillRect(0, H * 0.8, W, H * 0.2);
-    caps(x, 'TERRA', W / 2, H - 92, 20, C('gold', 1), 6);
+    caps(x, 'REGNUM', W / 2, H - 92, 20, C('gold', 1), 6);
     itext(x, 'tres undae · echo et reverberatio', W / 2, H - 66, 13, C('white', 0.85));
   }
 
