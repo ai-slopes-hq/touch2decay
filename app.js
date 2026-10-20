@@ -167,9 +167,12 @@
   // Касанием туда не попасть (планета встаёт снаружи) — только затащить. Глубина запоминается, пока тащишь: звук от зума не меняется
   const HOLE_R = 84;
   const holeAt = () => ({ x: 0, y: geo.top + EDGE_T + 44 });   // у левого края, под строкой заголовка
+  // краешек дыры — вдоль всего шумного края поля (там кончаются все орбиты), по касательной к ней: слабо съедает тон на любой высоте
+  const RIM_H = 0.35, RIM_W = 16;
   function holeDepth(x, y) {
-    const c = holeAt();
-    return clamp((HOLE_R - Math.hypot(x - c.x, y - c.y)) / (HOLE_R * 0.6));
+    const c = holeAt(), core = clamp((HOLE_R - Math.hypot(x - c.x, y - c.y)) / (HOLE_R * 0.6));
+    const edge = Math.min(x - EDGE, y - (geo.top + EDGE_T));   // до шумного края; за ним — меньше нуля
+    return Math.max(core, RIM_H * clamp((RIM_W - edge) / (2 * RIM_W)));
   }
   function outOfHole(x, y) {                  // точку внутри горизонта — наружу, в сторону поля
     const c = holeAt(), dx = Math.max(0, x - c.x), dy = Math.max(0, y - c.y), d = Math.hypot(dx, dy);
@@ -352,7 +355,7 @@
     clearLfos(v);
     sel.delete(v);
     const sp = outOfHole(f.x, f.y), q = unplace(sp.x, sp.y);
-    v.x = q.p; v.dx = v.x; v.y = q.c; v.hole = v.holeT = 0;
+    v.x = q.p; v.dx = v.x; v.y = q.c; v.hole = v.holeT = holeDepth(sp.x, sp.y);
     v.ox = sp.x - f.x; v.oy = sp.y - f.y;     // вытолкнули из дыры — палец ведёт планету с этим сдвигом
     v.beat = BEAT_DEF; v.wave = WAVE_DEF; v.fm = 0; v.cut = CUT_DEF; v.res = RES_DEF; v.shift = SHIFT_DEF; v.amp = 1;
     v.pinned = false; v.fingers = [];
@@ -679,17 +682,30 @@
     else if (!v.pinned && !kept(v)) release(v, TAIL);
   }
 
-  // ---------- кнопки — в верхней строке: слева заголовок, справа лад, FX, отмена, убрать всё ----------
+  // ---------- кнопки — в верхней строке: слева заголовок, справа громкость, лад, FX, кубик, отмена, убрать всё ----------
   const BTN_R = 20, ITEM_H = 46, CLR_R = 17;
   const SMALL = new Set(['clr', 'undo', 'dice']);
   const btnPos = (k) => {
     const y = scopeY + 20;
-    if (k === 'clr') return { x: W - 28, y };
-    if (k === 'undo') return { x: W - 70, y };
-    if (k === 'dice') return { x: W - 112, y };
-    if (k === 'rev') return { x: W - 160, y };
-    return { x: W - 210, y };
+    if (k === 'clr') return { x: W - 27, y };
+    if (k === 'undo') return { x: W - 66, y };
+    if (k === 'dice') return { x: W - 105, y };
+    if (k === 'rev') return { x: W - 150, y };
+    if (k === 'vol') return { x: W - 230, y };
+    return { x: W - 196, y };
   };
+  // громкость — общая на всё приложение, узкий фейдер перед ладом; зажал — вниз выдвигается длинная шкала,
+  // палец ведёт её без скачка. Снизу off, выше нуля — до +6 дБ (сильнее в мягкий лимитер). Запоминается на устройстве
+  const VOL_TRAVEL = 220, VOL_LO = -48, VOL_HI = 6, VOL_DEF = -VOL_LO / (VOL_HI - VOL_LO);
+  let vol = VOL_DEF, masterG = null;
+  try { const sv = parseFloat(localStorage.getItem('t2d-vol')); if (sv >= 0 && sv <= 1) vol = sv; } catch (_) { /* приватный режим */ }
+  const volDb = (t) => VOL_LO + (VOL_HI - VOL_LO) * t;
+  const volGain = (t) => (t < 0.005 ? 0 : 10 ** (volDb(t) / 20));
+  const volText = (t) => (t < 0.005 ? 'off' : `${volDb(t) > 0.5 ? '+' : ''}${Math.round(volDb(t))} dB`);
+  function setVol(t) {
+    vol = clamp(t);
+    if (masterG) masterG.gain.setTargetAtTime(0.8 * volGain(vol), ctx.currentTime, 0.03);
+  }
   // панель LFO внизу, под большой палец: полоса формы и пад — вправо скорость, вверх глубина
   const lfoPanel = () => {
     const x = 16, w = W - 32, bottom = H - safeBot - 16, top = bottom - 214;
@@ -793,6 +809,8 @@
       ghost = null;
       if (performance.now() < gh.until && Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 14) return { k: 'pin', ghost: gh.menu };
     }
+    const vb = btnPos('vol');
+    if (Math.abs(f.x - vb.x) < 15 && Math.abs(f.y - vb.y) < 26) return { k: 'vol' };
     for (const k of ['rev', 'scl', 'clr', 'undo', 'dice']) {
       const b = btnPos(k), r = SMALL.has(k) ? CLR_R + 4 : BTN_R + 6;
       if (Math.hypot(f.x - b.x, f.y - b.y) < r) return { k };
@@ -910,6 +928,7 @@
     if (f.ui === 'undo') { undo(); return; }
     if (f.ui === 'dice') { rollDice(); return; }
     if (f.ui === 'rev') { openFx(f); return; }
+    if (f.ui === 'vol') { f.vol0 = vol; return; }
     if (f.ui === 'pin') {
       if (f.hit.ghost) {                      // кольцо уже гасло — кружки снова звучат
         pinFrom(f.hit.ghost);
@@ -972,6 +991,7 @@
   }
 
   function uiMove(f) {
+    if (f.ui === 'vol') { setVol(f.vol0 - (f.y - f.y0) / VOL_TRAVEL); return; }
     if (f.ui === 'lfo') { lfoStrip(f); return; }
     if (f.ui === 'amp') { ampSet(f); return; }
     if (f.ui === 'ring') { ringTouch(f, false); return; }
@@ -1008,6 +1028,7 @@
   }
 
   function uiUp(f) {
+    if (f.ui === 'vol') { try { localStorage.setItem('t2d-vol', vol.toFixed(3)); } catch (_) { /* приватный режим */ } return; }
     if (f.menu && !f.menu.fx) leaveMenu(f.menu);
     if (f.ui === 'lfo') {
       if (!f.tg) return;
@@ -1463,7 +1484,8 @@
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -10; comp.knee.value = 10; comp.ratio.value = 2.5;
     comp.attack.value = 0.01; comp.release.value = 0.4;
-    const master = gainNode(0.8);
+    const master = gainNode(0.8 * volGain(vol));
+    masterG = master;
     // мягкий потолок на выходе: вдвое больше запаса по входу, чем по выходу
     const limitIn = gainNode(0.5);
     const limit = ctx.createWaveShaper(); limit.curve = soft(2.6, true); limit.oversample = '4x';
@@ -1814,13 +1836,16 @@
   // планета — осциллятор. Контур — его звук (атмосфера); внутри двойная звезда — пара генераторов,
   // которая вращается со скоростью биений detune. Закреплённая — с кольцом, как у Сатурна;
   // временная — комета: хвост от солнца, длиннее, пока гаснет. Спутники — LFO
-  // в чёрной дыре планета тускнеет (свет съеден) и вытягивается к центру
+  // чёрная дыра съедает свет: у края планета тускнеет и вытягивается к центру, глубже — падает в центр,
+  // сжимается и гаснет; остаётся едва видный след — за него можно вытащить. Звук — шум — идёт дальше
   function drawVoice(v, now, dt) {
     if (v.hole < 0.005) { drawPlanet(v, now, dt); return; }
     const x = vx(v), y = vy(v), c = holeAt(), a = Math.atan2(y - c.y, x - c.x), h = v.hole;
+    const e = clamp((h - 0.3) / 0.7) ** 1.5, s = 1 - 0.8 * e;      // e — насколько уже съедена
+    const px = x + (c.x - x) * e, py = y + (c.y - y) * e;
     g.save();
-    g.translate(x, y); g.rotate(a); g.scale(1 + 0.6 * h, 1 - 0.35 * h); g.rotate(-a); g.translate(-x, -y);
-    g.globalAlpha = 1 - 0.8 * h;
+    g.translate(px, py); g.rotate(a); g.scale((1 + 0.6 * h) * s, (1 - 0.35 * h) * s); g.rotate(-a); g.translate(-x, -y);
+    g.globalAlpha = Math.max(0.07, 1 - 0.8 * h - 0.2 * e);
     drawPlanet(v, now, dt);
     g.restore();
   }
@@ -2412,6 +2437,18 @@
     b.fillStyle = BG; b.fillRect(0, 0, bgC.width, bgC.height);
     if (scan) b.drawImage(scan, 0, 0);
     b.drawImage(L, 0, 0);
+    // краешек дыры: свет слабо тает вдоль шумного края поля, на границе — едва видный пунктир
+    b.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const ex = EDGE + RIM_W, ey = geo.top + EDGE_T + RIM_W, sy = geo.oy - SUN_R;
+    let gr = b.createLinearGradient(0, 0, ex, 0);
+    gr.addColorStop(0, 'rgba(0,0,0,0.7)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    b.fillStyle = gr; b.fillRect(0, ey, ex, sy - ey);
+    gr = b.createLinearGradient(0, geo.top, 0, ey);
+    gr.addColorStop(0, 'rgba(0,0,0,0.7)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    b.fillStyle = gr; b.fillRect(0, geo.top, W, ey - geo.top);
+    b.setLineDash([1, 5]); b.strokeStyle = ink(0.14); b.lineWidth = 1;
+    b.beginPath(); b.moveTo(EDGE, sy); b.lineTo(EDGE, geo.top + EDGE_T); b.lineTo(W, geo.top + EDGE_T); b.stroke();
+    b.setLineDash([]); b.setTransform(1, 0, 0, 1, 0, 0);
     return bgC;
   }
 
@@ -2496,17 +2533,45 @@
     }
   }
 
+  // громкость: узкая шкала-гравюра — двойная линия, засечка нуля, риска уровня; зажата — длинная шкала вниз с подписью
+  function drawVol(held, dim) {
+    const b = btnPos('vol'), h = 30, y0 = b.y - h / 2, ly = (t) => y0 + (1 - t) * h, z = ly(VOL_DEF);
+    g.fillStyle = 'rgba(0,0,0,0.88)'; g.fillRect(b.x - 9, y0 - 6, 18, h + 12);
+    const a = dim ? 0.15 : 1;
+    g.strokeStyle = ink(0.35 * a); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(b.x - 1.5, y0); g.lineTo(b.x - 1.5, y0 + h); g.moveTo(b.x + 1.5, y0); g.lineTo(b.x + 1.5, y0 + h); g.stroke();
+    g.beginPath(); g.moveTo(b.x - 5, z); g.lineTo(b.x - 2.5, z); g.moveTo(b.x + 2.5, z); g.lineTo(b.x + 5, z); g.stroke();
+    g.strokeStyle = ink((held ? 1 : 0.8) * a); g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(b.x - 6, ly(vol)); g.lineTo(b.x + 6, ly(vol)); g.stroke();
+    if (!held) return;
+    const top = b.y + 34, L = VOL_TRAVEL, sy = (t) => top + (1 - t) * L;
+    g.fillStyle = 'rgba(0,0,0,0.9)'; g.fillRect(b.x - 22, top - 14, 92, L + 28);
+    hairBox(b.x - 22, top - 14, 92, L + 28, 0.3);
+    g.strokeStyle = ink(0.4); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(b.x - 1.5, top); g.lineTo(b.x - 1.5, top + L); g.moveTo(b.x + 1.5, top); g.lineTo(b.x + 1.5, top + L); g.stroke();
+    g.beginPath();
+    for (let db = VOL_LO; db <= VOL_HI; db += 6) {   // засечки через 6 дБ, у нуля длиннее
+      const y = sy((db - VOL_LO) / (VOL_HI - VOL_LO)), l = db === 0 ? 9 : 5;
+      g.moveTo(b.x - 2.5 - l, y); g.lineTo(b.x - 2.5, y);
+    }
+    g.stroke();
+    g.strokeStyle = ink(1); g.lineWidth = 2;
+    g.beginPath(); g.moveTo(b.x - 9, sy(vol)); g.lineTo(b.x + 9, sy(vol)); g.stroke();
+    text(volText(vol), b.x + 14, sy(vol), 14, 0.95);
+  }
+
   function drawUI() {
-    let revF = null, sclF = null;
-    for (const f of F.values()) { if (f.ui === 'rev') revF = f; if (f.ui === 'scl') sclF = f; }
+    let revF = null, sclF = null, volF = null;
+    for (const f of F.values()) { if (f.ui === 'rev') revF = f; if (f.ui === 'scl') sclF = f; if (f.ui === 'vol') volF = f; }
 
     // FX: три кольца; дуга вокруг — сколько зала
     // верхняя строка: тёмная подложка-градиент, слева заголовок
     const tb = g.createLinearGradient(0, 0, 0, scopeY + 64);
     tb.addColorStop(0, 'rgba(0,0,0,0.85)'); tb.addColorStop(0.6, 'rgba(0,0,0,0.55)'); tb.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = tb; g.fillRect(0, 0, W, scopeY + 64);
-    mapText('touch2decay', 16, scopeY + 20, 21, sclF || revF ? 0.12 : 0.85);   // при открытом тулбоксе или веере FX заголовок уходит в тень
-    g.font = `italic 21px ${MAP}`; titleW = g.measureText('touch2decay').width;
+    mapText('touch2decay', 16, scopeY + 20, 19, sclF || revF ? 0.12 : 0.85);   // при открытом тулбоксе или веере FX заголовок уходит в тень
+    g.font = `italic 19px ${MAP}`; titleW = g.measureText('touch2decay').width;
+    drawVol(!!volF, !!(sclF || revF));
     // кнопки лежат поверх карты — у каждой тёмная подложка
     const pad = (p, rr) => { g.fillStyle = 'rgba(0,0,0,0.88)'; g.beginPath(); g.arc(p.x, p.y, rr, 0, Math.PI * 2); g.fill(); };
     pad(btnPos('rev'), BTN_R + 1); pad(btnPos('scl'), BTN_R + 1); pad(btnPos('undo'), CLR_R + 1); pad(btnPos('clr'), CLR_R + 1); pad(btnPos('dice'), CLR_R + 1);
@@ -2733,7 +2798,7 @@
 
     // волны от кружков — в ритме биений detune: что видно, то и слышно
     for (const v of V) {
-      if (!v.active || v.env < 0.02) continue;
+      if (!v.active || v.env < 0.02 || v.hole > 0.5) continue;   // из дыры свет не выходит
       v.emit += dt;
       if (v.emit >= clamp(1 / v.beat, 0.7, 4)) {      // быстрые биения — не чаще ~1.4 импульса в секунду
         v.emit = 0;
@@ -3170,7 +3235,7 @@
 
   window.t2d = {
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
-    get ctx() { return ctx; }, strikeSound, holeAt, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; },
+    get ctx() { return ctx; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; },
   };   // для отладки из консоли
 
   resize();

@@ -102,7 +102,19 @@ async def sc_hole(p):                              # касание в чёрн�
     print('hole drag:', await p.js("()=>t2d.voices.filter(v=>v.active).map(v=>+v.holeT.toFixed(2))"))
 
 
-SCENARIOS = {'planets': sc_planets, 'ring': sc_ring, 'map': sc_map, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_vol(p):                               # фейдер громкости: зажал — длинная шкала, повёл вниз — тише
+    await p.pin(200, 520)
+    b = await p.js("()=>t2d.btnPos('vol')")
+    v0 = await p.js('()=>t2d.vol')
+    pid = await p.hold(b['x'], b['y'], ms=60)
+    await p.drag(pid, b['x'], b['y'], b['x'], b['y'] + 60, steps=8)
+    await p.pg.wait_for_timeout(150); await p.shot('vol')
+    await p.up(); await p.pg.wait_for_timeout(150)
+    print('vol:', round(v0, 3), '→', round(await p.js('()=>t2d.vol'), 3))
+    await p.shot('vol-bar')
+
+
+SCENARIOS = {'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'map': sc_map, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
