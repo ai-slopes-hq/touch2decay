@@ -75,3 +75,19 @@ test('keyNotes never below 55 Hz', () => {          // тоника не A, пл
   assert.ok(k.every((n) => n >= 0), `keys ${k}`);
   assert.equal(k[0], 3);
 });
+
+test('snapToGrid', () => {
+  assert.equal(C.snapToGrid(3, 2, 16), 4);
+  assert.equal(C.snapToGrid(5, 4, 16), 4);
+  assert.equal(C.snapToGrid(15, 4, 16), 0);             // по кругу
+  assert.equal(C.snapToGrid(6, 4, 7), 0);               // длина не кратна сетке: ближайшая доля по кругу
+  assert.equal(C.snapToGrid(5, 1, 16), 5);
+});
+
+test('quantizeRhythm', () => {
+  const h = (n) => ({ x: n, y: 0, vel: 1 });
+  const s = Array(16).fill(null); s[1] = h(1); s[2] = h(2); s[7] = h(7); s[12] = h(12);
+  const q = Array.from(C.quantizeRhythm(s, 8, 4));
+  assert.deepEqual(q.map((x, i) => (x ? i : -1)).filter((i) => i >= 0), [0, 4, 12]);   // 1→0, 2→4, 7→8→0 занято; 12 — за длиной, не трогается
+  assert.equal(q[0].x, 1);                                // в занятое гнездо встаёт первый
+});

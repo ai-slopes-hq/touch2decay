@@ -262,9 +262,9 @@ async def sc_seq(p):                               # астролябия: пу�
     await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
     g = await p.js('()=>t2d.cym.astro'); cx, cy, R1, R2, ty = g['cx'], g['cy'], g['R1'], g['R2'], g['ty']
     slot = lambda i, R, d=0: (cx + R * math.cos(-math.pi / 2 + (i + d) * math.pi / 8), cy + R * math.sin(-math.pi / 2 + (i + d) * math.pi / 8))
-    await p.tap(cx - 30, ty); await p.pg.wait_for_timeout(500)              # ▶
+    await p.tap(g['playX'], ty); await p.pg.wait_for_timeout(500)              # ▶
     assert await p.js('()=>t2d.cym.seq.playing'), 'play'
-    await p.tap(cx + 30, ty); await p.pg.wait_for_timeout(200)              # ●
+    await p.tap(g['recX'], ty); await p.pg.wait_for_timeout(200)              # ●
     assert await p.js('()=>t2d.cym.seq.rec'), 'record'
     for dx, dy in [(-50, 0), (40, -30), (0, 50)]:
         await p.tap(cx + dx, cy + dy); await p.pg.wait_for_timeout(300)
@@ -274,7 +274,7 @@ async def sc_seq(p):                               # астролябия: пу�
         await p.tap(cx - 20, cy - 60); await p.pg.wait_for_timeout(320)
     m = await p.js('()=>t2d.cym.seq.rhythm.steps.filter(Boolean).length')
     assert m >= n + 2, f'same-spot taps recorded: {n} -> {m}'
-    await p.tap(cx + 30, ty); await p.pg.wait_for_timeout(100)              # запись выкл
+    await p.tap(g['recX'], ty); await p.pg.wait_for_timeout(100)              # запись выкл
     s8 = await p.js('()=>!!t2d.cym.seq.rhythm.steps[8]')
     await p.tap(*slot(8, R2)); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>!!t2d.cym.seq.rhythm.steps[8]') != s8, 'tap on a rhythm tick toggles it'
@@ -286,7 +286,7 @@ async def sc_seq(p):                               # астролябия: пу�
     await p.up(); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.cym.seq.rhythm.len') == 8, 'drag the length handle'
     b0 = await p.js('()=>t2d.cym.seq.bpm')
-    pid = await p.hold(cx - 30, ty, ms=120); await p.drag(pid, cx - 30, ty, cx + 30, ty, steps=8); await p.up()
+    pid = await p.hold(g['playX'], ty, ms=120); await p.drag(pid, g['playX'], ty, g['playX'] + 60, ty, steps=8); await p.up()
     assert await p.js('()=>t2d.cym.seq.bpm') > b0 and await p.js('()=>t2d.cym.seq.playing'), 'drag ▶ sets tempo, keeps playing'
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(600)
     assert await p.js('()=>t2d.cym.seq.rhythm.steps.some(Boolean) && t2d.cym.seq.playing'), 'dice makes a playing pattern'
@@ -354,10 +354,10 @@ async def sc_twist(p):                             # два пальца кру�
     assert await p.js('()=>t2d.cym.gesture') == 'twist'
     a = {'x': cx + 20, 'y': cy, 'id': 98}                                  # держишь смычок, вторым пальцем — ▶
     await p.T('touchStart', [a]); await p.pg.wait_for_timeout(300)
-    b = {'x': cx - 30, 'y': g['ty'], 'id': 99}
+    b = {'x': g['playX'], 'y': g['ty'], 'id': 99}
     await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60); await p.T('touchEnd', [b]); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.cym.seq.playing') and await p.js('()=>t2d.cym.live') == 1, '▶ by a second finger works, bow keeps going'
-    await p.T('touchEnd', [a]); await p.tap(cx - 30, g['ty']); await p.pg.wait_for_timeout(100)
+    await p.T('touchEnd', [a]); await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(100)
     r0 = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
     m = p.pg.mouse; s = pt(g['R2'], -90)
     await p.pg.keyboard.down('Shift'); await m.move(s['x'], s['y']); await m.down()
@@ -385,8 +385,8 @@ async def sc_keys(p):                              # клавиши лада: и
     assert await p.js('()=>t2d.cym.seq.melody.steps[3]') == keys[1]['n'] and await p.js('()=>t2d.cym.cursor') == 4, 'step entry'
     await p.tap(keys[8]['x'], keys[8]['y']); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.cym.seq.melody.steps[4]') is None and await p.js('()=>t2d.cym.cursor') == 5, 'rest key'
-    await p.tap(g['cx'] - 30, g['ty']); await p.pg.wait_for_timeout(500)    # ▶
-    await p.tap(g['cx'] + 30, g['ty']); await p.pg.wait_for_timeout(200)    # ●
+    await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(500)    # ▶
+    await p.tap(g['recX'], g['ty']); await p.pg.wait_for_timeout(200)    # ●
     n0 = await p.js('()=>t2d.cym.seq.rhythm.steps.filter(Boolean).length')
     await p.tap(keys[2]['x'], keys[2]['y']); await p.pg.wait_for_timeout(200)
     assert keys[2]['n'] in await p.js('()=>t2d.cym.seq.melody.steps'), 'recorded note'
@@ -402,7 +402,7 @@ async def sc_keys(p):                              # клавиши лада: и
     m1 = await p.js('()=>t2d.cym.seq.melody.steps')
     sh = [b2 - a2 for a2, b2 in zip(m0, m1) if a2 is not None]
     assert [x is None for x in m0] == [x is None for x in m1] and max(sh) - min(sh) < 1e-6, 'pinch writes no notes, only shifts the melody'
-    await p.tap(g['cx'] + 30, g['ty']); await p.tap(g['cx'] - 30, g['ty']); await p.pg.wait_for_timeout(200)   # стоп
+    await p.tap(g['recX'], g['ty']); await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(200)   # стоп
     await p.pin(g['cx'] + 35, g['cy'] - 20); await p.pg.wait_for_timeout(500)
     await p.shot('keys')
 
@@ -450,7 +450,38 @@ async def sc_relative(p):                          # щипок транспон
     assert m1[2] == m0[0] and m1[3] == m0[1], f'melody ring turned by 2: {m1}'
 
 
-SCENARIOS = {'relative': sc_relative, 'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_grid(p):                              # сетка записи 1/16 → 1/8 → 1/4; зажал — причесать ритм; фон-волны по высоте
+    await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
+    g = await p.js('()=>t2d.cym.astro'); gx, ty = g['gridX'], g['ty']
+    assert await p.js('()=>t2d.cym.grid') == 1
+    for want in (2, 4, 1):
+        await p.tap(gx, ty); await p.pg.wait_for_timeout(100)
+        assert await p.js('()=>t2d.cym.grid') == want, f'grid cycles to {want}'
+    await p.tap(gx, ty); await p.tap(gx, ty); await p.pg.wait_for_timeout(100)   # 1/4
+    await p.tap(g['playX'], ty); await p.pg.wait_for_timeout(500); await p.tap(g['recX'], ty)
+    for k in range(5):
+        await p.tap(g['cx'] - 40 + 20 * k, g['cy'] + 30); await p.pg.wait_for_timeout(170 + 37 * k)
+    st = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
+    assert any(st) and all(i % 4 == 0 for i, x in enumerate(st) if x), f'recorded on the 1/4 grid: {st}'
+    await p.tap(g['recX'], ty); await p.tap(g['playX'], ty); await p.pg.wait_for_timeout(100)
+    await p.js("()=>{const h=(n)=>({x:0.1*n,y:0,vel:1}); t2d.cym.load({rhythm:{len:16, steps:[null,h(1),h(2),null,null,null,null,h(7)]}})}")
+    await p.tap(g['cx'] + 60, g['cy']); await p.pg.wait_for_timeout(150)           # любой жест — чтобы узор попал в историю
+    pid = await p.hold(gx, ty, ms=700); await p.up(); await p.pg.wait_for_timeout(150)
+    st = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
+    assert [i for i, x in enumerate(st) if x] == [0, 4, 8], f'hold the grid button — rhythm combed to 1/4: {st}'
+    assert await p.js('()=>t2d.cym.grid') == 4, 'hold does not cycle the grid'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(150)
+    st = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
+    assert [i for i, x in enumerate(st) if x] == [1, 2, 7], f'undo brings the uncombed rhythm back: {st}'
+    w1 = await p.js('()=>t2d.cym.waveStep')
+    await p.pg.mouse.move(g['cx'], g['cy'])
+    for _ in range(10): await p.pg.mouse.wheel(0, 3000)
+    await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.cym.waveStep') < w1, 'smaller plate — denser waves'
+    await p.shot('waves')
+
+
+SCENARIOS = {'grid': sc_grid, 'relative': sc_relative, 'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
