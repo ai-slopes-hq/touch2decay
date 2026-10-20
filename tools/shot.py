@@ -677,6 +677,14 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     assert await p.js('()=>t2d.lab.fire && t2d.lab.live'), 'tap the furnace — fire, drone'
     lv = await p.js('()=>T2D.level'); assert lv > 0.02, f'drone is heard: {lv}'
     assert await p.js('()=>t2d.sounding()'), 'sounding while the fire burns'
+    a = await p.js('()=>t2d.lab.at(2)'); await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(1700)   # двойной тап по колбе — разбить
+    assert await p.js('()=>t2d.lab.broken[2]'), 'double tap a flask — it breaks'
+    await p.shot('lab-broken')
+    await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(200)
+    assert not await p.js('()=>t2d.lab.broken[2]'), 'double tap again — mended'
+    x0 = await p.js('()=>t2d.lab.catX'); await p.js("()=>t2d.lab.setFx('athanor', 1)"); await p.pg.wait_for_timeout(2500)
+    assert await p.js('()=>t2d.lab.catX') < x0 - 30, 'athanor at max — the cat moves away from the heat'
+    await p.shot('lab-cat'); await p.js("()=>t2d.lab.setFx('athanor', 0.35)")
     a = await p.js('()=>t2d.lab.at(0)'); f0 = await p.js('()=>t2d.lab.OPS[0].f')
     pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], a['x'] + 60, a['y'], steps=8)
     assert await p.js('()=>t2d.lab.focus') == 0, 'holding a flask — its waveform in the scroll'

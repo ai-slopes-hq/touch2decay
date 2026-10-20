@@ -1061,22 +1061,23 @@
     if (k != null && k >= 0) { const o = O[k]; T.mapText(WAVES[k], o.x, o.y - 30, 14, 0.9, 'center'); }
   }
   // ---------- лягушка: сидит на давно молчащей кувшинке; заиграла её — прыгает на самую молчаливую; тап — квакает нотой шага ----------
-  const frog = { i: -1, from: null, t0: 0, seen: 0, croak: 0 };
+  const frog = { i: -1, from: null, t0: 0, seen: 0, croak: 0, sat: 0 };   // sat — когда села: сидит не меньше 8 с
   function frogPos(G, now) {
     const live = []; for (let i = 0; i < pads.len; i++) if (pads.at[i]) live.push(i);
     if (!live.length) { frog.i = -1; return null; }
     const quiet = (ex) => live.filter((i) => i !== ex).sort((a, b) => playedAt[a] - playedAt[b])[0];
     if (frog.i < 0 || !pads.at[frog.i] || frog.i >= pads.len) { frog.i = quiet(-1); frog.from = null; }
-    if (playedAt[frog.i] > frog.seen && playedAt[frog.i] <= now && live.length > 1) {   // её кувшинка заиграла — прыжок
+    if (playedAt[frog.i] > frog.seen && playedAt[frog.i] <= now && live.length > 1 && now - frog.sat > 8000 && Math.random() < 0.35) {   // её кувшинка заиграла — изредка прыгает, неспешно
       const pd0 = pads.at[frog.i], p0 = padXY(G, frog.i, pd0.note);
-      frog.from = { x: p0.x, y: p0.y }; frog.t0 = now; frog.i = quiet(frog.i);
+      frog.from = { x: p0.x, y: p0.y }; frog.t0 = now; frog.sat = now + 700; frog.i = quiet(frog.i);
     }
     frog.seen = now;
     const pd = pads.at[frog.i], p = padXY(G, frog.i, pd.note), to = { x: p.x + 4 * p.s, y: p.y - 3 * p.s, s: 0.7 + 0.5 * p.s };
     if (!frog.from) return to;
-    const k = clamp((now - frog.t0) / 380);
+    const k = clamp((now - frog.t0) / 700);
     if (k >= 1) { frog.from = null; return to; }
-    return { x: frog.from.x + (to.x - frog.from.x) * k, y: frog.from.y + (to.y - frog.from.y) * k - Math.sin(Math.PI * k) * 26, s: to.s, air: true };
+    const e = k * k * (3 - 2 * k);
+    return { x: frog.from.x + (to.x - frog.from.x) * e, y: frog.from.y + (to.y - frog.from.y) * e - Math.sin(Math.PI * e) * 20, s: to.s, air: true };
   }
   function drawFrog(c, G, now) {
     const f = frogPos(G, now);
@@ -1140,21 +1141,24 @@
     c.restore();
   }
   // ---------- стрекозы над водой: больше chorus — больше стрекоз (до 3), зависают над только что сыгравшими кувшинками ----------
-  const flies = [0, 1, 2].map((k) => ({ x: 0, y: 0, k, ok: false }));
+  const flies = [0, 1, 2].map((k) => ({ x: 0, y: 0, k, ok: false, i: null, until: 0 }));
   let fliesLast = performance.now();
   function drawFlies(c, G, now) {
     const n = fx.chorus < 0.2 ? 0 : Math.ceil(((fx.chorus - 0.2) / 0.8) * 3), dt = Math.min(0.1, (now - fliesLast) / 1000); fliesLast = now;
     const order = []; for (let i = 0; i < pads.len; i++) if (pads.at[i]) order.push(i);
     order.sort((a, b) => playedAt[b] - playedAt[a]);
     for (let j = 0; j < n; j++) {
-      const F = flies[j], i = order[j % Math.max(1, order.length)];
+      const F = flies[j];
+      if (!F.until || now > F.until || !pads.at[F.i]) {   // цель меняет редко: висит над кувшинкой 6–12 с, потом — к недавно сыгравшей
+        F.i = order[j % Math.max(1, order.length)]; F.until = now + 6000 + Math.random() * 6000;
+      }
       let tx = G.W * (0.3 + 0.2 * j), ty = G.hor + G.h * (0.25 + 0.1 * j);
-      if (i != null) { const pd = pads.at[i], p = padXY(G, i, pd.note); tx = p.x + Math.sin(now * 0.0011 + j * 2) * 14; ty = p.y - 22 * p.s - 8 + Math.sin(now * 0.0017 + j) * 5; }
+      if (F.i != null && pads.at[F.i]) { const pd = pads.at[F.i], p = padXY(G, F.i, pd.note); tx = p.x + Math.sin(now * 0.0003 + j * 2) * 6; ty = p.y - 22 * p.s - 8 + Math.sin(now * 0.0005 + j) * 2; }
       if (!F.ok) { F.x = tx; F.y = ty; F.ok = true; }
-      const dart = (Math.sin(now * 0.0005 + j * 3) > 0.7 ? 6 : 2.2) * dt;   // зависает и рывком перелетает
-      F.x += (tx - F.x) * Math.min(1, dart); F.y += (ty - F.y) * Math.min(1, dart);
-      const fl = 0.55 + 0.45 * Math.sin(now * 0.08 + j);
-      c.save(); c.translate(F.x, F.y); c.rotate(Math.sin(now * 0.001 + j) * 0.3);
+      const k = Math.min(1, dt * 0.8);                // плавно, без рывков
+      F.x += (tx - F.x) * k; F.y += (ty - F.y) * k;
+      const fl = 0.7 + 0.3 * Math.sin(now * 0.03 + j);
+      c.save(); c.translate(F.x, F.y); c.rotate(Math.sin(now * 0.0003 + j) * 0.12);
       c.strokeStyle = ink(0.85); c.lineWidth = 1.1; c.beginPath(); c.moveTo(-7, 0); c.lineTo(6, 0); c.stroke();
       c.beginPath(); c.arc(7, 0, 1.4, 0, TAU); c.fillStyle = ink(0.85); c.fill();
       c.strokeStyle = ink(0.65 * fl); c.lineWidth = 0.8;
