@@ -184,7 +184,58 @@ async def sc_undo(p):                              # лад общий: пере
     assert await p.js('()=>t2d.scl.on') == on, 'undo in Sol Niger reverts its own scale change'
 
 
-SCENARIOS = {'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_plate(p):                             # Cymatica: удар, смычок, закреплённый смычок, кольцо, высота, FX, отмена
+    await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)        # без касаний: первое касание — по пластине
+    g = await p.js('()=>t2d.cym.geo'); cx, cy, r = g['cx'], g['cy'], g['r']
+    await p.tap(cx, cy); await p.pg.wait_for_timeout(700)                # звук строится — удар ждёт в очереди
+    assert await p.js('()=>t2d.cym.ready'), 'worklet ready'
+    assert await p.js('()=>Math.max(...t2d.cym.energy)') > 0, 'first strike is heard'
+    pid = await p.hold(cx + 30, cy, ms=600)                              # держишь — смычок
+    assert await p.js('()=>t2d.cym.live') == 1 and await p.js('()=>t2d.sounding()'), 'bow while held'
+    await p.up(); await p.pg.wait_for_timeout(200)
+    bx, by = cx - 40, cy + 20
+    await p.pin(bx, by)                                                  # двойной тап — закрепить
+    assert await p.js('()=>t2d.cym.bows.length') == 1, 'double tap pins a bow'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.cym.bows.length') == 0, 'undo removes the bow'
+    await p.pin(bx, by)
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.cym.bows.length') == 0, 'trash clears bows'
+    await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(400)
+    assert await p.js('()=>t2d.cym.bows.length') == 1, 'undo brings the bow back'
+    assert await p.js('()=>Math.max(...t2d.cym.energy)') > 0, 'restored bow sounds'
+    pid = await p.hold(bx, by, ms=600)                                   # долгое касание метки — кольцо
+    assert await p.js('()=>t2d.cym.ringOpen'), 'ring opens on the bow mark'
+    await p.up(); await p.pg.wait_for_timeout(200)
+    assert not await p.js('()=>t2d.cym.ringOpen') and await p.js('()=>t2d.cym.bows.length') == 1, 'ring closes, bow stays'
+    f0 = await p.js('()=>t2d.cym.f0')                                    # щипок: развёл — больше и ниже
+    a, b = {'x': cx - 20, 'y': cy - 60, 'id': 51}, {'x': cx + 20, 'y': cy - 60, 'id': 52}
+    await p.T('touchStart', [a]); await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(30)
+    for i in range(1, 9):
+        a2, b2 = dict(a, x=cx - 20 - 8 * i), dict(b, x=cx + 20 + 8 * i)
+        await p.T('touchMove', [a2, b2]); await p.pg.wait_for_timeout(16)
+    await p.T('touchEnd', [a2, b2]); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.cym.f0') < f0, 'pinch out lowers the plate'
+    z = await p.js('()=>t2d.zoom'); await p.pg.mouse.move(cx, cy)
+    for d in (3000, -3000):
+        for _ in range(20): await p.pg.mouse.wheel(0, d)
+        await p.pg.wait_for_timeout(100)
+        f = await p.js('()=>t2d.cym.f0'); assert 55 <= f <= 880, f'pitch clamped: {f}'
+    assert await p.js('()=>t2d.zoom') == z, 'wheel in Cymatica keeps Sol Niger zoom'
+    s0 = await p.js('()=>t2d.cym.fx.structure'); rv = await p.js("()=>t2d.btnPos('rev')")
+    pid = await p.hold(rv['x'], rv['y'], ms=120); await p.drag(pid, rv['x'], rv['y'], rv['x'] - 80, rv['y'], steps=10); await p.up()
+    assert await p.js('()=>t2d.cym.fx.structure') != s0, 'FX fan moves structure'
+    await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)       # убрать смычки
+    a, b = {'x': cx, 'y': cy, 'id': 61}, {'x': W - 10, 'y': H - 8, 'id': 62}
+    await p.T('touchStart', [a]); await p.pg.wait_for_timeout(300)       # смычок...
+    await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60)     # ...второй палец — резонатор: карта
+    await p.T('touchEnd', [b]); await p.pg.wait_for_timeout(400)
+    await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(2500)
+    assert await p.js('()=>t2d.view') == 'map'
+    assert not await p.js('()=>t2d.sounding()'), 'bow stops when its finger is lifted on the map'
+
+
+SCENARIOS = {'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

@@ -2801,7 +2801,7 @@
     if ((nav.view !== 'play' || nav.anim) && drawNav(now)) { measureStrain(now, performance.now() - t0); return; }
     cur().draw(now, dt);
     drawUI();
-    const fxF = [...F.values()].find((f) => f.menu && f.menu.fx);
+    const fxF = [...F.values()].find((f) => f.ui === 'rev' && f.menu);   // веер FX (у миров бывают свои кольца на весу)
     if (fxF) drawFx(fxF);                       // веер FX — поверх верхней строки
     drawStrain();
     measureStrain(now, performance.now() - t0);
@@ -3334,6 +3334,7 @@
 
   window.t2d = {
     worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return strikes; },
+    go(w) { nav.world = w; nav.view = 'play'; nav.anim = null; if (worlds[w].enter) worlds[w].enter(); },   // сразу в мир, без касаний (тесты)
     get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
     hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
