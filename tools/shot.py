@@ -671,7 +671,42 @@ async def sc_sketches(p):                         # эскизы миров III 
     await p.shot('map-sketches')
 
 
-SCENARIOS = {'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_lab(p):                              # Laboratorium: огонь — дрон, колба вбок — высота, вверх — уровень, трубки, пеликан, корзина, отмена, кубик
+    await p.js('()=>t2d.go(3)'); await p.pg.wait_for_timeout(300)
+    fb = await p.js('()=>t2d.lab.furnace()'); await p.tap(fb['x'], fb['y']); await p.pg.wait_for_timeout(1800)
+    assert await p.js('()=>t2d.lab.fire && t2d.lab.live'), 'tap the furnace — fire, drone'
+    lv = await p.js('()=>T2D.level'); assert lv > 0.02, f'drone is heard: {lv}'
+    assert await p.js('()=>t2d.sounding()'), 'sounding while the fire burns'
+    a = await p.js('()=>t2d.lab.at(0)'); f0 = await p.js('()=>t2d.lab.OPS[0].f')
+    pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], a['x'] + 60, a['y'], steps=8)
+    await p.shot('lab-pitch'); await p.up(); await p.pg.wait_for_timeout(100)
+    f1 = await p.js('()=>t2d.lab.OPS[0].f')
+    assert abs(12 * math.log2(f1 / f0) - 10) < 0.6, f'drag right 60 px — ten semitones up: {f0} -> {f1}'
+    l0 = await p.js('()=>t2d.lab.OPS[0].level'); a = await p.js('()=>t2d.lab.at(0)')
+    pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], a['x'], a['y'] - 40, steps=8); await p.up()
+    assert await p.js('()=>t2d.lab.OPS[0].level') > l0 + 0.2, 'drag up — more liquid'
+    n = await p.js('()=>t2d.lab.at(1)'); t = await p.js('()=>t2d.lab.at(0)')
+    pid = await p.hold(n['x'], n['neckY'], ms=60); await p.drag(pid, n['x'], n['neckY'], t['x'], t['y'], steps=12)
+    await p.shot('lab-tube'); await p.up(); await p.pg.wait_for_timeout(300)
+    assert [1, 0] in await p.js('()=>t2d.lab.mods'), 'neck of aer to ignis — aer modulates ignis'
+    await p.pg.wait_for_timeout(400)
+    q = await p.js('()=>t2d.lab.tubeAt(1, 0)'); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(200)
+    assert [1, 0] not in await p.js('()=>t2d.lab.mods'), 'tap on the tube removes it'
+    n = await p.js('()=>t2d.lab.at(1)')
+    pid = await p.hold(n['x'], n['neckY'], ms=60); await p.drag(pid, n['x'], n['neckY'], n['x'] + 70, n['neckY'] - 40, steps=6)
+    await p.drag(pid, n['x'] + 70, n['neckY'] - 40, n['x'], n['y'], steps=6); await p.up(); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.lab.OPS[1].fb') > 0, 'neck back into itself — pelican'
+    m0 = await p.js('()=>t2d.lab.mods')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.lab.mods') == [] and not await p.js('()=>t2d.lab.fire'), 'trash — tubes gone, fire out'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.lab.mods') == m0 and await p.js('()=>t2d.lab.fire'), 'undo brings tubes and fire back'
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
+    assert await p.js('()=>t2d.lab.fire && t2d.lab.live'), 'dice lights the fire'
+    await p.shot('lab')
+
+
+SCENARIOS = {'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

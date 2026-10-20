@@ -1,33 +1,38 @@
-// Laboratorium — мир III: FM на четырёх операторах-стихиях. Эскиз картинки, без звука.
-// Оператор — колба своего цвета: ignis, aer, aqua, terra. Форма колбы — ratio, уровень жидкости — индекс (у несущей — громкость),
-// поверхность жидкости — синус с ratio волнами. Алгоритм — как колбы стоят: модулятор выше и льёт по трубке в того, кого модулирует,
-// несущие — нижний ряд, сливают в общий приёмник на атаноре. Цвета смешиваются по трубкам. Обратная связь — «пеликан»,
-// трубка из колбы в саму себя. Играть — семь банок металлов-планет (♄ ♃ ♂ ☉ ♀ ☿ ☽) — семь ступеней лада.
-// Солнце — четверть в правом верхнем углу (угол к центру карты), тап — карта; на стене — бледные алхимические рисунки; в правом нижнем углу — четверть древа жизни (крона; корни — у змей, в мире под нами). Спека: docs/superpowers/specs/2026-10-20-laboratorium-design.md
+// Laboratorium — мир III: четыре колбы — четыре свободных генератора, как у Lyra-8; модулируют друг друга по трубкам (FM).
+// Колба — синус своей высоты: тянешь вбок — высота (с ладом — по ступеням), вверх-вниз — уровень жидкости: у модулятора индекс,
+// у несущей — громкость. Поверхность колышется тем чаще, чем выше колба звучит. Трубка от горлышка к другой колбе — первая
+// модулирует вторую; от горлышка в саму себя — «пеликан», обратная связь; тап по трубке — снять. Колбы сами встают по ярусам:
+// кто никуда не льёт — несущая, внизу, сливает в яйцо на атаноре. Цвета смешиваются по трубкам. Тап по печи — огонь:
+// горит — дрон звучит, погас — тишина. FX: athanor — жар (сатуратор), vitrum — стеклянный ревер, circulatio — медленное бурление индексов.
+// Солнце — четверть в правом верхнем углу (к центру карты), тап — карта; в правом нижнем — четверть древа жизни (корни — у змей).
+// Спека: docs/superpowers/specs/2026-10-20-laboratorium-design.md
 (() => {
   'use strict';
   const T = window.T2D;
   const TAU = Math.PI * 2;
   const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
   const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  const F_LO = 27.5, F_HI = 1760;
 
-  // ---------- состояние (демо) ----------
+  // ---------- состояние ----------
   const OPS = [
-    { key: 'ignis', col: [206, 62, 42], up: true, bar: false, ratio: 1, level: 0.7, fb: 0 },
-    { key: 'aer', col: [228, 192, 72], up: true, bar: true, ratio: 2, level: 0.5, fb: 0 },
-    { key: 'aqua', col: [58, 112, 206], up: false, bar: false, ratio: 0.5, level: 0.62, fb: 0 },
-    { key: 'terra', col: [74, 156, 92], up: false, bar: true, ratio: 3, level: 0.4, fb: 0.6 },
+    { key: 'ignis', col: [206, 62, 42], up: true, bar: false, shape: 'round', f: 110, level: 0.7, fb: 0 },
+    { key: 'aer', col: [228, 192, 72], up: true, bar: true, shape: 'pear', f: 165, level: 0.5, fb: 0 },
+    { key: 'aqua', col: [58, 112, 206], up: false, bar: false, shape: 'flat', f: 55, level: 0.45, fb: 0 },
+    { key: 'terra', col: [74, 156, 92], up: false, bar: true, shape: 'gourd', f: 331, level: 0.35, fb: 0.4 },
   ];
-  const mods = [[3, 2], [2, 0]];            // terra → aqua → ignis; aer — несущая сама по себе
-  const fx = { athanor: 0.55, vitrum: 0.35, circulatio: 0.3 };
+  let mods = [[3, 2], [2, 0]];               // terra → aqua → ignis; aer — несущая сама по себе
+  const fx = { athanor: 0.35, vitrum: 0.35, circulatio: 0.25 };
+  let fire = false, heat = 0;                // огонь: горит ли и как разгорелся (картинка)
 
   const carriers = () => OPS.map((_, i) => i).filter((i) => !mods.some((m) => m[0] === i));
   function levelOf(i, seen = new Set()) {
     if (seen.has(i)) return 0;
     seen.add(i);
     const outs = mods.filter((m) => m[0] === i).map((m) => m[1]);
-    return outs.length ? 1 + Math.max(...outs.map((j) => levelOf(j, seen))) : 0;
+    return outs.length ? 1 + Math.max(...outs.map((j) => levelOf(j, new Set(seen)))) : 0;
   }
+  const reaches = (a, b, seen = new Set()) => a === b || (!seen.has(a) && (seen.add(a), mods.some(([s, d]) => s === a && reaches(d, b, seen))));
   // цвет жидкости: свой + всё, что в колбу натекло (вес — уровень модулятора)
   function mixed(i, depth = 0) {
     let w = 1, c = OPS[i].col.slice();
@@ -38,28 +43,35 @@
     }
     return c.map((v) => Math.round(v / w));
   }
+  const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const noteName = (f) => { const m = Math.round(33 + 12 * Math.log2(f / 55)); return `${NAMES[((m % 12) + 12) % 12]}${Math.floor(m / 12) - 1}`; };
 
-  // ---------- геометрия: ярусы по алгоритму ----------
+  // ---------- геометрия: ярусы по алгоритму; на экране колбы плавно доезжают ----------
   function geo() {
-    const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, h = bot - top;
-    const shelf = bot - 18, egg = { x: W / 2, y: shelf - 0.25 * h }, furn = { y0: egg.y + 22, y1: shelf - 62 };
+    const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 6, h = bot - top;
+    const floor = bot - 2, egg = { x: W / 2, y: floor - 0.2 * h }, furn = { y0: egg.y + 22, y1: floor };
     const dy = 0.18 * h, r = Math.min(34, W * 0.085, dy / 4.3), L0 = egg.y - 0.17 * h;
     const pos = [], car = carriers();
-    car.forEach((i, k) => { pos[i] = { x: W * (car.length === 1 ? 0.5 : 0.28 + (0.46 * k) / (car.length - 1)), y: L0 }; });
+    car.forEach((i, k) => { pos[i] = { x: W * (car.length === 1 ? 0.5 : 0.24 + (0.52 * k) / (car.length - 1)), y: L0 }; });
     const lv = OPS.map((_, i) => levelOf(i));
     for (let l = 1; l <= 3; l++) {
       const at = OPS.map((_, i) => i).filter((i) => lv[i] === l);
       at.forEach((i, k) => {
         const outs = mods.filter((m) => m[0] === i).map((m) => pos[m[1]]).filter(Boolean);
         const x = outs.length ? outs.reduce((s, p) => s + p.x, 0) / outs.length : W / 2;
-        pos[i] = { x: x + (k - (at.length - 1) / 2) * W * 0.3, y: L0 - l * dy };
+        pos[i] = { x: clamp(x + (k - (at.length - 1) / 2) * W * 0.3, W * 0.16, W * 0.84), y: L0 - l * dy };
       });
     }
-    return { W, H, top, bot, h, shelf, egg, furn, r, pos, sun: { x: W, y: T.topY + 2, r: Math.min(64, W * 0.16) } };   // солнце — в правом верхнем углу, к центру карты
+    return { W, H, top, bot, h, floor, egg, furn, r, pos, sun: { x: W, y: T.topY + 2, r: Math.min(64, W * 0.16) } };   // солнце — в правом верхнем углу, к центру карты
   }
+  const shown = [];                          // где колбы нарисованы сейчас (едут к своим ярусам)
+  function ease(G, dt) {
+    const k = 1 - Math.exp(-dt / 0.12);
+    G.pos.forEach((p, i) => { if (!shown[i]) shown[i] = { ...p }; shown[i].x += (p.x - shown[i].x) * k; shown[i].y += (p.y - shown[i].y) * k; });
+  }
+  const P = (i) => shown[i] || geo().pos[i];
 
-  // ---------- колбы: форма — ratio ----------
-  const shapeOf = (ratio) => (ratio < 1 ? 'flat' : ratio < 2 ? 'round' : ratio < 3 ? 'pear' : ratio < 4 ? 'gourd' : 'tube');
+  // ---------- колбы: форма — у каждой стихии своя ----------
   // контур колбы без устья; neck — верх горлышка
   function flaskPath(c, kind, x, y, r) {
     const nw = r * 0.26, neckTop = y - r * 1.95;
@@ -79,48 +91,45 @@
     return { neckTop, nw };
   }
   const bodyBox = (kind, x, y, r) => ({ flat: [y + r * 0.25 - r * 0.68, y + r * 0.93, r * 1.3], round: [y - r, y + r, r], pear: [y - r * 1.3, y + r * 1.1, r * 0.78], gourd: [y - r * 1.35, y + r * 0.98, r * 0.95], tube: [y - r * 1.4, y + r * 0.6 + r * 0.34, r * 0.34] })[kind];
+  function flaskGeo(G, i) {
+    const p = P(i), [yTop, yBot, hw] = bodyBox(OPS[i].shape, p.x, p.y, G.r);
+    return { p, yTop, yBot, hw, neckTop: p.y - G.r * 1.95, nw: G.r * 0.26 };
+  }
 
-  function drawFlask(c, i, G, now) {
-    const o = OPS[i], p = G.pos[i];
-    if (!p) return;
-    const kind = shapeOf(o.ratio), r = G.r, col = mixed(i);
-    const [yTop, yBot, hw] = bodyBox(kind, p.x, p.y, r);
-    // жидкость: уровень — индекс; поверхность — синус с ratio волнами, колышется
+  const tubes = [];                          // для попадания пальцем: [{ s, d, pts }] и пеликаны [{ i, pts }]
+  function drawFlask(c, i, G, now, held) {
+    const o = OPS[i], { p, yTop, yBot, hw } = flaskGeo(G, i), r = G.r, col = mixed(i);
+    const waves = 1 + Math.log2(o.f / F_LO), wob = 0.8 + heat * 1.6;
     c.save();
-    c.beginPath(); flaskPath(c, kind, p.x, p.y, r); c.closePath(); c.clip();
-    const sy = yBot - o.level * (yBot - yTop), ph = now * 0.002 * (1 + o.ratio * 0.3);
+    c.beginPath(); flaskPath(c, o.shape, p.x, p.y, r); c.closePath(); c.clip();
+    const sy = yBot - o.level * (yBot - yTop), ph = now * 0.0015 * waves * (0.3 + heat);
     c.beginPath(); c.moveTo(p.x - hw - 2, yBot + 4);
-    for (let X = -hw - 2; X <= hw + 2; X += 2) c.lineTo(p.x + X, sy + Math.sin((X / (2 * hw)) * TAU * o.ratio + ph) * 1.6);
+    for (let X = -hw - 2; X <= hw + 2; X += 2) c.lineTo(p.x + X, sy + Math.sin((X / (2 * hw)) * TAU * waves + ph) * wob);
     c.lineTo(p.x + hw + 2, yBot + 4); c.closePath();
     c.fillStyle = rgba(col, 0.78); c.fill();
     c.strokeStyle = rgba(col.map((v) => Math.min(255, v + 60)), 0.9); c.lineWidth = 1; c.stroke();
-    // пузыри — огонь атанора
-    const nb = Math.round(fx.athanor * 5);
+    const nb = Math.round(heat * (1 + fx.athanor * 4));   // пузыри — пока горит огонь
     for (let k = 0; k < nb; k++) {
       const t = (now / (1400 + k * 230) + k * 0.37) % 1, bx = p.x + Math.sin(k * 2.3 + t * 5) * hw * 0.5, by = yBot - 4 - t * (yBot - sy - 4);
       T.ring(bx, by, 1.2 + k * 0.3, 0.5 * (1 - t), 0.8);
     }
     c.restore();
-    // стекло: белый контур, устье, блик
-    c.strokeStyle = T.ink(0.9); c.lineWidth = 1.2;
-    c.beginPath(); const nk = flaskPath(c, kind, p.x, p.y, r); c.stroke();
+    c.strokeStyle = T.ink(held ? 1 : 0.9); c.lineWidth = held ? 1.8 : 1.2;   // стекло: контур, устье, блик
+    c.beginPath(); const nk = flaskPath(c, o.shape, p.x, p.y, r); c.stroke();
     c.beginPath(); c.ellipse(p.x, nk.neckTop, nk.nw + 2.5, 2, 0, 0, TAU); c.stroke();
     c.strokeStyle = T.ink(0.35); c.lineWidth = 1;
     c.beginPath(); c.arc(p.x - hw * 0.15, (yTop + yBot) / 2, hw * 0.62, Math.PI * 1.08, Math.PI * 1.4); c.stroke();
-    // пеликан — обратная связь: трубка из горлышка обратно в тело, тем толще, чем сильнее
-    if (o.fb > 0.02) {
-      const sd = p.x <= G.W / 2 ? -1 : 1;           // пеликан — наружу, трубки к соседям — к середине
+    if (o.fb > 0.02) {                           // пеликан — наружу, толще — сильнее
+      const sd = p.x <= G.W / 2 ? -1 : 1;
       const sx = p.x + sd * nk.nw, s0 = nk.neckTop + r * 0.35, ex = p.x + sd * hw * 0.92, ey = (yTop + yBot) / 2 + r * 0.15;
-      const path = () => { c.beginPath(); c.moveTo(sx, s0); c.bezierCurveTo(sx + sd * r * 1.5, s0 - r * 0.9, ex + sd * r * 1.4, ey - r * 0.3, ex, ey); };
-      tube(c, path, 2 + 3 * o.fb, rgba(col, 0.85), now, o.fb);
+      const cp = [[sx, s0], [sx + sd * r * 1.5, s0 - r * 0.9], [ex + sd * r * 1.4, ey - r * 0.3], [ex, ey]];
+      tube(c, () => { c.beginPath(); c.moveTo(...cp[0]); c.bezierCurveTo(...cp[1], ...cp[2], ...cp[3]); }, 2 + 3 * o.fb, rgba(col, 0.85), now, o.fb * heat);
+      tubes.push({ i, pts: sample([cp]) });
     }
-    // стихия и ratio — под колбой
-    const out = p.x <= G.W / 2 ? -1 : 1, lx = p.x + out * (hw + 16), ly = Math.max(yTop + 8, p.y + r * 0.2);   // подпись — снаружи, у тела колбы
+    const out = p.x <= G.W / 2 ? -1 : 1, lx = p.x + out * (hw + 16), ly = Math.max(yTop + 8, p.y + r * 0.2);   // стихия — снаружи, у тела колбы
     elementGlyph(c, lx, ly, o.up, o.bar, 6, 0.75);
-    T.mapText(ratioText(o.ratio), lx, ly + 17, 14, 0.75, 'center');
-    T.mapText(o.key, lx, ly + 32, 11, 0.4, 'center');
+    T.mapText(o.key, lx, ly + 18, 11, 0.4, 'center');
   }
-  const ratioText = (r) => (r === 0.5 ? '½' : ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][Math.round(r)] || String(r));
   function elementGlyph(c, x, y, up, bar, s, a) {
     const u = up ? -1 : 1;
     c.strokeStyle = T.ink(a); c.lineWidth = 1;
@@ -136,19 +145,25 @@
     c.setLineDash([2, 7]); c.lineDashOffset = -now * (0.01 + 0.03 * rate); c.stroke(); c.setLineDash([]); c.lineDashOffset = 0;
     c.lineCap = 'butt';
   }
-
+  const bez = (a, b, c2, d, t) => { const u = 1 - t; return [u * u * u * a[0] + 3 * u * u * t * b[0] + 3 * u * t * t * c2[0] + t * t * t * d[0], u * u * u * a[1] + 3 * u * u * t * b[1] + 3 * u * t * t * c2[1] + t * t * t * d[1]]; };
+  const sample = (segs) => segs.flatMap((s) => Array.from({ length: 13 }, (_, k) => bez(...s, k / 12)));
+  function modSegs(G, s, d) {                       // трубка от горлышка s к горлышку d: выгиб к середине, мимо своих колб
+    const a = flaskGeo(G, s), b = flaskGeo(G, d), ax = a.p.x, ay = a.neckTop, bx = b.p.x, by = b.neckTop;
+    const side = ax <= G.W / 2 ? 1 : -1, o = G.r * 1.7;
+    return [[[ax, ay - 2], [ax + side * o * 0.4, ay - 40], [ax + side * o, ay - 10], [ax + side * o, (ay + by) / 2]],
+      [[ax + side * o, (ay + by) / 2], [ax + side * o, by - 24], [bx, by - 22], [bx, by - 4]]];
+  }
   function drawTubes(c, G, now) {
-    const neck = (i) => { const p = G.pos[i]; return { x: p.x, y: p.y - G.r * 1.95 }; };
-    for (const [s, d] of mods) {                  // модулятор льёт в горлышко того, кого модулирует
-      const a = neck(s), b = neck(d), side = a.x <= G.W / 2 ? 1 : -1, o = G.r * 1.7;   // выгиб — к середине, мимо своих колб
-      const path = () => { c.beginPath(); c.moveTo(a.x, a.y - 2); c.bezierCurveTo(a.x + side * o * 0.4, a.y - 40, a.x + side * o, a.y - 10, a.x + side * o, (a.y + b.y) / 2); c.bezierCurveTo(a.x + side * o, b.y - 24, b.x, b.y - 22, b.x, b.y - 4); };
-      tube(c, path, 3, rgba(mixed(s), 0.95), now, OPS[s].level);
+    for (const [s, d] of mods) {
+      const segs = modSegs(G, s, d);
+      tube(c, () => { c.beginPath(); c.moveTo(...segs[0][0]); for (const sg of segs) c.bezierCurveTo(...sg[1], ...sg[2], ...sg[3]); }, 3, rgba(mixed(s), 0.95), now, OPS[s].level * heat);
+      tubes.push({ s, d, pts: sample(segs) });
     }
     for (const i of carriers()) {                 // несущие сливают снизу в приёмник
-      const p = G.pos[i], [, yBot] = bodyBox(shapeOf(OPS[i].ratio), p.x, p.y, G.r), e = G.egg;
+      const { p, yBot } = flaskGeo(G, i), e = G.egg;
       const path = () => { c.beginPath(); c.moveTo(p.x, yBot + 40); c.bezierCurveTo(p.x, e.y - 60, e.x + (p.x - e.x) * 0.25, e.y - 70, e.x + (p.x - e.x) * 0.08, e.y - 46); };
-      tube(c, path, 3, rgba(mixed(i), 0.95), now, OPS[i].level);
-      c.strokeStyle = T.ink(0.8); c.lineWidth = 1.2;  // кран под колбой
+      tube(c, path, 3, rgba(mixed(i), 0.95), now, OPS[i].level * heat);
+      c.strokeStyle = T.ink(0.8); c.lineWidth = 1.2;
       c.beginPath(); c.moveTo(p.x, yBot); c.lineTo(p.x, yBot + 40); c.stroke();
       c.strokeRect(p.x - 4, yBot + 34, 8, 4);
     }
@@ -173,56 +188,37 @@
     c.beginPath(); c.ellipse(e.x, e.y - ry - 14, 8.5, 2, 0, 0, TAU); c.stroke();
     c.strokeStyle = T.ink(0.35); c.beginPath(); c.arc(e.x - 4, e.y - 2, rx * 0.65, Math.PI * 1.05, Math.PI * 1.4); c.stroke();
   }
-  // атанор — печь-башня из кирпича, в арке огонь (FX athanor — выше и гуще)
+  // атанор — печь-башня из кирпича; горит огонь — дрон звучит (тап по печи), выше пламя — сильнее жар (FX athanor)
+  const furnBox = (G) => ({ x0: G.W / 2 - 46, x1: G.W / 2 + 46, y0: G.furn.y0, y1: G.furn.y1 });
   function drawFurnace(c, G, now) {
-    const { W } = G, x0 = W / 2 - 46, x1 = W / 2 + 46, y0 = G.furn.y0, y1 = G.furn.y1;
+    const { x0, x1, y0, y1 } = furnBox(G);
     c.fillStyle = T.BG; c.fillRect(x0, y0, x1 - x0, y1 - y0);
     c.strokeStyle = T.ink(0.85); c.lineWidth = 1.2; c.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0);
-    c.beginPath(); c.moveTo(x0 - 6, y0); c.lineTo(x1 + 6, y0); c.moveTo(x0 - 6, y1); c.lineTo(x1 + 6, y1); c.stroke();
-    c.strokeStyle = T.ink(0.22); c.lineWidth = 0.8; c.beginPath();       // кладка
+    c.beginPath(); c.moveTo(x0 - 6, y0); c.lineTo(x1 + 6, y0); c.stroke();
+    c.strokeStyle = T.ink(0.22); c.lineWidth = 0.8; c.beginPath();
     for (let y = y0 + 9, row = 0; y < y1; y += 9, row++) { c.moveTo(x0, y); c.lineTo(x1, y); for (let x = x0 + (row % 2 ? 9 : 0); x < x1; x += 18) { c.moveTo(x, y - 9); c.lineTo(x, y); } }
     c.stroke();
-    const ax = W / 2, ay = y1, aw = 24, ah = Math.min(44, (y1 - y0) * 0.75);   // арка топки
+    const ax = G.W / 2, ay = y1, aw = 24, ah = Math.min(44, (y1 - y0) * 0.75);
     c.fillStyle = T.BG; c.beginPath(); c.moveTo(ax - aw, ay); c.lineTo(ax - aw, ay - ah + aw); c.arc(ax, ay - ah + aw, aw, Math.PI, 0); c.lineTo(ax + aw, ay); c.closePath(); c.fill();
     c.strokeStyle = T.ink(0.85); c.lineWidth = 1.2; c.stroke();
+    if (heat < 0.05) {                             // погас — тлеют угли
+      for (let k = 0; k < 5; k++) T.dot(ax - 14 + k * 7, ay - 3 - (k % 2) * 2, 1.3, 0.35 + 0.15 * Math.sin(now * 0.003 + k));
+      return;
+    }
     const n = 3 + Math.round(fx.athanor * 3);
-    for (let k = 0; k < n; k++) {                 // языки пламени
-      const fxp = ax - aw * 0.7 + (k / (n - 1)) * aw * 1.4, hh = (10 + 22 * fx.athanor) * (0.75 + 0.25 * Math.sin(now * 0.011 + k * 1.9)), w = 5;
+    for (let k = 0; k < n; k++) {
+      const fxp = ax - aw * 0.7 + (k / (n - 1)) * aw * 1.4, hh = heat * (10 + 22 * fx.athanor) * (0.75 + 0.25 * Math.sin(now * 0.011 + k * 1.9)), w = 5;
       c.strokeStyle = T.ink(0.85); c.lineWidth = 1;
       c.beginPath(); c.moveTo(fxp - w, ay - 2); c.quadraticCurveTo(fxp - w * 0.6, ay - hh * 0.6, fxp + Math.sin(now * 0.007 + k) * 2, ay - hh);
       c.quadraticCurveTo(fxp + w * 0.6, ay - hh * 0.6, fxp + w, ay - 2); c.stroke();
     }
   }
-
-  // ---------- семь банок металлов — клавиши (♄ ♃ ♂ ☉ ♀ ☿ ☽ — снизу вверх по ладу) ----------
-  const METALS = ['saturnus', 'iupiter', 'mars', 'sol', 'venus', 'mercurius', 'luna'];
-  function planet(c, k, x, y, s, a) {
-    c.strokeStyle = T.ink(a); c.lineWidth = 1.1; c.beginPath();
-    const O = (cx, cy, r) => { c.moveTo(cx + r, cy); c.arc(cx, cy, r, 0, TAU); };
-    if (k === 'sol') { O(x, y, s * 0.7); c.stroke(); T.dot(x, y, 1.2, a); return; }
-    if (k === 'luna') { c.arc(x, y, s * 0.8, Math.PI * 0.6, Math.PI * 1.4); c.arc(x - s * 0.55, y, s * 0.62, Math.PI * 1.3, Math.PI * 0.7, true); c.stroke(); return; }
-    if (k === 'venus') { O(x, y - s * 0.3, s * 0.5); c.moveTo(x, y + s * 0.2); c.lineTo(x, y + s); c.moveTo(x - s * 0.35, y + s * 0.6); c.lineTo(x + s * 0.35, y + s * 0.6); }
-    else if (k === 'mars') { O(x - s * 0.15, y + s * 0.2, s * 0.5); c.moveTo(x + s * 0.2, y - s * 0.15); c.lineTo(x + s * 0.75, y - s * 0.7); c.lineTo(x + s * 0.25, y - s * 0.7); c.moveTo(x + s * 0.75, y - s * 0.7); c.lineTo(x + s * 0.75, y - s * 0.2); }
-    else if (k === 'mercurius') { O(x, y - s * 0.1, s * 0.4); c.moveTo(x - s * 0.4, y - s); c.quadraticCurveTo(x, y - s * 0.35, x + s * 0.4, y - s); c.moveTo(x, y + s * 0.3); c.lineTo(x, y + s); c.moveTo(x - s * 0.3, y + s * 0.65); c.lineTo(x + s * 0.3, y + s * 0.65); }
-    else if (k === 'iupiter') { c.moveTo(x - s * 0.6, y - s * 0.6); c.quadraticCurveTo(x - s * 0.1, y - s * 0.9, x - s * 0.2, y - s * 0.2); c.lineTo(x - s * 0.7, y + s * 0.3); c.lineTo(x + s * 0.7, y + s * 0.3); c.moveTo(x + s * 0.35, y - s * 0.8); c.lineTo(x + s * 0.35, y + s); }
-    else if (k === 'saturnus') { c.moveTo(x - s * 0.3, y - s); c.lineTo(x - s * 0.3, y + s * 0.3); c.moveTo(x - s * 0.7, y - s * 0.6); c.lineTo(x + s * 0.1, y - s * 0.6); c.moveTo(x - s * 0.3, y - s * 0.05); c.quadraticCurveTo(x + s * 0.6, y - s * 0.5, x + s * 0.35, y + s * 0.4); c.quadraticCurveTo(x + s * 0.15, y + s, x + s * 0.6, y + s * 0.85); }
+  function drawFloor(c, G) {                        // пол лаборатории — каменные плиты
+    c.strokeStyle = T.ink(0.5); c.lineWidth = 1;
+    c.beginPath(); c.moveTo(10, G.floor + 0.5); c.lineTo(G.W - 10, G.floor + 0.5); c.stroke();
+    c.strokeStyle = T.ink(0.18); c.beginPath();
+    for (let x = 30; x < G.W - 20; x += 46) { c.moveTo(x, G.floor); c.lineTo(x - 8, G.floor + 8); }
     c.stroke();
-  }
-  function drawJars(c, G, now) {
-    const n = 7, y = G.shelf, x0 = 16, x1 = G.W - 78, w = Math.min(34, (x1 - x0) / n - 7);
-    c.strokeStyle = T.ink(0.8); c.lineWidth = 1.2;
-    c.beginPath(); c.moveTo(10, y + 0.5); c.lineTo(x1 + 4, y + 0.5); c.moveTo(10, y + 5.5); c.lineTo(x1 + 4, y + 5.5); c.stroke();
-    const playing = Math.floor(now / 625) % n;          // эскиз: «играет» по очереди
-    for (let i = 0; i < n; i++) {
-      const X = x0 + ((i + 0.5) / n) * (x1 - x0), h = 40, on = i === playing, a = on ? 1 : 0.6;
-      c.strokeStyle = T.ink(a); c.lineWidth = on ? 1.5 : 1.1;
-      c.beginPath();                                  // банка: плечики, горло, крышка
-      c.moveTo(X - w / 2, y); c.lineTo(X - w / 2, y - h + 10); c.quadraticCurveTo(X - w / 2, y - h + 4, X - w / 4, y - h + 3);
-      c.lineTo(X + w / 4, y - h + 3); c.quadraticCurveTo(X + w / 2, y - h + 4, X + w / 2, y - h + 10); c.lineTo(X + w / 2, y); c.stroke();
-      c.strokeRect(X - w / 4 - 1, y - h - 2, w / 2 + 2, 5);
-      c.beginPath(); c.arc(X, y - h - 4, 2, Math.PI, 0); c.stroke();
-      planet(c, METALS[i], X, y - h / 2 + 4, 7, a);
-    }
   }
 
   // солнце — четверть из правого верхнего угла (угол к центру карты); белым по чёрному
@@ -324,6 +320,161 @@
     c.restore();
   }
 
+  // ---------- звук: четыре синуса, модуляция по трубкам, пеликаны; сумма несущих → жар → огонь (гейт) → стекло ----------
+  let actx = null, bus = null, graph = null, offTimer = 0, curveK = -1;
+  function build(ctx, input) {
+    actx = ctx;
+    const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
+    const sum = g(1), shaper = ctx.createWaveShaper(), gate = g(0), out = g(1.3), hallSend = g(0), h = T.hall();
+    shaper.oversample = '2x';
+    sum.connect(shaper).connect(gate).connect(out);
+    gate.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
+    out.connect(input);
+    bus = { sum, shaper, gate, out, hallSend, hall: h };
+    graph = null; curveK = -1;
+    applyFx();
+    if (fire) { wire(); gateTo(true); }
+  }
+  function applyFx() {
+    if (!bus) return;
+    const t = actx.currentTime, k = 1 + fx.athanor * 6;
+    if (Math.abs(k - curveK) > 0.05) {             // жар — tanh, сильнее — грязнее
+      curveK = k;
+      const n = 1024, cv = new Float32Array(n), norm = Math.tanh(k);
+      for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; cv[i] = Math.tanh(k * x) / norm; }
+      bus.shaper.curve = cv;
+    }
+    bus.hallSend.gain.setTargetAtTime(fx.vitrum * fx.vitrum * 1.3, t, 0.05);
+    const tail = 0.4 + fx.vitrum * 2.4;              // стекло: короткий хвост, с vitrum длиннее
+    for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / tail), t, 0.05);
+    setParams();
+  }
+  // граф — заново при смене трубок (короткий перекрёсток, без щелчка); параметры — плавно
+  function wire() {
+    if (!actx || !bus) return;
+    const ctx = actx, t = ctx.currentTime, g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
+    const old = graph, xf = g(0);
+    xf.connect(bus.sum); xf.gain.setTargetAtTime(1, t, 0.03);
+    const oscs = OPS.map((o) => { const n = ctx.createOscillator(); n.frequency.value = o.f; return n; });
+    const lfo = ctx.createOscillator();
+    const edges = mods.map(([s, d]) => { const e = g(0), lg = g(0); oscs[s].connect(e).connect(oscs[d].frequency); lfo.connect(lg).connect(e.gain); return { s, d, e, lg }; });
+    const fbs = OPS.map((o, i) => {                 // пеликан: через задержку (петля в графе без неё молчит)
+      if (o.fb <= 0.02) return null;
+      const dl = ctx.createDelay(0.05), fg = g(0); dl.delayTime.value = 0.001;
+      oscs[i].connect(dl).connect(fg).connect(oscs[i].frequency); return fg;
+    });
+    const car = carriers(), outs = OPS.map((_, i) => { const og = g(0); if (car.includes(i)) oscs[i].connect(og).connect(xf); return og; });
+    for (const n of oscs) n.start();
+    lfo.start();
+    graph = { oscs, lfo, edges, fbs, outs, xf, car };
+    setParams(true);
+    if (old) { old.xf.gain.setTargetAtTime(0, t, 0.03); setTimeout(() => { for (const n of old.oscs) n.stop(); old.lfo.stop(); old.xf.disconnect(); }, 300); }
+  }
+  function setParams(now = false) {
+    if (!graph) return;
+    const t = actx.currentTime, tau = now ? 0.005 : 0.03, S = (p, v) => p.setTargetAtTime(v, t, tau);
+    OPS.forEach((o, i) => {
+      S(graph.oscs[i].frequency, o.f);
+      S(graph.outs[i].gain, graph.car.includes(i) ? o.level * 0.3 : 0);
+      if (graph.fbs[i]) S(graph.fbs[i].gain, o.fb * o.f * 1.2);
+    });
+    for (const e of graph.edges) {                   // индекс до 3: девиация = уровень × 3 × частота того, кого модулируем
+      const base = OPS[e.s].level * 3 * OPS[e.d].f;
+      S(e.e.gain, base); S(e.lg.gain, base * fx.circulatio * 0.6);
+    }
+    S(graph.lfo.frequency, 0.05 + fx.circulatio * 0.5);
+  }
+  function gateTo(on) {
+    if (!bus) return;
+    bus.gate.gain.setTargetAtTime(on ? 1 : 0, actx.currentTime, on ? 0.35 : 0.6);
+  }
+  function setFire(on) {
+    fire = on;
+    clearTimeout(offTimer);
+    if (on) { if (!graph) wire(); gateTo(true); return; }
+    gateTo(false);
+    offTimer = setTimeout(() => {                    // погас и затих — генераторы останавливаются, не греют телефон
+      if (fire || !graph) return;
+      for (const n of graph.oscs) n.stop();
+      graph.lfo.stop(); graph.xf.disconnect(); graph = null;
+    }, 4500);
+  }
+  const rewire = () => { if (graph) wire(); };
+
+  // ---------- касания ----------
+  const touches = new Map();
+  function hitFlask(G, x, y) {
+    for (let i = 0; i < OPS.length; i++) {
+      const q = flaskGeo(G, i);
+      if (Math.abs(x - q.p.x) < 20 && y > q.neckTop - 16 && y < q.yTop + 4) return { i, part: 'neck' };
+      if (Math.abs(x - q.p.x) < q.hw + 10 && y > q.yTop - 4 && y < q.yBot + 10) return { i, part: 'body' };
+    }
+    return null;
+  }
+  function hitTube(x, y) {
+    let best = null, bd = 12;
+    for (const t of tubes) for (const [px, py] of t.pts) { const d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = t; } }
+    return best;
+  }
+  function down(f) {
+    const G = geo(), h = hitFlask(G, f.x, f.y);
+    if (h && h.part === 'neck') { touches.set(f.id, { kind: 'tube', src: h.i }); return; }
+    if (h) { const o = OPS[h.i]; touches.set(f.id, { kind: 'flask', i: h.i, f0: o.f, l0: o.level, axis: null }); return; }
+    const tb = hitTube(f.x, f.y);
+    if (tb) { touches.set(f.id, { kind: 'tubeTap', t: tb }); return; }
+    const b = furnBox(G);
+    if (f.x > b.x0 - 6 && f.x < b.x1 + 6 && f.y > b.y0 && f.y < b.y1 + 10) { touches.set(f.id, { kind: 'fire' }); return; }
+    touches.set(f.id, { kind: 'none' });
+  }
+  function move(f) {
+    const t = touches.get(f.id);
+    if (!t) return;
+    t.x = f.x; t.y = f.y;
+    if (t.kind !== 'flask') return;
+    const dx = f.x - f.x0, dy = f.y - f.y0;
+    if (!t.axis && Math.hypot(dx, dy) > 8) t.axis = Math.abs(dx) > Math.abs(dy) ? 'pitch' : 'level';
+    const o = OPS[t.i];
+    if (t.axis === 'pitch') {                        // вбок: 6 px на полутон; с ладом — по ступеням
+      let s = 12 * Math.log2(t.f0 / 55) + dx / 6;
+      s = clamp(s, -12, 60);
+      if (T.scaleOn) s = T.snapSemi(Math.round(s));
+      o.f = 55 * 2 ** (s / 12);
+      t.label = performance.now() + 900;
+    } else if (t.axis === 'level') o.level = clamp(t.l0 - dy / 140);
+    setParams();
+  }
+  function up(f) {
+    const t = touches.get(f.id);
+    touches.delete(f.id);
+    if (!t) return;
+    const moved = Math.hypot(f.x - f.x0, f.y - f.y0) > 12;
+    if (t.kind === 'fire' && !moved) setFire(!fire);
+    else if (t.kind === 'tubeTap' && !moved) {
+      if (t.t.i != null) OPS[t.t.i].fb = 0;
+      else mods = mods.filter(([s, d]) => !(s === t.t.s && d === t.t.d));
+      rewire();
+    } else if (t.kind === 'tube' && moved) {
+      const h = hitFlask(geo(), f.x, f.y);
+      if (!h) return;
+      if (h.i === t.src) OPS[t.src].fb = OPS[t.src].fb > 0.02 ? 0 : 0.5;       // в себя — пеликан
+      else if (mods.some(([s, d]) => s === t.src && d === h.i)) mods = mods.filter(([s, d]) => !(s === t.src && d === h.i));
+      else if (!reaches(h.i, t.src)) mods = [...mods, [t.src, h.i]];          // петли между колбами нет — только пеликан
+      rewire();
+    }
+  }
+  function drawTouches(c, G, now) {
+    for (const t of touches.values()) {
+      const f = t.x == null ? null : { x: t.x, y: t.y };
+      if (t.kind === 'tube' && f) {                         // тянется трубка от горлышка к пальцу
+        const a = flaskGeo(G, t.src);
+        tube(c, () => { c.beginPath(); c.moveTo(a.p.x, a.neckTop - 2); c.quadraticCurveTo(a.p.x, Math.min(a.neckTop, f.y) - 40, f.x, f.y); }, 3, rgba(mixed(t.src), 0.9), now, 0.5);
+      } else if (t.kind === 'flask' && t.axis === 'pitch') {
+        const a = flaskGeo(G, t.i), o = OPS[t.i];
+        T.mapText(`${noteName(o.f)} · ${Math.round(o.f)} Hz`, a.p.x, a.neckTop - 18, 14, 0.9, 'center');
+      }
+    }
+  }
+
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
@@ -332,28 +483,61 @@
       { key: 'vitrum', label: 'vitrum', ang: deg(150) },
       { key: 'circulatio', label: 'circulatio', ang: deg(120) },
     ],
-    get: (k) => fx[k], set: (k, v) => { fx[k] = v; }, text: (k) => `${Math.round(fx[k] * 100)}%`,
-    arc: () => fx.vitrum, save: () => ({ ...fx }), load: (o) => Object.assign(fx, o),
+    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
+    arc: () => fx.vitrum, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
+  // кубик: алхимическая схема (цепь, два брака, квинтэссенция, …) и высоты от одной тоники, с лёгким дрейфом, как у Lyra
+  const SCHEMES = [[[1, 0], [2, 1], [3, 2]], [[1, 0], [3, 2]], [[1, 0], [2, 0], [3, 0]], [[3, 2], [2, 0]], [[2, 0], [3, 1]], [[3, 0]]];
+  function dice() {
+    const R = Math.random;
+    mods = SCHEMES[Math.floor(R() * SCHEMES.length)].map((m) => m.slice());
+    let s = [0, 3, 5, 7, 10, 12, 15][Math.floor(R() * 7)];
+    if (T.scaleOn) s = T.snapSemi(s);
+    const base = 55 * 2 ** (s / 12), ratios = [0.5, 1, 1.5, 2, 3, 4];
+    OPS.forEach((o) => { o.f = clamp(base * ratios[Math.floor(R() * ratios.length)] * (1 + (R() - 0.5) * 0.008), F_LO, F_HI); o.level = 0.25 + R() * 0.6; o.fb = 0; });
+    const top = OPS.map((_, i) => i).filter((i) => !mods.some((m) => m[1] === i) && mods.some((m) => m[0] === i));
+    if (top.length && R() < 0.6) OPS[top[0]].fb = 0.3 + R() * 0.4;
+    rewire(); setFire(true);
+  }
+  let last = performance.now();
   const lab = {
-    n: 'III', title: 'Laboratorium', sub: 'operatores quattuor · nondum sonat',
+    n: 'III', title: 'Laboratorium', sub: 'operatores quattuor',
     corner: { hit: (f) => { const G = geo(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце — карта; древо в углу пока просто стоит
     fx: fxw,
+    build,
     draw(now) {
-      const c = T.g, G = geo();
+      const c = T.g, G = geo(), dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      ease(G, dt);
+      heat += ((fire ? 1 : 0) - heat) * (1 - Math.exp(-dt / (fire ? 0.35 : 0.6)));
+      tubes.length = 0;
       c.drawImage(wall(G), 0, 0, T.W, T.H);
       drawSun(c, G, now);
+      drawFloor(c, G);
       drawFurnace(c, G, now);
       drawTubes(c, G, now);
-      for (let i = 0; i < OPS.length; i++) drawFlask(c, i, G, now);
+      const held = new Set([...touches.values()].filter((t) => t.kind === 'flask').map((t) => t.i));
+      for (let i = 0; i < OPS.length; i++) drawFlask(c, i, G, now, held.has(i));
       drawEgg(c, G, now);
-      drawJars(c, G, now);
       drawRoot(c);
+      drawTouches(c, G, now);
     },
-    down() {}, move() {}, up() {},
-    clear() {}, snapshot: () => JSON.stringify({ fx }), restore(js) { Object.assign(fx, JSON.parse(js).fx); },
-    sounding: () => false,
+    down, move, up, dice,
+    clear() { mods = []; for (const o of OPS) o.fb = 0; rewire(); setFire(false); },
+    snapshot: () => JSON.stringify({ ops: OPS.map((o) => ({ f: Math.round(o.f * 100) / 100, level: Math.round(o.level * 1e3) / 1e3, fb: o.fb })), mods, fx, fire }),
+    restore(js) {
+      const st = JSON.parse(js);
+      st.ops.forEach((s, i) => Object.assign(OPS[i], s));
+      mods = st.mods.map((m) => m.slice()); Object.assign(fx, st.fx);
+      applyFx(); rewire(); if (st.fire !== fire) setFire(st.fire);
+    },
+    sounding: () => fire,
   };
   T.registerWorld(3, lab);
-  window.t2d.lab = { OPS, mods, fx, geo, mixed };
+  window.t2d.lab = {
+    OPS, fx, geo, mixed, get mods() { return mods; }, get fire() { return fire; }, get live() { return !!graph; },
+    at: (i) => { const q = flaskGeo(geo(), i); return { x: q.p.x, y: (q.yTop + q.yBot) / 2, neckY: q.neckTop + 4 }; },
+    furnace: () => { const b = furnBox(geo()); return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }; },
+    tubeAt: (s, d) => { const t = tubes.find((q) => q.s === s && q.d === d); return t && { x: t.pts[8][0], y: t.pts[8][1] }; },
+  };
 })();
