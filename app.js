@@ -579,6 +579,8 @@
     if (ui) { f.ui = ui.k; f.hit = ui; uiDown(f); return; }
 
     let v = hit(f.x, f.y);
+    // на компьютере второго пальца нет: Shift + тянуть от планеты A к B — та же связь, что мост (B модулирует A)
+    if (v && e.shiftKey) { f.ui = 'thread'; f.A = v; return; }
     if (v) {
       // другой палец уже держит кружок — это мост
       for (const o of F.values()) {
@@ -1029,6 +1031,13 @@
   }
 
   function uiUp(f) {
+    if (f.ui === 'thread') {
+      const B = hit(f.x, f.y), A = f.A;
+      if (!B || B === A || !A.active) return;
+      const m = A.mods.find((k) => k.src === B) || addLink(A, B, LINK_NEW);
+      m.auto = false; A.dirty = true; focus = A;
+      return;
+    }
     if (f.ui === 'vol') { try { localStorage.setItem('t2d-vol', vol.toFixed(3)); } catch (_) { /* приватный режим */ } return; }
     if (f.menu && !f.menu.fx) leaveMenu(f.menu);
     if (f.ui === 'lfo') {
@@ -2840,6 +2849,13 @@
     let fxF = null, heldF = null, bridge = null;
     for (const f of F.values()) { if (f.menu) { if (f.menu.fx) fxF = f; else heldF = f; } if (f.bridge) bridge = f.bridge; }
     drawLinks(now, bridge && bridge.m);
+    for (const f of F.values()) {               // Shift-нить: пунктир от A за курсором, планета под курсором подсвечена
+      if (f.ui !== 'thread' || !f.A.active) continue;
+      const B = hit(f.x, f.y);
+      g.save(); g.setLineDash([3, 5]); g.strokeStyle = ink(0.7); g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(vx(f.A), vy(f.A)); g.lineTo(f.x, f.y); g.stroke(); g.restore();
+      if (B && B !== f.A) ring(vx(B), vy(B), planetR(B) + 10, 0.85, 1.4);
+    }
     for (const v of V) {
       if (!v.active) continue;
       if (bridge && (bridge.A === v || bridge.B === v)) continue;
