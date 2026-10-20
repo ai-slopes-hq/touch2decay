@@ -3132,7 +3132,7 @@
   const saveLink = () => { try { localStorage.setItem('t2d-link', JSON.stringify(link)); } catch (_) { /* приватный режим */ } };
   const perScl = {};                                      // свой лад у каждого мира, когда лад не общий
   function tempoFrom(n, bpm) { if (link.clock) for (const [k, w] of Object.entries(worlds)) if (+k !== n && w.tempo) w.tempo.set(bpm); }
-  function transportFrom(n, on) { if (link.clock) for (const [k, w] of Object.entries(worlds)) if (+k !== n && w.tempo) w.tempo.play(on); }
+  function transportFrom() { /* общие часы — только темп: пуск и стоп у каждого мира свои (автор) */ }
   const worlds = {};                                      // номер четверти → мир
   const cur = () => worlds[nav.world];   // view: play | map; anim: { t0, dir: 'out' | 'in', w }
   const NAV_MS = 520;
@@ -3267,7 +3267,7 @@
   }
   function settingsBox() {
     const w = Math.min(260, W - 40), h = 120, x = W / 2 - w / 2, y = H / 2 + 70;
-    return { x, y, w, h, rows: [{ key: 'clock', label: 'shared clock', sub: 'tempo · play / stop', y: y + 46 }, { key: 'scale', label: 'shared scale', sub: 'one scale in every world', y: y + 90 }] };
+    return { x, y, w, h, rows: [{ key: 'clock', label: 'shared tempo', sub: 'one bpm in every sequencer', y: y + 46 }, { key: 'scale', label: 'shared scale', sub: 'one scale in every world', y: y + 90 }] };
   }
   function drawSettings() {
     const S = settingsBox();

@@ -935,9 +935,8 @@ async def sc_startmap(p):                          # карта — старто
     b2 = await p.js('()=>t2d.cym.seq.bpm'); assert b2 > 110, f'tempo up in Cymatica: {b2}'
     assert await p.js('()=>t2d.nat.seq.bpm') == b2, 'shared clock — Natura follows the tempo'
     await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.cym.seq.playing && t2d.nat.seq.playing'), 'shared clock — play starts Natura too'
+    assert await p.js('()=>t2d.cym.seq.playing && !t2d.nat.seq.playing'), 'shared tempo only — play in Cymatica does not start Natura'
     await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(200)
-    assert not await p.js('()=>t2d.nat.seq.playing'), 'stop stops both'
     await p.js('()=>{t2d.link.clock = false}')
 
 
