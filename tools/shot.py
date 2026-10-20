@@ -712,6 +712,11 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     s0 = await p.js('()=>t2d.lab.jars[4]'); j = await p.js('()=>t2d.lab.jar(4)')
     pid = await p.hold(j['x'], j['y'], ms=60); await p.drag(pid, j['x'], j['y'], j['x'], j['y'] - 30, steps=6); await p.up()
     assert await p.js('()=>t2d.lab.jars[4]') == s0 + 5, 'jar up 30 px — its note five semitones up'
+    await p.tap(fb['x'], fb['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.lab.fire'), 'tap the furnace again — it keeps burning (only the jug puts it out)'
+    jg = await p.js('()=>t2d.lab.jug()'); await p.tap(jg['x'], jg['y']); await p.pg.wait_for_timeout(700)
+    await p.shot('lab-jug'); await p.pg.wait_for_timeout(300)
+    assert not await p.js('()=>t2d.lab.fire') and not any(v['latched'] for v in await p.js('()=>t2d.lab.voices')), 'jug — fire out, kept jars quiet'
     w = await p.js('()=>Array.from(t2d.lab.waveOf(0))'); assert max(w) > 0.9 and min(w) < -0.9, 'flask surface is its waveform'
     await p.shot('lab')
 

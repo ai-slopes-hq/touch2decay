@@ -3,7 +3,7 @@
 // у несущей — громкость. Поверхность колышется тем чаще, чем выше колба звучит. Трубка от горлышка к другой колбе — первая
 // модулирует вторую; от горлышка в саму себя — «пеликан», обратная связь; тап по трубке — снять. Колбы сами встают по ярусам:
 // кто никуда не льёт — несущая, внизу, сливает в яйцо на атаноре. Цвета смешиваются по трубкам. Тап по печи — огонь:
-// горит — дрон звучит, погас — тишина. Семь банок металлов (♄ ♃ ♂ ☉ ♀ ☿ ☽) — клавиши, как сенсоры Lyra: держишь — аппарат
+// горит — дрон звучит; кувшин с водой у печи — тап: заливает огонь, всё затихает. Семь банок металлов (♄ ♃ ♂ ☉ ♀ ☿ ☽) — клавиши, как сенсоры Lyra: держишь — аппарат
 // звучит на ноте банки (до трёх разом), двойной тап — оставить звучать, банку вверх-вниз — её нота. Поверхность жидкости — форма волны
 // колбы (FM считается напрямую), в яйце — живая осциллограмма выхода. FX: athanor — жар (сатуратор), vitrum — стеклянный ревер, circulatio — медленное бурление индексов.
 // Солнце — четверть в правом верхнем углу (к центру карты), тап — карта; в правом нижнем — четверть древа жизни (корни — у змей).
@@ -244,6 +244,62 @@
     }
   }
 
+  // кувшин с водой у печи: тап — заливает огонь, всё в лаборатории затихает (пар и шипение)
+  let pourAt = -1e9;
+  const POUR_MS = 1600;
+  const jugBox = (G) => { const b = furnBox(G); return { x: b.x1 + 34, y: b.y1, w: 26, h: 40 }; };
+  function drawJug(c, G, now) {
+    const { x, y, h } = jugBox(G), k = clamp((now - pourAt) / POUR_MS), tilt = k < 1 ? Math.sin(Math.min(1, k * 1.6) * Math.PI) * -0.95 : 0;
+    const b = furnBox(G), ax = G.W / 2, ay = b.y1 - 14;
+    if (k < 1 && tilt < -0.4) {                        // струя из носика в топку
+      const sx = x - 24, sy = y - h + 6;
+      c.strokeStyle = rgba(OPS[2].col, 0.85); c.lineWidth = 2.2;
+      c.setLineDash([4, 3]); c.lineDashOffset = -now * 0.12;
+      c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo(sx - 20, sy - 8, ax + 10, ay); c.stroke();
+      c.setLineDash([]); c.lineDashOffset = 0;
+    }
+    if (k < 1 && k > 0.25) {                           // пар из арки
+      for (let i = 0; i < 6; i++) {
+        const t = (k - 0.25) / 0.75, px = ax - 14 + i * 6 + Math.sin(now * 0.004 + i) * 4, py = ay - 10 - t * 70 - i * 6;
+        c.strokeStyle = T.ink(0.5 * (1 - t)); c.lineWidth = 1;
+        c.beginPath(); c.arc(px, py, 4 + t * 8, Math.PI * 1.1, Math.PI * 1.9); c.stroke();
+      }
+    }
+    c.save(); c.translate(x, y); c.rotate(tilt);
+    const body = () => {                                // кувшин: пузатое тело, горло, носик влево, ручка вправо
+      c.beginPath(); c.moveTo(-9, 0); c.bezierCurveTo(-17, -10, -15, -26, -7, -30); c.lineTo(-8, -h + 4); c.lineTo(-14, -h + 1);
+      c.lineTo(-7, -h); c.lineTo(8, -h); c.lineTo(7, -30); c.bezierCurveTo(15, -26, 17, -10, 9, 0); c.closePath();
+    };
+    c.fillStyle = T.BG; body(); c.fill();
+    c.save(); body(); c.clip();
+    const wl = k < 1 ? -18 + 12 * k : -20;             // вода внутри — убывает, пока льём
+    c.fillStyle = rgba(OPS[2].col, 0.55); c.fillRect(-20, wl, 40, 30);
+    c.restore();
+    c.strokeStyle = T.ink(0.9); c.lineWidth = 1.2; body(); c.stroke();
+    c.beginPath(); c.moveTo(8, -h + 6); c.bezierCurveTo(20, -h + 4, 22, -18, 12, -12); c.stroke();   // ручка
+    c.strokeStyle = T.ink(0.35); c.beginPath(); c.arc(-3, -14, 8, Math.PI * 1.05, Math.PI * 1.45); c.stroke();
+    c.restore();
+  }
+  // шипение пара — короткий шум через полосовой фильтр
+  function hiss() {
+    if (!actx || !bus) return;
+    const ctx = actx, t = ctx.currentTime, n = Math.round(ctx.sampleRate * 1.4), buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain();
+    src.buffer = buf; bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 0.8;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.18, t + 0.25); g.gain.exponentialRampToValueAtTime(0.001, t + 1.35);
+    src.connect(bp).connect(g).connect(bus.out); src.start(t); src.stop(t + 1.4);
+  }
+  function douse() {                                  // залить огонь: гаснет всё — огонь и оставленные банки
+    pourAt = performance.now();
+    setTimeout(() => {
+      hiss();
+      for (const [k, gr] of [...voices]) if (k !== 'fire') { kill(gr, 0.4); voices.delete(k); }
+      setFire(false);
+    }, 450);
+  }
+
+  // ---------- семь банок металлов — клавиши, как сенсоры Lyra (♄ ♃ ♂ ☉ ♀ ☿ ☽ — снизу вверх) ----------
   const METALS = ['saturnus', 'iupiter', 'mars', 'sol', 'venus', 'mercurius', 'luna'];
   function planet(c, k, x, y, s, a) {
     c.strokeStyle = T.ink(a); c.lineWidth = 1.1; c.beginPath();
@@ -547,6 +603,8 @@
     const tb = hitTube(f.x, f.y);                    // трубка — раньше тела колбы: её конец лежит у горлышка
     if (tb && !(h && h.part === 'body')) { touches.set(f.id, { kind: 'tubeTap', t: tb }); return; }
     if (h) { const o = OPS[h.i]; touches.set(f.id, { kind: 'flask', i: h.i, f0: o.f, l0: o.level, axis: null }); return; }
+    const jb = jugBox(G);
+    if (Math.abs(f.x - jb.x) < 26 && f.y > jb.y - jb.h - 12 && f.y < jb.y + 10) { touches.set(f.id, { kind: 'jug' }); return; }
     const b = furnBox(G);
     if (f.x > b.x0 - 6 && f.x < b.x1 + 6 && f.y > b.y0 && f.y < b.y1 + 10) { touches.set(f.id, { kind: 'fire' }); return; }
     touches.set(f.id, { kind: 'none' });
@@ -587,7 +645,8 @@
       jarOff(t.j);
       return;
     }
-    if (t.kind === 'fire' && !moved) setFire(!fire);
+    if (t.kind === 'fire' && !moved) { if (!fire) setFire(true); }   // печь только зажигает; гасит кувшин
+    else if (t.kind === 'jug' && !moved) douse();
     else if (t.kind === 'tubeTap') {                 // тап или вытянуть — трубка снята
       if (t.t.i != null) OPS[t.t.i].fb = 0;
       else mods = mods.filter(([s, d]) => !(s === t.t.s && d === t.t.d));
@@ -657,6 +716,7 @@
       c.drawImage(wall(G), 0, 0, T.W, T.H);
       drawSun(c, G, now);
       drawFurnace(c, G, now);
+      drawJug(c, G, now);
       drawTubes(c, G, now);
       const held = new Set([...touches.values()].filter((t) => t.kind === 'flask').map((t) => t.i));
       for (let i = 0; i < OPS.length; i++) drawFlask(c, i, G, now, held.has(i));
@@ -687,6 +747,7 @@
     get voices() { return [...voices].map(([k, v]) => ({ k, on: v.on, latched: v.latched })); },
     jar: (i) => { const b = jarBox(geo(), i); return { x: b.X, y: b.y - b.h / 2 }; },
     at: (i) => { const q = flaskGeo(geo(), i); return { x: q.p.x, y: (q.yTop + q.yBot) / 2, neckY: q.neckTop + 4 }; },
+    jug: () => { const b = jugBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
     furnace: () => { const b = furnBox(geo()); return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }; },
     tubeAt: (s, d) => { const t = tubes.find((q) => q.s === s && q.d === d); return t && { x: t.pts[8][0], y: t.pts[8][1] }; },
   };
