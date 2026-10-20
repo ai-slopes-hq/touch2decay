@@ -774,6 +774,18 @@ async def sc_natura(p):                           # Natura: лодочка — �
     await p.js("()=>t2d.nat.setFx('res', 0.2)"); g = await p.js('()=>t2d.nat.geo()')
     pid = await p.hold(60, g['hor'] - 20, ms=60); await p.drag(pid, 60, g['hor'] - 20, 60, g['hor'] - 80, steps=8); await p.shot('natura-mountains'); await p.up()
     assert await p.js('()=>t2d.nat.fx.res') > 0.4, 'mountains up — more resonance'
+    # p-lock: держишь кувшинку, вторым пальцем тянешь тучу — значение только у этой кувшинки
+    await p.js("()=>{t2d.nat.setFx('cutoff', 0.5); const a=t2d.nat.pads.at; a[4]={note:6,wave:1}}")
+    q = await p.js('()=>t2d.nat.pad(4)'); cl = await p.js('()=>t2d.nat.cloud()'); p.nid += 2; a, b = p.nid - 1, p.nid
+    await p.T('touchStart', [{'x': q['x'], 'y': q['y'], 'id': a}]); await p.pg.wait_for_timeout(120)
+    await p.T('touchStart', [{'x': q['x'], 'y': q['y'], 'id': a}, {'x': cl['x'], 'y': cl['y'], 'id': b}]); await p.pg.wait_for_timeout(60)
+    for k in range(1, 9):
+        await p.T('touchMove', [{'x': q['x'], 'y': q['y'], 'id': a}, {'x': cl['x'], 'y': cl['y'] - 8 * k, 'id': b}]); await p.pg.wait_for_timeout(16)
+    await p.pg.wait_for_timeout(500); await p.shot('natura-plock')
+    await p.T('touchEnd', [{'x': q['x'], 'y': q['y'], 'id': a}]); await p.pg.wait_for_timeout(50); await p.up(); await p.pg.wait_for_timeout(100)
+    lk = await p.js('()=>[t2d.nat.pads.at[4] && t2d.nat.pads.at[4].lock, t2d.nat.pads.at[4] && t2d.nat.pads.at[4].wave, t2d.nat.fx.cutoff]')
+    assert lk[0] and lk[0].get('cutoff', 0) > 0.6 and lk[1] == 1 and abs(lk[2] - 0.5) < 1e-6, f'p-lock: cutoff only on the held lily, flower kept: {lk}'
+    await p.js("()=>t2d.nat.pads.at[4]=null")
     pads0 = await p.js('()=>JSON.stringify(t2d.nat.pads.at)')
     await p.js("()=>{const a=t2d.nat.pads.at; for (let i=0;i<16;i++) a[i]=null; a[5]={note:3,wave:0}; a[6]={note:9,wave:0}}")
     p0 = await p.js('()=>t2d.nat.slot(4, 6)'); p5 = await p.js('()=>t2d.nat.pad(5)'); p6 = await p.js('()=>t2d.nat.pad(6)'); p7 = await p.js('()=>t2d.nat.slot(7, 6)')
