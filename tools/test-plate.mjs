@@ -63,15 +63,24 @@ test('modes order', () => {
   for (let k = 1; k < 24; k++) assert.ok(P.MODES[k].j > P.MODES[k - 1].j, `j grows at ${k}`);
 });
 
-test('ratios', () => {
+test('ratios', () => {                          // тела по лучу structure — опоры через 1/7: струна … калимба
   const s = P.modeRatios(0);
   for (let k = 0; k < 24; k++) assert.equal(s[k], k + 1);
-  close(P.modeRatios(1 / 3)[1], 1.5933, 1e-3, 'membrane');
-  close(P.modeRatios(2 / 3)[1], 2.5387, 1e-3, 'plate');
-  const b = P.modeRatios(1);
+  close(P.modeRatios(1 / 7)[1], 1.5933, 1e-3, 'membrane');
+  close(P.modeRatios(2 / 7)[1], 2.5387, 1e-3, 'plate');
+  const b = P.modeRatios(3 / 7);
   [0.5, 1, 1.2, 1.5, 2, 2.5].forEach((x, k) => close(b[k], x, 1e-9, `bell ${k}`));
-  const mid = Math.sqrt(P.modeRatios(1 / 3)[1] * P.modeRatios(2 / 3)[1]);
-  close(P.modeRatios(0.5)[1], mid, 1e-6, 'log interpolation');
+  const bowl = P.modeRatios(4 / 7);                  // поющая чаша: пары мод чуть врозь — биения
+  [1, 1.004, 2.71, 2.71 * 1.004].forEach((x, k) => close(bowl[k], x, 1e-9, `bowl ${k}`));
+  const hang = P.modeRatios(5 / 7);
+  [1, 2, 3].forEach((x, k) => close(hang[k], x, 1e-9, `handpan ${k}`));
+  const mar = P.modeRatios(6 / 7);
+  [1, 4, 10].forEach((x, k) => close(mar[k], x, 1e-9, `marimba ${k}`));
+  const kal = P.modeRatios(1);                       // калимба: язычок, закреплённый с одного конца
+  close(kal[1], 6.267, 1e-3, 'kalimba 1'); close(kal[2], 17.547, 1e-2, 'kalimba 2');
+  for (const r of [bowl, hang, mar, kal]) for (let k = 1; k < 24; k++) assert.ok(r[k] >= r[k - 1], 'ratios do not fall');
+  const mid = Math.sqrt(P.modeRatios(1 / 7)[1] * P.modeRatios(2 / 7)[1]);
+  close(P.modeRatios(1.5 / 7)[1], mid, 1e-6, 'log interpolation');
 });
 
 test('strike gains', () => {

@@ -489,7 +489,29 @@ async def sc_grid(p):                              # сетка записи 1/1
     await p.shot('waves')
 
 
-SCENARIOS = {'grid': sc_grid, 'relative': sc_relative, 'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_scalepinch(p):                        # с ладом щипок идёт по ступеням без застреваний, пластина едет плавно
+    import math
+    await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
+    await p.js('()=>{t2d.scl.on = true}')
+    g = await p.js('()=>t2d.cym.astro'); cx, cy = g['cx'], g['cy']
+    semis = await p.js('()=>t2d.cym.core.scaleSemis()')
+    a, b = {'x': cx - 20, 'y': cy, 'id': 31}, {'x': cx + 20, 'y': cy, 'id': 32}
+    await p.T('touchStart', [a]); await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(30)
+    seen = []
+    for k in range(1, 31):
+        a, b = dict(a, x=cx - 20 - 2 * k), dict(b, x=cx + 20 + 2 * k)
+        await p.T('touchMove', [a, b]); await p.pg.wait_for_timeout(16)
+        seen.append(round(12 * math.log2(await p.js('()=>t2d.cym.f0') / 55)))
+    shown = await p.js('()=>t2d.cym.shownF0'); f0 = await p.js('()=>t2d.cym.f0')
+    await p.T('touchEnd', [a, b]); await p.pg.wait_for_timeout(150)
+    idx = [semis.index(s) for s in seen]
+    assert all(s in semis for s in seen), f'pinch lands on scale notes: {seen}'
+    assert all(abs(j - i) <= 1 for i, j in zip(idx, idx[1:])), f'one scale step at a time: {idx}'
+    assert len(set(idx)) >= 4, f'keeps moving through the scale, no sticking: {idx}'
+    assert shown != f0, 'plate size eases to the new note'
+
+
+SCENARIOS = {'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

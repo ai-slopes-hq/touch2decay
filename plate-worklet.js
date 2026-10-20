@@ -47,17 +47,33 @@ var NORM = (() => {
 })();
 
 // строи: струна (1, 2, 3…), мембрана j/j01, пластина (j/j01)², колокол (hum, prime, tierce, quint, nominal, дальше — строй пластины от 2.5)
+// тела по лучу structure: струна, мембрана, пластина, колокол, поющая чаша, ханг, маримба, калимба
 var TUNINGS = (() => {
-  const s = new Float64Array(NM), mem = new Float64Array(NM), pl = new Float64Array(NM), bell = new Float64Array(NM);
+  const T = () => new Float64Array(NM);
+  const s = T(), mem = T(), pl = T(), bell = T(), bowl = T(), hang = T(), mar = T(), kal = T();
   for (let k = 0; k < NM; k++) { s[k] = k + 1; mem[k] = MODES[k].j / MODES[0].j; pl[k] = mem[k] * mem[k]; }
   [0.5, 1, 1.2, 1.5, 2].forEach((x, k) => { bell[k] = x; });
   for (let k = 5; k < NM; k++) bell[k] = (pl[k] * 2.5) / pl[5];
-  return [s, mem, pl, bell];
+  // поющая чаша: моды парами, чуть врозь (+0.4 %) — долгий звон с биениями
+  const BW = [1, 2.71, 5.15, 8.43, 12.5, 17.4, 23.1, 29.6, 36.9, 45.0, 54.0, 63.8];
+  for (let k = 0; k < NM; k++) bowl[k] = BW[k >> 1] * (k & 1 ? 1.004 : 1);
+  // ханг: настроенные основной, октава и квинта через октаву; выше — как у пластины
+  [1, 2, 3].forEach((x, k) => { hang[k] = x; });
+  for (let k = 3; k < NM; k++) hang[k] = (pl[k] * 4) / pl[3];
+  // брусок со свободными концами: β_n — корни cos·ch = 1; маримба настроена 1 : 4 : 10, выше — как брусок
+  const ff = (n) => (n === 1 ? 4.7300 : n === 2 ? 7.8532 : ((2 * n + 1) * Math.PI) / 2);
+  [1, 4, 10].forEach((x, k) => { mar[k] = x; });
+  for (let k = 3; k < NM; k++) mar[k] = ((ff(k + 1) / ff(1)) ** 2 * 10) / (ff(3) / ff(1)) ** 2;
+  // калимба — язычок, закреплённый с одного конца: β_n — корни cos·ch = −1, обертоны далеко и неровно
+  const cf = (n) => (n === 1 ? 1.8751 : n === 2 ? 4.6941 : n === 3 ? 7.8548 : ((2 * n - 1) * Math.PI) / 2);
+  for (let k = 0; k < NM; k++) kal[k] = (cf(k + 1) / cf(1)) ** 2;
+  return [s, mem, pl, bell, bowl, hang, mar, kal];
 })();
 
-// structure 0..1: 0 струна, ⅓ мембрана, ⅔ пластина, 1 колокол; между соседними — интерполяция отношений в логарифме
+// structure 0..1 — по телам через 1/7: струна, мембрана, пластина, колокол, чаша, ханг, маримба, калимба;
+// между соседними — интерполяция отношений в логарифме
 function modeRatios(structure) {
-  const x = clamp01(structure) * 3, seg = Math.min(2, Math.floor(x)), t = x - seg;
+  const n = TUNINGS.length - 1, x = clamp01(structure) * n, seg = Math.min(n - 1, Math.floor(x)), t = x - seg;
   const A = TUNINGS[seg], B = TUNINGS[seg + 1], r = new Float64Array(NM);
   for (let k = 0; k < NM; k++) r[k] = A[k] * (B[k] / A[k]) ** t;
   return r;

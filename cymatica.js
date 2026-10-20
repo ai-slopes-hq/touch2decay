@@ -16,7 +16,7 @@
   const r4 = (x) => Math.round(x * 1e4) / 1e4;
 
   // ---------- состояние: высота, пластина (веер FX), закреплённые смычки ----------
-  const plate = { f0: F_DEF, fx: { structure: 0.66, damping: 0.5, brightness: 0.5, hall: 0.25, echo: 0.15 }, bows: [] };
+  const plate = { f0: F_DEF, fx: { structure: 2 / 7, damping: 0.5, brightness: 0.5, hall: 0.25, echo: 0.15 }, bows: [] };
   let bowId = 1;
   const touches = new Map();                 // палец → касание пластины
   let ringF = null, two = null, lastTap = null, labelUntil = 0, gesture = null, twistLabel = null;
@@ -254,6 +254,22 @@
     send({ t: 'f0', hz: plate.f0 });
     if (seq.melody.steps.some((o) => o != null)) sendSeq();   // мелодия едет вместе с пластиной
   }
+  // щипок: ход пальцев линейный — без лада 12 px на полутон, с ладом 18 px на ступень (лишних ступеней нет, не застревает)
+  const PX_SEMI = 12, PX_DEG = 18;
+  let shownF0 = F_DEF, wheelAcc = 0;
+  function nearestIdx(list, s) {
+    let j = 0;
+    for (let i = 1; i < list.length; i++) if (Math.abs(list[i] - s) < Math.abs(list[j] - s)) j = i;
+    return j;
+  }
+  function stepScale(fromSemi, steps) {
+    const list = scaleSemis();
+    setF0(F_MIN * 2 ** (list[clamp(nearestIdx(list, fromSemi) + steps, 0, list.length - 1)] / 12));
+  }
+  function pinchTo(f00, dd) {
+    if (!T.scaleOn) { setF0(f00 * 2 ** (-dd / PX_SEMI / 12)); return; }
+    stepScale(12 * Math.log2(f00 / F_MIN), Math.round(-dd / PX_DEG));
+  }
   const NOTES = ['A', 'A♯', 'B', 'C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯'];
   function noteName(hz) {
     const s = Math.round(12 * Math.log2(hz / F_MIN));
@@ -266,7 +282,7 @@
     const top = T.topY, bot = T.H - T.safeBot;
     const rMax = Math.max(40, Math.min(T.W / 2 - 64, (bot - top - 224) / 2));
     const cy = top + (bot - top - (2 * rMax + 216)) / 2 + rMax + 64;
-    return { cx: T.W / 2, cy, rMax, r: rMax * Math.sqrt(F_MIN / plate.f0) };
+    return { cx: T.W / 2, cy, rMax, r: rMax * Math.sqrt(F_MIN / shownF0) };   // размер едет плавно к высоте
   }
   const toPlate = (f, g) => ({ x: (f.x - g.cx) / g.r, y: (f.y - g.cy) / g.r });
   const fromPlate = (b, g) => ({ x: g.cx + b.x * g.r, y: g.cy + b.y * g.r });
@@ -413,7 +429,7 @@
   function moveTwo(g) {
     const t = two, a1 = Math.atan2(t.b.y - t.a.y, t.b.x - t.a.x), d1 = Math.max(20, Math.hypot(t.b.x - t.a.x, t.b.y - t.a.y));
     if (!t.kind) { t.kind = twistOrPinch(t.a0, a1, t.d0, d1); if (t.kind) gesture = t.kind; }
-    if (t.kind === 'pinch') setF0(t.f00 * (t.d0 / d1) ** 2);   // развёл — пластина больше и ниже
+    if (t.kind === 'pinch') pinchTo(t.f00, d1 - t.d0);   // развёл — пластина больше и ниже
     if (t.kind !== 'twist' || !t.target) return;
     const dd = wrapDeg(((a1 - t.last) * 180) / Math.PI);
     t.last = a1; t.deg += dd;
@@ -575,7 +591,7 @@
 
   // ---------- веер FX: пластина и пространство ----------
   const deg = (d) => (d * Math.PI) / 180;
-  const STRUCT = ['string', 'membrane', 'plate', 'bell'];
+  const STRUCT = ['string', 'membrane', 'plate', 'bell', 'bowl', 'handpan', 'marimba', 'kalimba'];   // тела по лучу structure
   const fxw = {
     sectors: [
       { key: 'structure', label: 'structure', ang: deg(180) },
@@ -588,7 +604,7 @@
     set: (k, t) => { plate.fx[k] = t; if (k === 'hall' || k === 'echo') applyFx(); else sendParams(); },
     text: (k) => {
       const v = plate.fx[k];
-      if (k === 'structure') return STRUCT[Math.min(3, Math.round(v * 3))];
+      if (k === 'structure') return STRUCT[Math.round(v * (STRUCT.length - 1))];
       if (k === 'damping') { const s = 0.08 * 150 ** v; return `${s.toFixed(s < 10 ? 1 : 0)} s`; }
       return `${Math.round(v * 100)}%`;
     },
@@ -804,6 +820,7 @@
       const c = T.g, g = plateGeo();
       c.drawImage(wavesLayer(), 0, 0, T.W, T.H);   // фон с волнами — одной готовой картинкой
       drawPlate(g);
+      shownF0 += (plate.f0 - shownF0) * (1 - Math.exp(-(dt || 1 / 60) / 0.08));   // пластина плавно доезжает до размера
       stepSand(dt || 1 / 60);
       drawSand(g);
       drawAstro(g, now);
@@ -817,7 +834,11 @@
     down, move, up,
     wheel(e) {                                   // колесо / щипок тачпада: вверх (развёл) — больше и ниже
       const k = e.ctrlKey ? 0.01 : 0.0025, d = e.deltaMode ? e.deltaY * 16 : e.deltaY;
-      setF0(plate.f0 * Math.exp(clamp(d * k, -0.5, 0.5)));
+      const ds = (12 * clamp(d * k, -0.5, 0.5)) / Math.LN2;   // полутонов за щелчок
+      if (!T.scaleOn) { setF0(plate.f0 * 2 ** (ds / 12)); return; }
+      wheelAcc += (ds * scaleSemis().filter((s) => s < 12).length) / 12;   // с ладом — копим ход, шагаем по ступеням
+      const st = Math.trunc(wheelAcc);
+      if (st) { wheelAcc -= st; stepScale(fs(), st); }
     },
     dice() {                                     // генеративный узор: Евклид, случайные места, мелодия по ладу; часы идут
       const R = Math.random, n = 8 + Math.floor(R() * 9), k = 3 + Math.floor(R() * (n - 4)), e = euclid(k, n);
@@ -875,7 +896,7 @@
       sendSeq();
     },
     core: { euclid, nearestStep, walkMelody, rotateSteps, transposeMelody, keyNotes, twistOrPinch, scaleSemis, snapToGrid, quantizeRhythm },
-    get gesture() { return gesture; }, bowsOn: BOWS_ON, get ringTurn() { return { ...ringTurn }; }, get grid() { return grid; }, get waveStep() { return waveStep(); },
+    get gesture() { return gesture; }, get shownF0() { return shownF0; }, bowsOn: BOWS_ON, get ringTurn() { return { ...ringTurn }; }, get grid() { return grid; }, get waveStep() { return waveStep(); },
     get keys() { return keys(plateGeo()); }, get cursor() { return cursor; }, get lastStrike() { return lastStrike; },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
     bow(x, y, on = true) { send({ t: 'bow', id: 'dbg', x, y, on, exciter: 0, pressure: 0.5, amp: 0.8 }); },
