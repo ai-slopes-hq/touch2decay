@@ -194,13 +194,18 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       const was = this.seq.playing, stepN = stepSamples(d.bpm, this.fs);
       this.seq = {
         bpm: d.bpm, playing: !!d.playing,
-        // веса мод — заново только у шагов, чьё место изменилось: тянешь темп или длину — в звуковом потоке ничего тяжёлого
+        // веса мод — заново только у шагов, чьё место изменилось: тянешь темп или длину — в звуковом потоке ничего тяжёлого.
+        // место удара — у шага мелодии { s, x, y } (нота — клетка пластины) или, по-старому, у шага ритма (мелодия — полутоны)
         rhythm: { len: d.rhythm.len, steps: d.rhythm.steps.map((st, i) => {
           if (!st) return null;
-          const old = this.seq.rhythm.steps[i];
-          return { x: st.x, y: st.y, vel: st.vel == null ? 1 : st.vel, g: old && old.x === st.x && old.y === st.y ? old.g : strikeGains(st.x, st.y) };
+          const old = this.seq.rhythm.steps[i], vel = st.vel == null ? 1 : st.vel;
+          return st.x == null ? { vel } : { x: st.x, y: st.y, vel, g: old && old.x === st.x && old.y === st.y ? old.g : strikeGains(st.x, st.y) };
         }) },
-        melody: { len: d.melody.len, steps: d.melody.steps.slice() },
+        melody: { len: d.melody.len, steps: d.melody.steps.map((m, i) => {
+          if (m == null || typeof m === 'number') return m;
+          const old = this.seq.melody.steps[i];
+          return { s: m.s, x: m.x, y: m.y, g: old && old.x === m.x && old.y === m.y ? old.g : strikeGains(m.x, m.y) };
+        }) },
       };
       if (this.seq.playing && !was) { this.r = -1; this.m = -1; this.toNext = 0; }
       else if (this.seq.playing && stepN !== this.stepN) this.toNext = Math.max(0, stepN - (this.t - this.lastTick));
@@ -212,9 +217,10 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       this.m = (this.m + 1) % sq.melody.len;
       this.lastTick = this.t;
       this.port.postMessage({ t: 'step', r: this.r, m: this.m, time: this.t / this.fs });
-      const st = sq.rhythm.steps[this.r], semi = sq.melody.steps[this.m];
-      if (!st || this.t - this.lastLive < this.stepN / 2) return;
-      this.strike(st.g, semi == null ? this.f0 : F_LO * 2 ** (semi / 12), st.vel, 0.5);
+      const st = sq.rhythm.steps[this.r], mel = sq.melody.steps[this.m];
+      const at = mel && mel.g ? mel : st, semi = mel == null || typeof mel === 'number' ? mel : mel.s;
+      if (!st || !at || !at.g || this.t - this.lastLive < this.stepN / 2) return;   // шаг мелодии без места — пауза
+      this.strike(at.g, semi == null ? this.f0 : F_LO * 2 ** (semi / 12), st.vel, 0.5);
     }
     msg(d) {
       if (d.t === 'params') { Object.assign(this.fx, d); this.retune(); return; }

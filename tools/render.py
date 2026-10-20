@@ -35,7 +35,7 @@ async def main(js, world=1, onsets=False):
                 if await pg.evaluate('()=>t2d.cym.ready'): break
                 await pg.wait_for_timeout(100)
             if onsets:                                       # узор: 4 удара подряд на 120 BPM — проверить ровность
-                await pg.evaluate("()=>{const h={x:0.3,y:0.1,vel:1}; t2d.cym.load({bpm:120, rhythm:{len:4, steps:[h,h,h,h]}, melody:{len:1, steps:[null]}}); t2d.cym.play(true)}")
+                await pg.evaluate("()=>{const h={vel:1}; t2d.cym.load({bpm:120, rhythm:{len:4, steps:[h,h,h,h]}, melody:{len:1, steps:[{x:0.3,y:0.1}]}}); t2d.cym.play(true)}")
             else:
                 await pg.evaluate('()=>t2d.cym.strike(0.3, 0.1)')
         else:

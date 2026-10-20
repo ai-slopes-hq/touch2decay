@@ -301,3 +301,21 @@ test('tempo change does not recompute strike gains', () => {   // тянешь �
   send(seqMsg({ bpm: 90, rhythm: { len: 8, steps: slots((i) => (i === 3 ? { x: 0.1, y: 0.2, vel: 1 } : hit)) } }));
   assert.equal(calls, 1, 'one moved step — one recompute');
 });
+
+test('places come from the melody, with its own length', () => {   // ритм 4 удара, мелодия 3 места — полиритм
+  const { proc, send } = plate();
+  const hz = [], orig = proc.strike.bind(proc);
+  proc.strike = (g, f, v, h) => { hz.push(Math.round(f)); orig(g, f, v, h); };
+  send(seqMsg({ rhythm: { len: 4, steps: slots(() => ({ vel: 1 })) }, melody: { len: 3, steps: slots((i) => (i < 3 ? { s: 12 * i, x: 0.3, y: 0.1 * i } : null)) } }));
+  run(proc, 0.8);
+  assert.deepEqual(hz.slice(0, 6), [55, 110, 220, 55, 110, 220]);
+});
+
+test('a melody step without a place is a rest', () => {
+  const { proc, send } = plate();
+  let n = 0; const orig = proc.strike.bind(proc);
+  proc.strike = (...a) => { n++; orig(...a); };
+  send(seqMsg({ rhythm: { len: 4, steps: slots(() => ({ vel: 1 })) }, melody: { len: 2, steps: slots((i) => (i === 0 ? { s: 0, x: 0.3, y: 0 } : null)) } }));
+  run(proc, 0.45);                                   // тики 0 … 0.375 с — четыре шага
+  assert.equal(n, 2);
+});
