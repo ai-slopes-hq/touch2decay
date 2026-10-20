@@ -142,8 +142,47 @@
     const t = T.ctx.currentTime;
     nodes.hallSend.gain.setTargetAtTime(plate.fx.hall * plate.fx.hall * 1.4, t, 0.05);
     nodes.echoSend.gain.setTargetAtTime(plate.fx.echo * 0.8, t, 0.05);
-    for (const d of [nodes.dL, nodes.dR]) d.delayTime.setTargetAtTime(echoSec(), t, 0.05);
-    for (const f of nodes.fb) f.gain.setTargetAtTime(echoFb(), t, 0.05);
+    const cur = echoes[echoes.length - 1];
+    if (cur) for (const f of cur.fb) f.gain.setTargetAtTime(echoFb(), t, 0.05);
+    retime();
+  }
+  // эхо: на каждую долю — своя пара линий крест-накрест. Сменил долю или темп — звук идёт в новую пару с точным временем,
+  // старая больше не принимает и дозванивает своим (время задержки не едет — нет скрежета); живёт до 6 с, не больше 4 пар
+  let echoes = [], echoAt = 0, echoTimer = 0;
+  function echoPair(sec) {
+    const ctx = actx, g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
+    const inp = g(0), dL = ctx.createDelay(3), dR = ctx.createDelay(3), merge = ctx.createChannelMerger(2), outG = g(1);
+    dL.delayTime.value = dR.delayTime.value = sec;
+    const lp = (n) => { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3000; n.connect(f); return f; };
+    const fb = [g(echoFb()), g(echoFb())], fL = lp(dL), fR = lp(dR);
+    inp.connect(dL); fL.connect(fb[0]).connect(dR); fR.connect(fb[1]).connect(dL);
+    dL.connect(merge, 0, 0); dR.connect(merge, 0, 1); merge.connect(outG).connect(nodes.out);
+    nodes.echoSend.connect(inp);
+    inp.gain.setTargetAtTime(1, ctx.currentTime, 0.01);
+    return { sec, inp, dL, dR, fb, outG, all: [inp, dL, dR, merge, outG, fL, fR, ...fb] };
+  }
+  function dropPair(p, fade) {
+    const i = echoes.indexOf(p);
+    if (i >= 0) echoes.splice(i, 1);
+    if (p.gone) return;
+    p.gone = true; clearTimeout(p.timer);
+    p.inp.gain.setTargetAtTime(0, actx.currentTime, 0.01);
+    p.outG.gain.setTargetAtTime(0, actx.currentTime, fade);
+    setTimeout(() => { for (const n of p.all) n.disconnect(); }, fade * 6000);
+  }
+  function retime() {
+    if (!nodes) return;
+    const cur = echoes[echoes.length - 1], sec = echoSec(), now = performance.now();
+    if (cur && Math.abs(cur.sec - sec) < 1e-4) return;
+    clearTimeout(echoTimer);
+    if (cur && now - echoAt < 90) { echoTimer = setTimeout(retime, 90 - (now - echoAt)); return; }   // тянешь луч или темп — не чаще 11 раз в секунду
+    echoAt = now;
+    if (cur) {
+      cur.inp.gain.setTargetAtTime(0, actx.currentTime, 0.01);
+      cur.timer = setTimeout(() => dropPair(cur, 0.3), 6000);
+    }
+    while (echoes.length >= 4) dropPair(echoes[0], 0.02);
+    echoes.push(echoPair(sec));
   }
   function build(ctx, input) {
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
@@ -153,17 +192,9 @@
     const h = T.hall(), hallSend = g(0);
     for (const l of h.lines) l.g.gain.value = 10 ** ((-3 * l.len) / 4);
     hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-    // эхо: две линии крест-накрест, доля темпа с луча time (1/4d на 40 BPM — 2.25 с)
-    const echoSend = g(0), dL = ctx.createDelay(3), dR = ctx.createDelay(3), merge = ctx.createChannelMerger(2);
-    dL.delayTime.value = dR.delayTime.value = echoSec();
-    const lp = (n) => { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3000; return n.connect(f); };
-    const fb = [g(echoFb()), g(echoFb())];
-    echoSend.connect(dL);
-    lp(dL).connect(fb[0]).connect(dR);
-    lp(dR).connect(fb[1]).connect(dL);
-    dL.connect(merge, 0, 0); dR.connect(merge, 0, 1); merge.connect(out);
-    nodes = { out, hallSend, echoSend, dL, dR, fb };
-    actx = ctx;
+    const echoSend = g(0);                       // эхо — пары линий в retime(), доля темпа с луча time (1/4d на 40 BPM — 2.25 с)
+    nodes = { out, hallSend, echoSend };
+    actx = ctx; echoes = [];                     // новый звуковой контекст — пары эха заводятся заново
     applyFx();
     if (entered) start();
     send({ t: 'f0', hz: plate.f0 });
@@ -604,7 +635,7 @@
       { key: 'brightness', label: 'brightness', ang: deg(144) },
       { key: 'hall', label: 'hall', ang: deg(126) },
       { key: 'echo', label: 'echo', ang: deg(108) },
-      { key: 'time', label: 'time', ang: deg(90) },
+      { key: 'time', label: 'time', ang: deg(90), marks: ECHO_DIVS.map((d) => d[0]) },
     ],
     get: (k) => plate.fx[k],
     set: (k, t) => { plate.fx[k] = t; if (k === 'hall' || k === 'echo' || k === 'time') applyFx(); else sendParams(); },
@@ -905,7 +936,8 @@
       sendSeq();
     },
     core: { euclid, nearestStep, walkMelody, rotateSteps, transposeMelody, keyNotes, twistOrPinch, scaleSemis, snapToGrid, quantizeRhythm },
-    get echo() { return { label: echoDiv()[0], sec: echoSec(), fb: echoFb() }; }, get echoMax() { return nodes ? nodes.dL.delayTime.maxValue : 0; },
+    get echo() { return { label: echoDiv()[0], sec: echoSec(), fb: echoFb() }; }, get echoMax() { return echoes.length ? echoes[echoes.length - 1].dL.delayTime.maxValue : 0; },
+    get echoChains() { return echoes.map((p) => ({ sec: p.sec, real: p.dL.delayTime.value })); },
     get gesture() { return gesture; }, get shownF0() { return shownF0; }, bowsOn: BOWS_ON, get ringTurn() { return { ...ringTurn }; }, get grid() { return grid; }, get waveStep() { return waveStep(); },
     get keys() { return keys(plateGeo()); }, get cursor() { return cursor; }, get lastStrike() { return lastStrike; },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },

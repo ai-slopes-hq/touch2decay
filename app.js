@@ -2071,7 +2071,16 @@
         const r = R1 + (i / (NW - 1)) * d.span;
         g.moveTo(cx + c * r - px * 7, cy + s * r - py * 7); g.lineTo(cx + c * r + px * 7, cy + s * r + py * 7);
       }
+      const mk = sc.marks, mi = mk ? Math.round(d.get(sc.key) * (mk.length - 1)) : -1;
+      if (mk) for (let i = 0; i < mk.length; i++) {   // ступени луча (доли эха): риски, а пока его тянешь — и подписи
+        const r = R1 + (i / (mk.length - 1)) * d.span;
+        g.moveTo(cx + c * r - px * 6, cy + s * r - py * 6); g.lineTo(cx + c * r + px * 6, cy + s * r + py * 6);
+      }
       g.strokeStyle = ink(a * 0.35); g.stroke();
+      if (mk && on) for (let i = 0; i < mk.length; i++) {   // подписи — по ту сторону луча, где нет соседних лучей
+        const r = R1 + (i / (mk.length - 1)) * d.span;
+        mapText(mk[i], cx + c * r - px * 24, cy + s * r - py * 24, i === mi ? 13 : 11, i === mi ? 1 : 0.5, -px >= 0 ? 'left' : 'right');
+      }
       const val = d.get(sc.key), lv = d.live && d.live(sc.key);
       const tick = (t, l, w, al) => {
         const r = R1 + t * d.span;

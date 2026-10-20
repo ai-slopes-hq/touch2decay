@@ -526,6 +526,9 @@ async def sc_echo(p):                              # эхо по долям те
     assert e['label'] == '1/8t' and abs(e['sec'] - 60 / 120 / 3) < 1e-3, f'eighth triplet at 120: {e}'
     fb0 = e['fb']; await p.js("()=>t2d.cym.load({fx: {echo: 0.9}})"); e = await p.js('()=>t2d.cym.echo')
     assert e['fb'] > fb0 + 0.2, f'more echo, more repeats: {fb0} -> {e}'
+    ch = await p.js('()=>t2d.cym.echoChains')                           # смена доли — новая линия, старая звенит своим временем
+    assert len(ch) >= 2 and abs(ch[-1]['sec'] - 0.5 / 3) < 1e-3 and abs(ch[-1]['real'] - ch[-1]['sec']) < 1e-4, f'new time starts clean, no glide: {ch}'
+    assert any(abs(x['sec'] - 1.5 * 60 / bpm) < 1e-3 for x in ch[:-1]), f'old echoes keep their time: {ch}'
     await p.js("()=>t2d.cym.load({bpm: 40, fx: {time: 1}})"); e = await p.js('()=>t2d.cym.echo')
     assert abs(e['sec'] - 2.25) < 1e-3 and await p.js('()=>t2d.cym.echoMax') > 2.2, f'slow dotted quarter fits the delay line: {e}'
 
