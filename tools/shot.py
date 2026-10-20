@@ -87,7 +87,7 @@ async def sc_ampoff(p):                            # левый край пол�
     assert 0.05 <= amp < 0.5, f'a bit to the right it plays again, quietly: {amp}'
 
 
-async def sc_worlds(p):                            # карта, Cymatica в четверти II, III и IV не открываются
+async def sc_worlds(p):                            # карта, Cymatica в четверти II, эскиз Laboratorium в III
     await p.pin(150, 600)                                  # Tenebrae: закреплённая планета
     a, b = {'x': 200, 'y': 450, 'id': 1}, {'x': 10, 'y': H - 8, 'id': 2}
     await p.T('touchStart', [a]); await p.pg.wait_for_timeout(60)        # палец держит новую планету...
@@ -95,8 +95,10 @@ async def sc_worlds(p):                            # карта, Cymatica в ч�
     await p.T('touchEnd', [b]); await p.pg.wait_for_timeout(800)         # touchEnd перечисляет отпускаемые точки: солнце
     assert await p.js('()=>t2d.view') == 'map', 'sun -> map'
     await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(200)         # палец с планеты отпущен уже на карте — без ошибок
-    await p.tap(100, 600); await p.pg.wait_for_timeout(800)              # четверть III — не открывается
-    assert await p.js('()=>t2d.view') == 'map', 'III stays closed'
+    await p.tap(100, 600); await p.pg.wait_for_timeout(800)              # четверть III — эскиз Laboratorium
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 3], 'III opens (sketch)'
+    await p.tap(W - 38, H - 40); await p.pg.wait_for_timeout(800)
+    assert await p.js('()=>t2d.view') == 'map', 'skull -> map'
     await p.tap(100, 200); await p.pg.wait_for_timeout(800)              # четверть II — Cymatica
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 2], 'II -> Cymatica'
     assert await p.js('()=>t2d.T2D_ok'), 'T2D helpers for worlds'
@@ -646,7 +648,22 @@ async def sc_handpan(p):                           # нота — от клет�
     assert rings == {0, 1, 2}, f'dice reaches every ring: {rings}'
 
 
-SCENARIOS = {'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_sketches(p):                         # эскизы миров III и IV: картинка, FX меняют пейзаж, солнце — на карту
+    await p.js('()=>t2d.go(3)'); await p.pg.wait_for_timeout(900); await p.shot('laboratorium')
+    await p.js('()=>{t2d.lab.fx.athanor=1}'); await p.pg.wait_for_timeout(300); await p.shot('laboratorium-fire')
+    await p.js('()=>t2d.go(4)'); await p.pg.wait_for_timeout(900); await p.shot('natura')
+    await p.js("()=>Object.assign(t2d.nat.fx,{reverb:1,delay:0.9,chorus:1,cutoff:1,env:0.9})"); await p.pg.wait_for_timeout(500); await p.shot('natura-fx')
+    await p.js("()=>Object.assign(t2d.nat.fx,{reverb:0,delay:0.1,chorus:0,cutoff:0})"); await p.pg.wait_for_timeout(500); await p.shot('natura-clear')
+    await p.tap(30, H - 30); await p.pg.wait_for_timeout(900)            # надгробие в углу — карта
+    assert await p.js('()=>t2d.view') == 'map', 'Natura tombstone -> map'
+    await p.tap(100, 600); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 3], 'III opens'
+    await p.tap(W - 38, H - 40); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'Laboratorium skull -> map'
+    await p.shot('map-sketches')
+
+
+SCENARIOS = {'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

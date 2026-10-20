@@ -3,9 +3,13 @@
   'use strict';
 
   // ---------- палитра: пока ч/б, цвета добавлять здесь ----------
-  const INK = '237,237,237';                 // rgb без альфы
+  // чернила и бумага — у мира может быть своя тема (theme: { ink, bg, paper }): Regnum — чёрным по сепии
+  const INK0 = '237,237,237', BG0 = '#000', PAPER0 = '0,0,0';
+  let INK = INK0;                            // rgb без альфы
   const LINE = 'rgba(237,237,237,0.10)';
-  const BG = '#000';
+  let BG = BG0, PAPER = PAPER0;              // PAPER — rgb подложек под кнопками и панелями
+  const paper = (a) => `rgba(${PAPER},${a})`;
+  function setTheme(t) { INK = (t && t.ink) || INK0; BG = (t && t.bg) || BG0; PAPER = (t && t.paper) || PAPER0; }
 
   // ---------- звук ----------
   const F_LO = 55;          // нижняя нота поля (A1)
@@ -1919,7 +1923,7 @@
     if (fx.rev > 0.03) {                        // hall: туманность вокруг планеты, decay — её размер
       glowAt(x, y, 48 + 80 * invLog(DECAY_MIN, DECAY_MAX, fx.decay), 0.12 * fx.rev * a);
     }
-    g.fillStyle = 'rgba(0,0,0,0.82)';            // планета закрывает орбиты за собой
+    g.fillStyle = paper(0.82);            // планета закрывает орбиты за собой
     g.beginPath(); g.arc(x, y, R - 3, 0, Math.PI * 2); g.fill();
     if (v.pinned) {                             // кольцо: задняя половина тусклее, передняя ярче
       g.save(); g.translate(x, y); g.rotate(-0.42);
@@ -2049,7 +2053,7 @@
   // булавка из линий: головка, перекладина, игла; закреплено — кружок залит
   function drawPin(x, y, on) {
     if (on) { g.fillStyle = ink(0.95); g.beginPath(); g.arc(x, y, PIN_R, 0, Math.PI * 2); g.fill(); }
-    else { g.fillStyle = 'rgba(0,0,0,0.9)'; g.beginPath(); g.arc(x, y, PIN_R, 0, Math.PI * 2); g.fill(); ring(x, y, PIN_R, 0.8, 1.2); }
+    else { g.fillStyle = paper(0.9); g.beginPath(); g.arc(x, y, PIN_R, 0, Math.PI * 2); g.fill(); ring(x, y, PIN_R, 0.8, 1.2); }
     g.save(); g.translate(x, y); g.rotate(Math.PI / 4);
     g.strokeStyle = on ? BG : ink(0.9); g.fillStyle = on ? BG : ink(0.9); g.lineWidth = 1.4; g.lineCap = 'round';
     g.beginPath(); g.arc(0, -6, 3.2, 0, Math.PI * 2); g.fill();
@@ -2060,7 +2064,7 @@
   // кольцо как прибор: тонкие лучи со шкалой, значение — поперечная риска; подпись на конце луча
   function drawRing(d) {
     const { cx, cy } = d, R1 = MENU_DEAD, R2 = MENU_DEAD + d.span;
-    g.fillStyle = 'rgba(0,0,0,0.74)';
+    g.fillStyle = paper(0.74);
     g.beginPath(); g.arc(cx, cy, R2 + 40, 0, Math.PI * 2); g.fill();
     g.save(); g.setLineDash([2, 5]); ring(cx, cy, R1, d.centerOn ? 0.9 : 0.4, 1); g.restore();
     ring(cx, cy, R2, 0.08, 1);
@@ -2125,7 +2129,7 @@
 
   function drawCloseChip() {
     const c = closeChip(), on = [...F.values()].some((f) => f.ui === 'void');
-    g.fillStyle = 'rgba(0,0,0,0.9)'; g.fillRect(c.x, c.y, c.w, c.h);
+    g.fillStyle = paper(0.9); g.fillRect(c.x, c.y, c.w, c.h);
     hairBox(c.x, c.y, c.w, c.h, on ? 0.9 : 0.5);
     text('close', c.x + c.w / 2, c.y + c.h / 2, 12, on ? 1 : 0.8, 400, 'center');
   }
@@ -2213,7 +2217,7 @@
     const p = lfoPanel(), spec = tg.v.lfo[tg.key], pd = p.pad;
     let lf = null;
     for (const f of F.values()) if (f.ui === 'lfo') lf = f;
-    g.fillStyle = 'rgba(0,0,0,0.9)';
+    g.fillStyle = paper(0.9);
     g.fillRect(0, p.top - 10, W, p.bottom - p.top + 18);
     g.strokeStyle = ink(0.2); g.lineWidth = 1;
     g.beginPath(); g.moveTo(0, p.top - 9.5); g.lineTo(W, p.top - 9.5); g.stroke();
@@ -2288,7 +2292,7 @@
     const a = ampStrip(), v = tg.v;
     let af = null;
     for (const f of F.values()) if (f.ui === 'amp') af = f;
-    g.fillStyle = 'rgba(0,0,0,0.9)'; g.fillRect(0, a.y - 10, W, a.h + 16);
+    g.fillStyle = paper(0.9); g.fillRect(0, a.y - 10, W, a.h + 16);
     hairBox(a.x, a.y, a.w, a.h, af ? 0.8 : 0.3);
     const X = (amp) => a.x + PAD_IN + ampT(amp) * (a.w - 2 * PAD_IN), by = a.y + a.h - 8;
     g.strokeStyle = ink(0.3); g.lineWidth = 1; g.beginPath();
@@ -2507,10 +2511,10 @@
     b.setTransform(DPR, 0, 0, DPR, 0, 0);
     const ex = EDGE + RIM_W, ey = geo.top + EDGE_T + RIM_W, sy = geo.oy - SUN_R;
     let gr = b.createLinearGradient(0, 0, ex, 0);
-    gr.addColorStop(0, 'rgba(0,0,0,0.7)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    gr.addColorStop(0, paper(0.7)); gr.addColorStop(1, paper(0));
     b.fillStyle = gr; b.fillRect(0, ey, ex, sy - ey);
     gr = b.createLinearGradient(0, geo.top, 0, ey);
-    gr.addColorStop(0, 'rgba(0,0,0,0.7)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    gr.addColorStop(0, paper(0.7)); gr.addColorStop(1, paper(0));
     b.fillStyle = gr; b.fillRect(0, geo.top, W, ey - geo.top);
     b.setLineDash([1, 5]); b.strokeStyle = ink(0.14); b.lineWidth = 1;
     b.beginPath(); b.moveTo(EDGE, sy); b.lineTo(EDGE, geo.top + EDGE_T); b.lineTo(W, geo.top + EDGE_T); b.stroke();
@@ -2602,7 +2606,7 @@
   // громкость: кружок, в нём фейдер-гравюра — двойная линия, засечка нуля, риска уровня; зажат — длинная шкала вниз с подписью
   function drawVol(held, dim) {
     const b = btnPos('vol'), h = 18, y0 = b.y - h / 2, ly = (t) => y0 + (1 - t) * h, z = ly(VOL_DEF);
-    g.fillStyle = 'rgba(0,0,0,0.88)'; g.beginPath(); g.arc(b.x, b.y, CLR_R + 1, 0, Math.PI * 2); g.fill();
+    g.fillStyle = paper(0.88); g.beginPath(); g.arc(b.x, b.y, CLR_R + 1, 0, Math.PI * 2); g.fill();
     const a = dim ? 0.15 : 1;
     ring(b.x, b.y, CLR_R, (held ? 1 : 0.45) * a, 1.2);
     g.strokeStyle = ink(0.35 * a); g.lineWidth = 1;
@@ -2612,7 +2616,7 @@
     g.beginPath(); g.moveTo(b.x - 5.5, ly(vol)); g.lineTo(b.x + 5.5, ly(vol)); g.stroke();
     if (!held) return;
     const top = b.y + 34, L = VOL_TRAVEL, sy = (t) => top + (1 - t) * L;
-    g.fillStyle = 'rgba(0,0,0,0.9)'; g.fillRect(b.x - 22, top - 14, 92, L + 28);
+    g.fillStyle = paper(0.9); g.fillRect(b.x - 22, top - 14, 92, L + 28);
     hairBox(b.x - 22, top - 14, 92, L + 28, 0.3);
     g.strokeStyle = ink(0.4); g.lineWidth = 1;
     g.beginPath(); g.moveTo(b.x - 1.5, top); g.lineTo(b.x - 1.5, top + L); g.moveTo(b.x + 1.5, top); g.lineTo(b.x + 1.5, top + L); g.stroke();
@@ -2634,14 +2638,14 @@
     // FX: три кольца; дуга вокруг — сколько зала
     // верхняя строка: тёмная подложка-градиент, слева заголовок
     const tb = g.createLinearGradient(0, 0, 0, scopeY + 64);
-    tb.addColorStop(0, 'rgba(0,0,0,0.85)'); tb.addColorStop(0.6, 'rgba(0,0,0,0.55)'); tb.addColorStop(1, 'rgba(0,0,0,0)');
+    tb.addColorStop(0, paper(0.85)); tb.addColorStop(0.6, paper(0.55)); tb.addColorStop(1, paper(0));
     g.fillStyle = tb; g.fillRect(0, 0, W, scopeY + 64);
     const title = cur().title;                  // заголовок — имя мира
     mapText(title, 16, scopeY + 20, 21, sclF || revF ? 0.12 : 0.85);   // при открытом тулбоксе или веере FX заголовок уходит в тень
     g.font = `italic 21px ${MAP}`; titleW = g.measureText(title).width;
     drawVol(!!volF, !!(sclF || revF));
     // кнопки лежат поверх карты — у каждой тёмная подложка
-    const pad = (p, rr) => { g.fillStyle = 'rgba(0,0,0,0.88)'; g.beginPath(); g.arc(p.x, p.y, rr, 0, Math.PI * 2); g.fill(); };
+    const pad = (p, rr) => { g.fillStyle = paper(0.88); g.beginPath(); g.arc(p.x, p.y, rr, 0, Math.PI * 2); g.fill(); };
     pad(btnPos('rev'), BTN_R + 1); pad(btnPos('scl'), BTN_R + 1); pad(btnPos('undo'), CLR_R + 1); pad(btnPos('clr'), CLR_R + 1); pad(btnPos('dice'), CLR_R + 1);
     const r = btnPos('rev');
     const X = cur().fx, dimFx = X ? 1 : 0.35;   // у мира нет веера FX — кнопка тусклая
@@ -2709,7 +2713,7 @@
 
       // список: off и лады — строки с тонкими разделителями
       const rows = ['off', ...SCALES.map((sc) => sc.label)];
-      g.fillStyle = 'rgba(0,0,0,0.9)';
+      g.fillStyle = paper(0.9);
       g.fillRect(L.bx, L.top - 8, LIST_W, L.rows * ITEM_H + 16);
       hairBox(L.bx, L.top - 8, LIST_W, L.rows * ITEM_H + 16, 0.3);
       rows.forEach((label, i) => {
@@ -2719,7 +2723,7 @@
         if (i) { g.strokeStyle = ink(0.1); g.beginPath(); g.moveTo(L.bx + 8, Math.round(y + ITEM_H / 2) + 0.5); g.lineTo(L.bx + LIST_W - 8, Math.round(y + ITEM_H / 2) + 0.5); g.stroke(); }
       });
       // тоники: две колонки по шесть справа от списка
-      g.fillStyle = 'rgba(0,0,0,0.9)';
+      g.fillStyle = paper(0.9);
       g.fillRect(L.rx - 4, L.top - 8, 2 * L.cw + 8, L.rows * ITEM_H + 16);
       hairBox(L.rx - 4, L.top - 8, 2 * L.cw + 8, L.rows * ITEM_H + 16, 0.3);
       NOTES.forEach((nm, i) => {
@@ -2815,6 +2819,7 @@
     for (const w of Object.values(worlds)) if (w.tick) w.tick(now, dt);
     readLevel();
     if ((nav.view !== 'play' || nav.anim) && drawNav(now)) { measureStrain(now, performance.now() - t0); return; }
+    setTheme(cur().theme);
     cur().draw(now, dt);
     drawUI();
     const fxF = [...F.values()].find((f) => f.ui === 'rev' && f.menu);   // веер FX (у миров бывают свои кольца на весу)
@@ -3028,6 +3033,7 @@
   function worldImage(w) { return ENTER.has(w) ? snaps[w] : artFor(w); }
 
   function drawNav(now) {
+    setTheme(null);                             // карта — чёрная, как Tenebrae
     let k = 1, a = nav.anim;
     if (a) {
       k = clamp((now - a.t0) / NAV_MS);
@@ -3075,7 +3081,7 @@
       if (!info) continue;
       const right = p[0] >= cx, below = p[1] >= cy;
       const tx = right ? p[0] + 16 : p[0] + p[2] - 16, ty = below ? p[1] + p[3] - 34 : p[1] + 64;
-      g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(right ? tx - 6 : tx - 150, ty - 20, 156, 46);
+      g.fillStyle = paper(0.6); g.fillRect(right ? tx - 6 : tx - 150, ty - 20, 156, 46);
       mapText(`${info.n} · ${info.title}`, tx, ty - 4, 19, 0.95, right ? 'left' : 'right');
       mapText(ENTER.has(w) ? info.sub : `${info.sub} · nondum`, tx, ty + 16, 13, 0.6, right ? 'left' : 'right');
     }
@@ -3083,7 +3089,7 @@
     g.fillStyle = BG; g.beginPath(); g.arc(cx, cy, 40, 0, Math.PI * 2); g.fill();
     sunGlyph(g, cx, cy, 0, Math.PI * 2, 1, now);
     mapText('tap a world', cx, cy + 62, 13, 0.5, 'center');
-    g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(cx - 92, scopeY - 6, 184, 34);   // имя всей карты
+    g.fillStyle = paper(0.7); g.fillRect(cx - 92, scopeY - 6, 184, 34);   // имя всей карты
     g.font = `20px ${MAP}`; g.fillStyle = ink(0.95); g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText('U N I V E R S U M', cx, scopeY + 11);
     g.globalAlpha = 1;
@@ -3328,6 +3334,7 @@
 
   // ---------- миры: реестр; Tenebrae — мир I поверх своих функций ----------
   function registerWorld(n, w) {
+    if (n > 2) ENTER.add(n);                     // III и IV — модули-эскизы: пока без звука, но в них можно влететь
     worlds[n] = w; hists[n] = []; lasts[n] = entry(n);
   }
   const solNiger = {
@@ -3341,7 +3348,7 @@
 
   // общее для миров из других файлов (cymatica.js): регистрация и помощники рисования
   window.T2D = {
-    registerWorld, BG, MAP, ink, ring, dot, text, glowAt, hairBox,
+    registerWorld, get BG() { return BG; }, MAP, ink, paper, sunGlyph, ring, dot, text, glowAt, hairBox,
     get g() { return g; }, get W() { return W; }, get H() { return H; }, get DPR() { return DPR; },
     get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
     get ctx() { return ctx; }, hall, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,
