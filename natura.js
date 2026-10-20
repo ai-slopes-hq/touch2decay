@@ -5,6 +5,7 @@
 // запруда — длина петли. Древо на правом берегу, туча над ним поливает; дождь гуще — time; круги от задетой кувшинки
 // повторяются — delay; облака вокруг тучи — тоже delay; птиц больше — chorus (хор); камыши — cutoff; туман на горах — reverb.
 // Жесты: тап по реке — посадить кувшинку (тап по ней — убрать), тянешь кувшинку поперёк — нота, вдоль — шаг, держишь — сменить цветок;
+// запасной кораблик на левом берегу: берёшь и водишь по реке — поперёк звучит нота (с ладом — по ступеням, без — плавно), вниз по течению ярче;
 // запруда тянешь — длина петли; причал у истока: тап — пуск/стоп (лодочка отчаливает), вбок — темп.
 // Солнце — четверть в левом верхнем углу (к центру карты), тап — карта; надгробие слева внизу пока ни к чему не ведёт.
 // Спека: docs/superpowers/specs/2026-10-20-natura-design.md
@@ -305,13 +306,39 @@
     if (pads.len >= 16) drawBridge(c, G);
     // лист-лодочка плывёт по течению: между местами — плавно
     const { x: bx, y: by, s } = boatXY(G, now);
-    c.save(); c.translate(bx, by); c.rotate(-0.15);
+    boatShape(c, bx, by, s, -0.15, !playing);
+  }
+  function boatShape(c, bx, by, s, tilt, paused) {
+    c.save(); c.translate(bx, by); c.rotate(tilt);
     c.fillStyle = pap(1); c.strokeStyle = ink(0.95); c.lineWidth = 1.1;
     c.beginPath(); c.moveTo(-11 * s, 0); c.quadraticCurveTo(0, 6 * s, 11 * s, 0); c.quadraticCurveTo(0, -3 * s, -11 * s, 0); c.closePath(); c.fill(); c.stroke();
     c.beginPath(); c.moveTo(-9 * s, 0.5); c.lineTo(9 * s, 0.5); c.stroke();
-    c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -9 * s); c.lineTo(6 * s, -2 * s); c.closePath(); c.stroke();   // парус из листа
-    if (!playing) { c.lineWidth = 1; c.strokeRect(-3 * s, -14 * s, 1.6 * s, 4 * s); c.strokeRect(0.6 * s, -14 * s, 1.6 * s, 4 * s); }   // стоит — знак паузы над парусом
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -9 * s); c.lineTo(6 * s, -2 * s); c.closePath(); c.fill(); c.stroke();   // парус из листа
+    if (paused) { c.lineWidth = 1; c.strokeRect(-3 * s, -14 * s, 1.6 * s, 4 * s); c.strokeRect(0.6 * s, -14 * s, 1.6 * s, 4 * s); }   // стоит — знак паузы над парусом
     c.restore();
+  }
+
+  // ---------- запасной кораблик: лежит на левом берегу; водишь по реке — играет ----------
+  const skiff = { x: 0, y: 0, held: false, home: true, voice: null, trail: [], back: null };
+  const skiffHome = (G) => { const r = river(G, 0.5), p = across(r, -0.5 - 30 / r.w); return { x: p.x, y: p.y + 4 }; };
+  function drawSkiff(c, G, now) {
+    const home = skiffHome(G);
+    if (skiff.home) { skiff.x = home.x; skiff.y = home.y; }
+    else if (!skiff.held && skiff.back) {             // отпустили — сам плывёт к берегу
+      const k = clamp((now - skiff.back.t0) / 900), e = 1 - (1 - k) ** 3;
+      skiff.x = skiff.back.x + (home.x - skiff.back.x) * e; skiff.y = skiff.back.y + (home.y - skiff.back.y) * e;
+      if (k >= 1) { skiff.home = true; skiff.back = null; }
+    }
+    for (const w of skiff.trail) {                    // след на воде — расходящиеся дуги
+      const k = (now - w.t) / 1400;
+      if (k > 1) continue;
+      c.strokeStyle = ink(0.45 * (1 - k)); c.lineWidth = 0.9;
+      c.beginPath(); c.ellipse(w.x, w.y + 2, 6 + 22 * k, (6 + 22 * k) * 0.4, 0, Math.PI * 0.1, Math.PI * 0.9); c.stroke();
+    }
+    skiff.trail = skiff.trail.filter((w) => now - w.t < 1400);
+    const onWater = skiff.held && skiff.voice;
+    boatShape(c, skiff.x, skiff.y - (onWater ? 2 : 0), 1.25, skiff.home ? -0.35 : Math.sin(now * 0.004) * 0.08, false);
+    if (onWater && skiff.label) T.mapText(skiff.label, skiff.x, skiff.y - 30, 15, 0.95, 'center');
   }
   function boatXY(G, now) {                         // лист-лодочка: плывёт по течению между местами; стоит — у причала
     const ph = phase();
@@ -553,6 +580,35 @@
     }
   }
 
+  // голос кораблика: волна — последний выбранный цветок; поперёк реки — высота (с ладом по ступеням), вниз по течению — ярче
+  function skiffHz(q) {
+    const d = clamp((q / 0.78 + 0.5) * 14, 0, 14);
+    if (T.scaleOn) return noteHz(Math.round(d));
+    const lo = Math.floor(d), hi = Math.min(14, lo + 1), a = Math.log2(noteHz(lo)), b = Math.log2(noteHz(hi));
+    return 2 ** (a + (b - a) * (d - lo));               // без лада — плавно между ступенями
+  }
+  function skiffSound(o) {                            // o = { t, q } или null — с воды
+    if (!bus) return;
+    const t = actx.currentTime;
+    if (!o) {
+      if (skiff.voice) { const v = skiff.voice; skiff.voice = null; v.a.gain.setTargetAtTime(0, t, 0.25); setTimeout(() => { v.o.stop(); v.o.disconnect(); v.lp.disconnect(); v.a.disconnect(); }, 2000); }
+      return;
+    }
+    if (!skiff.voice) {
+      const ctx = actx, osc = ctx.createOscillator(), lp = ctx.createBiquadFilter(), a = ctx.createGain();
+      osc.type = ['sine', 'square', 'triangle'][lastWave]; lp.type = 'lowpass'; a.gain.value = 0;
+      osc.frequency.value = skiffHz(o.q); osc.connect(lp).connect(a).connect(bus.vin); osc.start();
+      skiff.voice = { o: osc, lp, a };
+      a.gain.setTargetAtTime([0.26, 0.11, 0.25][lastWave], t, 0.04);
+    }
+    const hz = skiffHz(o.q), v = skiff.voice;
+    v.o.frequency.setTargetAtTime(hz, t, T.scaleOn ? 0.015 : 0.03);
+    v.lp.Q.value = 0.7 + fx.res * 10;
+    v.lp.frequency.setTargetAtTime(180 * 2 ** (fx.cutoff * 6.6) * (0.5 + 1.8 * o.t), t, 0.05);
+    skiff.label = noteName(hz);
+    lastSound = performance.now(); setLive(true);
+  }
+
   // часы — по звуковому времени с запасом вперёд (таймер 25 мс, окно 200 мс)
   function schedule() {
     if (!seq.playing || !actx) return;
@@ -575,6 +631,10 @@
   const inRiver = (G, x, y) => { const o = onRiver(G, x, y); return o && o.t > 0.1 && o.t < 0.995 && Math.abs(o.q) < 0.5 + 6 / river(G, o.t).w; };
   function down(f) {
     const G = geo(), now = performance.now(), pq = pierXY(G);
+    if (Math.hypot(f.x - skiff.x, f.y - skiff.y + 4) < 26) {   // запасной кораблик — взять
+      skiff.held = true; skiff.home = false; skiff.back = null; skiff.dx = skiff.x - f.x; skiff.dy = skiff.y - f.y;
+      touches.set(f.id, { kind: 'skiff' }); return;
+    }
     const br = river(G, bridgeT()), bdx = f.x - br.x, bdy = f.y - br.y, al = bdx * br.tx + bdy * br.ty, ac = bdx * br.nx + bdy * br.ny;
     if (Math.abs(al) < 24 && Math.abs(ac) < br.w / 2 + 22) { touches.set(f.id, { kind: 'bridge' }); return; }
     for (let i = 0; i < 16; i++) {                    // кувшинки — раньше лодочки: та плывёт мимо и не должна перехватывать
@@ -596,6 +656,14 @@
     if (!t) return;
     const G = geo(), dx = f.x - f.x0, dy = f.y - f.y0;
     if (!t.moved && Math.hypot(dx, dy) > 8) t.moved = true;
+    if (t.kind === 'skiff') {                         // ведёшь кораблик: на воде — звучит
+      skiff.x = f.x + skiff.dx; skiff.y = f.y + skiff.dy;
+      const o = inRiver(G, skiff.x, skiff.y) ? onRiver(G, skiff.x, skiff.y) : null;
+      skiffSound(o);
+      const last = skiff.trail[skiff.trail.length - 1];
+      if (o && (!last || Math.hypot(last.x - skiff.x, last.y - skiff.y) > 10)) skiff.trail.push({ x: skiff.x, y: skiff.y, t: performance.now() });
+      return;
+    }
     if (t.kind === 'tree') {                          // тормошим: чем быстрее водишь по дереву, тем сильнее
       const v = Math.hypot(f.x - t.lx, f.y - t.ly); t.lx = f.x; t.ly = f.y;
       shake = Math.min(1, shake + v / 260); return;
@@ -615,6 +683,7 @@
     touches.delete(f.id);
     if (!t) return;
     const G = geo();
+    if (t.kind === 'skiff') { skiff.held = false; skiffSound(null); skiff.back = { x: skiff.x, y: skiff.y, t0: performance.now() }; return; }
     if (t.kind === 'boat' && !t.moved) play();
     else if (t.kind === 'pad' && !t.moved && !t.cycled) pads.at[t.i] = null;      // тап по кувшинке — убрать
     else if (t.kind === 'birds' && !t.moved) { birdsAt = performance.now(); laser(); }   // спугнули — лазер
@@ -717,6 +786,7 @@
       drawReeds(c, G, now);
       drawTree(c, G);
       drawCloud(c, G, now);
+      drawSkiff(c, G, now);
       drawStone(c, G);
       drawTouches(c, G);
     },
@@ -745,6 +815,7 @@
   T.registerWorld(4, natura);
   window.t2d.nat = {
     fx, pads, geo, seq, play, get phase() { return phase(); }, get shake() { return shake; }, get birdsAt() { return birdsAt; },
+    skiff: () => ({ x: skiff.x, y: skiff.y - 4, playing: !!skiff.voice, home: skiff.home }),
     tree: () => { const G = geo(), R = Math.min(G.W * 0.16, G.h * 0.09); return { x: G.tree.x, y: G.tree.y - G.h * 0.13 - R * 0.6 }; },
     bird: () => { const b = birdList(geo(), performance.now())[0]; return b && { x: b.X, y: b.Y }; },
     setFx: (k, v) => fxw.set(k, v),

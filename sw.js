@@ -1,7 +1,7 @@
 // Офлайн без залипания старой версии.
 // Код и страница — сначала из сети (мимо HTTP-кеша), кеш — только запасной вариант без сети.
 // Шрифты, иконки и гравюры не меняются — сразу из кеша.
-const CACHE = 't2d-v83';   // при выкладке менять вместе с app.js?v= в index.html
+const CACHE = 't2d-v84';   // при выкладке менять вместе с app.js?v= в index.html
 const SHELL = ['./', './index.html', './app.js', './cymatica.js', './plate-worklet.js', './laboratorium.js', './natura.js', './manifest.webmanifest'];
 const STATIC = ['./icon-180.png', './icon-192.png', './icon-512.png',
   './fonts/im-fell-english-latin-400-italic.woff2', './fonts/im-fell-english-latin-400-normal.woff2',

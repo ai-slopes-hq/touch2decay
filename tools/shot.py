@@ -756,6 +756,13 @@ async def sc_natura(p):                           # Natura: лодочка — �
     assert await p.js('()=>performance.now() - t2d.nat.birdsAt') < 1000, 'tap the birds — they scatter (laser)'
     await p.shot('natura-birds')
     await p.js("()=>t2d.nat.setFx('res', 0.95)"); await p.pg.wait_for_timeout(200); await p.shot('natura-res')
+    k0 = await p.js('()=>t2d.nat.skiff()'); w1 = await p.js('()=>t2d.nat.slot(8, 3)'); w2 = await p.js('()=>t2d.nat.slot(9, 12)')
+    pid = await p.hold(k0['x'], k0['y'], ms=60)                           # запасной кораблик: на воду — играет
+    await p.drag(pid, k0['x'], k0['y'], w1['x'], w1['y'], steps=10); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.nat.skiff().playing'), 'skiff on the water sounds'
+    await p.drag(pid, w1['x'], w1['y'], w2['x'], w2['y'], steps=10); await p.pg.wait_for_timeout(150)
+    await p.shot('natura-skiff'); await p.up(); await p.pg.wait_for_timeout(1300)
+    sk = await p.js('()=>t2d.nat.skiff()'); assert not sk['playing'] and sk['home'], f'released — quiet, back on the bank: {sk}'
     pads0 = await p.js('()=>JSON.stringify(t2d.nat.pads.at)')
     await p.js("()=>{const a=t2d.nat.pads.at; for (let i=0;i<16;i++) a[i]=null; a[5]={note:3,wave:0}; a[6]={note:9,wave:0}}")
     p0 = await p.js('()=>t2d.nat.slot(4, 6)'); p5 = await p.js('()=>t2d.nat.pad(5)'); p6 = await p.js('()=>t2d.nat.pad(6)'); p7 = await p.js('()=>t2d.nat.slot(7, 6)')
