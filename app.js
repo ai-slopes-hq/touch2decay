@@ -513,7 +513,7 @@
       if (f === except || !f.menu || !f.menu.voice) continue;
       return { v: f.menu.voice, key: f.menu.sector ? f.menu.sector.key : 'pitch', group: f.menu.group };
     }
-    if (editor && editor.kind === 'voice') return { v: editor.v, key: editor.key || 'pitch', group: editor.group };
+    if (editor && editor.kind === 'voice') return { v: editor.v, key: editor.key || 'pitch', group: editor.group };   // в плашке key — строка, у которой открыт LFO
     return null;
   }
 
@@ -737,6 +737,7 @@
   }
   // панель LFO внизу, под большой палец: полоса формы и пад — вправо скорость, вверх глубина
   const lfoPanel = () => {
+    if (editor && editor.sheet) { const s = sheetGeo(); return { x: s.x, w: s.w, top: s.lfoTop + 8, bottom: s.bottom, shape: { y: s.lfoTop + 30, h: 40 }, pad: { y: s.lfoTop + 78, h: s.bottom - s.lfoTop - 78 } }; }   // в плашке — внизу, под строками
     const x = 16, w = W - 32, bottom = H - safeBot - 16, top = bottom - 214;
     return { x, w, top, bottom, shape: { y: top + 22, h: 44 }, pad: { y: top + 74, h: bottom - top - 74 } };
   };
@@ -811,6 +812,29 @@
   function linkMid(dst, m) { return bez(linkCurve(dst, m), 0.5); }
   const ringR = () => MENU_DEAD + MENU_SPAN + 34;
 
+  // ---------- плашка снизу (вместо колец): настройки планеты и FX — строки под большой палец ----------
+  const SHEET_ROWS = [['cut', 'cutoff'], ['res', 'res'], ['beat', 'detune'], ['fm', 'fm'], ['shift', 'shift'], ['amp', 'amp']];
+  const ROW_H = 40;
+  function sheetGeo() {
+    const bottom = H - safeBot - 8, lfoH = editor && editor.lfo ? 196 : 0, x = 16, w = W - 32;
+    const top = bottom - lfoH - SHEET_ROWS.length * ROW_H - 52 - 50;
+    const wave = { y: top + 52, h: 40 };
+    const rows = SHEET_ROWS.map(([k, label], i) => ({ k, label, y: top + 100 + i * ROW_H, h: ROW_H }));
+    return { x, w, top, bottom, wave, rows, lfoTop: bottom - lfoH, tx0: x + 70, tx1: x + w - 112, lfoX: x + w - 18, close: { x: x + w - 64, y: top + 12, w: 64, h: 30 }, pitch: { x: x + w - 140, y: top + 12, w: 66, h: 30 } };
+  }
+  function fxGeo() {
+    const X = cur().fx, n = X ? X.sectors.length : 0, bottom = H - safeBot - 8, x = 16, w = W - 32, top = bottom - 52 - n * 46;
+    return { x, w, top, bottom, rows: X ? X.sectors.map((sc, i) => ({ k: sc.key, label: sc.label, y: top + 48 + i * 46, h: 46 })) : [], tx0: x + 82, tx1: x + w - 84 };
+  }
+  let fxSheet = null;                             // { w } — открыта плашка FX этого мира
+  const ampRowT = (v) => (v.amp > 0 ? ampT(v.amp) : 0);
+  function setAmpT(u, t) { const amp = lerpLog(AMP_MIN, AMP_MAX, clamp(t)); u.amp = t <= 0.005 ? 0 : Math.abs(20 * Math.log10(amp)) < 0.6 ? 1 : amp; u.dirty = true; }
+  const ROW_DEF = { cut: CUT_DEF, res: RES_DEF, beat: null, fm: 0, shift: SHIFT_DEF, amp: null };
+  function rowDefault(u, k) {                     // двойной тап по строке — значение по умолчанию
+    if (k === 'amp') u.amp = 1; else if (k === 'beat') u.beat = BEAT_DEF; else if (k === 'cut') u.cut = CUT_DEF; else if (k === 'res') u.res = RES_DEF;
+    else if (k === 'shift') u.shift = SHIFT_DEF; else if (k === 'fm') u.fm = 0; else if (k === 'wave') u.wave = WAVE_DEF;
+    u.dirty = true;
+  }
   // полоса громкости над панелью LFO — в опциях планеты, без лишнего луча
   const ampStrip = () => { const p = lfoPanel(); return { x: p.x, w: p.w, y: p.top - 52, h: 34 }; };
   const ampText = (amp) => {
@@ -837,6 +861,12 @@
   }
 
   function uiHit(f) {
+    if (fxSheet) {                                       // открыта плашка FX: строки — тянуть, кнопка FX или мимо — закрыть
+      const b = btnPos('rev'), s = fxGeo();
+      if (Math.hypot(f.x - b.x, f.y - b.y) < BTN_R + 6) return { k: 'fxclose' };
+      if (f.y >= s.top) { const r = s.rows.find((q) => f.y >= q.y - 4 && f.y < q.y + q.h); return r ? { k: 'fxrow', key: r.k } : { k: 'none' }; }
+      return { k: 'fxclose' };
+    }
     if (cur().corner.hit(f)) return { k: 'corner' };   // солнце / предмет в углу — карта миров
     if (nav.world === 1 && ghost) {                              // любое касание гасит призрак; по булавке — закрепляет
       const gh = ghost, p = pinPos(gh.menu.cx, gh.menu.cy);
@@ -854,6 +884,20 @@
       if (o === f || !o.menu || o.menu.fx) continue;
       const p = pinPos(o.menu.cx, o.menu.cy);
       if (Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 12) return { k: 'pin', holder: o };
+    }
+    if (editor && editor.sheet) {                         // плашка планеты: волна, строки, «~» — LFO на строку, панель LFO внизу
+      const s = sheetGeo();
+      if (f.y < s.top) return { k: 'void' };
+      if (inBox(f, s.close, 4)) return { k: 'void' };
+      if (inBox(f, s.pitch, 4)) return { k: 'slfo', key: 'pitch' };
+      if (f.y >= s.wave.y - 4 && f.y < s.wave.y + s.wave.h + 4) return { k: 'swave' };
+      for (const r of s.rows) if (f.y >= r.y && f.y < r.y + r.h) return f.x > s.lfoX - 24 && r.k !== 'amp' ? { k: 'slfo', key: r.k } : { k: 'srow', key: r.k };
+      if (editor.lfo) {
+        const tg = modTarget(f);
+        if (tg && tg.v.lfo[tg.key] && inBox(f, offChip())) return { k: 'lfooff' };
+        const l = lfoHit(f); if (l) return l;
+      }
+      return { k: 'none' };
     }
     if (editor) {
       if (editor.kind === 'voice') {
@@ -967,7 +1011,24 @@
     if (f.ui === 'corner') { goMap(); return; }
     if (f.ui === 'undo') { undo(); return; }
     if (f.ui === 'dice') { cur().dice(); return; }
-    if (f.ui === 'rev') { openFx(f); return; }
+    if (f.ui === 'rev') { fxSheet = { w: nav.world }; return; }   // FX — плашка снизу
+    if (f.ui === 'fxclose') { fxSheet = null; return; }
+    if (f.ui === 'fxrow') { const X = cur().fx; f.key = f.hit.key; f.v0 = X.get(f.key); return; }
+    if (f.ui === 'none') return;
+    if (f.ui === 'swave') { sheetWave(f); return; }
+    if (f.ui === 'srow') {
+      const e = editor, k = f.hit.key, now = performance.now();
+      f.key = k; f.v0 = k === 'amp' ? ampRowT(e.v) : norm(e.v, k);
+      if (lastRowTap && lastRowTap.k === k && now - lastRowTap.t < DTAP_MS) { for (const u of e.group) rowDefault(u, k); lastRowTap = null; f.done = true; }
+      return;
+    }
+    if (f.ui === 'slfo') {                    // «~» строки: LFO на этот параметр и его панель; ещё раз — свернуть
+      const e = editor, k = f.hit.key;
+      if (e.lfo && e.key === k) { e.lfo = false; return; }
+      e.key = k; e.lfo = true;
+      for (const u of e.group) if (!u.lfo[k]) { setLfo(u, k, { morph: 0, rate: 1.2, depth: 0.35 }); u.dirty = true; }
+      return;
+    }
     if (f.ui === 'vol') { f.vol0 = vol; return; }
     if (f.ui === 'pin') {
       if (f.hit.ghost) {                      // кольцо уже гасло — кружки снова звучат
@@ -1030,8 +1091,20 @@
     }
   }
 
+  let lastRowTap = null;
+  function sheetWave(f) {                     // волна: где палец на полосе — та таблица (морфинг между ними)
+    const s = sheetGeo(), t = clamp((f.x - s.x - 18) / (s.w - 36));
+    for (const u of editor.group) { u.wave = t; u.dirty = true; }
+  }
   function uiMove(f) {
     if (f.ui === 'vol') { setVol(f.vol0 - (f.y - f.y0) / VOL_TRAVEL); return; }
+    if (f.ui === 'swave') { sheetWave(f); return; }
+    if (f.ui === 'srow' && !f.done && editor) {   // строка: тянешь вбок — от прежнего значения, без скачка
+      const s = sheetGeo(), t = clamp(f.v0 + (f.x - f.x0) / (s.tx1 - s.tx0));
+      for (const u of editor.group) if (f.key === 'amp') setAmpT(u, t); else setNorm(u, f.key, t);
+      return;
+    }
+    if (f.ui === 'fxrow') { const X = cur().fx, s = fxGeo(); if (X) X.set(f.key, clamp(f.v0 + (f.x - f.x0) / (s.tx1 - s.tx0))); return; }
     if (f.ui === 'lfo') { lfoStrip(f); return; }
     if (f.ui === 'amp') { ampSet(f); return; }
     if (f.ui === 'ring') { ringTouch(f, false); return; }
@@ -1068,6 +1141,7 @@
   }
 
   function uiUp(f) {
+    if (f.ui === 'srow') { const quick = performance.now() - f.t0 < TAP_MS && Math.hypot(f.x - f.x0, f.y - f.y0) < TAP_MOVE; lastRowTap = quick && !f.done ? { k: f.key, t: performance.now() } : null; return; }
     if (f.ui === 'thread') {
       const B = hit(f.x, f.y), A = f.A;
       if (!B || B === A || !A.active) return;
@@ -1132,6 +1206,14 @@
     return { cx: x0 < x1 ? clamp(x, x0, x1) : W / 2, cy: y0 < y1 ? clamp(y, y0, y1) : (y0 + y1) / 2 };
   }
 
+  // долгое касание планеты — плашка её настроек снизу; палец, что держал, больше ничего не двигает
+  function openSheet(f) {
+    const v = f.voice;
+    f.menuWas = true; f.parked = true;
+    ghost = null;
+    editor = { kind: 'voice', v, group: groupOf(v), key: null, sheet: true, lfo: false, cx: vx(v), cy: vy(v), sectors: SECTORS };
+    focus = v;
+  }
   // ---------- кольцо на весу: тот же палец ведёт по лучу; расстояние от точки касания — значение ----------
   function openMenu(f) {
     const v = f.voice, group = groupOf(v);
@@ -2822,8 +2904,8 @@
     setTheme(cur().theme);
     cur().draw(now, dt);
     drawUI();
-    const fxF = [...F.values()].find((f) => f.ui === 'rev' && f.menu);   // веер FX (у миров бывают свои кольца на весу)
-    if (fxF) drawFx(fxF);                       // веер FX — поверх верхней строки
+    if (fxSheet && fxSheet.w !== nav.world) fxSheet = null;
+    if (fxSheet) drawFxSheet();                  // плашка FX — поверх мира
     drawStrain();
     measureStrain(now, performance.now() - t0);
   }
@@ -2834,7 +2916,7 @@
     const shown = nav.view === 'play' && !nav.anim && nav.world === 1;
     for (const f of F.values()) {
       if (!shown || f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
-      if (now - f.t0 > HOLD_MS) openMenu(f);
+      if (now - f.t0 > HOLD_MS) openSheet(f);
     }
 
     if (now > chaosAt) { chaosAt = now + 400; chaosTick(now); }
@@ -2946,7 +3028,7 @@
       g.save(); g.setLineDash([3, 5]); ring(full[i].x, full[i].y, 34 * (1 - 0.4 * k), 0.7 * (1 - k), 1.2); g.restore();
     }
     if (bridge) drawBridge(bridge, now);
-    if (editor) drawEditor();
+    if (editor && !editor.sheet) drawEditor();
     if (ghost && now > ghost.until) ghost = null;
     if (ghost && !editor) {                     // отпущенное кольцо гаснет; булавку ещё можно тапнуть
       g.save(); g.globalAlpha = 0.85 * ((ghost.until - now) / GHOST_MS) ** 0.6;
@@ -2954,9 +3036,71 @@
     }
     if (heldF) drawHeld(heldF.menu, { x: heldF.menu.cx + (heldF.x - heldF.menu.gx), y: heldF.menu.cy + (heldF.y - heldF.menu.gy) });
 
+    if (editor && editor.sheet) { drawSheet(now); return; }
     const tg = modTarget(null);
     if (tg) { drawLfoPanel(tg, now); drawAmpStrip(tg); }
     if (editor) drawCloseChip();
+  }
+  // плашка планеты: заголовок с маленькой планетой и нотой, полоса волн, строки параметров; «~» — LFO, его панель — внизу
+  function drawSheet(now) {
+    const e = editor, v = e.v, s = sheetGeo();
+    ring(vx(v), vy(v), planetR(v) + 9, 0.85, 1.4);   // на поле — кто сейчас в плашке
+    g.fillStyle = paper(0.97); g.fillRect(0, s.top, W, H - s.top);
+    g.strokeStyle = ink(0.35); g.lineWidth = 1; g.beginPath(); g.moveTo(0, s.top + 0.5); g.lineTo(W, s.top + 0.5); g.stroke();
+    g.fillStyle = ink(0.3); g.fillRect(W / 2 - 18, s.top + 5, 36, 2);
+    const hz = freq(v), many = e.group.length > 1 ? `  ×${e.group.length}` : '';
+    contour(v, s.x + 16, s.top + 27, 13, 1, 1.2, false);
+    mapText(`${noteName(Math.round(semiOf(hz)))} · ${Math.round(hz)} Hz${many}`, s.x + 40, s.top + 27, 16, 0.95);
+    const pc = s.pitch, pOn = !!v.lfo.pitch, pSel = e.lfo && e.key === 'pitch';
+    hairBox(pc.x, pc.y, pc.w, pc.h, pSel ? 0.9 : 0.4); text(`~ pitch`, pc.x + pc.w / 2, pc.y + pc.h / 2, 12, pOn ? 1 : 0.6, 400, 'center');
+    hairBox(s.close.x, s.close.y, s.close.w, s.close.h, 0.5); text('close', s.close.x + s.close.w / 2, s.close.y + s.close.h / 2, 12, 0.85, 400, 'center');
+    // полоса волн: таблицы по местам, рамка — где сейчас морфинг
+    const wv = s.wave;
+    hairBox(s.x, wv.y, s.w, wv.h, 0.3);
+    for (let i = 0; i < NW; i++) drawCurve(WAVES[i].fn, s.x + 18 + (i / (NW - 1)) * (s.w - 36), wv.y + wv.h / 2, 22, 14, 0.4, 1, 1);
+    const wx = s.x + 18 + clamp(v.wave + v.wv) * (s.w - 36);
+    hairBox(wx - 15, wv.y + 3, 30, wv.h - 6, 0.95);
+    drawCurve(morphFn(clamp(v.wave + v.wv)), wx, wv.y + wv.h / 2, 22, 14, 1, 1, 1.4);
+    for (const r of s.rows) {                   // строка: имя, нить с бегунком, полоса размаха LFO, значение, «~»
+      const cy = r.y + r.h / 2, sel = e.lfo && e.key === r.k, rf = [...F.values()].some((f) => f.ui === 'srow' && f.key === r.k);
+      text(r.label, s.x, cy, 14, rf || sel ? 1 : 0.75);
+      g.strokeStyle = ink(0.45); g.lineWidth = 1; g.beginPath(); g.moveTo(s.tx0, cy + 0.5); g.lineTo(s.tx1, cy + 0.5); g.stroke();
+      const T = (t) => s.tx0 + clamp(t) * (s.tx1 - s.tx0);
+      if (r.k === 'shift') { g.beginPath(); g.moveTo(T(0.5) + 0.5, cy - 5); g.lineTo(T(0.5) + 0.5, cy + 5); g.stroke(); }
+      const lr = r.k !== 'amp' && liveRange(v, r.k);
+      if (lr) { g.fillStyle = ink(0.16); g.fillRect(T(lr.lo), cy - 3, T(lr.hi) - T(lr.lo), 6); }
+      const t = r.k === 'amp' ? ampRowT(v) : norm(v, r.k);
+      g.fillStyle = ink(1); g.beginPath(); g.arc(T(t), cy, rf ? 8 : 6.5, 0, Math.PI * 2); g.fill();
+      if (lr) dot(T(lr.now), cy, 2.2, 0.7);
+      text(r.k === 'amp' ? ampText(v.amp) : valueText(v, r.k), s.tx1 + 12, cy, 13, 0.9);
+      if (r.k !== 'amp') {                    // «~»: есть LFO — ярко; открыт — в рамке
+        const on = !!v.lfo[r.k], lx = s.lfoX;
+        g.strokeStyle = ink(on ? 1 : 0.3); g.lineWidth = on ? 1.4 : 1; g.beginPath();
+        for (let i = 0; i <= 12; i++) { const X = lx - 10 + (i / 12) * 20, Y = cy + Math.sin((i / 12) * Math.PI * 2) * 4; i ? g.lineTo(X, Y) : g.moveTo(X, Y); }
+        g.stroke();
+        if (sel) hairBox(lx - 15, cy - 12, 30, 24, 0.8);
+      }
+    }
+    if (e.lfo) { const tg = modTarget(null); if (tg) drawLfoPanel(tg, now); }
+  }
+  // плашка FX мира: строка на каждый эффект, тянешь вбок; значение — как у мира в подписи
+  function drawFxSheet() {
+    const X = cur().fx, s = fxGeo();
+    if (!X) { fxSheet = null; return; }
+    g.fillStyle = paper(0.97); g.fillRect(0, s.top, W, H - s.top);
+    g.strokeStyle = ink(0.35); g.lineWidth = 1; g.beginPath(); g.moveTo(0, s.top + 0.5); g.lineTo(W, s.top + 0.5); g.stroke();
+    g.fillStyle = ink(0.3); g.fillRect(W / 2 - 18, s.top + 5, 36, 2);
+    mapText('aether', s.x, s.top + 26, 17, 0.95);
+    mapText('FX — tap outside to close', s.x + s.w, s.top + 26, 12, 0.5, 'right');
+    for (const r of s.rows) {
+      const cy = r.y + r.h / 2, on = [...F.values()].some((f) => f.ui === 'fxrow' && f.key === r.k), T = (t) => s.tx0 + clamp(t) * (s.tx1 - s.tx0);
+      text(r.label, s.x, cy, 14, on ? 1 : 0.75);
+      g.strokeStyle = ink(0.45); g.lineWidth = 1; g.beginPath(); g.moveTo(s.tx0, cy + 0.5); g.lineTo(s.tx1, cy + 0.5); g.stroke();
+      const t = X.get(r.k);
+      g.fillStyle = ink(0.2); g.fillRect(s.tx0, cy - 2, T(t) - s.tx0, 4);
+      g.fillStyle = ink(1); g.beginPath(); g.arc(T(t), cy, on ? 8 : 6.5, 0, Math.PI * 2); g.fill();
+      text(X.text(r.k), s.tx1 + 12, cy, 13, 0.9);
+    }
   }
 
   // ---------- смежные миры: солнце — начало координат, вокруг него четыре четверти ----------
@@ -3009,7 +3153,7 @@
   const sunCorner = (w) => [null, [0, geo.bot], [W, H], [W, 0], [0, 0]][w];
 
   function goMap() {
-    loadArt();
+    loadArt(); fxSheet = null;
     const n = nav.world;
     if (nav.view === 'play') {
       if (worlds[n].mapShot) {                      // у миров III и IV солнце в своём углу двоило бы центральное — снимок без него
@@ -3495,7 +3639,7 @@
   window.t2d = {
     worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return strikes; },
     go(w) { nav.world = w; nav.view = 'play'; nav.anim = null; nav.settings = false; if (worlds[w].enter) worlds[w].enter(); },
-    get nav() { return { ...nav }; }, link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }),   // сразу в мир, без касаний (тесты)
+    get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }),   // сразу в мир, без касаний (тесты)
     get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
     hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,

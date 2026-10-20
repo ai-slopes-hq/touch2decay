@@ -62,29 +62,38 @@ async def sc_planets(p):
     print('planets:', await p.js("()=>t2d.voices.filter(v=>v.active).map(v=>[v.i,v.pinned,Math.round(t2d.freq(v))])"))
 
 
-async def sc_ring(p):
-    await p.pin(200, 450)
-    await p.hold(200, 450); await p.up(); await p.pg.wait_for_timeout(200)   # отпустил в центре — кольцо закреплено
-    e = await p.js("()=>t2d.editor&&{cx:t2d.editor.cx,cy:t2d.editor.cy}")
-    await p.tap(e['cx'] + math.cos(math.radians(-30)) * 100, e['cy'] + math.sin(math.radians(-30)) * 100)   # луч cutoff
-    await p.tap(W * 0.6, H - 16 - 140 * 0.6)                                                                  # пад LFO
-    await p.pg.wait_for_timeout(400)
-    await p.shot('ring')
-    print('ring:', await p.js("()=>({editor:t2d.editor&&t2d.editor.key, lfo:t2d.voices.filter(v=>v.pinned).map(v=>Object.keys(v.lfo))})"))
+async def sc_ring(p):                              # долгое касание планеты — плашка снизу: строки, «~» — LFO, двойной тап — по умолчанию
+    await p.pin(200, 300)
+    await p.hold(200, 300, ms=600); await p.up(); await p.pg.wait_for_timeout(200)
+    e = await p.js("()=>t2d.editor&&{sheet:!!t2d.editor.sheet}"); assert e and e['sheet'], f'hold a planet — its sheet: {e}'
+    s = await p.js('()=>t2d.sheetGeo()'); row = lambda k: next(r for r in s['rows'] if r['k'] == k)
+    c0 = await p.js('()=>t2d.voices.find(v=>v.pinned).cut'); r = row('cut'); y = r['y'] + r['h'] / 2
+    pid = await p.hold(s['tx0'] + 40, y, ms=60); await p.drag(pid, s['tx0'] + 40, y, s['tx0'] + 140, y, steps=8); await p.up(); await p.pg.wait_for_timeout(100)
+    c1 = await p.js('()=>t2d.voices.find(v=>v.pinned).cut'); assert c1 > c0 + 0.2, f'drag the cutoff row right — brighter: {c0} -> {c1}'
+    await p.tap(s['lfoX'], y); await p.pg.wait_for_timeout(200)       # «~» у cutoff — LFO и его панель
+    st = await p.js("()=>({lfo:t2d.editor.lfo, key:t2d.editor.key, has:Object.keys(t2d.voices.find(v=>v.pinned).lfo)})")
+    assert st['lfo'] and st['key'] == 'cut' and 'cut' in st['has'], f'tap ~ — LFO on cutoff: {st}'
+    await p.pg.wait_for_timeout(300); await p.shot('ring')
+    s = await p.js('()=>t2d.sheetGeo()'); r = row('res'); y = r['y'] + r['h'] / 2
+    pid = await p.hold(s['tx0'] + 40, y, ms=60); await p.drag(pid, s['tx0'] + 40, y, s['tx0'] + 160, y, steps=6); await p.up(); await p.pg.wait_for_timeout(100)
+    await p.tap(s['tx0'] + 60, y); await p.pg.wait_for_timeout(80); await p.tap(s['tx0'] + 60, y); await p.pg.wait_for_timeout(100)
+    assert abs(await p.js('()=>t2d.voices.find(v=>v.pinned).res') - 0.21) < 1e-6, 'double tap a row — back to default'
+    await p.tap(200, s['top'] - 60); await p.pg.wait_for_timeout(100)
+    assert not await p.js('()=>t2d.editor'), 'tap above the sheet — closed'
+    print('ring:', st)
 
 
-
-async def sc_ampoff(p):                            # левый край полосы amp — off: планета молчит, но модулирует
-    await p.pin(200, 450)
-    await p.hold(200, 450); await p.up(); await p.pg.wait_for_timeout(200)   # закреплённое кольцо — под ним полоса amp
-    a = await p.js('()=>t2d.ampStrip()')
-    await p.tap(a['x'] + 3, a['y'] + a['h'] / 2); await p.pg.wait_for_timeout(100)
+async def sc_ampoff(p):                            # строка amp в плашке: левый край — off: планета молчит, но модулирует
+    await p.pin(200, 300)
+    await p.hold(200, 300, ms=600); await p.up(); await p.pg.wait_for_timeout(200)
+    s = await p.js('()=>t2d.sheetGeo()'); r = next(q for q in s['rows'] if q['k'] == 'amp'); y = r['y'] + r['h'] / 2
+    pid = await p.hold(s['tx1'] - 10, y, ms=60); await p.drag(pid, s['tx1'] - 10, y, s['tx1'] - 10 - 3 * (s['tx1'] - s['tx0']), y, steps=10); await p.up(); await p.pg.wait_for_timeout(100)
     amp = await p.js('()=>t2d.voices.find(v=>v.pinned).amp')
     await p.shot('ampoff')
-    assert amp == 0, f'left edge of the amp strip is off: {amp}'
-    await p.tap(a['x'] + a['w'] * 0.25, a['y'] + a['h'] / 2); await p.pg.wait_for_timeout(100)
+    assert amp == 0, f'amp row all the way left is off: {amp}'
+    pid = await p.hold(s['tx0'] + 10, y, ms=60); await p.drag(pid, s['tx0'] + 10, y, s['tx0'] + 10 + 0.3 * (s['tx1'] - s['tx0']), y, steps=6); await p.up(); await p.pg.wait_for_timeout(100)
     amp = await p.js('()=>t2d.voices.find(v=>v.pinned).amp')
-    assert 0.05 <= amp < 0.5, f'a bit to the right it plays again, quietly: {amp}'
+    assert 0.03 <= amp < 0.5, f'a bit to the right it plays again, quietly: {amp}'
 
 
 async def sc_worlds(p):                            # карта, Cymatica в четверти II, эскиз Laboratorium в III
@@ -110,7 +119,9 @@ async def sc_worlds(p):                            # карта, Cymatica в ч�
     assert await p.js('()=>t2d.zoom') == z, 'wheel in Cymatica keeps Tenebrae zoom'
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned)'), 'undo in Cymatica leaves Tenebrae alone'
-    r = await p.js("()=>t2d.btnPos('rev')"); await p.tap(r['x'], r['y'])  # FX без набора — ничего
+    r = await p.js("()=>t2d.btnPos('rev')"); await p.tap(r['x'], r['y']); await p.pg.wait_for_timeout(100)   # FX — плашка; ещё раз — закрыта
+    assert await p.js('()=>t2d.fxSheet'), 'FX opens the sheet'
+    await p.tap(r['x'], r['y']); await p.pg.wait_for_timeout(100)
     await p.pg.set_viewport_size({'width': 430, 'height': 900}); await p.pg.wait_for_timeout(300)
     await p.pg.set_viewport_size({'width': W, 'height': H}); await p.pg.wait_for_timeout(300)
     await p.tap(W - 10, H - 8); await p.pg.wait_for_timeout(800)          # резонатор — карта
@@ -243,8 +254,11 @@ async def sc_plate(p):                             # Cymatica: удар, смы�
         f = await p.js('()=>t2d.cym.f0'); assert 55 <= f <= 880, f'pitch clamped: {f}'
     assert await p.js('()=>t2d.zoom') == z, 'wheel in Cymatica keeps Tenebrae zoom'
     s0 = await p.js('()=>t2d.cym.fx.structure'); rv = await p.js("()=>t2d.btnPos('rev')")
-    pid = await p.hold(rv['x'], rv['y'], ms=120); await p.drag(pid, rv['x'], rv['y'], rv['x'] - 80, rv['y'], steps=10); await p.up()
-    assert await p.js('()=>t2d.cym.fx.structure') != s0, 'FX fan moves structure'
+    await p.tap(rv['x'], rv['y']); await p.pg.wait_for_timeout(100)
+    fg = await p.js('()=>t2d.fxGeo()'); r = next(q for q in fg['rows'] if q['k'] == 'structure'); y = r['y'] + r['h'] / 2
+    pid = await p.hold(fg['tx0'] + 60, y, ms=60); await p.drag(pid, fg['tx0'] + 60, y, fg['tx0'] + 160, y, steps=8); await p.up()
+    assert await p.js('()=>t2d.cym.fx.structure') != s0, 'FX sheet row moves structure'
+    await p.tap(rv['x'], rv['y']); await p.pg.wait_for_timeout(100)
     await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)       # убрать смычки
     a, b = {'x': cx, 'y': cy, 'id': 61}, {'x': W - 10, 'y': H - 8, 'id': 62}
     await p.T('touchStart', [a]); await p.pg.wait_for_timeout(300)       # смычок...
@@ -538,9 +552,13 @@ async def sc_scalepinch(p):                        # с ладом щипок и
 async def sc_echo(p):                              # эхо по долям темпа: луч time 1/16t … 1/4d, повторов больше с echo
     await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
     g = await p.js('()=>t2d.cym.geo'); await p.tap(g['cx'], g['cy']); await p.pg.wait_for_timeout(700)
-    rv = await p.js("()=>t2d.btnPos('rev')")
-    pid = await p.hold(rv['x'], rv['y'], ms=120); await p.drag(pid, rv['x'], rv['y'], rv['x'], rv['y'] + 400, steps=12)
+    rv = await p.js("()=>t2d.btnPos('rev')"); await p.tap(rv['x'], rv['y']); await p.pg.wait_for_timeout(150)   # FX — плашка: строка time вправо до конца
+    assert await p.js('()=>t2d.fxSheet'), 'FX opens the sheet'
+    fg = await p.js('()=>t2d.fxGeo()'); r = next(q for q in fg['rows'] if q['k'] == 'time'); y = r['y'] + r['h'] / 2
+    pid = await p.hold(fg['tx0'] + 10, y, ms=60); await p.drag(pid, fg['tx0'] + 10, y, fg['tx0'] + 10 + 2 * (fg['tx1'] - fg['tx0']), y, steps=10)
     e = await p.js('()=>t2d.cym.echo'); await p.shot('echo'); await p.up()
+    await p.tap(200, fg['top'] - 80); await p.pg.wait_for_timeout(100)
+    assert not await p.js('()=>t2d.fxSheet'), 'tap outside — FX sheet closed'
     bpm = await p.js('()=>t2d.cym.seq.bpm')
     assert e['label'] == '1/4d', f'time ray at the end is a dotted quarter: {e}'
     assert abs(e['sec'] - 1.5 * 60 / bpm) < 1e-3, f'delay follows the tempo: {e}'
