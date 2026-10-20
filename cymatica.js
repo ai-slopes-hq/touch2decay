@@ -418,7 +418,7 @@
     if (h.k === 'play' && !f.moved) { cursor = null; play(); T.tempoFrom(2, seq.bpm); T.transportFrom(2, seq.playing); }
     else if (h.k === 'rec') { cursor = null; if (seq.playing) rec(); else stepRecToggle(); }   // часы стоят — запись по шагам
     else if (h.k === 'rtick' && !f.moved) { seq.rhythm.steps[h.i] = seq.rhythm.steps[h.i] ? null : { vel: 1 }; fillMelody(); sendSeq(); }
-    else if (h.k === 'drift' && !f.moved && !f.menu) { drift.on = !drift.on; drift.k = 0; drift.t0 = performance.now(); drift.last = -1; send({ t: 'f0', hz: effF0() }); sendSeq(); }
+    else if (h.k === 'drift' && !f.moved && !f.menu && !T.sheetOpen) { drift.on = !drift.on; drift.k = 0; drift.t0 = performance.now(); drift.last = -1; send({ t: 'f0', hz: effF0() }); sendSeq(); }
     else if (h.k === 'mtick' && !f.moved && !seq.playing) cursor = h.i % seq.melody.len;   // тап по гнезду мелодии, часы стоят — курсор пошагового ввода туда
   }
   // пошаговый ввод: курсор появляется тапом по гнезду кольца мелодии (часы стоят); тап по пластине пишет место в гнездо
@@ -626,17 +626,15 @@
   const DRIFT_SECTORS = [
     { key: 'depth', label: 'depth', ang: -Math.PI / 2 },
     { key: 'rate', label: 'rate', ang: -Math.PI / 6 - Math.PI / 3, marks: DRIFT_RATES.map((r) => r[0]) },
-    { key: 'shape', label: 'sine ↔ random', ang: -Math.PI / 6 },
+    { key: 'shape', label: 'shape', ang: -Math.PI / 6 },
   ];
-  function openDrift(f) {
-    const g = plateGeo(), A = astro(g), c = T.ringCenter(A.driftX, A.ty), orig = { ...drift };
-    f.menu = {
-      cx: c.cx, cy: c.cy, gx: f.x, gy: f.y, sector: null, sectors: DRIFT_SECTORS, span: T.MENU_SPAN, fx: true,
-      get: (k) => drift[k], set: (k, t) => { drift[k] = t; if (!drift.on) { drift.on = true; drift.t0 = performance.now(); } },
+  function openDrift() {                          // плашка луны снизу (как FX): depth, rate, sine ↔ random
+    T.openSheet({
+      title: 'luna', hint: 'plate drift — tap outside to close', rows: DRIFT_SECTORS,
+      get: (k) => drift[k],
+      set: (k, t) => { drift[k] = t; if (!drift.on) { drift.on = true; drift.t0 = performance.now(); drift.last = -1; } },
       text: (k) => (k === 'depth' ? `±${driftDepth()} steps` : k === 'rate' ? driftRate()[0] : drift.shape < 0.5 ? 'sine' : 'random'),
-      restore: () => Object.assign(drift, orig),
-    };
-    ringF = f;
+    });
   }
   function driftTick(now) {                       // луна качает пластину: новая ступень — пластина и ноты едут
     if (!drift.on) { if (drift.k) { drift.k = 0; send({ t: 'f0', hz: effF0() }); sendSeq(); } return; }
@@ -658,7 +656,7 @@
         send({ t: 'bow', id: f.bid, x: p.x, y: p.y, on: true, exciter: 0, pressure: 0.5, amp: 0.8 });
       }
       if (f.cb && !f.moved && !f.menu && now - f.t0 > T.HOLD_MS) openRing(f);
-      if (f.astro && f.astro.k === 'drift' && !f.menu && !f.moved && now - f.t0 > T.HOLD_MS) openDrift(f);   // зажал луну — кольцо: глубина, такт, форма
+      if (f.astro && f.astro.k === 'drift' && !f.menu && !f.moved && now - f.t0 > T.HOLD_MS) { f.menu = true; openDrift(); }   // зажал луну — плашка: глубина, такт, форма
       if (f.astro && f.astro.k === 'grid' && !f.combed && !f.moved && now - f.t0 > T.HOLD_MS) {   // зажал сетку — причесать ритм
         f.combed = true;
         seq.rhythm.steps = quantizeRhythm(seq.rhythm.steps, seq.rhythm.len, grid);

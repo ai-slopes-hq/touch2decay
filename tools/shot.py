@@ -899,9 +899,15 @@ async def sc_cymx(p):                              # Cymatica: запись по
     await p.js('()=>{const s=t2d.cym.seq; t2d.cym.play(true)}'); await p.pg.wait_for_timeout(3500)
     assert await p.js('()=>t2d.cym.stars') > 1, 'played places draw a constellation'
     await p.shot('cym-drift')
-    pid = await p.hold(g['driftX'], ty, ms=700)                             # держишь луну — кольцо
-    assert await p.js('()=>t2d.cym.ringOpen'), 'hold the moon — its ring'
+    pid = await p.hold(g['driftX'], ty, ms=700)                             # держишь луну — плашка снизу
     await p.up(); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold the moon — its sheet'
+    fg = await p.js('()=>t2d.fxGeo()'); r = next(q for q in fg['rows'] if q['k'] == 'depth'); y = r['y'] + r['h'] / 2
+    d0 = await p.js('()=>t2d.cym.drift.depth')
+    pid = await p.hold(fg['tx0'] + 20, y, ms=60); await p.drag(pid, fg['tx0'] + 20, y, fg['tx0'] + 120, y, steps=6); await p.shot('cym-luna'); await p.up()
+    assert await p.js('()=>t2d.cym.drift.depth') > d0 + 0.2, 'luna sheet: depth row'
+    await p.tap(200, fg['top'] - 80); await p.pg.wait_for_timeout(100)
+    assert not await p.js('()=>T2D.sheetOpen'), 'tap outside — closed'
     await p.js('()=>t2d.cym.play(false)')
     await p.tap(g['driftX'], ty); await p.pg.wait_for_timeout(100)
     assert not await p.js('()=>t2d.cym.drift.on') and abs(await p.js('()=>t2d.cym.effF0') - await p.js('()=>t2d.cym.f0')) < 0.01, 'moon off — plate back to its size'

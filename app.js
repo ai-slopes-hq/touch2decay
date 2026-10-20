@@ -822,11 +822,14 @@
     const rows = SHEET_ROWS.map(([k, label], i) => ({ k, label, y: top + 100 + i * ROW_H, h: ROW_H }));
     return { x, w, top, bottom, wave, rows, lfoTop: bottom - lfoH, tx0: x + 70, tx1: x + w - 112, lfoX: x + w - 18, close: { x: x + w - 64, y: top + 12, w: 64, h: 30 }, pitch: { x: x + w - 140, y: top + 12, w: 66, h: 30 } };
   }
+  // плашка со строками — FX мира или своя у мира (T2D.openSheet: луна Cymatica …): spec { title, hint, rows: [{ key, label }], get, set, text }
+  const fxSpec = () => { const X = cur().fx; return X && { title: 'aether', hint: 'FX — tap outside to close', rows: X.sectors, get: X.get, set: X.set, text: X.text }; };
+  const sheetSpec = () => (fxSheet ? fxSheet.spec || fxSpec() : null);
   function fxGeo() {
-    const X = cur().fx, n = X ? X.sectors.length : 0, bottom = H - safeBot - 8, x = 16, w = W - 32, top = bottom - 52 - n * 46;
-    return { x, w, top, bottom, rows: X ? X.sectors.map((sc, i) => ({ k: sc.key, label: sc.label, y: top + 48 + i * 46, h: 46 })) : [], tx0: x + 82, tx1: x + w - 84 };
+    const S = sheetSpec(), n = S ? S.rows.length : 0, bottom = H - safeBot - 8, x = 16, w = W - 32, top = bottom - 52 - n * 46;
+    return { x, w, top, bottom, rows: S ? S.rows.map((sc, i) => ({ k: sc.key, label: sc.label, y: top + 48 + i * 46, h: 46 })) : [], tx0: x + 82, tx1: x + w - 84 };
   }
-  let fxSheet = null;                             // { w } — открыта плашка FX этого мира
+  let fxSheet = null;                             // { w, spec? } — открыта плашка (FX или своя у мира)
   const ampRowT = (v) => (v.amp > 0 ? ampT(v.amp) : 0);
   function setAmpT(u, t) { const amp = lerpLog(AMP_MIN, AMP_MAX, clamp(t)); u.amp = t <= 0.005 ? 0 : Math.abs(20 * Math.log10(amp)) < 0.6 ? 1 : amp; u.dirty = true; }
   const ROW_DEF = { cut: CUT_DEF, res: RES_DEF, beat: null, fm: 0, shift: SHIFT_DEF, amp: null };
@@ -1013,7 +1016,7 @@
     if (f.ui === 'dice') { cur().dice(); return; }
     if (f.ui === 'rev') { fxSheet = { w: nav.world }; return; }   // FX — плашка снизу
     if (f.ui === 'fxclose') { fxSheet = null; return; }
-    if (f.ui === 'fxrow') { const X = cur().fx; f.key = f.hit.key; f.v0 = X.get(f.key); return; }
+    if (f.ui === 'fxrow') { const X = sheetSpec(); f.key = f.hit.key; f.v0 = X.get(f.key); return; }
     if (f.ui === 'none') return;
     if (f.ui === 'swave') { sheetWave(f); return; }
     if (f.ui === 'srow') {
@@ -1104,7 +1107,7 @@
       for (const u of editor.group) if (f.key === 'amp') setAmpT(u, t); else setNorm(u, f.key, t);
       return;
     }
-    if (f.ui === 'fxrow') { const X = cur().fx, s = fxGeo(); if (X) X.set(f.key, clamp(f.v0 + (f.x - f.x0) / (s.tx1 - s.tx0))); return; }
+    if (f.ui === 'fxrow') { const X = sheetSpec(), s = fxGeo(); if (X) X.set(f.key, clamp(f.v0 + (f.x - f.x0) / (s.tx1 - s.tx0))); return; }
     if (f.ui === 'lfo') { lfoStrip(f); return; }
     if (f.ui === 'amp') { ampSet(f); return; }
     if (f.ui === 'ring') { ringTouch(f, false); return; }
@@ -3087,13 +3090,13 @@
   }
   // плашка FX мира: строка на каждый эффект, тянешь вбок; значение — как у мира в подписи
   function drawFxSheet() {
-    const X = cur().fx, s = fxGeo();
+    const X = sheetSpec(), s = fxGeo();
     if (!X) { fxSheet = null; return; }
     g.fillStyle = paper(0.97); g.fillRect(0, s.top, W, H - s.top);
     g.strokeStyle = ink(0.35); g.lineWidth = 1; g.beginPath(); g.moveTo(0, s.top + 0.5); g.lineTo(W, s.top + 0.5); g.stroke();
     g.fillStyle = ink(0.3); g.fillRect(W / 2 - 18, s.top + 5, 36, 2);
-    mapText('aether', s.x, s.top + 26, 17, 0.95);
-    mapText('FX — tap outside to close', s.x + s.w, s.top + 26, 12, 0.5, 'right');
+    mapText(X.title, s.x, s.top + 26, 17, 0.95);
+    mapText(X.hint || 'tap outside to close', s.x + s.w, s.top + 26, 12, 0.5, 'right');
     for (const r of s.rows) {
       const cy = r.y + r.h / 2, on = [...F.values()].some((f) => f.ui === 'fxrow' && f.key === r.k), T = (t) => s.tx0 + clamp(t) * (s.tx1 - s.tx0);
       text(r.label, s.x, cy, 14, on ? 1 : 0.75);
@@ -3629,7 +3632,7 @@
 
   // общее для миров из других файлов (cymatica.js): регистрация и помощники рисования
   window.T2D = {
-    registerWorld, tempoFrom, transportFrom, get link() { return { ...link }; }, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,
+    registerWorld, tempoFrom, transportFrom, openSheet: (spec) => { fxSheet = { w: nav.world, spec }; }, closeSheet: () => { fxSheet = null; }, get sheetOpen() { return !!fxSheet; }, get link() { return { ...link }; }, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,
     get g() { return g; }, get W() { return W; }, get H() { return H; }, get DPR() { return DPR; },
     get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
     get ctx() { return ctx; }, hall, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,
