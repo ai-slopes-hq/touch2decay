@@ -198,7 +198,7 @@
   // зум: на экране видна доля zoom координаты высоты, от солнца наружу. По умолчанию — до 880 Гц;
   // щипок по пустому месту — от «только sub и bass» до всех пяти октав. Звук от зума не меняется
   const ZOOM_DEF = (48 / 60) ** (1 / 1.45), ZOOM_MIN = 0.35;
-  let zoom = ZOOM_DEF, zoomT = ZOOM_DEF;
+  let zoom = ZOOM_DEF, zoomT = ZOOM_DEF, zoomShow = 0;
   const rAt = (p) => (p / zoom > 1.0001 ? Infinity : rOfP(p / zoom));   // радиус орбиты высоты p (за горизонтом — ∞)
   function place(p, c) {
     const r = rOfP(Math.min(1, p / zoom)), sp = arcSpan(r) || [Math.PI / 4, Math.PI / 4];
@@ -594,6 +594,7 @@
     if (f.zoom) {
       const z = f.zoom;
       zoomT = clamp((z.z1 * z.d1) / Math.max(20, fdist(z.a, z.b)), ZOOM_MIN, 1);   // развёл — ближе к солнцу
+      zoomShow = performance.now() + 1200;      // подписи диапазонов видны во время зума и ещё секунду после
       return;
     }
     if (f.bridge) bridgeMove(f.bridge);
@@ -2148,9 +2149,9 @@
 
   // где дуга радиуса r пересекает край поля: чистый конец (низ или правый край) и шумный (левый или верхний)
   function arcEnds(r) {
-    const { oy, top, bot } = geo, h = oy - top;
+    const { oy, top, bot } = geo, h = oy - top - EDGE_T + 4;   // верх — под строкой кнопок
     const clean = r < W - 4 ? { x: r, y: bot } : { x: W, y: oy - Math.sqrt(Math.max(0, r * r - W * W)) };
-    const noisy = r < h ? { x: 0, y: oy - r } : { x: Math.sqrt(Math.max(0, r * r - h * h)), y: top };
+    const noisy = r < h ? { x: 0, y: oy - r } : { x: Math.sqrt(Math.max(0, r * r - h * h)), y: oy - h };
     return { clean, noisy };
   }
 
@@ -2159,6 +2160,7 @@
     const held = [];
     for (const f of F.values()) if (f.voice && !f.ui && !f.parked && !f.bridge && !f.menu) held.push(f.voice);
     const drag = held.length > 0;
+    const zk = clamp((zoomShow - performance.now()) / 400);   // зум: 1 — пока щиплешь, дальше тает
     const heldS = held.map((v) => semi(soundX(v)));
     const cols = fieldCols();
     const Q = -Math.PI / 2;
@@ -2174,7 +2176,7 @@
     cols.forEach((c, i) => {                    // орбиты на границах; полоса под кружком — едва светлее
       const on = heldS.some((s) => s >= c.s0 && s < c.s1 + (c.s1 >= SEMIS ? 1 : 0));
       if (on) { g.fillStyle = ink(0.045); g.beginPath(); g.arc(ox, oy, c.r1, Q, 0); g.arc(ox, oy, c.r0, 0, Q, true); g.closePath(); g.fill(); }
-      if (i) engraved(c.r0, drag ? 0.22 : 0.12);
+      if (i) engraved(c.r0, drag ? 0.22 : 0.12 + 0.18 * zk);
     });
     const tgt = new Map();                      // нота, к которой притянут кружок → сам кружок
     if (scl.on) {
@@ -2191,7 +2193,12 @@
       }
     }
     g.restore();
-    if (!drag) return;
+    if (zk > 0) {                               // зум: докуда сейчас видно поле
+      const hz = F_LO * 2 ** (semi(zoom) / 12);
+      mapText(`55 – ${hz >= 1000 ? (hz / 1000).toFixed(2) + ' kHz' : Math.round(hz) + ' Hz'}`, W / 2, top + 76, 17, 0.9 * zk, 'center');
+    }
+    if (!drag && zk <= 0) return;
+    const la = drag ? 1 : zk;                   // подписи — при перетаскивании или при зуме
     // подписи: имя полосы — у чистого конца её дуги, граница в герцах — у шумного
     cols.forEach((c) => {
       const on = heldS.some((s) => s >= c.s0 && s < c.s1 + (c.s1 >= SEMIS ? 1 : 0));
@@ -2199,12 +2206,13 @@
       if (c.label && c.r1 - c.r0 > 16) {
         const e = arcEnds(rm).clean;
         const lab = scl.on ? c.label : c.label[0].toUpperCase() + c.label.slice(1);
-        if (e.y >= bot - 1) mapText(lab, e.x, bot - 13, 15, on ? 0.95 : 0.5, 'center');
-        else mapText(lab, W - 14, e.y, 15, on ? 0.95 : 0.5, 'right');
+        const al = on ? 0.95 : drag ? 0.5 : 0.85 * la;
+        if (e.y >= bot - 1) mapText(lab, e.x, bot - 13, 15, al, 'center');
+        else mapText(lab, W - 14, e.y, 15, al, 'right');
       }
       if (c.hz) {
         const e = arcEnds(c.r0).noisy;
-        mapText(c.hz >= 1000 ? `${c.hz / 1000}k` : `${c.hz}`, e.x + 12, e.x < 1 ? e.y - 9 : top + 14, 12, 0.5);
+        mapText(c.hz >= 1000 ? `${c.hz / 1000}k` : `${c.hz}`, e.x + 12, e.x < 1 ? e.y - 9 : top + EDGE_T - 4, 12, drag ? 0.5 : 0.75 * la);
       }
     });
     // в ладу — имя ноты рядом с кружком, снаружи по радиусу
