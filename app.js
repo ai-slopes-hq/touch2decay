@@ -3330,6 +3330,8 @@
     get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
     get ctx() { return ctx; }, hall, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,
     MENU_DEAD, get MENU_SPAN() { return MENU_SPAN; }, HOLD_MS, DTAP_MS, PIN_MAX, get scaleOn() { return scl.on; },
+    get scaleRoot() { return scl.on ? scl.root : 0; },                              // тоника — класс высоты от A
+    get scalePCs() { return scl.on ? SCALES[scl.idx].steps.map((s) => (s + scl.root) % 12) : null; },   // классы высот лада
   };
 
   window.t2d = {
