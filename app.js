@@ -1182,6 +1182,23 @@
     return c;
   }
 
+  // звук удара солнца: треск (шум в полосе, двумя щелчками) и глухой толчок; через шину голосов — с залом и перегрузом
+  function strikeSound(p) {
+    if (!ctx || !bus) return;
+    const t = ctx.currentTime, lvl = 0.05 + 0.1 * p;
+    const n = ctx.createBufferSource(), bp = filter('bandpass', 1800 + 2600 * Math.random(), 1.2), ng = gainNode(0);
+    n.buffer = noiseBuf;
+    const t2 = t + 0.012 + 0.02 * Math.random();
+    ng.gain.setValueAtTime(lvl, t); ng.gain.exponentialRampToValueAtTime(lvl * 0.08, t2);
+    ng.gain.setValueAtTime(lvl * 0.7, t2); ng.gain.exponentialRampToValueAtTime(0.0005, t2 + 0.04 + 0.06 * p);
+    n.connect(bp).connect(ng).connect(bus);
+    n.start(t, Math.random() * 3); n.stop(t2 + 0.12);
+    const o = ctx.createOscillator(), og = gainNode(0);
+    o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.08);
+    og.gain.setValueAtTime(lvl * 1.4, t); og.gain.exponentialRampToValueAtTime(0.0005, t + 0.12);
+    o.connect(og).connect(bus); o.start(t); o.stop(t + 0.14);
+  }
+
   function noiseBuffer(seconds) {
     const len = Math.floor(ctx.sampleRate * seconds);
     const buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
@@ -1775,7 +1792,7 @@
   // которая вращается со скоростью биений detune. Закреплённая — с кольцом, как у Сатурна;
   // временная — комета: хвост от солнца, длиннее, пока гаснет. Спутники — LFO
   function drawVoice(v, now, dt) {
-    const x = vx(v), y = vy(v);
+    const k = kick(v, performance.now()), x = vx(v) + k.x, y = vy(v) + k.y;
     const held = v.fingers.length > 0;
     const editing = editor && editor.kind === 'voice' && editor.group.includes(v);
     const R = planetR(v), far = v.dx + v.wob > zoom * 1.0001;   // за горизонтом зума — у края, бледно
@@ -2199,6 +2216,15 @@
 
   // солнце, как на гравюре: двойной диск, лучи — прямые и волнистые «пламенные» через один.
   // Медленно поворачивается; с громкостью лучи вытягиваются, а свечение за ним чуть ярче
+  // удар солнца: отдача — планету отбрасывает от солнца и она возвращается
+  const STRIKE_MS = 110, NO_KICK = { x: 0, y: 0 };
+  function kick(v, now) {
+    const st = v.strike, age = st ? now - st.t0 : Infinity;
+    if (age > 700) return NO_KICK;
+    const m = (6 + 16 * st.p) * (1 - Math.exp(-age / 14)) * Math.exp(-age / 130);
+    return { x: Math.cos(st.a) * m, y: Math.sin(st.a) * m };
+  }
+
   function drawSun() {
     const { ox, oy } = geo, L = sunLevel, rot = performance.now() * 0.00004;
     glowAt(ox, oy, 90 + 50 * L + 60 * fx.dirt, 0.16 + 0.2 * L + 0.2 * fx.dirt);
@@ -2227,17 +2253,24 @@
         g.stroke();
       }
     }
-    // планету тянут на солнце (палец заходит в его зону) — солнце бьёт её лучами-молниями; глубже — чаще и ярче
+    // планету тянут на солнце (палец заходит в его зону) — солнце бьёт её: молния, треск, отдача; глубже — чаще и сильнее
+    const now = performance.now();
     for (const f of F.values()) {
       const v = f.voice;
       if (!v || !f.moved || f.ui || f.parked || f.bridge || f.menu) continue;
       const t = clamp((SUN_R + 24 - Math.hypot(f.x + v.ox - ox, f.y + v.oy - oy)) / 70);
-      if (t <= 0) continue;
-      const px = vx(v), py = vy(v), d = Math.hypot(px - ox, py - oy), R = planetR(v), a0 = Math.atan2(py - oy, px - ox);
+      if (t <= 0 || now < (v.strikeNext || 0)) continue;
+      v.strike = { t0: now, p: t, a: Math.atan2(vy(v) - oy, vx(v) - ox) };
+      v.strikeNext = now + (440 - 320 * t) * (0.6 + 0.8 * Math.random());
+      strikeSound(t);
+    }
+    for (const v of V) {                        // молния живёт ~0.1 с после удара и мерцает
+      const st = v.strike;
+      if (!st || !v.active || now - st.t0 > STRIKE_MS || Math.random() < 0.25) continue;
+      const k = kick(v, now), px = vx(v) + k.x, py = vy(v) + k.y, d = Math.hypot(px - ox, py - oy), R = planetR(v), t = st.p;
       for (let s = 0, n = 1 + Math.round(2 * t); s < n; s++) {
-        if (Math.random() > 0.35 + 0.6 * t) continue;   // удары, а не ровный луч
-        const a = a0 + ((Math.random() - 0.5) * R) / d, end = d - R * 0.85, c = Math.cos(a), s2 = Math.sin(a);
-        g.strokeStyle = ink(0.35 + 0.55 * t); g.lineWidth = 0.8 + 0.8 * t;
+        const a = st.a + ((Math.random() - 0.5) * R) / d, end = d - R * 0.85, c = Math.cos(a), s2 = Math.sin(a);
+        g.strokeStyle = ink(0.4 + 0.5 * t); g.lineWidth = 0.8 + 0.8 * t;
         g.beginPath();
         for (let i = 0; i <= 8; i++) {
           const r = 17 + ((end - 17) * i) / 8, j = i && i < 8 ? (Math.random() - 0.5) * (6 + 8 * t) : 0;
@@ -3074,7 +3107,7 @@
 
   window.t2d = {
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
-    get ctx() { return ctx; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; },
+    get ctx() { return ctx; }, strikeSound, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; },
   };   // для отладки из консоли
 
   resize();
