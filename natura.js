@@ -521,20 +521,7 @@
   }
   // причал у истока, на левом берегу: тап — пуск/стоп, вбок — темп
   const pierXY = (G) => { const r = river(G, 0.06), p = across(r, -0.5); return { x: p.x - 8, y: p.y }; };
-  // табличка у верха: ▷/■ — пуск и стоп, темп (тянешь вбок), длина петли — видно без поиска причала и запруды
-  const plaqueAt = (G) => ({ x: G.W / 2 - 88, y: G.top + 4, w: 176, h: 38 });
-  function drawPlaque(c, G) {
-    const P = plaqueAt(G), held = [...touches.values()].some((t) => t.kind === 'tempo' || (t.kind === 'boat' && t.plaque));
-    c.fillStyle = pap(1); c.fillRect(P.x, P.y, P.w, P.h);
-    T.hairBox(P.x, P.y, P.w, P.h, 0.85); T.hairBox(P.x + 3, P.y + 3, P.w - 6, P.h - 6, 0.3);
-    const cy = P.y + P.h / 2, px = P.x + 22;
-    c.strokeStyle = ink(0.95); c.lineWidth = 1.3; c.beginPath();
-    if (seq.playing) c.rect(px - 5, cy - 5, 10, 10); else { c.moveTo(px - 4, cy - 7); c.lineTo(px + 6, cy); c.lineTo(px - 4, cy + 7); c.closePath(); }
-    c.stroke();
-    c.strokeStyle = ink(0.35); c.lineWidth = 1; c.beginPath(); c.moveTo(P.x + 44, P.y + 8); c.lineTo(P.x + 44, P.y + P.h - 8); c.moveTo(P.x + 118, P.y + 8); c.lineTo(P.x + 118, P.y + P.h - 8); c.stroke();
-    T.mapText(`${seq.bpm}`, P.x + 70, cy, 17, held ? 1 : 0.9, 'center'); T.mapText('bpm', P.x + 98, cy + 1, 11, 0.6, 'center');
-    T.mapText(`${pads.len}`, P.x + 136, cy, 17, 0.9, 'center'); T.mapText('steps', P.x + 158, cy + 1, 11, 0.6, 'center');
-  }
+
   function drawPier(c, G) {
     const { x, y } = pierXY(G);
     c.fillStyle = pap(1); c.strokeStyle = ink(0.9); c.lineWidth = 1.1;
@@ -878,14 +865,7 @@
       const d = D[kind === 'duckA' ? 'A' : 'R'];
       if (Math.hypot(f.x - d.x, f.y - (d.y - d.s * 0.35)) < Math.max(28, d.s * 1.6)) { touches.set(f.id, { kind, key, ...lockOf(key) }); return; }
     }
-    if (frog.at && frog.i >= 0 && Math.hypot(f.x - frog.at.x, f.y - frog.at.y) < 16) { touches.set(f.id, { kind: 'frog' }); return; }
-    const PQ = plaqueAt(G);
-    if (f.x > PQ.x && f.x < PQ.x + PQ.w && f.y > PQ.y - 4 && f.y < PQ.y + PQ.h + 4) {   // табличка: ▷ — пуск/стоп, середина — темп вбок
-      if (f.x < PQ.x + 44) touches.set(f.id, { kind: 'boat', bpm0: seq.bpm, plaque: true });
-      else if (f.x < PQ.x + 118) touches.set(f.id, { kind: 'tempo', bpm0: seq.bpm });
-      else touches.set(f.id, { kind: 'none' });
-      return;
-    }
+    if (frog.at && frog.i >= 0 && pads.at[frog.i] && Math.hypot(f.x - frog.at.x, f.y - frog.at.y) < 16) { touches.set(f.id, { kind: 'pad', i: frog.i, t0: now, fx: f.x, fy: f.y, frog: true }); return; }   // лягушка: тап — квакает; потянул или держишь — это её кувшинка
     const pi = padAt(G, f.x, f.y);                    // кувшинки — раньше лодочки: та плывёт мимо и не должна перехватывать
     if (pi >= 0) { touches.set(f.id, { kind: 'pad', i: pi, t0: now, fx: f.x, fy: f.y }); return; }
 
@@ -940,7 +920,7 @@
     }
     if (t.kind === 'plant' && t.moved) { t.path.push([f.x, f.y]); return; }   // рисуем по воде
     if (!t.moved) return;
-    if (t.kind === 'boat' || t.kind === 'tempo') { seq.bpm = Math.round(clamp(t.bpm0 + dx / 2, 40, 200)); applyFx(); T.tempoFrom(4, seq.bpm); }
+    if (t.kind === 'boat') { seq.bpm = Math.round(clamp(t.bpm0 + dx / 2, 40, 200)); applyFx(); T.tempoFrom(4, seq.bpm); }
     else if (t.kind === 'bridge') { const o = onRiver(G, f.x, f.y); if (o) pads.len = clamp(slotOf({ t: o.t + 0.02 }) + 1, 2, 16); }
     else if (t.kind === 'pad' && !t.cycled) {         // поперёк — нота, вдоль — на другое место (если свободно)
       const o = onRiver(G, f.x, f.y), pd = pads.at[t.i], j = slotOf(o), n = noteOf(o);
@@ -982,6 +962,7 @@
     }
     if (t.kind === 'frog' && !t.moved) { croak(); return; }
     if (t.kind === 'boat' && !t.moved) { play(); T.tempoFrom(4, seq.bpm); T.transportFrom(4, seq.playing); }
+    else if (t.kind === 'pad' && t.frog && !t.moved && !t.cycled) croak();
     else if (t.kind === 'pad' && !t.moved && !t.cycled) pads.at[t.i] = null;      // тап по кувшинке — убрать
     else if (t.kind === 'birds' && !t.moved) { birdsAt = performance.now(); laser(); }   // спугнули — лазер
     else if (t.kind === 'plant' && t.moved) {                                      // провёл по воде через кувшинки — глайд в них
@@ -1304,7 +1285,6 @@
       drawReeds(c, G, now);
       drawTree(c, G);
       drawCloud(c, G, now);
-      drawPlaque(c, G);
       drawDucks(c, G, now);
       drawSkiff(c, G, now);
       drawFlies(c, G, now);
@@ -1352,7 +1332,6 @@
     ring: () => ring && { i: ring.i, pinned: ring.pinned, cx: ring.cx, cy: ring.cy, dead: T.MENU_DEAD, span: T.MENU_SPAN, sector: ring.sector && ring.sector.key },
     frog: () => frog.at && frog.i >= 0 && { x: frog.at.x, y: frog.at.y, i: frog.i, croak: frog.croak }, sun: () => sunAt(geo()), get fish() { return !!fish; },
     scare: () => { ducksGone = { t0: performance.now() }; },
-    plaque: () => plaqueAt(geo()),
     get ducksGone() { return !!ducksGone; }, get envOpen() { return envOpen(); }, pond: () => pondAt(geo()),
     cloud: () => { const cl = cloudAt(geo()); return { x: cl.cx, y: cl.cy }; },
     menu: () => menu && { open: true, held: menu.held, opts: menuOpts(geo()) },

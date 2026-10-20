@@ -782,6 +782,9 @@ async def sc_natura(p):                           # Natura: лодочка — �
     await p.pg.wait_for_timeout(500); fr = await p.js('()=>t2d.nat.frog()'); assert fr, 'a frog sits on a lily'
     await p.tap(fr['x'], fr['y']); await p.pg.wait_for_timeout(120)
     assert await p.js('()=>performance.now() - t2d.nat.frog().croak') < 600, f'tap the frog — it croaks {fr}'
+    i0 = fr['i']; pd0 = await p.js(f'()=>t2d.nat.pads.at[{i0}].note'); pid = await p.hold(fr['x'], fr['y'], ms=60)   # потянул лягушку — едет её кувшинка
+    await p.drag(pid, fr['x'], fr['y'], fr['x'] + 40, fr['y'], steps=8); await p.up(); await p.pg.wait_for_timeout(100)
+    assert await p.js(f'()=>t2d.nat.pads.at[{i0}] && t2d.nat.pads.at[{i0}].note') != pd0, 'drag on the frog moves its lily'
     t = await p.js('()=>t2d.nat.tree()'); pid = await p.hold(t['x'], t['y'], ms=60)   # тормошим дерево — срез вверх
     for k in range(8):
         await p.drag(pid, t['x'] + (-30 if k % 2 else 30), t['y'], t['x'] + (30 if k % 2 else -30), t['y'], steps=3)
@@ -847,12 +850,6 @@ async def sc_natura(p):                           # Natura: лодочка — �
     assert not await p.js('()=>t2d.nat.pads.at[3].lock'), 'double tap a row — back to general'
     await p.tap(200, fg['top'] - 60); await p.pg.wait_for_timeout(100)
     assert not await p.js('()=>T2D.sheetOpen'), 'tap outside — sheet closed'
-    pq = await p.js('()=>t2d.nat.plaque()'); b0 = await p.js('()=>t2d.nat.seq.bpm')    # табличка: ▷ — пуск, середина вбок — темп
-    await p.tap(pq['x'] + 20, pq['y'] + pq['h'] / 2); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.nat.seq.playing'), 'plaque ▷ — play'
-    pid = await p.hold(pq['x'] + 80, pq['y'] + pq['h'] / 2, ms=60); await p.drag(pid, pq['x'] + 80, pq['y'] + 19, pq['x'] + 140, pq['y'] + 19, steps=6); await p.up()
-    assert await p.js('()=>t2d.nat.seq.bpm') > b0 + 20, 'plaque middle sideways — tempo'
-    await p.tap(pq['x'] + 20, pq['y'] + pq['h'] / 2); await p.pg.wait_for_timeout(100)
     k0 = await p.js('()=>t2d.nat.skiff()'); await p.hold(k0['x'], k0['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(100)   # кораблик на берегу — тоже меню
     m = await p.js('()=>t2d.nat.menu()'); assert m, 'hold the skiff — wave menu'
     o = m['opts'][3]; await p.tap(o['x'], o['y']); await p.pg.wait_for_timeout(100)
