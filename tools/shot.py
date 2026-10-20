@@ -90,7 +90,19 @@ async def sc_sun(p):                               # планету тянут �
     await p.up()
 
 
-SCENARIOS = {'planets': sc_planets, 'ring': sc_ring, 'map': sc_map, 'sun': sc_sun}
+async def sc_hole(p):                              # касание в чёрной дыре — планета встаёт снаружи; затащить — съедена
+    c = await p.js('()=>t2d.holeAt()')
+    await p.tap(c['x'] + 30, c['y'] + 10); await p.pg.wait_for_timeout(200)
+    print('hole tap:', await p.js("()=>t2d.voices.filter(v=>v.active).map(v=>+v.holeT.toFixed(2))"))
+    await p.pin(200, 420)
+    pid = await p.hold(200, 420, ms=60)
+    await p.drag(pid, 200, 420, c['x'] + 30, c['y'] + 10, steps=16)
+    await p.pg.wait_for_timeout(500); await p.shot('hole-drag')
+    await p.up(); await p.pg.wait_for_timeout(600); await p.shot('hole')
+    print('hole drag:', await p.js("()=>t2d.voices.filter(v=>v.active).map(v=>+v.holeT.toFixed(2))"))
+
+
+SCENARIOS = {'planets': sc_planets, 'ring': sc_ring, 'map': sc_map, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

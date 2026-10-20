@@ -94,7 +94,7 @@
   // ---------- голоса (кружки) ----------
   const V = Array.from({ length: VOICES }, (_, i) => ({
     i, x: 0.35, dx: 0.35, wob: 0, wv: 0, y: 0.22, ox: 0, oy: 0,
-    beat: BEAT_DEF, wave: WAVE_DEF, fm: 0, cut: CUT_DEF, res: RES_DEF, shift: SHIFT_DEF, amp: 1,
+    beat: BEAT_DEF, wave: WAVE_DEF, fm: 0, cut: CUT_DEF, res: RES_DEF, shift: SHIFT_DEF, amp: 1, hole: 0, holeT: 0,
     mods: [], lfo: {},
     fingers: [], pinned: false, active: false,
     env: 0, envT: 0, envTau: 0.05, emit: 0, t: 0,
@@ -163,6 +163,20 @@
   const EDGE_B = EDGE;        // снизу кнопок нет
   const SUN_R = 100;          // зона солнца: лучи (до ~70) + планета (до 34) — планеты на солнце не наезжают; 55 Гц — на её краю
   const EDGE_T = 64;          // сверху — ниже строки с заголовком и кнопками
+  // чёрная дыра — в дальнем шумном углу (вверху слева): за горизонтом событий тон съеден, остаётся шум, глубже — темнее.
+  // Касанием туда не попасть (планета встаёт снаружи) — только затащить. Глубина запоминается, пока тащишь: звук от зума не меняется
+  const HOLE_R = 84;
+  const holeAt = () => ({ x: 0, y: geo.top + EDGE_T + 44 });   // у левого края, под строкой заголовка
+  function holeDepth(x, y) {
+    const c = holeAt();
+    return clamp((HOLE_R - Math.hypot(x - c.x, y - c.y)) / (HOLE_R * 0.6));
+  }
+  function outOfHole(x, y) {                  // точку внутри горизонта — наружу, в сторону поля
+    const c = holeAt(), dx = Math.max(0, x - c.x), dy = Math.max(0, y - c.y), d = Math.hypot(dx, dy);
+    if (Math.hypot(x - c.x, y - c.y) > HOLE_R + 2) return { x, y };
+    const k = (HOLE_R + 2) / (d || 1), ux = d ? dx : Math.SQRT1_2, uy = d ? dy : Math.SQRT1_2;
+    return { x: c.x + ux * k, y: c.y + uy * k };
+  }
   const geo = { ox: 0, oy: 0, top: 0, bot: 0, step: 2, r: [0], a: [0] };
   function arcSpan(r) {
     const w = W - EDGE, h = geo.oy - geo.top - EDGE_T;
@@ -285,13 +299,14 @@
     const f = F.get(v.fingers[0]);
     if (!f || f.menu || f.parked || f.bridge) return;
     const q = unplace(f.x + v.ox, f.y + v.oy);
-    v.x = q.p; v.y = q.c;
+    v.x = q.p; v.y = q.c; v.holeT = holeDepth(f.x + v.ox, f.y + v.oy);
     v.dirty = true;
     focus = v;
     if (f.group) for (const m of f.group) {     // выделенные едут следом, сохраняя расстановку
       if (!m.u.active) continue;
       m.u.x = clamp(v.x + m.ox); m.u.y = clamp(v.y + m.oy);
       if (!scl.on) m.u.dx = m.u.x;
+      m.u.holeT = holeDepth(vx(m.u), vy(m.u));
       m.u.dirty = true;
     }
   }
@@ -336,8 +351,9 @@
     unlinkAll(v);
     clearLfos(v);
     sel.delete(v);
-    const q = unplace(f.x, f.y);
-    v.x = q.p; v.dx = v.x; v.y = q.c; v.ox = 0; v.oy = 0;
+    const sp = outOfHole(f.x, f.y), q = unplace(sp.x, sp.y);
+    v.x = q.p; v.dx = v.x; v.y = q.c; v.hole = v.holeT = 0;
+    v.ox = sp.x - f.x; v.oy = sp.y - f.y;     // вытолкнули из дыры — палец ведёт планету с этим сдвигом
     v.beat = BEAT_DEF; v.wave = WAVE_DEF; v.fm = 0; v.cut = CUT_DEF; v.res = RES_DEF; v.shift = SHIFT_DEF; v.amp = 1;
     v.pinned = false; v.fingers = [];
     v.snap = v.env < 0.02; v.dirty = true; v.emit = 1e9;
@@ -826,7 +842,7 @@
     const ids = new Set(pins.map((v) => v.i));
     return JSON.stringify({
       v: pins.map((v) => ({
-        i: v.i, x: r4(v.x), y: r4(v.y), amp: r4(v.amp), wave: r4(v.wave), cut: r4(v.cut), res: r4(v.res), beat: r4(v.beat), fm: r4(v.fm), shift: r4(v.shift),
+        i: v.i, x: r4(v.x), y: r4(v.y), amp: r4(v.amp), wave: r4(v.wave), cut: r4(v.cut), res: r4(v.res), beat: r4(v.beat), fm: r4(v.fm), shift: r4(v.shift), hole: r4(v.holeT),
         lfo: Object.fromEntries(Object.entries(v.lfo).map(([k, sp]) => [k, { morph: r4(sp.morph), rate: r4(sp.rate), depth: r4(sp.depth) }])),
         mods: v.mods.filter((m) => !m.auto && ids.has(m.src.i)).map((m) => ({ src: m.src.i, type: m.type, depth: r4(m.depth) })),
       })),
@@ -857,7 +873,7 @@
       unlinkAll(v);
       clearLfos(v);
       v.snap = !v.active || v.env < 0.02;
-      Object.assign(v, { x: d.x, dx: d.x, y: d.y, amp: d.amp == null ? 1 : d.amp, wave: d.wave, cut: d.cut, res: d.res, beat: d.beat, fm: d.fm, shift: d.shift });
+      Object.assign(v, { x: d.x, dx: d.x, y: d.y, amp: d.amp == null ? 1 : d.amp, wave: d.wave, cut: d.cut, res: d.res, beat: d.beat, fm: d.fm, shift: d.shift, hole: d.hole || 0, holeT: d.hole || 0 });
       v.pinned = true; v.dirty = true;
       if (!v.active || v.envT === 0) attack(v);
       burst(v);
@@ -1516,13 +1532,13 @@
     // гребёнка, настроенная на высоту: тихая постоянная окраска
     const sum = gainNode(1);
     env.connect(sum);
-    const dl = ctx.createDelay(1);
+    const dl = ctx.createDelay(1), comb = gainNode(0.45);
     const loopLP = filter('lowpass', 3000, -3);
     const loopSat = ctx.createWaveShaper(); loopSat.curve = soft(1.6, false);
     const fb = gainNode(FB_BASE);
     env.connect(dl);
     dl.connect(loopLP).connect(loopSat).connect(fb).connect(dl);
-    dl.connect(gainNode(0.45)).connect(sum);
+    dl.connect(comb).connect(sum);
 
     // усилитель для am / rm от связей
     const vca = gainNode(1);
@@ -1532,7 +1548,7 @@
     const out = pan(0);
     sum.connect(vca).connect(lvl).connect(out);  // к шине подключается, только пока кружок звучит
 
-    return { c1, c2, sub, m, morph, tone, shf, sfm, mod, driveIn, lp, bp, nz, hiss, env, dl, vca, lvl, vscope, out, fmTargets, lfo: {}, live: false };
+    return { c1, c2, sub, m, morph, tone, shf, sfm, mod, driveIn, lp, bp, nz, hiss, env, dl, comb, vca, lvl, vscope, out, fmTargets, lfo: {}, live: false };
   }
 
   function apply(v) {
@@ -1553,15 +1569,18 @@
     shifterOn(n.shf, shOn);
     T(n.shf.cos.frequency, sh, 0.06); T(n.shf.sin.frequency, sh, 0.06);   // одинаково — иначе пара разойдётся по фазе
     T(n.shf.wet.gain, shOn ? 1 : 0, 0.02); T(n.shf.dry.gain, shOn ? 0 : 1, 0.02);
-    // ось Y: внизу чистые колебания, вверху перегруз и шум, вытесняющий тон
+    // ось Y: внизу чистые колебания, вверху перегруз и шум, вытесняющий тон.
+    // В чёрной дыре (h) тон и настроенная гребёнка съедены, остаётся широкий шум — глубже, темнее
+    const h = v.holeT;
     T(n.driveIn.gain, 0.22 + 3.6 * y * y, 0.1);
-    T(n.tone.gain, 1 - 0.65 * y ** 1.5, 0.1);
+    T(n.tone.gain, (1 - 0.65 * y ** 1.5) * (1 - h), 0.15);
     T(n.lp.frequency, cutoff(v), 0.1);
     T(n.lp.Q, v.res * RES_MAX, 0.1);
-    T(n.nz.gain, 0.95 * y ** 1.8, 0.1);
-    T(n.bp.frequency, Math.min(f * 3 * 2 ** (y * 2), 9000), 0.1);
-    T(n.bp.Q, 9 - 6 * y, 0.1);
-    T(n.hiss.gain, 0.25 * y ** 3, 0.1);
+    T(n.nz.gain, 0.95 * y ** 1.8 * (1 - h) + 0.9 * h, 0.15);
+    T(n.bp.frequency, Math.min(f * 3 * 2 ** (y * 2), 9000) ** (1 - h) * 600 ** h, 0.15);
+    T(n.bp.Q, (9 - 6 * y) * (1 - h) + 0.5 * h, 0.15);
+    T(n.hiss.gain, 0.25 * y ** 3 * (1 - h), 0.15);
+    T(n.comb.gain, 0.45 * (1 - h), 0.15);
     let d = 1 / f;
     while (d < 0.006) d *= 2;
     T(n.dl.delayTime, d, G);
@@ -1704,7 +1723,11 @@
     x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
     return c;
   })();
-  function glowAt(x, y, r, a) { if (a <= 0.003) return; g.globalAlpha = Math.min(1, a); g.drawImage(glowSprite, x - r, y - r, 2 * r, 2 * r); g.globalAlpha = 1; }
+  function glowAt(x, y, r, a) {
+    if (a <= 0.003) return;
+    const ga = g.globalAlpha;
+    g.globalAlpha = ga * Math.min(1, a); g.drawImage(glowSprite, x - r, y - r, 2 * r, 2 * r); g.globalAlpha = ga;
+  }
   const MAP = '"IM Fell English", Georgia, "Times New Roman", serif';   // подписи на поле — как на старых звёздных картах
   function mapText(s, x, y, size, a, align = 'left', italic = true) {
     g.font = `${italic ? 'italic ' : ''}${size}px ${MAP}`; g.fillStyle = ink(a); g.textAlign = align; g.textBaseline = 'middle';
@@ -1791,7 +1814,17 @@
   // планета — осциллятор. Контур — его звук (атмосфера); внутри двойная звезда — пара генераторов,
   // которая вращается со скоростью биений detune. Закреплённая — с кольцом, как у Сатурна;
   // временная — комета: хвост от солнца, длиннее, пока гаснет. Спутники — LFO
+  // в чёрной дыре планета тускнеет (свет съеден) и вытягивается к центру
   function drawVoice(v, now, dt) {
+    if (v.hole < 0.005) { drawPlanet(v, now, dt); return; }
+    const x = vx(v), y = vy(v), c = holeAt(), a = Math.atan2(y - c.y, x - c.x), h = v.hole;
+    g.save();
+    g.translate(x, y); g.rotate(a); g.scale(1 + 0.6 * h, 1 - 0.35 * h); g.rotate(-a); g.translate(-x, -y);
+    g.globalAlpha = 1 - 0.8 * h;
+    drawPlanet(v, now, dt);
+    g.restore();
+  }
+  function drawPlanet(v, now, dt) {
     const k = kick(v, performance.now()), x = vx(v) + k.x, y = vy(v) + k.y;
     const held = v.fingers.length > 0;
     const editing = editor && editor.kind === 'voice' && editor.group.includes(v);
@@ -2216,6 +2249,34 @@
 
   // солнце, как на гравюре: двойной диск, лучи — прямые и волнистые «пламенные» через один.
   // Медленно поворачивается; с громкостью лучи вытягиваются, а свечение за ним чуть ярче
+  // чёрная дыра: тень (абсолютная чернота — свет и орбиты сюда не доходят), фотонное кольцо, наклонный аккреционный диск.
+  // Тихо; диск разгорается и крутится быстрее, пока дыра ест; горизонт событий проявляется, когда тащишь планету рядом
+  function drawHole(now) {
+    const c = holeAt();
+    let feed = 0, near = 0;
+    for (const v of V) if (v.active) feed = Math.max(feed, v.hole * v.env);
+    for (const f of F.values()) {
+      const v = f.voice;
+      if (v && f.moved && !f.ui && !f.parked && !f.bridge && !f.menu) near = Math.max(near, clamp((HOLE_R * 1.7 - Math.hypot(f.x + v.ox - c.x, f.y + v.oy - c.y)) / (HOLE_R * 0.7)));
+    }
+    const spin = now * (0.004 + 0.02 * feed), tilt = -0.5, S = HOLE_R * 0.46;
+    const disk = (front) => {
+      for (let i = 0; i < 4; i++) {
+        const rx = HOLE_R * (0.62 + 0.22 * i), ry = rx * 0.3;
+        g.strokeStyle = ink((0.1 + 0.3 * feed) * (1 - i * 0.2)); g.lineWidth = 0.8;
+        g.setLineDash([2 + i, 4 + 2 * i]); g.lineDashOffset = -spin * (5 - i);
+        g.beginPath(); g.ellipse(c.x, c.y, rx, ry, tilt, front ? 0 : Math.PI, front ? Math.PI : Math.PI * 2); g.stroke();
+      }
+      g.setLineDash([]);
+    };
+    disk(false);
+    g.fillStyle = '#000'; g.beginPath(); g.arc(c.x, c.y, S, 0, Math.PI * 2); g.fill();
+    ring(c.x, c.y, S + 1.5, 0.45 + 0.35 * feed, 1);
+    ring(c.x, c.y, S + 4, 0.12 + 0.15 * feed, 0.8);
+    disk(true);
+    g.setLineDash([1, 6]); ring(c.x, c.y, HOLE_R, 0.1 + 0.35 * near, 1); g.setLineDash([]);
+  }
+
   // удар солнца: отдача — планету отбрасывает от солнца и она возвращается
   const STRIKE_MS = 110, NO_KICK = { x: 0, y: 0 };
   function kick(v, now) {
@@ -2367,6 +2428,7 @@
     g.save();
     g.beginPath(); g.rect(0, top, W, bot - top); g.clip();
     drawSun();
+    drawHole(performance.now());
     if (fx.chaos > 0.02 && geo.stars) {         // chaos — звёзды мерцают
       for (let k = 0, n = Math.round(fx.chaos * 14); k < n; k++) {
         const st = geo.stars[Math.floor(Math.random() * geo.stars.length)];
@@ -2646,6 +2708,7 @@
     for (const v of V) {
       if (v.dirty) { v.dirty = false; apply(v); }
       v.env += (v.envT - v.env) * (1 - Math.exp(-dt / v.envTau));
+      v.hole += (v.holeT - v.hole) * (1 - Math.exp(-dt / 0.15));
       if (v.active && !v.pinned && !v.fingers.length && v.envT === 0 && v.env < 0.004) {
         v.active = false;
         sel.delete(v);
@@ -3107,7 +3170,7 @@
 
   window.t2d = {
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
-    get ctx() { return ctx; }, strikeSound, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; },
+    get ctx() { return ctx; }, strikeSound, holeAt, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; },
   };   // для отладки из консоли
 
   resize();
