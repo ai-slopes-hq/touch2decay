@@ -763,6 +763,17 @@ async def sc_natura(p):                           # Natura: лодочка — �
     await p.drag(pid, w1['x'], w1['y'], w2['x'], w2['y'], steps=10); await p.pg.wait_for_timeout(150)
     await p.shot('natura-skiff'); await p.up(); await p.pg.wait_for_timeout(1300)
     sk = await p.js('()=>t2d.nat.skiff()'); assert not sk['playing'] and sk['home'], f'released — quiet, back on the bank: {sk}'
+    for kind, key, dx, dy in (('cloud', 'cutoff', 0, -60), ('mill', 'att', 0, -50)):   # туча вверх — ярче; мельница вверх — attack
+        await p.js(f"()=>t2d.nat.setFx('{key}', 0.3)"); q = await p.js(f'()=>t2d.nat.{kind}()')
+        pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] + dx, q['y'] + dy, steps=8)
+        await p.shot(f'natura-{kind}'); await p.up()
+        assert await p.js(f'()=>t2d.nat.fx.{key}') > 0.4, f'{kind} drag moves {key}'
+    r0 = await p.js('()=>t2d.nat.fx.rel'); q = await p.js('()=>t2d.nat.mill()')
+    pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] + 60, q['y'], steps=8); await p.up()
+    assert await p.js('()=>t2d.nat.fx.rel') > r0 + 0.2, 'mill sideways — longer release'
+    await p.js("()=>t2d.nat.setFx('res', 0.2)"); g = await p.js('()=>t2d.nat.geo()')
+    pid = await p.hold(60, g['hor'] - 20, ms=60); await p.drag(pid, 60, g['hor'] - 20, 60, g['hor'] - 80, steps=8); await p.shot('natura-mountains'); await p.up()
+    assert await p.js('()=>t2d.nat.fx.res') > 0.4, 'mountains up — more resonance'
     pads0 = await p.js('()=>JSON.stringify(t2d.nat.pads.at)')
     await p.js("()=>{const a=t2d.nat.pads.at; for (let i=0;i<16;i++) a[i]=null; a[5]={note:3,wave:0}; a[6]={note:9,wave:0}}")
     p0 = await p.js('()=>t2d.nat.slot(4, 6)'); p5 = await p.js('()=>t2d.nat.pad(5)'); p6 = await p.js('()=>t2d.nat.pad(6)'); p7 = await p.js('()=>t2d.nat.slot(7, 6)')
