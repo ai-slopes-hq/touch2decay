@@ -32,7 +32,15 @@
   const fs = () => 12 * Math.log2(plate.f0 / F_MIN);
   const absM = (o) => (o == null ? null : fs() + o);
   const relM = (a) => (a == null ? null : a - fs());
+  const born = { r: new Float64Array(SLOTS), m: new Float64Array(SLOTS) }, pulse = { r: new Float64Array(SLOTS), m: new Float64Array(SLOTS) };
+  const sent = { r: [], m: [] };
   function sendSeq() {
+    const now = performance.now();               // новое в гнезде — вспышка: видно, куда легло
+    for (let i = 0; i < SLOTS; i++) {
+      if (seq.rhythm.steps[i] && seq.rhythm.steps[i] !== sent.r[i]) born.r[i] = now;
+      if (seq.melody.steps[i] != null && seq.melody.steps[i] !== sent.m[i]) born.m[i] = now;
+    }
+    sent.r = seq.rhythm.steps.slice(); sent.m = seq.melody.steps.slice();
     const melody = { len: seq.melody.len, steps: seq.melody.steps.map((o) => (o == null ? null : clamp(fs() + o, 0, 48))) };
     send({ t: 'seq', bpm: seq.bpm, playing: seq.playing, rhythm: seq.rhythm, melody });
     if (nodes && echoBpm !== seq.bpm) {         // эхо — восьмая с точкой
@@ -173,7 +181,13 @@
     });
   }
   function onMsg(d) {
-    if (d.t === 'step') { lastStep = { r: d.r, m: d.m, atMs: performance.now() }; return; }
+    if (d.t === 'step') {                        // играет шаг — его удар и нота мигают
+      const now = performance.now();
+      lastStep = { r: d.r, m: d.m, atMs: now };
+      if (seq.rhythm.steps[d.r]) pulse.r[d.r] = now;
+      if (seq.melody.steps[d.m] != null) pulse.m[d.m] = now;
+      return;
+    }
     if (d.t === 'energy') { energy = d.e; level = d.voices.reduce((s, v) => s + v.level, 0); updateField(); }
     else if (d.t === 'shapes') shapes = d;
   }
@@ -244,11 +258,11 @@
   }
 
   // ---------- геометрия: пластина посередине; радиус по высоте: f ∝ 1/r² ----------
-  // по высоте — пластина, кольца астролябии над ней (+36), ▶/● и клавиши лада под ней (+138): блок по центру между строкой и низом
+  // по высоте — пластина, кольца астролябии над ней (+58), ▶/● и клавиши лада под ней (+148): блок по центру между строкой и низом
   function plateGeo() {
     const top = T.topY, bot = T.H - T.safeBot;
-    const rMax = Math.max(40, Math.min(T.W / 2 - 44, (bot - top - 182) / 2));
-    const cy = top + (bot - top - (2 * rMax + 174)) / 2 + rMax + 36;
+    const rMax = Math.max(40, Math.min(T.W / 2 - 60, (bot - top - 214) / 2));
+    const cy = top + (bot - top - (2 * rMax + 206)) / 2 + rMax + 58;
     return { cx: T.W / 2, cy, rMax, r: rMax * Math.sqrt(F_MIN / plate.f0) };
   }
   const toPlate = (f, g) => ({ x: (f.x - g.cx) / g.r, y: (f.y - g.cy) / g.r });
@@ -259,7 +273,8 @@
   }
 
   // ---------- астролябия: кольцо мелодии (внутри) и ритма (снаружи), 16 гнёзд от верха по часовой; внизу ▶ и ● ----------
-  function astro(g) { return { R1: g.rMax + 12, R2: g.rMax + 30, ty: g.cy + g.rMax + 64, playX: g.cx - 60, recX: g.cx, gridX: g.cx + 60 }; }
+  // кольцо мелодии R1, ноты подписаны снаружи него (R1 + 16), кольцо ритма R2 = R1 + 32; граница зон — RM = R1 + 24
+  function astro(g) { return { R1: g.rMax + 12, R2: g.rMax + 44, RM: g.rMax + 36, ty: g.cy + g.rMax + 78, playX: g.cx - 60, recX: g.cx, gridX: g.cx + 60 }; }
   const slotAng = (i) => -Math.PI / 2 + (i * Math.PI * 2) / SLOTS;
   const slotXY = (g, i, R) => ({ x: g.cx + R * Math.cos(slotAng(i)), y: g.cy + R * Math.sin(slotAng(i)) });
   const slotOf = (f, g) => ((((Math.atan2(f.y - g.cy, f.x - g.cx) + Math.PI / 2) / (Math.PI * 2)) * SLOTS) % SLOTS + SLOTS) % SLOTS;
@@ -273,8 +288,8 @@
     if (Math.hypot(f.x - hr.x, f.y - hr.y) < 16) return { k: 'len', ring: 'rhythm' };
     if (Math.hypot(f.x - hm.x, f.y - hm.y) < 12) return { k: 'len', ring: 'melody' };
     const i = Math.round(slotOf(f, g)) % SLOTS;
-    if (Math.abs(d - A.R2) < 11 && Math.abs(d - A.R2) <= Math.abs(d - A.R1)) return { k: 'rtick', i };
-    if (Math.abs(d - A.R1) < 8) return { k: 'mtick', i, r0: d, s0: Math.round(absM(seq.melody.steps[i]) ?? fs()) };
+    if (d >= A.RM && d < A.R2 + 11) return { k: 'rtick', i };
+    if (d >= A.R1 - 8 && d < A.RM) return { k: 'mtick', i, r0: d, s0: Math.round(absM(seq.melody.steps[i]) ?? fs()) };
     return null;
   }
   function astroMove(f, g) {
@@ -352,9 +367,8 @@
       else T.mapText(noteName(F_MIN * 2 ** (k.n / 12)), k.x, k.y, 11, off ? 0.15 : 0.45, 'center');
     });
     if (!seq.playing) {                          // курсор пошагового ввода — дужка у гнезда мелодии
-      const A = astro(g), a = slotAng(cursor % seq.melody.len), R = A.R1 + 7;
-      c.strokeStyle = T.ink(0.8); c.lineWidth = 1.4;
-      c.beginPath(); c.arc(g.cx, g.cy, R, a - 0.16, a + 0.16); c.stroke();
+      const A = astro(g), p = slotXY(g, cursor % seq.melody.len, A.R1 + 16);
+      T.ring(p.x, p.y, 12, 0.85, 1.4);
     }
   }
 
@@ -373,10 +387,10 @@
   const wrapDeg = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
   const origOf = () => ({ r: seq.rhythm.steps.slice(), m: seq.melody.steps.slice() });
   // что крутим — по расстоянию от центра пластины (у двух пальцев — среднее: оно не меняется при повороте), с запасом:
-  // внутри стола — пластина, до середины между кольцами — мелодия, всё дальше — ритм
+  // внутри стола — пластина, до границы зон между кольцами — мелодия, всё дальше — ритм
   function twistTarget(d, g) {
     const A = astro(g);
-    return d < g.rMax ? 'plate' : d < (A.R1 + A.R2) / 2 ? 'melody' : 'rhythm';
+    return d < g.rMax ? 'plate' : d < A.RM ? 'melody' : 'rhythm';
   }
   function startTwo(o, f, g) {
     if (o.bowing) { send({ t: 'bow', id: o.bid, on: false }); o.bowing = false; }   // смычок первого пальца гаснет
@@ -401,7 +415,7 @@
     twistTo(t, t.target, t.deg, (t.a.x + t.b.x) / 2, (t.a.y + t.b.y) / 2);
   }
   // поворот относительно начала жеста: кольца — 22.5° на гнездо, пластина — 20° на ступень лада (по часовой — вперёд/вверх)
-  const ringTurn = { melody: 0, rhythm: 0 };    // остаток поворота кольца в градусах — кольцо идёт за пальцами, отпустил — встаёт в гнездо
+  const ringTurn = { melody: 0, rhythm: 0 }, ringOrn = { melody: 0, rhythm: 0 };   // ringOrn — накопленный поворот узора кольца    // остаток поворота кольца в градусах — кольцо идёт за пальцами, отпустил — встаёт в гнездо
   function twistTo(t, target, deg, x, y) {
     const k = Math.round(deg / (target === 'plate' ? 20 : 22.5));
     if (target !== 'plate') ringTurn[target] = deg - k * 22.5;
@@ -412,6 +426,10 @@
     else if (target === 'melody') seq.melody.steps = rotateSteps(t.orig.m, seq.melody.len, k);
     else seq.melody.steps = k ? transposeMelody(t.orig.m.map(absM), k, scaleSemis()).map(relM) : t.orig.m.slice();   // вернул в ноль — мелодия как была
     sendSeq();
+  }
+  function endTurn(t) {                          // отпустил — кольцо встаёт в гнездо, его узор остаётся повёрнутым
+    if (t.target === 'melody' || t.target === 'rhythm') ringOrn[t.target] = (ringOrn[t.target] + t.k * 22.5) % 360;
+    ringTurn.melody = ringTurn.rhythm = 0;
   }
   function rotateSand(a) {
     const c = Math.cos(a), s = Math.sin(a);
@@ -485,9 +503,9 @@
       if (st && f.moved && Math.hypot(st.x, st.y) > 1.05) { seq.rhythm.steps[f.mk] = null; sendSeq(); }   // за край — удар удалён
       return;
     }
-    if (f.twist1) { ringTurn.melody = ringTurn.rhythm = 0; return; }
+    if (f.twist1) { endTurn(f.twist1); return; }
     if (f.key != null) return;
-    if (f.two) { if (two && (two.a === f || two.b === f)) { two = null; ringTurn.melody = ringTurn.rhythm = 0; } return; }
+    if (f.two) { if (two && (two.a === f || two.b === f)) { endTurn(two); two = null; } return; }
     if (f.cb) {
       if (Math.hypot(f.cb.x, f.cb.y) > 1.05) {   // утащил за край — смычок убран
         sendBow(f.cb, false);
@@ -610,6 +628,10 @@
     }
     for (const f of touches.values()) if (f.bowing) T.ring(f.x, f.y, 26, 0.35, 1);   // живой смычок под пальцем
   }
+  function flash(t, x, y, now) {                 // запись в гнездо — расходящийся круг, полсекунды
+    const k = (now - t) / 500;
+    if (k >= 0 && k < 1) T.ring(x, y, 5 + 16 * k, 0.9 * (1 - k), 1.4);
+  }
   // астролябия: двойные кольца с засечками гнёзд, удары ритма — точки, ноты мелодии — засечки внутрь по высоте;
   // стрелки — пока часы идут; выступы длины; ▶/■ и ● внизу; метки ударов на пластине вспыхивают на своём шаге
   function drawAstro(g, now) {
@@ -617,17 +639,43 @@
     for (const R of [A.R1, A.R2]) { T.ring(g.cx, g.cy, R, 0.4, 1); T.ring(g.cx, g.cy, R + 2.5, 0.15, 1); }
     c.lineWidth = 1;
     const tr = (ringTurn.rhythm * Math.PI) / 180, tm = (ringTurn.melody * Math.PI) / 180;
+    // узор колец — шкала, как у лимба астролябии: мелкие деления и звезда-указатель; крутится вместе с кольцом
+    for (const [R, o, side] of [[A.R2, ringOrn.rhythm + ringTurn.rhythm, 1], [A.R1, ringOrn.melody + ringTurn.melody, -1]]) {
+      const base = (o * Math.PI) / 180;
+      c.strokeStyle = T.ink(0.22); c.lineWidth = 0.8; c.beginPath();
+      for (let j = 0; j < 64; j++) {
+        const a = base + (j * Math.PI) / 32, l = j % 4 ? 2.5 : 4;
+        c.moveTo(g.cx + Math.cos(a) * (R + side * 3), g.cy + Math.sin(a) * (R + side * 3));
+        c.lineTo(g.cx + Math.cos(a) * (R + side * (3 + l)), g.cy + Math.sin(a) * (R + side * (3 + l)));
+      }
+      c.stroke();
+      for (let q = 0; q < 1; q++) {                 // звезда-указатель — между гнёздами; показывает, насколько кольцо провернули
+        const a = base - Math.PI / 2 + Math.PI / 16 + (side < 0 ? Math.PI : 0), px = g.cx + Math.cos(a) * (R + side * 10), py = g.cy + Math.sin(a) * (R + side * 10);
+        const ux = Math.cos(a) * 4 * side, uy = Math.sin(a) * 4 * side, vx = -Math.sin(a) * 2, vy = Math.cos(a) * 2;
+        c.strokeStyle = T.ink(0.45); c.beginPath();
+        c.moveTo(px - ux, py - uy); c.lineTo(px + vx, py + vy); c.lineTo(px + ux, py + uy); c.lineTo(px - vx, py - vy); c.closePath(); c.stroke();
+      }
+    }
+    // ритм: удар — крупная точка, пустое гнездо — колечко; мелодия — название ноты у гнезда, пусто — «·»;
+    // играющий шаг мигает (точка и нота вспыхивают), новое в гнезде — расходящийся круг
+    const blink = (t) => Math.max(0, 1 - (now - t) / 220);
     for (let i = 0; i < SLOTS; i++) {
       let a = slotAng(i) + tr, x = Math.cos(a), y = Math.sin(a);
       const onR = i < seq.rhythm.len, onM = i < seq.melody.len, st = seq.rhythm.steps[i], s = seq.melody.steps[i];
       const lg = i % grid === 0 ? 7 : 4;          // доли сетки записи — засечки длиннее
-      c.strokeStyle = T.ink(onR ? 0.55 : 0.12);
-      c.beginPath(); c.moveTo(g.cx + x * (A.R2 - 4), g.cy + y * (A.R2 - 4)); c.lineTo(g.cx + x * (A.R2 + lg), g.cy + y * (A.R2 + lg)); c.stroke();
-      if (st) T.dot(g.cx + x * A.R2, g.cy + y * A.R2, 2.6, onR ? 0.95 : 0.25);
+      c.strokeStyle = T.ink(onR ? 0.45 : 0.12); c.lineWidth = 1;
+      c.beginPath(); c.moveTo(g.cx + x * (A.R2 + 8), g.cy + y * (A.R2 + 8)); c.lineTo(g.cx + x * (A.R2 + 8 + lg), g.cy + y * (A.R2 + 8 + lg)); c.stroke();
+      const rx = g.cx + x * A.R2, ry = g.cy + y * A.R2, br = blink(pulse.r[i]);
+      if (st) { T.dot(rx, ry, 4.5 + 3 * br, onR ? 0.95 : 0.3); if (br) T.ring(rx, ry, 9 + 6 * (1 - br), br, 1.4); }
+      else if (onR) T.ring(rx, ry, 2.5, 0.35, 1); else T.dot(rx, ry, 1, 0.15);
+      flash(born.r[i], rx, ry, now);
       a = slotAng(i) + tm; x = Math.cos(a); y = Math.sin(a);
-      const l = s == null ? 3 : 3 + (((Math.round(fs() + s) % 24) + 24) % 24) * 0.5;
-      c.strokeStyle = T.ink(onM ? (s == null ? 0.35 : 0.85) : 0.12);
-      c.beginPath(); c.moveTo(g.cx + x * A.R1, g.cy + y * A.R1); c.lineTo(g.cx + x * (A.R1 - l), g.cy + y * (A.R1 - l)); c.stroke();
+      const mx = g.cx + x * (A.R1 + 16), my = g.cy + y * (A.R1 + 16), bm = blink(pulse.m[i]);
+      if (s != null) {
+        T.mapText(noteName(F_MIN * 2 ** (clamp(fs() + s, 0, 48) / 12)), mx, my, 12 + 4 * bm, onM ? Math.min(1, 0.8 + bm) : 0.25, 'center');
+        if (bm) T.ring(mx, my, 12 + 5 * (1 - bm), bm, 1.3);
+      } else T.dot(mx, my, 1.4, onM ? 0.45 : 0.12);
+      flash(born.m[i], mx, my, now);
     }
     for (const [ring, R] of [['rhythm', A.R2 + 12], ['melody', A.R1 - 11]]) {   // выступы длины колец — ромбики
       const p = slotXY(g, seq[ring].len - 0.5, R);
@@ -661,9 +709,9 @@
     if (seq.rec) T.dot(A.recX, A.ty, 5, 0.95); else T.ring(A.recX, A.ty, 5, 0.6, 1.2);
     T.mapText(String(16 / grid), A.gridX, A.ty, 15, 0.8, 'center');   // сетка записи: 16, 8, 4
     if (now < bpmUntil) T.mapText(`${seq.bpm} BPM`, A.playX, A.ty - 30, 14, 0.85, 'center');
-    if (noteEdit && now < noteEdit.until) {
-      const s = absM(seq.melody.steps[noteEdit.i]), p = slotXY(g, noteEdit.i, A.R1 - 24);
-      T.mapText(s == null ? '—' : noteName(F_MIN * 2 ** (s / 12)), p.x, p.y, 13, 0.85, 'center');
+    if (noteEdit && now < noteEdit.until) {      // тянешь засечку мелодии — гнездо обведено, нота у гнезда меняется
+      const p = slotXY(g, noteEdit.i, A.R1 + 16);
+      T.ring(p.x, p.y, 13, 0.9, 1.4);
     }
   }
   function drawTwist(now) {
