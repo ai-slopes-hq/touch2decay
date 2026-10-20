@@ -346,12 +346,33 @@
     c.stroke();
   }
   // кот у печи: спит клубком; на athanor в максимуме при огне — отходит от жара; на шипение кувшина поднимает голову
-  let catX = null;
+  let catX = null, catLeave = 0, catPokes = [];   // достали — уходит и не вернётся до перезагрузки
+  function meow(grump) {                            // мяу: пила сквозь полосу, высота вверх-вниз; уходя — ворчит ниже
+    if (!actx || !bus) return;
+    const ctx = actx, t = ctx.currentTime, o = ctx.createOscillator(), bp = ctx.createBiquadFilter(), g = ctx.createGain(), d = grump ? 0.7 : 0.45;
+    o.type = 'sawtooth';
+    if (grump) { o.frequency.setValueAtTime(260, t); o.frequency.linearRampToValueAtTime(200, t + d); }
+    else { o.frequency.setValueAtTime(520, t); o.frequency.linearRampToValueAtTime(820, t + d * 0.35); o.frequency.exponentialRampToValueAtTime(480, t + d); }
+    bp.type = 'bandpass'; bp.frequency.value = grump ? 700 : 1500; bp.Q.value = 3;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.06, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + d); g.gain.linearRampToValueAtTime(0, t + d + 0.01);
+    o.connect(bp).connect(g).connect(bus.out); o.start(t); o.stop(t + d + 0.03);
+    o.onended = () => { o.disconnect(); bp.disconnect(); g.disconnect(); };
+    lastSound = performance.now(); setLive(true);
+  }
+  function pokeCat(now) {
+    catPokes = catPokes.filter((t) => now - t < 8000); catPokes.push(now);
+    if (catPokes.length >= 5) { catLeave = now; meow(true); return; }
+    catUp = now; meow(false);
+  }
+  const catHit = (G, x, y) => catX != null && !catLeave && Math.abs(x - catX) < 26 && y > furnBox(G).y1 - 30 && y < furnBox(G).y1 + 6;
   function drawCat(c, G, now, dt) {
     const b = furnBox(G), hot = fire && fx.athanor > 0.85, home = b.x0 - 34, away = Math.max(28, b.x0 - 96);
     if (catX == null) catX = home;
-    catX += ((hot ? away : home) - catX) * (1 - Math.exp(-dt / 0.9));
-    const x = catX, y = b.y1, s = 11, walking = Math.abs((hot ? away : home) - catX) > 2, up = now - catUp < 2200 || walking;
+    if (catLeave) {                                  // достали — уходит за край, насовсем (до перезагрузки)
+      if (catX < -40) return;
+      catX -= dt * 60;
+    } else catX += ((hot ? away : home) - catX) * (1 - Math.exp(-dt / 0.9));
+    const x = catX, y = b.y1, s = 11, walking = !!catLeave || Math.abs((hot ? away : home) - catX) > 2, up = now - catUp < 2200 || walking;
     c.save(); c.translate(x, y); c.fillStyle = T.BG; c.strokeStyle = T.ink(0.8); c.lineWidth = 1;
     c.beginPath(); c.ellipse(0, -s * 0.55, s * 1.25, s * 0.6, 0, 0, TAU); c.fill(); c.stroke();   // тело клубком
     c.beginPath(); c.moveTo(s * 1.1, -s * 0.2); c.quadraticCurveTo(s * 1.6, s * 0.05, s * 0.2, s * 0.02); c.stroke();   // хвост обёрнут
@@ -800,6 +821,7 @@
   }
   function down(f) {
     const G = geo();
+    if (catHit(G, f.x, f.y)) { touches.set(f.id, { kind: 'cat' }); return; }
     for (const k of KNOBS) { const q = knobAt(G, k); if (Math.hypot(f.x - q.x, f.y - q.y) < q.R + 14) { touches.set(f.id, { kind: 'knob', k, v0: fx[k] }); return; } }
     const j = hitJar(G, f.x, f.y);
     if (j >= 0) {
@@ -865,6 +887,7 @@
       else lastFlaskTap = { i: t.i, t: now };
       return;
     }
+    if (t.kind === 'cat') { pokeCat(performance.now()); return; }
     if (t.kind === 'fire' && !moved) { if (!fire) setFire(true); }   // лампа только зажигает; гасит кувшин
     else if (t.kind === 'jug' && !moved) douse();
     else if (t.kind === 'tubeTap') {                 // тап или вытянуть — трубка снята
@@ -975,7 +998,7 @@
   T.registerWorld(3, lab);
   window.t2d.lab = {
     OPS, fx, geo, mixed, jars, waveOf, waveOut, get focus() { return focusI; }, setFx: (k, v) => fxw.set(k, v), get solveOn() { return !!(bus && bus.sc.tick); }, get mods() { return mods; }, get fire() { return fire; }, get live() { return voices.has('fire'); },
-    get broken() { return broken.slice(); }, get soot() { return soot; }, get catX() { return catX; }, lamp: () => { const b = lampBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
+    get broken() { return broken.slice(); }, get soot() { return soot; }, get catX() { return catX; }, get catGone() { return !!catLeave; }, get catUp() { return catUp; }, lamp: () => { const b = lampBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
     get voices() { return [...voices].map(([k, v]) => ({ k, on: v.on, latched: v.latched })); },
     jar: (i) => { const b = jarBox(geo(), i); return { x: b.X, y: b.y - b.h / 2 }; },
     at: (i) => { const q = flaskGeo(geo(), i); return { x: q.p.x, y: (q.yTop + q.yBot) / 2, neckY: q.neckTop + 4 }; },

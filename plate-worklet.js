@@ -193,13 +193,13 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
     setSeq(d) {
       const was = this.seq.playing, stepN = stepSamples(d.bpm, this.fs);
       this.seq = {
-        bpm: d.bpm, playing: !!d.playing,
+        bpm: d.bpm, playing: !!d.playing, chance: d.chance == null ? 1 : d.chance,
         // веса мод — заново только у шагов, чьё место изменилось: тянешь темп или длину — в звуковом потоке ничего тяжёлого.
         // место удара — у шага мелодии { s, x, y } (нота — клетка пластины) или, по-старому, у шага ритма (мелодия — полутоны)
         rhythm: { len: d.rhythm.len, steps: d.rhythm.steps.map((st, i) => {
           if (!st) return null;
-          const old = this.seq.rhythm.steps[i], vel = st.vel == null ? 1 : st.vel;
-          return st.x == null ? { vel } : { x: st.x, y: st.y, vel, g: old && old.x === st.x && old.y === st.y ? old.g : strikeGains(st.x, st.y) };
+          const old = this.seq.rhythm.steps[i], vel = st.vel == null ? 1 : st.vel, chance = st.chance == null ? 1 : st.chance;
+          return st.x == null ? { vel, chance } : { x: st.x, y: st.y, vel, chance, g: old && old.x === st.x && old.y === st.y ? old.g : strikeGains(st.x, st.y) };
         }) },
         melody: { len: d.melody.len, steps: d.melody.steps.map((m, i) => {
           if (m == null || typeof m === 'number') return m;
@@ -216,8 +216,9 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       this.r = (this.r + 1) % sq.rhythm.len;
       this.m = (this.m + 1) % sq.melody.len;
       this.lastTick = this.t;
-      this.port.postMessage({ t: 'step', r: this.r, m: this.m, time: this.t / this.fs });
-      const st = sq.rhythm.steps[this.r], mel = sq.melody.steps[this.m];
+      const st0 = sq.rhythm.steps[this.r], hit = !!st0 && Math.random() < (st0.chance == null ? 1 : st0.chance) * (sq.chance == null ? 1 : sq.chance);   // шанс удара: свой у шага × общий
+      this.port.postMessage({ t: 'step', r: this.r, m: this.m, time: this.t / this.fs, hit });
+      const st = hit ? st0 : null, mel = sq.melody.steps[this.m];
       const at = mel && mel.g ? mel : st, semi = mel == null || typeof mel === 'number' ? mel : mel.s;
       if (!st || !at || !at.g || this.t - this.lastLive < this.stepN / 2) return;   // шаг мелодии без места — пауза
       this.strike(at.g, semi == null ? this.f0 : F_LO * 2 ** (semi / 12), st.vel, 0.5);

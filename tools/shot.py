@@ -685,6 +685,12 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     x0 = await p.js('()=>t2d.lab.catX'); await p.js("()=>t2d.lab.setFx('athanor', 1)"); await p.pg.wait_for_timeout(2500)
     assert await p.js('()=>t2d.lab.catX') < x0 - 30, 'athanor at max — the cat moves away from the heat'
     await p.shot('lab-cat'); await p.js("()=>t2d.lab.setFx('athanor', 0.35)")
+    await p.pg.wait_for_timeout(2500); cx = await p.js('()=>t2d.lab.catX'); fb2 = await p.js('()=>t2d.lab.furnace()')
+    cy = await p.js('()=>{const g=t2d.lab.geo(); return g.furn.y1 - 10}')
+    await p.tap(cx, cy); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>performance.now() - t2d.lab.catUp') < 500 and not await p.js('()=>t2d.lab.catGone'), 'touch the cat — it looks up'
+    for _ in range(5): await p.tap(cx, cy); await p.pg.wait_for_timeout(120)
+    assert await p.js('()=>t2d.lab.catGone'), 'pester the cat — it leaves for good'
     a = await p.js('()=>t2d.lab.at(0)'); f0 = await p.js('()=>t2d.lab.OPS[0].f')
     pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], a['x'] + 60, a['y'], steps=8)
     assert await p.js('()=>t2d.lab.focus') == 0, 'holding a flask — its waveform in the scroll'
@@ -849,7 +855,41 @@ async def sc_natura(p):                           # Natura: лодочка — �
     assert await p.js('()=>t2d.nat.seq.playing'), 'dice set the river flowing'
 
 
-SCENARIOS = {'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_cymx(p):                              # Cymatica: запись по шагам, шанс удара, луна качает пластину, созвездия, резонатор отзывается
+    import math
+    await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(600)
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+    g = await p.js('()=>t2d.cym.astro'); cx, cy, R2, ty = g['cx'], g['cy'], g['R2'], g['ty']
+    await p.tap(g['recX'], ty); await p.pg.wait_for_timeout(150)           # часы стоят — ● включает запись по шагам
+    assert await p.js('()=>t2d.cym.stepRec') == {'r': 0, 'm': 0}, 'rec while stopped — step recording'
+    for dx, dy in [(-40, 0), (30, -30)]:
+        await p.tap(cx + dx, cy + dy); await p.pg.wait_for_timeout(150)
+    await p.tap(cx + 40, cy - R2 - 30); await p.pg.wait_for_timeout(150)  # мимо стола и колец — пауза
+    await p.tap(cx, cy + 40); await p.pg.wait_for_timeout(150)
+    sq = await p.js('()=>t2d.cym.seq'); r = [bool(x) for x in sq['rhythm']['steps'][:4]]
+    assert r == [True, True, False, True], f'step recording: hit, hit, rest, hit: {r}'
+    assert await p.js('()=>t2d.cym.stepRec.r') == 4, 'cursor moved on'
+    await p.shot('cym-steprec')
+    await p.tap(g['recX'], ty); await p.pg.wait_for_timeout(100)
+    assert not await p.js('()=>t2d.cym.stepRec'), 'tap ● again — step recording off'
+    x, y = cx + R2 * math.cos(-math.pi / 2), cy + R2 * math.sin(-math.pi / 2)   # удар шага 0 к центру — шанс меньше
+    pid = await p.hold(x, y, ms=60); await p.drag(pid, x, y, x, y + 35, steps=8); await p.shot('cym-chance'); await p.up(); await p.pg.wait_for_timeout(100)
+    ch = await p.js('()=>t2d.cym.seq.rhythm.steps[0].chance'); assert ch is not None and ch < 0.6, f'drag a hit toward the center — lower chance: {ch}'
+    assert await p.js('()=>t2d.cym.sentSeq.rhythm.steps[0].chance') == ch, 'chance goes to the worklet'
+    await p.tap(g['driftX'], ty); await p.pg.wait_for_timeout(100)          # луна — качает пластину
+    assert await p.js('()=>t2d.cym.drift.on'), 'tap the moon — drift on'
+    await p.js('()=>{const s=t2d.cym.seq; t2d.cym.play(true)}'); await p.pg.wait_for_timeout(3500)
+    assert await p.js('()=>t2d.cym.stars') > 1, 'played places draw a constellation'
+    await p.shot('cym-drift')
+    pid = await p.hold(g['driftX'], ty, ms=700)                             # держишь луну — кольцо
+    assert await p.js('()=>t2d.cym.ringOpen'), 'hold the moon — its ring'
+    await p.up(); await p.pg.wait_for_timeout(100)
+    await p.js('()=>t2d.cym.play(false)')
+    await p.tap(g['driftX'], ty); await p.pg.wait_for_timeout(100)
+    assert not await p.js('()=>t2d.cym.drift.on') and abs(await p.js('()=>t2d.cym.effF0') - await p.js('()=>t2d.cym.f0')) < 0.01, 'moon off — plate back to its size'
+
+
+SCENARIOS = {'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
