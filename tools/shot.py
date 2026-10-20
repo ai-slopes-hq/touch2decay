@@ -204,10 +204,8 @@ async def sc_plate(p):                             # Cymatica: удар, смы�
     await p.tap(cx, cy - 0.9 * r); await p.pg.wait_for_timeout(700)      # звук строится — удар ждёт в очереди (край — нота пластины)
     assert await p.js('()=>t2d.cym.ready'), 'worklet ready'
     assert await p.js('()=>Math.max(...t2d.cym.energy)') > 0, 'first strike is heard'
-    await p.js('()=>t2d.cym.strike(0, 0)'); await p.pg.wait_for_timeout(150)   # песок уходит в узлы
-    s1 = await p.js('()=>t2d.cym.sandSpread()'); await p.pg.wait_for_timeout(1500)
-    s2 = await p.js('()=>t2d.cym.sandSpread()'); await p.shot('plate')
-    assert s2 < s1, f'sand settles on the nodal lines: {s1} -> {s2}'
+    await p.shot('plate')
+    assert await p.js('()=>typeof t2d.cym.sandSpread') == 'undefined', 'no sand on the handpan'
     u = await p.js("()=>t2d.btnPos('undo')"); c = await p.js("()=>t2d.btnPos('clr')")
     if await p.js('()=>t2d.cym.bowsOn'):                                 # смычки выключены флагом BOWS_ON — их проверки ждут
         pid = await p.hold(cx + 30, cy, ms=600)                              # держишь — смычок
@@ -574,6 +572,12 @@ async def sc_handpan(p):                           # нота — от клет�
     assert await p.js('()=>t2d.cym.showNotes') is True, 'just after a pinch — names shown'
     await p.pg.wait_for_timeout(1300)
     assert await p.js('()=>t2d.cym.showNotes') is False, 'a second later — gone'
+    q = await cell(1, 2); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(250)   # гейт: клетка горит, пока звучит её нота
+    lit = await p.js('()=>t2d.cym.lit')
+    assert '1,2' in lit, f'the struck cell glows while its note sounds: {lit}'
+    await p.shot('handpan-gate')
+    await p.pg.wait_for_timeout(4000)
+    assert await p.js('()=>t2d.cym.lit') == [], 'and goes dark when the note has died away'
     q = await cell(0, 0); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(700)
     h0 = await p.js('()=>t2d.cym.lastStrike.hz')
     q = await cell(2, 0); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(200)
@@ -632,6 +636,14 @@ async def sc_handpan(p):                           # нота — от клет�
     s = await p.js('()=>t2d.cym.sentSeq')
     assert s['rhythm']['steps'][0] is None and s['rhythm']['steps'][1] is not None, f'out-of-range cell is silent: {s}'
     for _ in range(20): await p.pg.mouse.wheel(0, -3000)
+    await p.pg.wait_for_timeout(100)
+    d = await p.js("()=>t2d.btnPos('dice')"); rings = set()               # кубик кладёт удары во все три кольца, не только у края
+    for _ in range(20):
+        await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(40)
+        rs = await p.js('()=>{const C=t2d.cym.core,n=C.degPerOct(),b=t2d.cym.base; return t2d.cym.seq.rhythm.steps.filter(Boolean).map(s=>{const i=C.cellIdx(s.x,s.y,b,n); return i==null?-1:Math.floor((i-b)/n)})}')
+        assert all(0 <= r <= 2 for r in rs), f'dice hits stay on the plate: {rs}'
+        rings |= set(rs)
+    assert rings == {0, 1, 2}, f'dice reaches every ring: {rings}'
 
 
 SCENARIOS = {'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}

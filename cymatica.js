@@ -156,7 +156,7 @@
   }
   function play(on = !seq.playing) { seq.playing = on; if (!on) seq.rec = false; sendSeq(); }
   function rec(on = !seq.rec) { seq.rec = on; if (on && !seq.playing) play(true); }
-  let energy = new Float32Array(24), level = 0;
+  let energy = new Float32Array(24), level = 0, voices = [];
 
   // ---------- звук: worklet, зал и эхо; пока узел грузится, сообщения ждут в очереди ----------
   let node = null, ready = false, nodes = null, actx = null, entered = false, started = false;
@@ -248,62 +248,12 @@
       const now = performance.now();
       lastStep = { r: d.r, m: d.r, atMs: now };
       const st = seq.rhythm.steps[d.r];
-      if (st) { pulse.r[d.r] = pulse.m[d.r] = now; if (d.r < seq.rhythm.len && sent.m[d.r] != null) flashCell(st.x, st.y); }
+      if (st) pulse.r[d.r] = pulse.m[d.r] = now;
       return;
     }
-    if (d.t === 'energy') { energy = d.e; level = d.voices.reduce((s, v) => s + v.level, 0); updateField(); }
-    else if (d.t === 'shapes') shapes = d;
+    if (d.t === 'energy') { voices = d.voices; energy = d.e; level = d.voices.reduce((s, v) => s + v.level, 0); }   // формы мод (shapes) больше не нужны: песка нет
   }
-  let shapes = null;                         // формы мод на сетке — для песка
 
-  // ---------- песок Хладни: где пластина колеблется — крупинки скачут, в узлах — оседают ----------
-  const SAND = 2500, GN = 96, SAND_STEP = 0.06;
-  const sand = { x: new Float32Array(SAND), y: new Float32Array(SAND) };
-  for (let i = 0; i < SAND; i++) {           // поначалу ровным слоем по кругу
-    const r = Math.sqrt(Math.random()), a = Math.random() * Math.PI * 2;
-    sand.x[i] = r * Math.cos(a); sand.y[i] = r * Math.sin(a);
-  }
-  let field = null, quiet = true;
-  // поле колебаний A = √(Σ w_k·φ_k²) на сетке, нормировано по максимуму; в тишине не пересчитывается.
-  // Вес моды — квадрат её энергии: фигуру, как на настоящей пластине, рисуют главные моды, слабые её не размывают
-  function updateField() {
-    if (!shapes) return;
-    let tot = 0;
-    for (let k = 0; k < 24; k++) tot += energy[k];
-    quiet = tot < 1e-6;
-    if (quiet) return;
-    const n2 = GN * GN, grid = shapes.grid;
-    if (!field) field = new Float32Array(n2);
-    field.fill(0);
-    let top = 0;
-    for (let k = 0; k < 24; k++) top = Math.max(top, energy[k]);
-    for (let k = 0; k < 24; k++) {
-      const ek = (energy[k] / top) ** 2;
-      if (ek < 1e-4) continue;
-      for (let i = 0, o = k * n2; i < n2; i++) { const s = grid[o + i]; field[i] += ek * s * s; }
-    }
-    let mx = 0;
-    for (let i = 0; i < n2; i++) { field[i] = Math.sqrt(field[i]); if (field[i] > mx) mx = field[i]; }
-    if (mx > 0) for (let i = 0; i < n2; i++) field[i] /= mx;
-  }
-  function fieldAt(x, y) {
-    const ix = Math.floor(((x + 1) / 2) * GN), iy = Math.floor(((y + 1) / 2) * GN);
-    return ix < 0 || iy < 0 || ix >= GN || iy >= GN ? 0 : field[iy * GN + ix];
-  }
-  function stepSand(dt) {
-    if (quiet || !field) return;
-    const k = SAND_STEP * Math.min(3, dt * 60);
-    for (let i = 0; i < SAND; i++) {
-      const s = fieldAt(sand.x[i], sand.y[i]) * k, a = Math.random() * Math.PI * 2;
-      const x = sand.x[i] + Math.cos(a) * s, y = sand.y[i] + Math.sin(a) * s;
-      if (x * x + y * y < 1) { sand.x[i] = x; sand.y[i] = y; }   // за край не уходит
-    }
-  }
-  function drawSand(g) {
-    const c = T.g;
-    c.fillStyle = T.ink(0.75);
-    for (let i = 0; i < SAND; i++) c.fillRect(g.cx + sand.x[i] * g.r - 0.65, g.cy + sand.y[i] * g.r - 0.65, 1.3, 1.3);
-  }
   function sendBow(b, on) { send({ t: 'bow', id: b.id, x: b.x, y: b.y, on, exciter: b.exciter, pressure: b.pressure, amp: b.amp }); }
 
   // ---------- высота = размер пластины ----------
@@ -451,7 +401,6 @@
     if (t.kind !== 'twist' || !t.target) return;
     const dd = wrapDeg(((a1 - t.last) * 180) / Math.PI);
     t.last = a1; t.deg += dd;
-    if (t.target === 'plate') rotateSand((dd * Math.PI) / 180);   // песок поворачивается вслед за пальцами
     twistTo(t, t.target, t.deg, (t.a.x + t.b.x) / 2, (t.a.y + t.b.y) / 2);
   }
   // поворот относительно начала жеста: кольца — 22.5° на гнездо, пластина — 20° на ступень лада (по часовой — вперёд/вверх)
@@ -473,11 +422,6 @@
     if (t.target === 'melody' || t.target === 'rhythm') ringOrn.melody = ringOrn.rhythm = (ringOrn.rhythm + t.k * 22.5) % 360;
     ringTurn.melody = ringTurn.rhythm = 0;
   }
-  function rotateSand(a) {
-    const c = Math.cos(a), s = Math.sin(a);
-    for (let i = 0; i < SAND; i++) { const x = sand.x[i], y = sand.y[i]; sand.x[i] = x * c - y * s; sand.y[i] = x * s + y * c; }
-  }
-
   // ---------- касания ----------
   function down(f, e) {
     const g = plateGeo();
@@ -502,7 +446,7 @@
     if (mk >= 0) {                              // тап по метке звучит сразу; повёл — тащишь метку
       f.mk = mk;
       const st = seq.rhythm.steps[mk], note = notesOf([st])[0];
-      if (note != null) { send({ t: 'strike', x: st.x, y: st.y, vel: 1, hard: 0.5, hz: F_MIN * 2 ** (note / 12) }); flashCell(st.x, st.y); }
+      if (note != null) send({ t: 'strike', x: st.x, y: st.y, vel: 1, hard: 0.5, hz: F_MIN * 2 ** (note / 12) });
       return;
     }
     const p = toPlate(f, g);
@@ -511,7 +455,7 @@
     if (note == null) return;                    // клетка за 1760 Гц — молчит
     f.live = true; f.bid = `t${f.id}`;
     lastStrike = { t: 'strike', x: p.x, y: p.y, vel: 1, hard: 0.5, hz: F_MIN * 2 ** (note / 12), rec: seq.rec && seq.playing };
-    send(lastStrike); flashCell(p.x, p.y);
+    send(lastStrike);
     recordHit(p.x, p.y);
     if (cursor != null && !seq.playing) {        // пошаговый ввод: удар — в гнездо курсора, курсор дальше
       const len = seq.rhythm.len;
@@ -661,12 +605,20 @@
     }
     c.stroke();
   }
-  // клетки ханга: сетка едва видна всегда; названия нот — только пока играешь (палец на пластине, метка, бусина, жест,
-  // секунда после щипка); сыгранная клетка коротко вспыхивает
-  const cellFlash = new Map();                   // 'кольцо,сектор' → время удара
-  function flashCell(x, y) {
-    const n = degPerOct(), i = cellIdx(x, y, 0, n);
-    if (i != null) cellFlash.set(`${Math.floor(i / n)},${i % n}`, performance.now());
+  // клетки ханга: сетка видна всегда; клетка горит, пока звучит её нота (гейт — по уровню голоса из worklet: −50…−10 дБ);
+  // названия нот — только пока играешь (палец на пластине, метка, бусина, жест, секунда после щипка)
+  const glowOf = (lv) => clamp((10 * Math.log10(lv + 1e-20) + 50) / 40);
+  function litCells() {                          // 'кольцо,сектор' → яркость
+    const out = new Map(), list = noteList(), b = nearestIdx(list, fs()), n = degPerOct();
+    for (const v of voices) {
+      const gl = glowOf(v.level);
+      if (gl < 0.02) continue;
+      const s = 12 * Math.log2(v.hz / F_MIN), cl = cellOf(list.findIndex((x) => Math.abs(x - s) < 0.05), b, n);
+      if (!cl) continue;                         // нота не из раскладки (удар без клетки) — не горит
+      const key = `${cl.ring},${cl.sector}`;
+      out.set(key, Math.max(out.get(key) || 0, gl));
+    }
+    return out;
   }
   function showNotes(now) {
     return !!two || now < labelUntil || [...touches.values()].some((f) => f.live || f.mk != null || (f.astro && f.astro.k === 'mtick'));
@@ -681,19 +633,18 @@
   }
   function drawCells(g, now) {
     const c = T.g, n = degPerOct();
-    c.strokeStyle = T.ink(0.15); c.lineWidth = 1; c.beginPath();   // тоньше — тонет в песке
+    c.strokeStyle = T.ink(0.25); c.lineWidth = 1; c.beginPath();
     for (let k = 0; k < n; k++) {
       const a = (k / n) * Math.PI * 2 - Math.PI / 2;
       c.moveTo(g.cx, g.cy); c.lineTo(g.cx + Math.cos(a) * g.r, g.cy + Math.sin(a) * g.r);
     }
     for (const r of [RINGS[1], RINGS[2]]) { c.moveTo(g.cx + r * g.r, g.cy); c.arc(g.cx, g.cy, r * g.r, 0, Math.PI * 2); }
     c.stroke();
-    for (const [key, t] of cellFlash) {
-      const k = (now - t) / 200;
-      if (k >= 1) { cellFlash.delete(key); continue; }
+    for (const [key, gl] of litCells()) {        // звучит — клетка светится и гаснет вместе с нотой
       const [ring, sector] = key.split(',').map(Number);
-      if (sector >= n) continue;
-      c.strokeStyle = T.ink(0.8 * (1 - k)); c.lineWidth = 1.2; cellPath(c, g, ring, sector, n); c.stroke();
+      cellPath(c, g, ring, sector, n);
+      c.fillStyle = T.ink(0.12 * gl); c.fill();
+      c.strokeStyle = T.ink(0.3 + 0.6 * gl); c.lineWidth = 1 + 0.6 * gl; c.stroke();
     }
     if (!showNotes(now)) return;
     const list = noteList(), b = nearestIdx(list, fs());
@@ -901,8 +852,6 @@
       c.drawImage(wavesLayer(), 0, 0, T.W, T.H);   // фон с волнами — одной готовой картинкой
       drawPlate(g);
       shownF0 += (plate.f0 - shownF0) * (1 - Math.exp(-(dt || 1 / 60) / 0.08));   // пластина плавно доезжает до размера
-      stepSand(dt || 1 / 60);
-      drawSand(g);
       drawCells(g, now);
       drawAstro(g, now);
       drawCursor(g);
@@ -923,8 +872,9 @@
     },
     dice() {                                     // генеративный узор: Евклид, случайные места, мелодия по ладу; часы идут
       const R = Math.random, n = 8 + Math.floor(R() * 9), k = 3 + Math.floor(R() * (n - 4)), e = euclid(k, n);
-      const list = noteList(), b = nearestIdx(list, fs()), dn = degPerOct();   // ноты — блуждание по ладу в двух нижних кольцах
-      const w = walkMelody(n, list[b], list.slice(b, Math.min(b + 2 * dn, list.length)));
+      const list = noteList(), b = nearestIdx(list, fs()), dn = degPerOct();   // ноты — блуждание по ладу по всем трём кольцам
+      const span = list.slice(b, Math.min(b + 3 * dn, list.length));          // со случайной ноты — иначе от края до центра не дойдёт
+      const w = walkMelody(n, span[Math.floor(R() * span.length)], span);
       seq.rhythm = { len: n, steps: Array.from({ length: SLOTS }, (_, i) => {
         if (i >= n || !e[i]) return null;
         const cl = cellOf(list.indexOf(w[i]), b, dn), p = cellCenter(cl.ring, cl.sector, dn);
@@ -982,14 +932,8 @@
     get echo() { return { label: echoDiv()[0], sec: echoSec(), fb: echoFb() }; }, get echoMax() { return echoes.length ? echoes[echoes.length - 1].dL.delayTime.maxValue : 0; },
     get echoChains() { return echoes.map((p) => ({ sec: p.sec, real: p.dL.delayTime.value })); },
     get gesture() { return gesture; }, get shownF0() { return shownF0; }, bowsOn: BOWS_ON, get ringTurn() { return { ...ringTurn }; }, get grid() { return grid; }, get waveStep() { return waveStep(); },
-    get cursor() { return cursor; }, get bornM() { return Array.from(born.m); }, get showNotes() { return showNotes(performance.now()); }, get lastStrike() { return lastStrike; },
+    get cursor() { return cursor; }, get lit() { return [...litCells().keys()]; }, get bornM() { return Array.from(born.m); }, get showNotes() { return showNotes(performance.now()); }, get lastStrike() { return lastStrike; },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
     bow(x, y, on = true) { send({ t: 'bow', id: 'dbg', x, y, on, exciter: 0, pressure: 0.5, amp: 0.8 }); },
-    sandSpread() {                               // среднее поле под крупинками: песок в узлах — меньше
-      if (!field) return 1;
-      let s = 0;
-      for (let i = 0; i < SAND; i++) s += fieldAt(sand.x[i], sand.y[i]);
-      return s / SAND;
-    },
   };
 })();
