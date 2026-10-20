@@ -1,10 +1,9 @@
 // Офлайн без залипания старой версии.
 // Код и страница — сначала из сети (мимо HTTP-кеша), кеш — только запасной вариант без сети.
 // Шрифты и иконки не меняются — сразу из кеша.
-const CACHE = 't2d-v27';   // при выкладке менять вместе с app.js?v= в index.html
+const CACHE = 't2d-v28';   // при выкладке менять вместе с app.js?v= в index.html
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest'];
 const STATIC = ['./icon-180.png', './icon-192.png', './icon-512.png',
-  './fonts/ibm-plex-mono-latin-400-normal.woff2', './fonts/ibm-plex-mono-latin-500-normal.woff2',
   './fonts/im-fell-english-latin-400-italic.woff2', './fonts/im-fell-english-latin-400-normal.woff2'];
 const NET_WAIT = 3500;      // плохая сеть — не ждать дольше, отдать кеш
 

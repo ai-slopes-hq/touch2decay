@@ -12,12 +12,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
-<link rel="preload" href="fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/ibm-plex-mono-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/im-fell-english-latin-400-italic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/im-fell-english-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-  @font-face { font-family: 'IBM Plex Mono'; font-weight: 400; font-display: swap; src: url('fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2'); }
-  @font-face { font-family: 'IBM Plex Mono'; font-weight: 500; font-display: swap; src: url('fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2'); }
   @font-face { font-family: 'IM Fell English'; font-style: italic; font-display: swap; src: url('fonts/im-fell-english-latin-400-italic.woff2') format('woff2'); }
   @font-face { font-family: 'IM Fell English'; font-style: normal; font-display: swap; src: url('fonts/im-fell-english-latin-400-normal.woff2') format('woff2'); }
   :root { --bg: #000; }
@@ -37,7 +34,7 @@
 <canvas id="field" aria-label="Synth field: touch to sound, drag to shape"></canvas>
 <div id="safe-top"></div>
 <div id="safe-bot"></div>
-<script src="app.js?v=27"></script>
+<script src="app.js?v=28"></script>
 <script>
   // офлайн-кэш: только на настоящем сайте (https), не в превью и не с диска
   // новая версия: проверка при каждом возврате в приложение (иконка на «Домой» не перезапускается, а разворачивается);

@@ -1669,7 +1669,6 @@
     return c;
   })();
   function glowAt(x, y, r, a) { if (a <= 0.003) return; g.globalAlpha = Math.min(1, a); g.drawImage(glowSprite, x - r, y - r, 2 * r, 2 * r); g.globalAlpha = 1; }
-  const MONO = '"IBM Plex Mono", ui-monospace, Menlo, monospace';
   const MAP = '"IM Fell English", Georgia, "Times New Roman", serif';   // подписи на поле — как на старых звёздных картах
   function mapText(s, x, y, size, a, align = 'left', italic = true) {
     g.font = `${italic ? 'italic ' : ''}${size}px ${MAP}`; g.fillStyle = ink(a); g.textAlign = align; g.textBaseline = 'middle';
@@ -1693,8 +1692,10 @@
     g.strokeStyle = ink(a); g.lineWidth = 1;
     g.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w), Math.round(h));
   }
+  // один шрифт на всё — IM Fell English: в интерфейсе прямой, на карте курсив (mapText).
+  // У него мельче очко, поэтому кегль чуть больше; жирного начертания нет — акцент яркостью
   function text(s, x, y, size, a, weight = 400, align = 'left') {
-    g.font = `${weight} ${size}px ${MONO}`; g.fillStyle = ink(a); g.textAlign = align; g.textBaseline = 'middle';
+    g.font = `${size + 2}px ${MAP}`; g.fillStyle = ink(a); g.textAlign = align; g.textBaseline = 'middle';
     g.fillText(s, x, y);
   }
 
@@ -2369,7 +2370,7 @@
     const tb = g.createLinearGradient(0, 0, 0, scopeY + 64);
     tb.addColorStop(0, 'rgba(0,0,0,0.85)'); tb.addColorStop(0.6, 'rgba(0,0,0,0.55)'); tb.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = tb; g.fillRect(0, 0, W, scopeY + 64);
-    mapText('touch2decay', 16, scopeY + 20, 21, sclF ? 0.25 : 0.85);   // при открытом тулбоксе заголовок уходит в тень
+    mapText('touch2decay', 16, scopeY + 20, 21, sclF || revF ? 0.12 : 0.85);   // при открытом тулбоксе или веере FX заголовок уходит в тень
     g.font = `italic 21px ${MAP}`; titleW = g.measureText('touch2decay').width;
     // кнопки лежат поверх карты — у каждой тёмная подложка
     const pad = (p, rr) => { g.fillStyle = 'rgba(0,0,0,0.88)'; g.beginPath(); g.arc(p.x, p.y, rr, 0, Math.PI * 2); g.fill(); };
@@ -2678,7 +2679,7 @@
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
   if (document.fonts && document.fonts.load) {
-    document.fonts.load(`13px ${MONO}`).catch(() => {});
+    document.fonts.load(`13px ${MAP}`).catch(() => {});
     document.fonts.load(`italic 13px ${MAP}`).catch(() => {});
   }
 
