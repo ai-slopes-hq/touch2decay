@@ -304,7 +304,55 @@ async def sc_seq(p):                               # астролябия: пу�
         assert a['cy'] - a['R2'] - 6 > top, f'rings under the top row at {vw}x{vh}'
 
 
-SCENARIOS = {'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_twist(p):                             # два пальца крутят кольца (сдвиг узора) и пластину (транспонирование); Shift-мышь
+    import math
+    await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
+    await p.js("()=>{const h={x:0.3,y:0,vel:1}; t2d.cym.load({rhythm:{len:16, steps:[h,null,null,null,h]}, melody:{len:7, steps:[12,15]}})}")
+    g = await p.js('()=>t2d.cym.astro'); cx, cy = g['cx'], g['cy']
+    pt = lambda R, deg: {'x': cx + R * math.cos(math.radians(deg)), 'y': cy + R * math.sin(math.radians(deg))}
+    async def twist(R, d0, turn, i1=81, i2=82, spread=0):
+        a, b = dict(pt(R, -90 - d0), id=i1), dict(pt(R, -90 + d0), id=i2)
+        await p.T('touchStart', [a]); await p.pg.wait_for_timeout(30)
+        await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(30)
+        for k in range(1, 11):
+            a = dict(pt(R + spread * k / 10, -90 - d0 + turn * k / 10), id=i1); b = dict(pt(R + spread * k / 10, -90 + d0 + turn * k / 10), id=i2)
+            await p.T('touchMove', [a, b]); await p.pg.wait_for_timeout(16)
+        await p.T('touchEnd', [a, b]); await p.pg.wait_for_timeout(150)
+    await twist(g['R2'], 10, 45)
+    st = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
+    assert [i for i, x in enumerate(st) if x] == [2, 6], f'rhythm ring turned by 2: {st}'
+    await twist(g['R1'], 10, 45)
+    m = await p.js('()=>t2d.cym.seq.melody.steps')
+    assert m[2] == 12 and m[3] == 15, f'melody ring turned by 2: {m}'
+    exp = await p.js('()=>t2d.cym.core.transposeMelody(t2d.cym.seq.melody.steps, 2, t2d.cym.core.scaleSemis())')
+    await twist(40, 30, 40)
+    assert await p.js('()=>t2d.cym.seq.melody.steps') == exp, 'plate twist transposes by 2 scale steps'
+    f0, m0 = await p.js('()=>t2d.cym.f0'), await p.js('()=>t2d.cym.seq.melody.steps')
+    a, b = {'x': cx - 30, 'y': cy, 'id': 91}, {'x': cx + 30, 'y': cy, 'id': 92}
+    await p.T('touchStart', [a]); await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(30)
+    for k in range(1, 11):
+        a, b = dict(a, x=cx - 30 - 3 * k), dict(b, x=cx + 30 + 3 * k)
+        await p.T('touchMove', [a, b]); await p.pg.wait_for_timeout(16)
+    await p.T('touchEnd', [a, b]); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.cym.f0') < f0 and await p.js('()=>t2d.cym.seq.melody.steps') == m0, 'pinch sizes the plate only'
+    a = {'x': cx + 20, 'y': cy, 'id': 95}                                 # держишь — смычок; второй палец и поворот
+    await p.T('touchStart', [a]); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.cym.live') == 1
+    await twist(40, 50, 40, 96, 97)
+    await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.cym.live') == 0, 'held bow stops when a twist starts'
+    assert await p.js('()=>t2d.cym.gesture') == 'twist'
+    r0 = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
+    m = p.pg.mouse; s = pt(g['R2'], -90)
+    await p.pg.keyboard.down('Shift'); await m.move(s['x'], s['y']); await m.down()
+    for k in range(1, 19):
+        q = pt(g['R2'], -90 + 5 * k); await m.move(q['x'], q['y']); await p.pg.wait_for_timeout(10)
+    await m.up(); await p.pg.keyboard.up('Shift'); await p.pg.wait_for_timeout(100)
+    r1 = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
+    assert r1 == r0[-4:] + r0[:-4], f'Shift-drag turns the rhythm ring by 4: {r0} -> {r1}'
+
+
+SCENARIOS = {'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

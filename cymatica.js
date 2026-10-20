@@ -16,7 +16,7 @@
   const plate = { f0: F_DEF, fx: { structure: 0.66, damping: 0.5, brightness: 0.5, hall: 0.25, echo: 0.15 }, bows: [] };
   let bowId = 1;
   const touches = new Map();                 // палец → касание пластины
-  let ringF = null, pinch = null, lastTap = null, labelUntil = 0;
+  let ringF = null, two = null, lastTap = null, labelUntil = 0, gesture = null, twistLabel = null;
 
   // ---------- секвенсер: узор (ритм и мелодия разной длины), часы — в worklet ----------
   const SLOTS = 16;
@@ -294,9 +294,64 @@
     return -1;
   }
 
+  // ---------- вращение: кольца — сдвиг узора, пластина — транспонирование; два пальца или Shift-мышь ----------
+  const wrapDeg = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
+  const origOf = () => ({ r: seq.rhythm.steps.slice(), m: seq.melody.steps.slice() });
+  function twistTarget(x, y, g) {
+    const A = astro(g), d = Math.hypot(x - g.cx, y - g.cy);
+    if (Math.abs(d - A.R1) < 14) return 'melody';
+    if (Math.abs(d - A.R2) < 14) return 'rhythm';
+    return d < g.rMax ? 'plate' : null;
+  }
+  function startTwo(o, f, g) {
+    if (o.bowing) { send({ t: 'bow', id: o.bid, on: false }); o.bowing = false; }   // смычок первого пальца гаснет
+    o.live = false; o.astro = null; o.mk = null; o.cb = null;
+    touches.set(f.id, f);
+    o.two = f.two = true;
+    two = {
+      a: o, b: f, a0: Math.atan2(f.y - o.y, f.x - o.x), d0: Math.max(20, Math.hypot(f.x - o.x, f.y - o.y)),
+      kind: null, target: twistTarget((o.x + f.x) / 2, (o.y + f.y) / 2, g), f00: plate.f0, orig: origOf(), deg: 0, k: 0,
+    };
+    two.last = two.a0;
+  }
+  function moveTwo(g) {
+    const t = two, a1 = Math.atan2(t.b.y - t.a.y, t.b.x - t.a.x), d1 = Math.max(20, Math.hypot(t.b.x - t.a.x, t.b.y - t.a.y));
+    if (!t.kind) { t.kind = twistOrPinch(t.a0, a1, t.d0, d1); if (t.kind) gesture = t.kind; }
+    if (t.kind === 'pinch') setF0(t.f00 * (t.d0 / d1) ** 2, true);   // развёл — пластина больше и ниже
+    if (t.kind !== 'twist' || !t.target) return;
+    const dd = wrapDeg(((a1 - t.last) * 180) / Math.PI);
+    t.last = a1; t.deg += dd;
+    if (t.target === 'plate') rotateSand((dd * Math.PI) / 180);   // песок поворачивается вслед за пальцами
+    twistTo(t, t.target, t.deg, (t.a.x + t.b.x) / 2, (t.a.y + t.b.y) / 2);
+  }
+  // поворот относительно начала жеста: кольца — 22.5° на гнездо, пластина — 20° на ступень лада (по часовой — вперёд/вверх)
+  function twistTo(t, target, deg, x, y) {
+    const k = Math.round(deg / (target === 'plate' ? 20 : 22.5));
+    twistLabel = { text: `${k > 0 ? '+' : ''}${k}`, x, y, until: performance.now() + 1000 };
+    if (k === t.k) return;
+    t.k = k;
+    if (target === 'rhythm') seq.rhythm.steps = rotateSteps(t.orig.r, seq.rhythm.len, k);
+    else if (target === 'melody') seq.melody.steps = rotateSteps(t.orig.m, seq.melody.len, k);
+    else seq.melody.steps = transposeMelody(t.orig.m, k, scaleSemis());
+    sendSeq();
+  }
+  function rotateSand(a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    for (let i = 0; i < SAND; i++) { const x = sand.x[i], y = sand.y[i]; sand.x[i] = x * c - y * s; sand.y[i] = x * s + y * c; }
+  }
+
   // ---------- касания ----------
-  function down(f) {
+  function down(f, e) {
     const g = plateGeo();
+    if (e && e.shiftKey) {                       // Shift + мышь — вращение того, что под курсором
+      const target = twistTarget(f.x, f.y, g);
+      if (target) { touches.set(f.id, f); f.twist1 = { target, last: Math.atan2(f.y - g.cy, f.x - g.cx), deg: 0, orig: origOf(), k: 0 }; return; }
+    }
+    for (const o of touches.values()) {          // второй палец — поворот или щипок (решится по первым ~10° / ~20 px)
+      if (o === f || o === ringF || two || o.twist1 || (o.astro && (o.astro.k === 'play' || o.astro.k === 'rec'))) continue;   // ▶ и ● — не в пару
+      startTwo(o, f, g);
+      return;
+    }
     const h = astroHit(f, g);
     if (h) { touches.set(f.id, f); f.astro = h; f.bpm0 = seq.bpm; return; }
     if (Math.hypot(f.x - g.cx, f.y - g.cy) > g.rMax) return;   // мимо стола
@@ -309,15 +364,6 @@
       const st = seq.rhythm.steps[mk];
       send({ t: 'strike', x: st.x, y: st.y, vel: 1, hard: 0.5 });
       return;
-    }
-    for (const o of touches.values()) {      // второй палец почти разом — щипок
-      if (o !== f && !o.cb && !o.moved && f.t0 - o.t0 < 250 && !pinch) {
-        pinch = { a: o, b: f, d0: Math.max(20, Math.hypot(f.x - o.x, f.y - o.y)), f0: plate.f0 };
-        if (o.bowing) { send({ t: 'bow', id: o.bid, on: false }); o.bowing = false; }
-        o.live = false;
-        o.pinch = f.pinch = true;
-        return;
-      }
     }
     const p = toPlate(f, g);
     if (Math.hypot(p.x, p.y) > 1) return;    // вне пластины (но на столе) — только для щипка
@@ -335,11 +381,13 @@
       if (st) { const p = toPlate(f, g); st.x = p.x; st.y = p.y; sendSeq(); }
       return;
     }
-    if (f.pinch && pinch) {
-      const d = Math.max(20, Math.hypot(pinch.a.x - pinch.b.x, pinch.a.y - pinch.b.y));
-      setF0(pinch.f0 * (pinch.d0 / d) ** 2, true);   // развёл — пластина больше и ниже
+    if (f.twist1) {                              // Shift-мышь: угол вокруг центра пластины
+      const a = Math.atan2(f.y - g.cy, f.x - g.cx), t = f.twist1;
+      t.deg += wrapDeg(((a - t.last) * 180) / Math.PI); t.last = a;
+      twistTo(t, t.target, t.deg, f.x, f.y);
       return;
     }
+    if (f.two && two) { moveTwo(g); return; }
     if (f.cb && f.moved) { const p = toPlate(f, g); f.cb.x = p.x; f.cb.y = p.y; sendBow(f.cb, true); return; }
     if (f.bowing) { const p = toPlate(f, g); send({ t: 'bow', id: f.bid, x: p.x, y: p.y, on: true }); }
   }
@@ -354,7 +402,8 @@
       if (st && f.moved && Math.hypot(st.x, st.y) > 1.05) { seq.rhythm.steps[f.mk] = null; sendSeq(); }   // за край — удар удалён
       return;
     }
-    if (f.pinch) { if (pinch && (pinch.a === f || pinch.b === f)) pinch = null; return; }
+    if (f.twist1) return;
+    if (f.two) { if (two && (two.a === f || two.b === f)) two = null; return; }
     if (f.cb) {
       if (Math.hypot(f.cb.x, f.cb.y) > 1.05) {   // утащил за край — смычок убран
         sendBow(f.cb, false);
@@ -512,6 +561,10 @@
       T.mapText(s == null ? '—' : noteName(F_MIN * 2 ** (s / 12)), p.x, p.y, 13, 0.85, 'center');
     }
   }
+  function drawTwist(now) {
+    if (!twistLabel || now > twistLabel.until) return;
+    T.mapText(twistLabel.text, twistLabel.x, twistLabel.y - 44, 16, 0.9 * Math.min(1, (twistLabel.until - now) / 400), 'center');
+  }
   function drawLabel(g, now) {
     if (now > labelUntil) return;
     const a = Math.min(1, (labelUntil - now) / 400);
@@ -565,6 +618,7 @@
       drawAstro(g, now);
       drawBows(g);
       drawLabel(g, now);
+      drawTwist(now);
       drawResonator();
       if (ringF) drawRingHeld();
     },
@@ -628,7 +682,8 @@
       if (o.melody) seq.melody = { len: o.melody.len, steps: pad(o.melody.steps) };
       sendSeq();
     },
-    core: { euclid, nearestStep, walkMelody, rotateSteps, transposeMelody, keyNotes, twistOrPinch },
+    core: { euclid, nearestStep, walkMelody, rotateSteps, transposeMelody, keyNotes, twistOrPinch, scaleSemis },
+    get gesture() { return gesture; },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
     bow(x, y, on = true) { send({ t: 'bow', id: 'dbg', x, y, on, exciter: 0, pressure: 0.5, amp: 0.8 }); },
     sandSpread() {                               // среднее поле под крупинками: песок в узлах — меньше
