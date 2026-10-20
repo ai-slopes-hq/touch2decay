@@ -1253,7 +1253,7 @@
   function morphOsc(shapers, dest, lfoShapes = false) {
     const fq = ctx.createConstantSource(); fq.offset.value = 0;
     const dt = ctx.createConstantSource(); dt.offset.value = 0;
-    const oscs = [fq, dt];
+    const oscs = [fq, dt], tabs = [];
     WAVES.forEach((w, i) => {
       const o = ctx.createOscillator(); o.setPeriodicWave(lfoShapes ? w.pwLfo : w.pw); o.frequency.value = 0;
       fq.connect(o.frequency); dt.connect(o.detune);
@@ -1261,9 +1261,22 @@
       shapers[i].connect(gn.gain);
       o.connect(gn).connect(dest);
       oscs.push(o);
+      tabs.push({ o, gn, on: true, want: true });
     });
     for (const o of oscs) o.start();
-    return { freq: fq.offset, detune: dt.offset, oscs };
+    return { freq: fq.offset, detune: dt.offset, oscs, tabs };
+  }
+  // слышны только соседние таблицы вокруг позиции морфа (и размах LFO на волне) — остальные генераторы
+  // отцеплены от графа и не считаются; отцепляются с задержкой, пока позиция доезжает
+  const tableSpan = (p, d) => [Math.max(0, Math.floor(clamp(p - d) * (NW - 1) + 1e-6)), Math.min(NW - 1, Math.ceil(clamp(p + d) * (NW - 1) - 1e-6))];
+  function useTables(mo, lo, hi) {
+    mo.tabs.forEach((t, i) => {
+      if (i >= lo && i <= hi) { t.want = true; if (!t.on) { t.o.connect(t.gn); t.on = true; } }
+      else if (t.on && t.want) {
+        t.want = false;
+        setTimeout(() => { if (!t.want && t.on) { t.o.disconnect(t.gn); t.on = false; } }, 160);
+      }
+    });
   }
 
   // позиция морфинга → веса таблиц
@@ -1283,9 +1296,10 @@
   const HILB = [[0.6923878, 0.9360654322959, 0.988229522686, 0.9987488452737],
     [0.4021921162426, 0.856171088242, 0.9722909545651, 0.9952884791278]];
   function shifter(input, output) {
+    const heads = [];
     const chain = (as) => {
-      let x = input;
-      for (const a of as) { const f = ctx.createIIRFilter([a * a, 0, -1], [1, 0, -a * a]); x.connect(f); x = f; }
+      let x = null;
+      for (const a of as) { const f = ctx.createIIRFilter([a * a, 0, -1], [1, 0, -a * a]); if (x) x.connect(f); else heads.push(f); x = f; }
       return x;
     };
     const I = ctx.createIIRFilter([0, 1], [1]);   // одна ветка на отсчёт позже — так фазы расходятся ровно на 90°
@@ -1299,9 +1313,18 @@
     I.connect(mi).connect(wet);
     Q.connect(mq).connect(wet);                    // I·cos + Q·sin: с этим знаком плюс — вверх
     input.connect(dry).connect(output);
-    wet.connect(output);
     cos.start(); sin.start();
-    return { cos, sin, wet, dry };
+    // пока сдвиг выключен, ветки отключены от графа и не считаются (см. shifterOn)
+    return { cos, sin, wet, dry, heads, input, output, on: false, linked: false };
+  }
+  function shifterOn(sh, on) {
+    if (on === sh.on) return;
+    sh.on = on;
+    if (on) {
+      if (!sh.linked) { for (const h of sh.heads) sh.input.connect(h); sh.wet.connect(sh.output); sh.linked = true; }
+    } else setTimeout(() => {                      // после перехода сухой/мокрый — отцепить
+      if (!sh.on && sh.linked) { for (const h of sh.heads) sh.input.disconnect(h); sh.wet.disconnect(sh.output); sh.linked = false; }
+    }, 150);
   }
 
   // зал: четыре линии задержки с перекрёстной обратной связью (матрица Хаусхолдера).
@@ -1489,7 +1512,10 @@
     T(n.sub.frequency, f / 2, G);
     T(n.m.frequency, f, G);
     T(n.morph.pos, 2 * v.wave - 1, 0.04);
+    const wl = v.lfo.wave ? v.lfo.wave.depth : 0, [tlo, thi] = tableSpan(v.wave, wl);
+    useTables(n.c1, tlo, thi); useTables(n.c2, tlo, thi);
     const sh = shiftHz(v.shift), shOn = sh !== 0 || !!v.lfo.shift;
+    shifterOn(n.shf, shOn);
     T(n.shf.cos.frequency, sh, 0.06); T(n.shf.sin.frequency, sh, 0.06);   // одинаково — иначе пара разойдётся по фазе
     T(n.shf.wet.gain, shOn ? 1 : 0, 0.02); T(n.shf.dry.gain, shOn ? 0 : 1, 0.02);
     // ось Y: внизу чистые колебания, вверху перегруз и шум, вытесняющий тон
@@ -1524,6 +1550,8 @@
       if (!L) continue;
       L.mo.freq.setTargetAtTime(spec.rate, t, 0.05);
       L.mp.pos.setTargetAtTime(2 * spec.morph - 1, t, 0.05);
+      const [la, lb] = tableSpan(spec.morph, 0);
+      useTables(L.mo, la, lb);
       const d2 = spec.depth;
       const depth = key === 'pitch' ? d2 * 700 : key === 'wave' ? d2 * 2 : key === 'cut' ? d2 * 4800
         : key === 'res' ? d2 * 20 : key === 'beat' ? d2 * 16 : key === 'shift' ? d2 * 300 : key === 'amp' ? d2 * 0.55 * v.amp : d2 * f * FM_MAX;
@@ -1567,7 +1595,7 @@
   // нагрузка: если кадры стабильно тормозят — меньше кружков; когда отпустит — постепенно обратно
   // ---------- рисование ----------
   function resize() {
-    DPR = Math.min(window.devicePixelRatio || 1, 3);
+    DPR = Math.min(window.devicePixelRatio || 1, 2);   // 3× на iPhone — в 2.25 раза больше пикселей, на глаз почти то же
     W = window.innerWidth; H = window.innerHeight;
     cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
     g.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1628,10 +1656,19 @@
     for (let i = 0, px = 12; px < W - 10; px += 8, i++) { const l = i % 5 ? 2.5 : 4.5; x.moveTo(Math.round(px) + 0.5, ft + 4.5); x.lineTo(Math.round(px) + 0.5, ft + 4.5 + l); }
     for (let i = 0, py = ft + 12; py < fb - 6; py += 8, i++) { const l = i % 5 ? 2.5 : 4.5; x.moveTo(W - 8.5, Math.round(py) + 0.5); x.lineTo(W - 8.5 - l, Math.round(py) + 0.5); }
     x.stroke();
-    scan = c;
+    scan = c; scanId++;
   }
 
   const ink = (a) => `rgba(${INK},${a})`;
+  // мягкое круглое свечение — рисуется один раз, потом только штампуется (солнце, туманности)
+  const glowSprite = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const x = c.getContext('2d'), gr = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, `rgba(${INK},1)`); gr.addColorStop(0.35, `rgba(${INK},0.45)`); gr.addColorStop(1, `rgba(${INK},0)`);
+    x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+    return c;
+  })();
+  function glowAt(x, y, r, a) { if (a <= 0.003) return; g.globalAlpha = Math.min(1, a); g.drawImage(glowSprite, x - r, y - r, 2 * r, 2 * r); g.globalAlpha = 1; }
   const MONO = '"IBM Plex Mono", ui-monospace, Menlo, monospace';
   const MAP = '"IM Fell English", Georgia, "Times New Roman", serif';   // подписи на поле — как на старых звёздных картах
   function mapText(s, x, y, size, a, align = 'left', italic = true) {
@@ -1699,15 +1736,14 @@
         pts.push(x + Math.cos(th) * rr, y + Math.sin(th) * rr);
       }
     }
-    g.save();
-    const blur = glow ? 20 : fx.dirt > 0.25 ? 18 * (fx.dirt - 0.25) : 0;   // drive — планеты раскаляются
-    if (blur) { g.shadowColor = ink(0.9); g.shadowBlur = blur; }
-    g.lineWidth = lw; g.strokeStyle = ink(a); g.lineJoin = 'round';
+    // свечение — не shadowBlur (в Safari это самое дорогое), а широкий бледный штрих под контуром
+    const halo = glow ? 1 : fx.dirt > 0.25 ? (fx.dirt - 0.25) * 1.6 : 0;   // drive — планеты раскаляются
+    g.lineJoin = 'round';
     g.beginPath();
     if (pts) { for (let i = 0; i < pts.length; i += 2) (i ? g.lineTo(pts[i], pts[i + 1]) : g.moveTo(pts[i], pts[i + 1])); g.closePath(); }
     else g.arc(x, y, r, 0, Math.PI * 2);
-    g.stroke();
-    g.restore();
+    if (halo) { g.lineWidth = lw + 7; g.strokeStyle = ink(0.07 * halo * a); g.stroke(); g.lineWidth = lw + 3; g.strokeStyle = ink(0.12 * halo * a); g.stroke(); }
+    g.lineWidth = lw; g.strokeStyle = ink(a); g.stroke();
   }
 
   const AMP_MIN = 0.05, AMP_MAX = 1.8;
@@ -1729,17 +1765,16 @@
       const len = 26 + 70 * fade;
       for (const k of [-0.12, 0, 0.12]) {
         const x0 = x + Math.cos(ang + k) * (R - 4), y0 = y + Math.sin(ang + k) * (R - 4);
-        const gr = g.createLinearGradient(x0, y0, x0 + Math.cos(ang + k * 1.6) * len, y0 + Math.sin(ang + k * 1.6) * len);
-        gr.addColorStop(0, ink(a * (k ? 0.18 : 0.3))); gr.addColorStop(1, ink(0));
-        g.strokeStyle = gr; g.lineWidth = k ? 1 : 1.4;
-        g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + Math.cos(ang + k * 1.6) * len, y0 + Math.sin(ang + k * 1.6) * len); g.stroke();
+        const ex = Math.cos(ang + k * 1.6) * len, ey = Math.sin(ang + k * 1.6) * len;   // хвост тает двумя ступенями
+        g.lineWidth = k ? 1 : 1.4;
+        g.strokeStyle = ink(a * (k ? 0.18 : 0.3));
+        g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + ex * 0.5, y0 + ey * 0.5); g.stroke();
+        g.strokeStyle = ink(a * (k ? 0.07 : 0.12));
+        g.beginPath(); g.moveTo(x0 + ex * 0.5, y0 + ey * 0.5); g.lineTo(x0 + ex, y0 + ey); g.stroke();
       }
     }
     if (fx.rev > 0.03) {                        // hall: туманность вокруг планеты, decay — её размер
-      const R = 48 + 80 * invLog(DECAY_MIN, DECAY_MAX, fx.decay);
-      const neb = g.createRadialGradient(x, y, 28, x, y, R);
-      neb.addColorStop(0, ink(0.1 * fx.rev * a)); neb.addColorStop(1, ink(0));
-      g.fillStyle = neb; g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.fill();
+      glowAt(x, y, 48 + 80 * invLog(DECAY_MIN, DECAY_MAX, fx.decay), 0.12 * fx.rev * a);
     }
     g.fillStyle = 'rgba(0,0,0,0.82)';            // планета закрывает орбиты за собой
     g.beginPath(); g.arc(x, y, R - 3, 0, Math.PI * 2); g.fill();
@@ -2003,7 +2038,7 @@
       g.beginPath(); g.moveTo(m.cx, m.cy); g.lineTo(pointer.x, pointer.y); g.stroke();
       dot(pointer.x, pointer.y, 3, 0.8);
     }
-    if (m.overPin) { g.save(); g.shadowColor = ink(0.9); g.shadowBlur = 18; drawPin(pin.x, pin.y, true); g.restore(); }
+    if (m.overPin) { ring(pin.x, pin.y, PIN_R + 5, 0.35, 3); drawPin(pin.x, pin.y, true); }
     else drawPin(pin.x, pin.y, false);
   }
 
@@ -2146,10 +2181,7 @@
   // Медленно поворачивается; с громкостью лучи вытягиваются, а свечение за ним чуть ярче
   function drawSun() {
     const { ox, oy } = geo, L = sunLevel, rot = performance.now() * 0.00004;
-    const GR = 90 + 50 * L + 60 * fx.dirt;
-    const glow = g.createRadialGradient(ox, oy, 0, ox, oy, GR);
-    glow.addColorStop(0, ink(0.16 + 0.2 * L + 0.2 * fx.dirt)); glow.addColorStop(1, ink(0));
-    g.fillStyle = glow; g.beginPath(); g.arc(ox, oy, GR, -Math.PI / 2, 0); g.lineTo(ox, oy); g.closePath(); g.fill();
+    glowAt(ox, oy, 90 + 50 * L + 60 * fx.dirt, 0.16 + 0.2 * L + 0.2 * fx.dirt);
     const N = 28;
     g.lineWidth = 0.9;
     for (let k = 0; k < N; k++) {
@@ -2180,9 +2212,8 @@
   }
 
   // гравированная орбита: двойная линия и засечки по внешней
-  function engraved(r, a) {
+  function engraved(r, a, g = cv.getContext('2d')) {
     const { ox, oy } = geo, Q = -Math.PI / 2;
-    if (fx.chaos > 0.02) r += Math.sin(performance.now() * 0.0023 + r * 0.7) * 2.2 * fx.chaos;   // chaos — орбиты дрожат
     g.strokeStyle = ink(a); g.lineWidth = 1;
     g.beginPath(); g.arc(ox, oy, r, Q, 0); g.stroke();
     g.strokeStyle = ink(a * 0.5);
@@ -2204,6 +2235,51 @@
     return { clean, noisy };
   }
 
+  // слой орбит: границы диапазонов, а в ладу — ноты и тоники. Рисуется заново, только когда меняется
+  // зум, лад или размер экрана; в кадре — одна копия картинки
+  let orbC = null, orbKey = '';
+  function orbitLayer(cols) {
+    const key = `${zoom.toFixed(4)}|${scl.on}|${scl.idx}|${scl.root}|${W}x${H}|${DPR}`;
+    if (orbC && key === orbKey) return orbC;
+    orbKey = key;
+    if (!orbC) orbC = document.createElement('canvas');
+    orbC.width = Math.round(W * DPR); orbC.height = Math.round(H * DPR);
+    const o = orbC.getContext('2d');
+    o.setTransform(DPR, 0, 0, DPR, 0, 0);
+    o.clearRect(0, 0, W, H);
+    o.save(); o.beginPath(); o.rect(0, geo.top, W, geo.bot - geo.top); o.clip();
+    cols.forEach((c, i) => { if (i && c.r0 < 1e5) engraved(c.r0, 0.12, o); });
+    if (scl.on) {
+      const Q = -Math.PI / 2;
+      for (let n = 0; n <= SEMIS; n++) {         // ноты лада — пунктирные орбиты, тоники (октавы) — гравированные
+        if (!inScale(n)) continue;
+        const rn = rAt(xOf(n));
+        if (rn === Infinity) break;
+        if ((((n - scl.root) % 12) + 12) % 12 === 0) { o.setLineDash([]); engraved(rn, 0.16, o); continue; }
+        o.setLineDash([1, 5]); o.strokeStyle = `rgba(${INK},0.16)`; o.lineWidth = 1;
+        o.beginPath(); o.arc(geo.ox, geo.oy, rn, Q, 0); o.stroke();
+      }
+    }
+    o.restore();
+    return orbC;
+  }
+
+  // непрозрачный фон кадра: чёрный, звёзды с рамкой и меридианами, орбиты. Один проход по экрану вместо трёх;
+  // собирается заново вместе со слоем орбит
+  let bgC = null, bgKey = '', scanId = 0;
+  function bgLayer(cols) {
+    const L = orbitLayer(cols), key = orbKey + '|' + scanId;
+    if (bgC && key === bgKey) return bgC;
+    bgKey = key;
+    if (!bgC) bgC = document.createElement('canvas');
+    bgC.width = L.width; bgC.height = L.height;
+    const b = bgC.getContext('2d');
+    b.fillStyle = BG; b.fillRect(0, 0, bgC.width, bgC.height);
+    if (scan) b.drawImage(scan, 0, 0);
+    b.drawImage(L, 0, 0);
+    return bgC;
+  }
+
   function drawField() {
     const { ox, oy, top, bot } = geo;
     const held = [];
@@ -2213,6 +2289,7 @@
     const heldS = held.map((v) => semi(soundX(v)));
     const cols = fieldCols();
     const Q = -Math.PI / 2;
+    g.drawImage(bgLayer(cols), 0, 0, W, H);
     g.save();
     g.beginPath(); g.rect(0, top, W, bot - top); g.clip();
     drawSun();
@@ -2222,22 +2299,21 @@
         if (st) dot(st.x, st.y, 1 + Math.random() * 1.4, Math.random() * 0.7 * fx.chaos + 0.1);
       }
     }
-    cols.forEach((c, i) => {                    // орбиты на границах; полоса под кружком — едва светлее
-      const on = heldS.some((s) => s >= c.s0 && s < c.s1 + (c.s1 >= SEMIS ? 1 : 0));
-      if (on) { g.fillStyle = ink(0.045); g.beginPath(); g.arc(ox, oy, c.r1, Q, 0); g.arc(ox, oy, c.r0, 0, Q, true); g.closePath(); g.fill(); }
-      if (i) engraved(c.r0, drag ? 0.22 : 0.12 + 0.18 * zk);
+    cols.forEach((c) => {                       // полоса под кружком — едва светлее
+      if (heldS.some((s) => s >= c.s0 && s < c.s1 + (c.s1 >= SEMIS ? 1 : 0))) {
+        g.fillStyle = ink(0.045); g.beginPath(); g.arc(ox, oy, c.r1, Q, 0); g.arc(ox, oy, c.r0, 0, Q, true); g.closePath(); g.fill();
+      }
     });
+    // орбиты уже в фоне; при перетаскивании и зуме — поверх ещё раз, ярче
+    const boost = drag ? 0.8 : 1.5 * zk;
+    if (boost > 0.02) { g.globalAlpha = Math.min(1, boost); g.drawImage(orbitLayer(cols), 0, 0, W, H); g.globalAlpha = 1; }
     const tgt = new Map();                      // нота, к которой притянут кружок → сам кружок
     if (scl.on) {
       held.forEach((v, i) => tgt.set(Math.round(heldS[i]), v));
-      for (let n = 0; n <= SEMIS; n++) {         // ноты лада — пунктирные орбиты, тоники (октавы) — сплошные
-        if (!inScale(n)) continue;
-        const root = (((n - scl.root) % 12) + 12) % 12 === 0, hit = tgt.has(n);
+      for (const n of tgt.keys()) {             // её орбита — ярко
         const rn = rAt(xOf(n));
-        if (rn === Infinity) break;
-        if (root && !hit) { g.setLineDash([]); engraved(rn, 0.16 * (drag ? 1.3 : 1)); continue; }
-        g.setLineDash(root ? [] : [1, 5]);
-        g.strokeStyle = ink(hit ? 0.7 : 0.16 * (drag ? 1.3 : 1)); g.lineWidth = hit ? 1.4 : 1;
+        if (!inScale(n) || rn === Infinity) continue;
+        g.strokeStyle = ink(0.7); g.lineWidth = 1.4;
         g.beginPath(); g.arc(ox, oy, rn, Q, 0); g.stroke();
       }
     }
@@ -2470,6 +2546,7 @@
 
     if (now > chaosAt) { chaosAt = now + 400; chaosTick(now); }
     zoom += (zoomT - zoom) * (1 - Math.exp(-dt / 0.06));
+    if (Math.abs(zoomT - zoom) < 1e-4) zoom = zoomT;
 
     // с ладом кружки плавно съезжают к нотам и обратно
     const sliding = now < scl.slideUntil;
@@ -2512,9 +2589,7 @@
     if (!anyActive && lock) { lock.release().catch(() => {}); lock = null; }
 
     // фон: зерно (ось шума) и полосы частот или октав (ось высоты)
-    g.fillStyle = BG; g.fillRect(0, 0, W, H);
-    if (scan) g.drawImage(scan, 0, 0, W, H);
-    drawField();
+    drawField();                                // фон, звёзды и орбиты — одной готовой картинкой
 
     // волны от кружков — в ритме биений detune: что видно, то и слышно
     for (const v of V) {
@@ -2523,11 +2598,11 @@
       if (v.emit >= clamp(1 / v.beat, 0.7, 4)) {      // быстрые биения — не чаще ~1.4 импульса в секунду
         v.emit = 0;
         const p = { x: vx(v), y: vy(v), r: 36, a: v.env * 0.7, sp: 40 + freq(v) * 0.1 };
-        if (rings.length < 160) rings.push(p);
+        if (rings.length < 60) rings.push(p);
         // delay: тот же импульс повторяется пунктиром через время задержки, каждый повтор бледнее
         if (fx.dly > 0.04) for (let k = 1; k <= 3; k++) {
           const a = p.a * fx.dly * 1.6 * DLY_REPEATS ** (k - 1);
-          if (a > 0.04 && rings.length < 160) rings.push({ ...p, a, wait: 0.45 * k, echo: true });
+          if (a > 0.04 && rings.length < 60) rings.push({ ...p, a, wait: 0.45 * k, echo: true });
         }
       }
     }
