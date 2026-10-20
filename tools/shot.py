@@ -194,24 +194,26 @@ async def sc_plate(p):                             # Cymatica: удар, смы�
     s1 = await p.js('()=>t2d.cym.sandSpread()'); await p.pg.wait_for_timeout(1500)
     s2 = await p.js('()=>t2d.cym.sandSpread()'); await p.shot('plate')
     assert s2 < s1, f'sand settles on the nodal lines: {s1} -> {s2}'
-    pid = await p.hold(cx + 30, cy, ms=600)                              # держишь — смычок
-    assert await p.js('()=>t2d.cym.live') == 1 and await p.js('()=>t2d.sounding()'), 'bow while held'
-    await p.up(); await p.pg.wait_for_timeout(200)
-    bx, by = cx - 40, cy + 20
-    await p.pin(bx, by)                                                  # двойной тап — закрепить
-    assert await p.js('()=>t2d.cym.bows.length') == 1, 'double tap pins a bow'
-    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.cym.bows.length') == 0, 'undo removes the bow'
-    await p.pin(bx, by)
-    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.cym.bows.length') == 0, 'trash clears bows'
-    await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(400)
-    assert await p.js('()=>t2d.cym.bows.length') == 1, 'undo brings the bow back'
-    assert await p.js('()=>Math.max(...t2d.cym.energy)') > 0, 'restored bow sounds'
-    pid = await p.hold(bx, by, ms=600)                                   # долгое касание метки — кольцо
-    assert await p.js('()=>t2d.cym.ringOpen'), 'ring opens on the bow mark'
-    await p.up(); await p.pg.wait_for_timeout(200)
-    assert not await p.js('()=>t2d.cym.ringOpen') and await p.js('()=>t2d.cym.bows.length') == 1, 'ring closes, bow stays'
+    u = await p.js("()=>t2d.btnPos('undo')"); c = await p.js("()=>t2d.btnPos('clr')")
+    if await p.js('()=>t2d.cym.bowsOn'):                                 # смычки выключены флагом BOWS_ON — их проверки ждут
+        pid = await p.hold(cx + 30, cy, ms=600)                              # держишь — смычок
+        assert await p.js('()=>t2d.cym.live') == 1 and await p.js('()=>t2d.sounding()'), 'bow while held'
+        await p.up(); await p.pg.wait_for_timeout(200)
+        bx, by = cx - 40, cy + 20
+        await p.pin(bx, by)                                                  # двойной тап — закрепить
+        assert await p.js('()=>t2d.cym.bows.length') == 1, 'double tap pins a bow'
+        await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+        assert await p.js('()=>t2d.cym.bows.length') == 0, 'undo removes the bow'
+        await p.pin(bx, by)
+        await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+        assert await p.js('()=>t2d.cym.bows.length') == 0, 'trash clears bows'
+        await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(400)
+        assert await p.js('()=>t2d.cym.bows.length') == 1, 'undo brings the bow back'
+        assert await p.js('()=>Math.max(...t2d.cym.energy)') > 0, 'restored bow sounds'
+        pid = await p.hold(bx, by, ms=600)                                   # долгое касание метки — кольцо
+        assert await p.js('()=>t2d.cym.ringOpen'), 'ring opens on the bow mark'
+        await p.up(); await p.pg.wait_for_timeout(200)
+        assert not await p.js('()=>t2d.cym.ringOpen') and await p.js('()=>t2d.cym.bows.length') == 1, 'ring closes, bow stays'
     f0 = await p.js('()=>t2d.cym.f0')                                    # щипок: развёл — больше и ниже
     a, b = {'x': cx - 20, 'y': cy - 60, 'id': 51}, {'x': cx + 20, 'y': cy - 60, 'id': 52}
     await p.T('touchStart', [a]); await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(30)
@@ -240,6 +242,7 @@ async def sc_plate(p):                             # Cymatica: удар, смы�
 
 
 async def sc_orphan(p):                           # корзина, пока держишь метку смычка, — смычок не остаётся звучать невидимкой
+    if not await p.js('()=>(t2d.go(2), t2d.cym.bowsOn)'): print('orphan: bows off (BOWS_ON) — skipped'); return
     await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
     g = await p.js('()=>t2d.cym.geo'); bx, by = g['cx'] - 40, g['cy'] + 20
     await p.pin(bx, by); await p.pg.wait_for_timeout(600)
@@ -349,9 +352,10 @@ async def sc_twist(p):                             # два пальца кру�
     await p.T('touchEnd', [a, b]); await p.pg.wait_for_timeout(150)
     m1 = await p.js('()=>t2d.cym.seq.melody.steps'); d = 12 * math.log2(await p.js('()=>t2d.cym.f0') / f0)
     assert d < 0 and all(b2 is None if a2 is None else abs(b2 - a2 - d) < 1e-6 for a2, b2 in zip(m0, m1)), 'pinch sizes the plate and carries the melody along'
-    a = {'x': cx + 20, 'y': cy, 'id': 95}                                 # держишь — смычок; второй палец и поворот
+    bows = await p.js('()=>t2d.cym.bowsOn')
+    a = {'x': cx + 20, 'y': cy, 'id': 95}                                 # держишь (смычок, если включены); второй палец и поворот
     await p.T('touchStart', [a]); await p.pg.wait_for_timeout(300)
-    assert await p.js('()=>t2d.cym.live') == 1
+    assert not bows or await p.js('()=>t2d.cym.live') == 1
     await twist(40, 50, 40, 96, 97)
     await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.cym.live') == 0, 'held bow stops when a twist starts'
@@ -360,7 +364,7 @@ async def sc_twist(p):                             # два пальца кру�
     await p.T('touchStart', [a]); await p.pg.wait_for_timeout(300)
     b = {'x': g['playX'], 'y': g['ty'], 'id': 99}
     await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60); await p.T('touchEnd', [b]); await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.cym.seq.playing') and await p.js('()=>t2d.cym.live') == 1, '▶ by a second finger works, bow keeps going'
+    assert await p.js('()=>t2d.cym.seq.playing') and (not bows or await p.js('()=>t2d.cym.live') == 1), '▶ by a second finger works, bow keeps going'
     await p.T('touchEnd', [a]); await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(100)
     r0 = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
     m = p.pg.mouse; s = pt(g['R2'], -90)

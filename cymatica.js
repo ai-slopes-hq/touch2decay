@@ -7,6 +7,9 @@
   const VER = (document.currentScript && new URL(document.currentScript.src, location.href).searchParams.get('v')) || '0';
 
   const F_MIN = 55, F_MAX = 880, F_DEF = 110;
+  // смычки (живой — держишь палец, закреплённые — двойной тап, кольцо смычка) выключены: апплет — о полиритмах и модах.
+  // Код на месте; вернуть — BOWS_ON = true (тесты смычков в tools/shot.py включатся сами)
+  const BOWS_ON = false;
   const BOW_AFTER = 150;                     // мс: дольше держишь — удар переходит в смычок
   const TAP_MS = 250, TAP_MOVE = 12, MARK_R = 18;
   const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
@@ -459,7 +462,7 @@
     if (h) { touches.set(f.id, f); f.astro = h; f.bpm0 = seq.bpm; return; }
     if (Math.hypot(f.x - g.cx, f.y - g.cy) > g.rMax) { touches.set(f.id, f); return; }   // мимо стола: само по себе ничего, но второй палец — вращение
     touches.set(f.id, f);
-    const b = bowAt(f, g);
+    const b = BOWS_ON ? bowAt(f, g) : null;
     if (b) { f.cb = b; return; }
     const mk = seq.rec ? -1 : markAt(f, g);   // при записи метки не мешают: барабанишь в одну точку — каждый тап пишется
     if (mk >= 0) {                              // тап по метке звучит сразу; повёл — тащишь метку
@@ -520,7 +523,7 @@
     if (f.bowing) send({ t: 'bow', id: f.bid, on: false });
     const tap = now - f.t0 < TAP_MS && Math.hypot(f.x - f.x0, f.y - f.y0) < TAP_MOVE;
     if (!tap) return;
-    if (lastTap && now - lastTap.t < T.DTAP_MS && Math.hypot(f.x - lastTap.x, f.y - lastTap.y) < 30) {
+    if (BOWS_ON && lastTap && now - lastTap.t < T.DTAP_MS && Math.hypot(f.x - lastTap.x, f.y - lastTap.y) < 30) {
       lastTap = null;
       if (plate.bows.length >= T.PIN_MAX) return;   // закреплённых уже три
       const p = toPlate(f, plateGeo());
@@ -556,7 +559,7 @@
   function tick(now) {
     const g = plateGeo();
     for (const f of touches.values()) {
-      if (f.live && !f.bowing && now - f.t0 > BOW_AFTER) {
+      if (BOWS_ON && f.live && !f.bowing && now - f.t0 > BOW_AFTER) {
         const p = toPlate(f, g);
         f.bowing = true;
         send({ t: 'bow', id: f.bid, x: p.x, y: p.y, on: true, exciter: 0, pressure: 0.5, amp: 0.8 });
@@ -872,7 +875,7 @@
       sendSeq();
     },
     core: { euclid, nearestStep, walkMelody, rotateSteps, transposeMelody, keyNotes, twistOrPinch, scaleSemis, snapToGrid, quantizeRhythm },
-    get gesture() { return gesture; }, get ringTurn() { return { ...ringTurn }; }, get grid() { return grid; }, get waveStep() { return waveStep(); },
+    get gesture() { return gesture; }, bowsOn: BOWS_ON, get ringTurn() { return { ...ringTurn }; }, get grid() { return grid; }, get waveStep() { return waveStep(); },
     get keys() { return keys(plateGeo()); }, get cursor() { return cursor; }, get lastStrike() { return lastStrike; },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
     bow(x, y, on = true) { send({ t: 'bow', id: 'dbg', x, y, on, exciter: 0, pressure: 0.5, amp: 0.8 }); },
