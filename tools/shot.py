@@ -556,6 +556,21 @@ async def sc_handpan(p):                           # нота — от клет�
     await p.js('()=>{t2d.scl.on = false}')
     async def cell(ring, sec):
         return await p.js(f'()=>{{const c=t2d.cym.core.cellCenter({ring},{sec},t2d.cym.core.degPerOct()), g=t2d.cym.geo; return {{x:g.cx+c.x*g.r, y:g.cy+c.y*g.r}}}}')
+    assert await p.js('()=>t2d.cym.showNotes') is False, 'at rest no note names'
+    await p.shot('handpan')
+    q = await cell(1, 1); pid = await p.hold(q['x'], q['y'], ms=400)
+    assert await p.js('()=>t2d.cym.showNotes') is True, 'finger on the plate — note names'
+    await p.shot('handpan-held'); await p.up(); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.cym.showNotes') is False, 'finger lifted — names gone'
+    g0 = await p.js('()=>t2d.cym.geo'); a, b = {'x': g0['cx'] - 30, 'y': g0['cy'], 'id': 21}, {'x': g0['cx'] + 30, 'y': g0['cy'], 'id': 22}
+    await p.T('touchStart', [a]); await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(30)
+    for k in range(1, 6):
+        a, b = dict(a, x=g0['cx'] - 30 - 4 * k), dict(b, x=g0['cx'] + 30 + 4 * k)
+        await p.T('touchMove', [a, b]); await p.pg.wait_for_timeout(16)
+    await p.T('touchEnd', [a, b]); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.cym.showNotes') is True, 'just after a pinch — names shown'
+    await p.pg.wait_for_timeout(1300)
+    assert await p.js('()=>t2d.cym.showNotes') is False, 'a second later — gone'
     q = await cell(0, 0); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(700)
     h0 = await p.js('()=>t2d.cym.lastStrike.hz')
     q = await cell(2, 0); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(200)
