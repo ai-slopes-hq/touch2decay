@@ -937,7 +937,23 @@ async def sc_startmap(p):                          # карта — старто
     await p.js('()=>{t2d.link.clock = false}')
 
 
-SCENARIOS = {'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_legenda(p):                           # тап по заголовку мира — легенда жестов; любое касание — закрыть
+    for w in (1, 2, 3, 4):
+        await p.js(f'()=>t2d.go({w})'); await p.pg.wait_for_timeout(900)
+        tw = await p.js('()=>t2d.titleW()')
+        await p.tap(16 + tw / 2, await p.js('()=>t2d.scopeY()') + 20); await p.pg.wait_for_timeout(150)
+        L = await p.js('()=>t2d.legenda()')
+        assert L and len(L['rows']) >= 8, f'world {w}: tap the title — legenda'
+        assert L['top'] + L['h'] < H, f'world {w}: legenda fits the screen {L}'
+        await p.shot(f'legenda-{w}')
+        await p.tap(W / 2, H / 2); await p.pg.wait_for_timeout(100)
+        assert not await p.js('()=>t2d.legenda()'), f'world {w}: tap anywhere — legenda closed'
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    await p.tap(W / 2, H / 2 + 62); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.nav.settings'), 'tap the concordia label — settings'
+
+
+SCENARIOS = {'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

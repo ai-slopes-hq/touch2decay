@@ -874,11 +874,23 @@
       c.fillStyle = 'rgba(0,0,0,0.88)'; c.beginPath(); c.arc(x, A.ty, 18, 0, Math.PI * 2); c.fill();
       T.ring(x, A.ty, 17, 0.45, 1.2);
     }
-    {                                              // луна: фаза — где сейчас пластина в качании; выключена — тусклый серп
-      const x = A.driftX, y = A.ty, r = 7, ph = drift.on ? drift.k / driftDepth() : 0.6, a = drift.on ? 0.95 : 0.45;
-      T.ring(x, y, r, a, 1.1);
+    {                                              // луна на орбите вокруг пластины: ширина орбиты — глубина, место на ней и фаза — где сейчас пластина в качании
+      const x0 = A.driftX, y0 = A.ty, a = drift.on ? 0.95 : 0.45, ph = drift.on ? clamp(drift.k / Math.max(1, driftDepth()), -1, 1) : 0.6;
+      const ox = 6 + 8 * drift.depth, oy = ox * 0.5, r = 3.4;
+      c.setLineDash([1.5, 2.5]); c.strokeStyle = T.ink(a * 0.5); c.lineWidth = 1; c.beginPath(); c.ellipse(x0, y0, ox, oy, 0, 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
+      T.dot(x0, y0, 1.6, a * 0.7);                                       // пластина
+      const x = x0 + ph * ox, y = y0 - Math.sqrt(Math.max(0, 1 - ph * ph)) * oy;
+      c.fillStyle = 'rgba(0,0,0,1)'; c.beginPath(); c.arc(x, y, r + 1.5, 0, Math.PI * 2); c.fill();
+      T.ring(x, y, r, a, 1);
       c.fillStyle = T.ink(a * 0.8); c.beginPath(); c.arc(x, y, r, -Math.PI / 2, Math.PI / 2); c.ellipse(x, y, Math.abs(ph) * r, r, 0, Math.PI / 2, -Math.PI / 2, ph > 0); c.fill();
-      if (drift.on && drift.shape >= 0.5) { T.dot(x - 11, y - 11, 1.2, 0.7); T.dot(x + 11, y - 11, 1.2, 0.7); }   // random — две звёздочки
+      if (drift.on && drift.shape >= 0.5) { T.dot(x0 - 11, y0 - 10, 1.2, 0.7); T.dot(x0 + 11, y0 - 10, 1.2, 0.7); }   // random — две звёздочки
+    }
+    {                                              // подписи под кнопками — тихо, латынью
+      const cy = A.ty + 30;
+      T.mapText(`${seq.bpm} bpm`, A.playX, cy, 12, 0.5, 'center');
+      if (!stepRec) T.mapText(seq.playing ? 'scribe' : 'per gradus', A.recX, cy, 12, seq.rec ? 0.85 : 0.5, 'center');
+      T.mapText('grid', A.gridX, cy, 12, 0.5, 'center');
+      T.mapText(drift.on ? `luna ±${driftDepth()}` : 'luna', A.driftX, cy, 12, drift.on ? 0.75 : 0.5, 'center');
     }
     if (stepRec) {                                 // запись по шагам: курсоры на обоих кольцах, подпись
       const pr = slotXY(g, stepRec.r, A.R2), pm = slotXY(g, stepRec.m, A.R1);

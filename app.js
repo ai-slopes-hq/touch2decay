@@ -829,6 +829,7 @@
     const S = sheetSpec(), n = S ? S.rows.length : 0, bottom = H - safeBot - 8, x = 16, w = W - 32, top = bottom - 52 - n * 46;
     return { x, w, top, bottom, rows: S ? S.rows.map((sc, i) => ({ k: sc.key, label: sc.label, y: top + 48 + i * 46, h: 46 })) : [], tx0: x + 82, tx1: x + w - 84 };
   }
+  let legenda = null;                             // { w } — открыта табличка жестов мира (тап по заголовку)
   let fxSheet = null;                             // { w, spec? } — открыта плашка (FX или своя у мира)
   const ampRowT = (v) => (v.amp > 0 ? ampT(v.amp) : 0);
   function setAmpT(u, t) { const amp = lerpLog(AMP_MIN, AMP_MAX, clamp(t)); u.amp = t <= 0.005 ? 0 : Math.abs(20 * Math.log10(amp)) < 0.6 ? 1 : amp; u.dirty = true; }
@@ -864,12 +865,14 @@
   }
 
   function uiHit(f) {
+    if (legenda) return { k: 'legclose' };              // легенда открыта: любое касание закрывает
     if (fxSheet) {                                       // открыта плашка FX: строки — тянуть, кнопка FX или мимо — закрыть
       const b = btnPos('rev'), s = fxGeo();
       if (Math.hypot(f.x - b.x, f.y - b.y) < BTN_R + 6) return { k: 'fxclose' };
       if (f.y >= s.top) { const r = s.rows.find((q) => f.y >= q.y - 4 && f.y < q.y + q.h); return r ? { k: 'fxrow', key: r.k } : { k: 'none' }; }
       return { k: 'fxclose' };
     }
+    if (f.y < scopeY + 38 && f.x < 16 + titleW + 10) return { k: 'legenda' };   // заголовок мира — легенда жестов
     if (cur().corner.hit(f)) return { k: 'corner' };   // солнце / предмет в углу — карта миров
     if (nav.world === 1 && ghost) {                              // любое касание гасит призрак; по булавке — закрепляет
       const gh = ghost, p = pinPos(gh.menu.cx, gh.menu.cy);
@@ -1012,6 +1015,8 @@
   function uiDown(f) {
     if (f.ui === 'clr') { cur().clear(); return; }
     if (f.ui === 'corner') { goMap(); return; }
+    if (f.ui === 'legenda') { legenda = { w: nav.world }; fxSheet = null; return; }
+    if (f.ui === 'legclose') { legenda = null; return; }
     if (f.ui === 'undo') { undo(); return; }
     if (f.ui === 'dice') { cur().dice(); return; }
     if (f.ui === 'rev') { fxSheet = { w: nav.world }; return; }   // FX — плашка снизу
@@ -2733,6 +2738,7 @@
     const title = cur().title;                  // заголовок — имя мира
     mapText(title, 16, scopeY + 20, 21, sclF || revF ? 0.12 : 0.85);   // при открытом тулбоксе или веере FX заголовок уходит в тень
     g.font = `italic 21px ${MAP}`; titleW = g.measureText(title).width;
+    if (!(sclF || revF)) { g.strokeStyle = ink(0.18); g.lineWidth = 1; g.beginPath(); g.moveTo(16, scopeY + 33.5); g.lineTo(16 + titleW, scopeY + 33.5); g.stroke(); }   // тонкая черта: заголовок — легенда
     drawVol(!!volF, !!(sclF || revF));
     // кнопки лежат поверх карты — у каждой тёмная подложка
     const pad = (p, rr) => { g.fillStyle = paper(0.88); g.beginPath(); g.arc(p.x, p.y, rr, 0, Math.PI * 2); g.fill(); };
@@ -2914,6 +2920,8 @@
     drawUI();
     if (fxSheet && fxSheet.w !== nav.world) fxSheet = null;
     if (fxSheet) drawFxSheet();                  // плашка FX — поверх мира
+    if (legenda && legenda.w !== nav.world) legenda = null;
+    if (legenda) drawLegenda();
     drawStrain();
     measureStrain(now, performance.now() - t0);
   }
@@ -3094,6 +3102,86 @@
     if (e.lfo) { const tg = modTarget(null); if (tg) drawLfoPanel(tg, now); }
   }
   // плашка FX мира: строка на каждый эффект, тянешь вбок; значение — как у мира в подписи
+  // ---------- легенда: что делает рука в этом мире ----------
+  // [знак, жест, что делает]; знаки — tap, double, hold, drag, up, draw, throw, shake, two, pinch, twist
+  const LEGEND = {
+    1: [['tap', 'touch the field', 'sounds while held · farther from the sun — higher'], ['drag', 'drag along the arc', 'clean low right · noise up left'],
+      ['double', 'double tap a planet', 'pin · unpin'], ['hold', 'hold a planet', 'its sheet: wave, filter, beat, fm, LFO'],
+      ['two', 'hold one, touch another', 'a thread: the second modulates the first'], ['pinch', 'pinch empty space', 'zoom through the octaves'],
+      ['drag', 'into the sun · into the hole', 'lightning strikes · eaten by noise'], ['tap', 'tap the sun', 'map of worlds']],
+    2: [['tap', 'tap the plate', 'a strike · each cell is a note'], ['pinch', 'pinch', 'plate size — pitch of everything'],
+      ['tap', 'tap a ring slot', 'outer — hits · inner — places'], ['drag', 'drag a hit in · out', 'its chance'],
+      ['drag', 'drag a bead out · in', 'its note up · down'], ['drag', "drag a ring's end", 'its length — polyrhythm'],
+      ['twist', 'twist with two fingers', 'turn a ring · transpose the plate'], ['hold', 'hold the moon', 'plate drift: depth, rate, shape'],
+      ['tap', 'tap the resonator', 'map of worlds']],
+    3: [['tap', 'tap the lamp · the jug', 'light the fire · douse it'], ['drag', 'drag a flask', 'sideways — pitch · up — level'],
+      ['draw', 'from a neck to a flask', 'a tube: modulation · to itself — pelican'], ['tap', 'tap a tube', 'remove it'],
+      ['hold', 'hold a flask', 'its sheet: pitch, level, pelican'], ['double', 'double tap a flask', 'crack it · mend it'],
+      ['hold', 'hold a jar', 'the still on its note · double tap — keep'], ['up', 'solve · coagula — up', 'dirty delay: time · amount'],
+      ['tap', 'tap the sun', 'map of worlds']],
+    4: [['tap', 'tap water · tap a lily', 'plant a lily · remove it'], ['drag', 'drag a lily', 'across — note · along — step'],
+      ['hold', 'hold a lily', 'its sheet: wave, filter, envelope, chance'], ['draw', 'draw through lilies', 'glide between their notes'],
+      ['tap', 'the pier · drag sideways', 'play · stop · tempo'], ['drag', 'drag the weir', 'loop length'],
+      ['up', 'cloud · mountains · ducks — up', 'cutoff · res · attack, release'], ['shake', 'shake the tree', 'high-pass, leaves rustle'],
+      ['throw', 'throw the skiff at the ducks', 'they fly — envelope wide open'], ['tap', 'tap the birds · the sun', 'laser chirp · map of worlds']],
+  };
+  function legGeo() {
+    const rows = cur().legend || LEGEND[nav.world] || [], n = rows.length;
+    const top = scopeY + 50, x = 14, w = W - 28, avail = H - safeBot - top - 12;
+    const rh = clamp((avail - 112) / Math.max(1, n), 34, 50), h = 82 + n * rh + 30;
+    return { rows, x, w, top, rh, h };
+  }
+  function legGlyph(kind, x, y) {
+    const arrow = (x0, y0, x1, y1) => {
+      const a = Math.atan2(y1 - y0, x1 - x0);
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1);
+      g.moveTo(x1 - Math.cos(a - 0.5) * 5, y1 - Math.sin(a - 0.5) * 5); g.lineTo(x1, y1); g.lineTo(x1 - Math.cos(a + 0.5) * 5, y1 - Math.sin(a + 0.5) * 5); g.stroke();
+    };
+    const pen = () => { g.strokeStyle = ink(0.85); g.lineWidth = 1.2; };
+    pen();
+    if (kind === 'tap') { dot(x, y, 3.5, 0.9); ring(x, y, 9, 0.45, 1); }
+    else if (kind === 'double') { dot(x, y, 3.5, 0.9); ring(x, y, 8, 0.7, 1); ring(x, y, 12, 0.4, 1); }
+    else if (kind === 'hold') { dot(x, y, 3.5, 0.9); g.setLineDash([2.5, 2.5]); ring(x, y, 8, 0.75, 1); ring(x, y, 13, 0.4, 1); g.setLineDash([]); }
+    else if (kind === 'drag') { dot(x - 9, y, 3.2, 0.9); pen(); arrow(x - 4, y, x + 12, y); }
+    else if (kind === 'up') { dot(x, y + 10, 3.2, 0.9); pen(); arrow(x, y + 5, x, y - 12); }
+    else if (kind === 'draw') {
+      g.setLineDash([3, 2.5]); g.beginPath(); g.moveTo(x - 14, y + 7); g.quadraticCurveTo(x - 6, y - 12, x, y); g.quadraticCurveTo(x + 6, y + 10, x + 12, y - 6); g.stroke(); g.setLineDash([]);
+      dot(x + 12, y - 6, 3, 0.9);
+    } else if (kind === 'throw') {
+      g.beginPath(); g.moveTo(x - 13, y + 10); g.quadraticCurveTo(x - 4, y - 16, x + 13, y - 3); g.stroke();
+      arrow(x + 7, y - 7, x + 13, y - 3); dot(x - 13, y + 10, 3, 0.9);
+    } else if (kind === 'shake') { arrow(x, y, x + 13, y); arrow(x, y, x - 13, y); dot(x, y, 3.2, 0.9); }
+    else if (kind === 'two') { dot(x - 9, y + 4, 3.2, 0.9); dot(x + 9, y - 4, 3.2, 0.9); pen(); g.setLineDash([2, 3]); g.beginPath(); g.moveTo(x - 9, y + 4); g.lineTo(x + 9, y - 4); g.stroke(); g.setLineDash([]); }
+    else if (kind === 'pinch') { dot(x - 4, y + 4, 3, 0.9); dot(x + 4, y - 4, 3, 0.9); pen(); arrow(x - 6, y + 6, x - 13, y + 13); arrow(x + 6, y - 6, x + 13, y - 13); }
+    else if (kind === 'twist') {
+      g.beginPath(); g.arc(x, y, 11, -2.6, -0.6); g.stroke(); g.beginPath(); g.arc(x, y, 11, 0.55, 2.55); g.stroke();
+      arrow(x + Math.cos(-0.9) * 11, y + Math.sin(-0.9) * 11, x + Math.cos(-0.6) * 11, y + Math.sin(-0.6) * 11);
+      arrow(x + Math.cos(2.25) * 11, y + Math.sin(2.25) * 11, x + Math.cos(2.55) * 11, y + Math.sin(2.55) * 11);
+      dot(x + Math.cos(-2.6) * 11, y + Math.sin(-2.6) * 11, 2.8, 0.9); dot(x + Math.cos(0.55) * 11, y + Math.sin(0.55) * 11, 2.8, 0.9);
+    }
+  }
+  function fitText(s, x, y, size, a, maxW) {      // курсив, который ужимается, чтобы влезть в строку
+    let sz = size; g.font = `italic ${sz}px ${MAP}`;
+    while (sz > 9 && g.measureText(s).width > maxW) { sz -= 0.5; g.font = `italic ${sz}px ${MAP}`; }
+    mapText(s, x, y, sz, a, 'left');
+  }
+  function drawLegenda() {
+    const L = legGeo(), { x, w, top, rh, h } = L;
+    g.fillStyle = paper(0.97); g.fillRect(x, top, w, h);
+    hairBox(x, top, w, h, 0.75); hairBox(x + 4, top + 4, w - 8, h - 8, 0.3);
+    g.fillStyle = ink(0.7); for (const [qx, qy] of [[x, top], [x + w, top], [x, top + h], [x + w, top + h]]) { g.beginPath(); g.arc(qx, qy, 1.8, 0, Math.PI * 2); g.fill(); }
+    mapText('L E G E N D A', x + w / 2, top + 30, 20, 0.95, 'center', false);
+    mapText('what the hand does here', x + w / 2, top + 54, 13, 0.6, 'center');
+    g.strokeStyle = ink(0.3); g.lineWidth = 1; g.beginPath(); g.moveTo(x + w / 2 - 50, top + 68.5); g.lineTo(x + w / 2 + 50, top + 68.5); g.stroke();
+    L.rows.forEach(([kind, ges, does], i) => {
+      const cy = top + 82 + rh * (i + 0.5), tx = x + 58;
+      legGlyph(kind, x + 32, cy);
+      fitText(ges, tx, cy - 8, 15, 0.95, x + w - 16 - tx);
+      fitText(does, tx, cy + 10, 12.5, 0.62, x + w - 16 - tx);
+    });
+    mapText('tap anywhere — close', x + w / 2, top + h - 18, 12, 0.5, 'center');
+  }
+
   function drawFxSheet() {
     const X = sheetSpec(), s = fxGeo();
     if (!X) { fxSheet = null; return; }
@@ -3196,7 +3284,7 @@
         if (row >= 0) { const k = S.rows[row].key; link[k] = !link[k]; saveLink(); return; }
         nav.settings = false; return;
       }
-      if (Math.hypot(dx, dy) < 44) { nav.settings = true; return; }   // солнце — общие настройки
+      if (Math.hypot(dx, dy) < 44 || (Math.abs(dx) < 50 && dy > 46 && dy < 80)) { nav.settings = true; return; }   // солнце или подпись concordia — общие настройки
       const w = dx >= 0 ? (dy < 0 ? 1 : 4) : dy < 0 ? 2 : 3;
       if (ENTER.has(w) && worlds[w]) goWorld(w);       // III и IV — nondum: не открываются
     }
@@ -3260,8 +3348,17 @@
         x.stroke();
       });
     }
+    // гравированный медальон: двойной круг, засечки по сторонам света, ромбики на диагоналях
+    const M = R * 1.78, my = w === 3 ? cy - R * 0.12 : w === 4 ? cy + R * 0.12 : cy;
+    x.lineWidth = 1; x.strokeStyle = ink2(0.8); x.beginPath(); x.arc(cx, my, M, 0, T2); x.stroke();
+    x.strokeStyle = ink2(0.3); x.beginPath(); x.arc(cx, my, M - 5, 0, T2); x.stroke();
+    x.strokeStyle = ink2(0.55); x.beginPath();
+    for (let k = 0; k < 4; k++) { const a = (k / 4) * T2; x.moveTo(cx + Math.cos(a) * (M + 2), my + Math.sin(a) * (M + 2)); x.lineTo(cx + Math.cos(a) * (M + 8), my + Math.sin(a) * (M + 8)); }
+    x.stroke();
+    x.fillStyle = ink2(0.5);
+    for (let k = 0; k < 4; k++) { const a = Math.PI / 4 + (k / 4) * T2, px = cx + Math.cos(a) * (M - 2.5), py = my + Math.sin(a) * (M - 2.5); x.beginPath(); x.moveTo(px, py - 2.4); x.lineTo(px + 1.6, py); x.lineTo(px, py + 2.4); x.lineTo(px - 1.6, py); x.closePath(); x.fill(); }
     x.font = `italic 14px ${MAP}`; x.fillStyle = ink2(0.7); x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillText(EMB_LINE[w], cx, cy + R * (w === 4 ? 1.55 : 1.75));
+    x.fillText(EMB_LINE[w], cx, my + M + 22);
     emblems[w] = { key, c };
     return c;
   }
@@ -3330,15 +3427,27 @@
       const p = panel(w), info = worlds[w] || WORLDS[w];
       if (!info) continue;
       const right = p[0] >= cx, below = p[1] >= cy;
-      const tx = right ? p[0] + 16 : p[0] + p[2] - 16, ty = below ? p[1] + p[3] - 34 : p[1] + 64;
-      g.fillStyle = paper(0.6); g.fillRect(right ? tx - 6 : tx - 150, ty - 20, 156, 46);
-      mapText(`${info.n} · ${info.title}`, tx, ty - 4, 19, 0.95, right ? 'left' : 'right');
-      mapText(ENTER.has(w) ? info.sub : `${info.sub} · nondum`, tx, ty + 16, 13, 0.6, right ? 'left' : 'right');
+      const tx = right ? p[0] + 22 : p[0] + p[2] - 22, ty = below ? p[1] + p[3] - 34 : p[1] + 64;
+      // картуш в чернилах своего мира: подложка мира, двойная рамка, засечки по углам
+      const name = `${info.n} · ${info.title}`, sub = ENTER.has(w) ? info.sub : `${info.sub} · nondum`;
+      setTheme(worlds[w] && worlds[w].theme);
+      g.font = `italic 19px ${MAP}`; const bw = Math.max(g.measureText(name).width, (g.font = `italic 13px ${MAP}`, g.measureText(sub).width)) + 24;
+      const bx = right ? tx - 12 : tx - bw + 12, by = ty - 22;
+      g.fillStyle = BG; g.fillRect(bx, by, bw, 50);
+      hairBox(bx, by, bw, 50, 0.7); hairBox(bx + 3, by + 3, bw - 6, 44, 0.25);
+      g.fillStyle = ink(0.7); for (const [qx, qy] of [[bx, by], [bx + bw, by], [bx, by + 50], [bx + bw, by + 50]]) { g.beginPath(); g.arc(qx, qy, 1.6, 0, Math.PI * 2); g.fill(); }
+      mapText(name, tx, ty - 4, 19, 0.95, right ? 'left' : 'right');
+      mapText(sub, tx, ty + 16, 13, 0.6, right ? 'left' : 'right');
+      setTheme(null);
     }
     // солнце целиком
     g.fillStyle = BG; g.beginPath(); g.arc(cx, cy, 40, 0, Math.PI * 2); g.fill();
     sunGlyph(g, cx, cy, 0, Math.PI * 2, 1, now);
-    if (!nav.settings) mapText('tap a world · the sun — concordia', cx, cy + 62, 13, 0.5, 'center');
+    if (!nav.settings) {                                  // подпись солнца — что за ним: общие настройки
+      g.font = `italic 13px ${MAP}`; const lw = g.measureText('concordia').width + 20;
+      g.fillStyle = BG; g.fillRect(cx - lw / 2, cy + 50, lw, 24); hairBox(cx - lw / 2, cy + 50, lw, 24, 0.45);
+      mapText('concordia', cx, cy + 62, 13, 0.7, 'center');
+    }
     g.fillStyle = paper(0.7); g.fillRect(cx - 92, scopeY - 6, 184, 34);   // имя всей карты
     g.font = `20px ${MAP}`; g.fillStyle = ink(0.95); g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText('U N I V E R S U M', cx, scopeY + 11);
@@ -3649,7 +3758,7 @@
   window.t2d = {
     worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return strikes; },
     go(w) { nav.world = w; nav.view = 'play'; nav.anim = null; nav.settings = false; if (worlds[w].enter) worlds[w].enter(); },
-    get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }),   // сразу в мир, без касаний (тесты)
+    get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }),   // сразу в мир, без касаний (тесты)
     get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
     hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
