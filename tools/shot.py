@@ -78,9 +78,9 @@ async def sc_worlds(p):                            # карта, Cymatica в ч�
     a, b = {'x': 200, 'y': 450, 'id': 1}, {'x': 10, 'y': H - 8, 'id': 2}
     await p.T('touchStart', [a]); await p.pg.wait_for_timeout(60)        # палец держит новую планету...
     await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60)     # ...второй — солнце: карта
-    await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(800)
+    await p.T('touchEnd', [b]); await p.pg.wait_for_timeout(800)         # touchEnd перечисляет отпускаемые точки: солнце
     assert await p.js('()=>t2d.view') == 'map', 'sun -> map'
-    await p.T('touchEnd', []); await p.pg.wait_for_timeout(200)          # первый отпущен уже на карте — без ошибок
+    await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(200)         # палец с планеты отпущен уже на карте — без ошибок
     await p.tap(100, 600); await p.pg.wait_for_timeout(800)              # четверть III — не открывается
     assert await p.js('()=>t2d.view') == 'map', 'III stays closed'
     await p.tap(100, 200); await p.pg.wait_for_timeout(800)              # четверть II — Cymatica
@@ -148,7 +148,36 @@ async def sc_solniger(p):                          # Sol Niger через инт
     assert await p.js('()=>t2d.voices.filter(v=>v.active&&v.pinned).length') == 0, 'undo removes the pin'
 
 
-SCENARIOS = {'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_hold(p):                              # держишь планету и уходишь на карту — кольцо тайком не открывается
+    await p.pin(150, 600)
+    a, b = {'x': 150, 'y': 600, 'id': 1}, {'x': 10, 'y': H - 8, 'id': 2}
+    await p.T('touchStart', [a]); await p.pg.wait_for_timeout(60)
+    await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60)
+    await p.T('touchEnd', [b]); await p.pg.wait_for_timeout(800)         # карта, планету всё ещё держат
+    await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.view') == 'map'
+    assert not await p.js('()=>!!t2d.editor'), 'no hidden ring opened while on the map'
+
+
+async def sc_undo(p):                              # лад общий: переключён в Cymatica — откатывается отменой Cymatica, не Sol Niger
+    await p.pin(150, 600)
+    await p.tap(10, H - 8); await p.pg.wait_for_timeout(800)
+    await p.tap(100, 200); await p.pg.wait_for_timeout(800)              # Cymatica
+    s = await p.js("()=>t2d.btnPos('scl')"); await p.tap(s['x'], s['y']); await p.pg.wait_for_timeout(300)   # тап — лад вкл/выкл
+    on = await p.js('()=>t2d.scl.on')
+    assert await p.js('()=>t2d.hist(2)') == 1, 'scale change is a Cymatica undo step'
+    await p.tap(W - 10, H - 8); await p.pg.wait_for_timeout(800)
+    await p.tap(300, 200); await p.pg.wait_for_timeout(800)              # обратно в Sol Niger
+    assert await p.js('()=>t2d.hist(1)') == 1, 'Sol Niger history untouched'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.scl.on') == on, 'undo in Sol Niger keeps the scale set in Cymatica'
+    s = await p.js("()=>t2d.btnPos('scl')"); await p.tap(s['x'], s['y']); await p.pg.wait_for_timeout(300)   # лад в самом Sol Niger
+    assert await p.js('()=>t2d.scl.on') != on
+    await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.scl.on') == on, 'undo in Sol Niger reverts its own scale change'
+
+
+SCENARIOS = {'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

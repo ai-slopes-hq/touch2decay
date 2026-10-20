@@ -869,6 +869,8 @@
   // закреплённые кружки (место, тембр, LFO, связи между ними), FX и лад. Временные кружки не в счёт ----------
   const UNDO_MAX = 10;
   const hists = {}, lasts = {};               // мир → история и последнее сохранённое
+  // состояние мира и общий лад; в истории — мир до шага и лад до и после: лад откатывается в том мире, где его меняли
+  const entry = (n) => JSON.stringify({ w: worlds[n].snapshot(), scl: { on: scl.on, idx: scl.idx, root: scl.root } });
   const r4 = (x) => Math.round(x * 1e4) / 1e4;
   function snapshot() {
     const pins = V.filter((v) => v.active && v.pinned);
@@ -880,18 +882,20 @@
         mods: v.mods.filter((m) => !m.auto && ids.has(m.src.i)).map((m) => ({ src: m.src.i, type: m.type, depth: r4(m.depth) })),
       })),
       fx: Object.fromEntries(Object.entries(fx).map(([k, x]) => [k, r4(x)])),
-      scl: { on: scl.on, idx: scl.idx, root: scl.root },
     });
   }
   // после каждого жеста: если сохраняемое изменилось — прежнее состояние в историю
   function commit() {
     if (F.size) return;                         // ждём, пока отпущены все пальцы — один жест, один шаг
-    const n = nav.world, h = hists[n], now = worlds[n].snapshot();
-    if (now !== lasts[n]) {
-      h.push(lasts[n]);
-      if (h.length > UNDO_MAX) h.shift();
+    for (const k of Object.keys(worlds)) {      // шаг — только у мира на экране; изменения других миров «из-за кадра» — без шага
+      const n = +k, now = entry(n), h = hists[n];
+      if (n === nav.world && now !== lasts[n]) {
+        const was = JSON.parse(lasts[n]);
+        h.push({ w: was.w, scl: was.scl, after: JSON.parse(now).scl });   // лад до и после шага
+        if (h.length > UNDO_MAX) h.shift();
+      }
+      lasts[n] = now;
     }
-    lasts[n] = now;
   }
   function restore(js) {
     const st = JSON.parse(js);
@@ -917,15 +921,16 @@
       for (const [k, sp] of Object.entries(d.lfo)) setLfo(v, k, { ...sp });
     }
     Object.assign(fx, st.fx); applyFx();
-    if (scl.on !== st.scl.on || scl.idx !== st.scl.idx || scl.root !== st.scl.root) {
-      Object.assign(scl, st.scl); scl.slideUntil = performance.now() + 500; allDirty();
-    }
   }
   function undo() {
     const n = nav.world, h = hists[n];
     if (!h.length) return;
-    worlds[n].restore(h.pop());
-    lasts[n] = worlds[n].snapshot();
+    const st = h.pop(), same = (a, b) => a.on === b.on && a.idx === b.idx && a.root === b.root;
+    worlds[n].restore(st.w);
+    if (!same(st.scl, st.after) && same(scl, st.after)) {   // лад менялся в этом шаге и с тех пор не трогали — вернуть
+      Object.assign(scl, st.scl); scl.slideUntil = performance.now() + 500; allDirty();
+    }
+    for (const k of Object.keys(worlds)) lasts[k] = entry(+k);
     undoAt = performance.now();
   }
   let undoAt = -1e9;
@@ -2782,9 +2787,10 @@
 
   // Sol Niger: звук и состояние — каждый кадр, даже когда на экране другой мир
   function solTick(now, dt) {
-    // долгое касание пойманного кружка — кольцо свойств на весу
+    // долгое касание пойманного кружка — кольцо свойств на весу (только пока Sol Niger на экране: с карты кольцо не открыть)
+    const shown = nav.view === 'play' && !nav.anim && nav.world === 1;
     for (const f of F.values()) {
-      if (f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
+      if (!shown || f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
       if (now - f.t0 > HOLD_MS) openMenu(f);
     }
 
@@ -3282,7 +3288,7 @@
 
   // ---------- миры: реестр; Sol Niger — мир I поверх своих функций ----------
   function registerWorld(n, w) {
-    worlds[n] = w; hists[n] = []; lasts[n] = w.snapshot();
+    worlds[n] = w; hists[n] = []; lasts[n] = entry(n);
   }
   const solNiger = {
     n: 'I', title: 'Sol Niger', sub: 'orbes · strepitus',
