@@ -744,8 +744,14 @@ async def sc_natura(p):                           # Natura: лодочка — �
     assert await p.js('()=>t2d.nat.seq.playing'), 'tap the boat — the river flows'
     lv = await p.js('()=>T2D.level'); assert lv > 0.01, f'notes are heard: {lv}'
     await p.shot('natura-play')
+    await p.js("()=>{t2d.nat.setFx('chorus', 1); t2d.nat.setFx('rel', 1); t2d.nat.setFx('reverb', 0.8)}"); await p.pg.wait_for_timeout(700); await p.shot('natura-candies')
+    s0 = await p.js('()=>t2d.nat.sun().y'); await p.js('()=>{t2d.nat.seq.bpm = 45}'); s1 = await p.js('()=>t2d.nat.sun().y'); await p.js('()=>{t2d.nat.seq.bpm = 96}')
+    assert s1 > s0 + 40, f'slow tempo — the sun sinks: {s0} → {s1}'
     b = await p.js('()=>t2d.nat.boat()'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(200)
     assert not await p.js('()=>t2d.nat.seq.playing'), 'tap the boat — it stops'
+    await p.pg.wait_for_timeout(500); fr = await p.js('()=>t2d.nat.frog()'); assert fr, 'a frog sits on a lily'
+    await p.tap(fr['x'], fr['y']); await p.pg.wait_for_timeout(120)
+    assert await p.js('()=>performance.now() - t2d.nat.frog().croak') < 600, f'tap the frog — it croaks {fr}'
     t = await p.js('()=>t2d.nat.tree()'); pid = await p.hold(t['x'], t['y'], ms=60)   # тормошим дерево — срез вверх
     for k in range(8):
         await p.drag(pid, t['x'] + (-30 if k % 2 else 30), t['y'], t['x'] + (30 if k % 2 else -30), t['y'], steps=3)
