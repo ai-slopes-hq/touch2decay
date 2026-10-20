@@ -39,6 +39,7 @@ async def main(js, world=1, onsets=False):
             else:
                 await pg.evaluate('()=>t2d.cym.strike(0.3, 0.1)')
         else:
+            await pg.evaluate('()=>t2d.go(1)'); await pg.wait_for_timeout(900)   # приложение открывается на карте
             for k in range(2):                               # двойной тап — закреплённая планета
                 await T('touchStart', [{'x': 140, 'y': 600, 'id': k + 1}]); await pg.wait_for_timeout(70); await T('touchEnd', []); await pg.wait_for_timeout(80)
         if js:

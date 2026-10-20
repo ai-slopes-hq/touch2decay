@@ -105,6 +105,12 @@ function resCoefs(hz, t60, fs) {
   return { b1: 2 * R * Math.cos(w), b2: -R * R };
 }
 // голос для ноты: тот же (±10 центов), иначе самый тихий
+// выход: до 0.8 — прямая (удар звенит чисто), выше — мягко к 1.6; громкость дальше ловит общий ограничитель.
+// Раньше тут был сплошной tanh, и нижние ноты у края пластины уходили в перегруз (искажения −16 дБ — хрип)
+function outKnee(x) {
+  const a = Math.abs(x);
+  return a < 0.8 ? x : Math.sign(x) * (0.8 + 0.8 * Math.tanh((a - 0.8) / 0.8));
+}
 function pickVoice(voices, hz) {
   for (let i = 0; i < voices.length; i++) if (Math.abs(1200 * Math.log2(voices[i].hz / hz)) < 10) return i;
   let best = 0;
@@ -291,8 +297,8 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
             if (k & 1) { l += 0.65 * y; r += 0.35 * y; } else { l += 0.35 * y; r += 0.65 * y; }
           }
         }
-        L[n] = 0.98 * Math.tanh(l * OUT_GAIN);
-        if (R !== L) R[n] = 0.98 * Math.tanh(r * OUT_GAIN);
+        L[n] = outKnee(l * OUT_GAIN);
+        if (R !== L) R[n] = outKnee(r * OUT_GAIN);
         if (++this.count >= this.every) { this.count = 0; this.report(); }
       }
       // голос без ударов и смычков, отзвеневший до тишины, засыпает: состояние в ноль, дальше не считается

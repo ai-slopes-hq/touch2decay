@@ -1355,6 +1355,16 @@
   }
 
   // tanh-кривая: normed=true — выход до ±1 (мастер), false — наклон 1 в нуле (петля обратной связи)
+  // потолок мастера: до колена (knee) — прямая с усилением k, выше — мягко к потолку top. Тихое и среднее — чисто,
+  // без гармоник; раньше тут был сплошной tanh, и удары пластины хрипели — каждый пик шёл в перегруз
+  function knee(k, kn, top) {
+    const n = 4096, c = new Float32Array(n), room = top - kn;
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1, y = Math.abs(k * x);
+      c[i] = Math.sign(x) * (y < kn ? y : kn + room * Math.tanh((y - kn) / room));
+    }
+    return c;
+  }
   function soft(k, normed) {
     const n = 4096, c = new Float32Array(n), d = normed ? Math.tanh(k) : k;
     for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(k * x) / d; }
@@ -1630,7 +1640,7 @@
     masterG = master;
     // мягкий потолок на выходе: вдвое больше запаса по входу, чем по выходу
     const limitIn = gainNode(0.5);
-    const limit = ctx.createWaveShaper(); limit.curve = soft(2.6, true); limit.oversample = '4x';
+    const limit = ctx.createWaveShaper(); limit.curve = knee(2.6 / Math.tanh(2.6), 0.6, 0.98); limit.oversample = '4x';
     an = ctx.createAnalyser(); an.fftSize = 2048; scopeBuf = new Float32Array(an.fftSize);
     const masterIn = gainNode(1);               // общий вход мастера: сюда — выходы всех миров
     out.connect(masterIn);

@@ -118,7 +118,7 @@ test('processor strike decays', () => {
   send({ t: 'strike', x: 0.3, y: 0.1, vel: 1, hard: 0.5 });
   const a = run(proc, 1);
   assert.ok(finite(a), 'no NaN');
-  assert.ok(peak(a) < 1, `peak ${peak(a)}`);
+  assert.ok(peak(a) < 1.61, `peak ${peak(a)}`);
   assert.ok(rms(a, 0, 0.1) > 1e-3, 'audible');
   assert.ok(rms(a, 0.9, 1) < 0.5 * rms(a, 0, 0.1), 'decays');
 });
@@ -128,7 +128,7 @@ test('processor bow sustains', () => {
   send({ t: 'bow', id: 1, x: 0.4, y: 0, on: true, exciter: 0, pressure: 0.6, amp: 1 });
   const a = run(proc, 1.5);
   assert.ok(finite(a), 'no NaN');
-  assert.ok(peak(a) < 1, `peak ${peak(a)}`);
+  assert.ok(peak(a) < 1.61, `peak ${peak(a)}`);
   assert.ok(rms(a, 1, 1.5) > 0.3 * rms(a, 0.2, 0.5), 'sustains');
   assert.ok(rms(a, 0.2, 0.5) > 1e-3, 'audible');
   send({ t: 'bow', id: 1, on: false });
@@ -142,7 +142,7 @@ test('strike flood', () => {
   assert.ok(proc.strikes.length <= 16, `strikes ${proc.strikes.length}`);
   const a = run(proc, 0.5);
   assert.ok(finite(a), 'no NaN');
-  assert.ok(peak(a) < 1, `peak ${peak(a)}`);
+  assert.ok(peak(a) < 1.61, `peak ${peak(a)}`);
 });
 
 test('center vs edge', () => {
