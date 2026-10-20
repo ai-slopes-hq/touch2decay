@@ -77,7 +77,7 @@ async def sc_map(p):
     await p.pin(150, 600)
     await p.tap(10, H - 8); await p.pg.wait_for_timeout(800)      # тап по солнцу — карта Universum
     await p.shot('map')
-    for name, (x, y), back in [('rosarium', (100, 200), (W - 5, H - 5)), ('hermetica', (100, 600), (W - 5, 5)), ('terra', (300, 600), (5, 5))]:
+    for name, (x, y), back in [('cabbala', (100, 200), (W - 5, H - 5)), ('rosarium', (100, 600), (W - 5, 5)), ('terra', (300, 600), (5, 5))]:
         await p.tap(x, y); await p.pg.wait_for_timeout(800); await p.shot(name)
         await p.tap(*back); await p.pg.wait_for_timeout(800)
     await p.tap(300, 200); await p.pg.wait_for_timeout(800)       # обратно в Systema

@@ -2668,13 +2668,13 @@
   }
 
   // ---------- смежные миры: солнце — начало координат, вокруг него четыре четверти ----------
-  // Universum: I (x>0, y>0) — Systema, солнечная система: планеты и орбиты, играет. II, III, IV — пока только гравюры (идеи — в ROADMAP.md).
+  // Universum: I (x>0, y>0) — Sol Niger, чёрный космос с планетами, играет. II, III, IV — пока только гравюры (идеи — в ROADMAP.md).
   // Тап по солнцу — карта миров; тап по четверти — влететь в мир; в мире тап по солнцу — снова карта
   const WORLDS = [
     null,
-    { n: 'I', title: 'Systema', sub: 'orbes · strepitus' },
-    { n: 'II', title: 'Rosarium', sub: 'operatores quattuor' },
-    { n: 'III', title: 'Hermetica', sub: 'modi resonantes' },
+    { n: 'I', title: 'Sol Niger', sub: 'orbes · strepitus' },
+    { n: 'II', title: 'Cabbala', sub: 'arbor vitae' },
+    { n: 'III', title: 'Rosarium', sub: 'operatores quattuor' },
     { n: 'IV', title: 'Terra', sub: 'echo et reverberatio' },
   ];
   const nav = { view: 'play', world: 1, anim: null };   // view: play | map | world; anim: { t0, dir: 'out' | 'in', w }
@@ -2815,12 +2815,12 @@
   }
 
   // ---------- гравюры миров: у каждого своя палитра ----------
-  // Rosarium — раскрашенная алхимическая гравюра: пергамент, сепия, киноварь, охра, лазурь, ярь-медянка, сусальное золото.
-  // Hermetica — гримуар и Изумрудная скрижаль: тёмный изумруд, золото, бычья кровь, свечение изумруда.
+  // Cabbala (II) — ночное небо: индиго, сусальное золото, сфиры в традиционных цветах.
+  // Rosarium (III) — раскрашенная алхимическая гравюра: пергамент, сепия, киноварь, охра, лазурь, ярь-медянка, золото.
   // Terra — средневековая живопись (часослов, Джотто, Дуччо): ультрамарин, сусальное золото, малахит, охра, киноварь, свинцовые белила
   const PALS = {
-    2: { ink: '62,42,26', paper: ['#efe3c6', '#cdb68a'], red: '178,52,38', gold: '190,140,44', green: '74,122,96', blue: '44,72,128', disc: '#e8c25a' },
-    3: { ink: '212,176,92', paper: ['#123528', '#050f0b'], red: '128,30,30', gold: '212,176,92', green: '70,205,130', blue: '60,120,110', disc: '#1a3d2e' },
+    2: { ink: '214,180,96', paper: ['#1f2658', '#060918'], red: '170,40,40', gold: '222,186,96', white: '236,232,220', disc: '#e2b84a', disc2: '#10153a' },
+    3: { ink: '62,42,26', paper: ['#efe3c6', '#cdb68a'], red: '178,52,38', gold: '190,140,44', green: '74,122,96', blue: '44,72,128', disc: '#e8c25a' },
     4: { ink: '28,20,14', paper: ['#2c4fa8', '#13245e'], red: '176,50,38', gold: '214,170,64', green: '70,128,78', blue: '44,86,170', ochre: '186,138,62', white: '246,240,224', disc: '#d6aa40' },
   };
   let PAL = null;
@@ -2839,13 +2839,14 @@
     const bg = x.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.2, W / 2, H / 2, Math.hypot(W, H) * 0.6);
     bg.addColorStop(0, PAL.paper[0]); bg.addColorStop(1, PAL.paper[1]);
     x.fillStyle = bg; x.fillRect(0, 0, W, H);
-    ({ 2: artRosarium, 3: artHermetica, 4: artTerra })[w](x);
+    const after = ({ 2: artCabbala, 3: artRosarium, 4: artTerra })[w](x);   // может вернуть то, что рисуется поверх солнца
     // рамка: двойная линия; у Terra — золотая кайма, как в рукописи
     if (w === 4) { x.strokeStyle = C('gold', 0.9); x.lineWidth = 3; x.strokeRect(6, 6, W - 12, H - 12); x.lineWidth = 1; x.strokeStyle = C('red', 0.7); x.strokeRect(11.5, 11.5, W - 23, H - 23); }
     else { x.strokeStyle = P(0.45); x.lineWidth = 1; x.strokeRect(4.5, 4.5, W - 9, H - 9); x.strokeStyle = P(0.2); x.strokeRect(9.5, 9.5, W - 19, H - 19); }
     const sc = sunCorner(w), q = { 2: [Math.PI, Math.PI * 1.5], 3: [Math.PI / 2, Math.PI], 4: [0, Math.PI / 2] }[w];
-    sunGlyph(x, sc[0], sc[1], q[0], q[1], 1, 0, PAL.gold, PAL.disc);
-    x.font = `italic 15px ${MAP}`; x.fillStyle = w === 4 ? C('white', 0.8) : P(0.65); x.textAlign = 'center'; x.textBaseline = 'middle';
+    sunGlyph(x, sc[0], sc[1], q[0], q[1], { 2: 1.3, 3: 1.5, 4: 1.9 }[w], 0, PAL.gold, PAL.disc);
+    if (after) after();
+    x.font = `italic 15px ${MAP}`; x.fillStyle = w === 4 || w === 2 ? C('white', 0.7) : P(0.65); x.textAlign = 'center'; x.textBaseline = 'middle';
     x.fillText('terra incognita · nondum', W / 2, H - 32);
     PAL = null;
     arts[w] = { key, c };
@@ -2872,142 +2873,172 @@
     x.font = `italic ${size}px ${MAP}`; x.fillStyle = fill; x.textAlign = align; x.textBaseline = 'middle'; x.fillText(s, X, Y);
   };
 
-  // II — Rosarium philosophorum: сосуд, в нём Солнце и Луна; вокруг четыре стихии — четыре FM-оператора; розы
-  function artRosarium(x) {
-    hatch(x, Math.PI / 4, 8, P(0.045));
-    const cx = W * 0.46, cy = H * 0.5, R = Math.min(W, H) * 0.2;
-    // лента с названием — киноварью, как рубрика в рукописи
-    const by = H * 0.13;
-    x.strokeStyle = P(0.8); x.lineWidth = 1; x.fillStyle = '#f6edd6';
-    x.beginPath();
-    x.moveTo(W * 0.1, by - 14); x.quadraticCurveTo(W * 0.5, by - 26, W * 0.9, by - 14);
-    x.lineTo(W * 0.9, by + 14); x.quadraticCurveTo(W * 0.5, by + 2, W * 0.1, by + 14); x.closePath(); x.fill(); x.stroke();
-    for (const s of [-1, 1]) {
-      const ex = s < 0 ? W * 0.1 : W * 0.9;
-      x.fillStyle = '#e4d3ac';
-      x.beginPath(); x.moveTo(ex, by - 14); x.lineTo(ex + s * 16, by - 6); x.lineTo(ex + s * 6, by); x.lineTo(ex + s * 16, by + 8); x.lineTo(ex, by + 14); x.closePath(); x.fill(); x.stroke();
+  // II — Cabbala: ночное небо и Древо Жизни — десять сфирот в традиционных цветах, 22 пути с буквами иврита.
+  // Солнце участвует: золотой луч из угла входит в Тиферет — сфиру Солнца
+  function artCabbala(x) {
+    let seed = 5;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 160; i++) {                      // звёзды
+      const X = rnd() * W, Y = rnd() * H, r = rnd() < 0.12 ? 1.6 : 0.8;
+      x.fillStyle = C('gold', 0.25 + 0.55 * rnd()); x.beginPath(); x.arc(X, Y, r, 0, Math.PI * 2); x.fill();
     }
-    caps(x, 'ROSARIUM', W / 2, by - 6, 15, C('red', 0.95), 4);
-    caps(x, 'PHILOSOPHORUM', W / 2, by + 9, 11, P(0.85), 3);
-    // сосуд: тело с жидкостью цвета рубедо, горлышко
-    const neckW = R * 0.26, neckH = R * 1.15;
-    x.fillStyle = 'rgba(255,250,235,0.35)'; x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.fill();
-    x.save(); x.beginPath(); x.arc(cx, cy, R - 1, 0, Math.PI * 2); x.clip();
-    x.fillStyle = C('red', 0.35); x.fillRect(cx - R, cy + R * 0.25, 2 * R, R);
-    x.restore();
-    x.save(); x.beginPath(); x.rect(cx - R, cy + R * 0.25, 2 * R, R); x.clip();
-    hatch(x, 0, 4, C('red', 0.55), () => x.arc(cx, cy, R - 2, 0, Math.PI * 2)); x.restore();
-    x.lineWidth = 1.3; x.strokeStyle = P(0.9);
-    x.beginPath();
-    x.moveTo(cx - neckW / 2, cy - R * 0.92 - neckH);
-    x.lineTo(cx - neckW / 2, cy - R * 0.94);
-    x.arc(cx, cy, R, -Math.PI / 2 - Math.asin(neckW / 2 / R), -Math.PI / 2 + Math.asin(neckW / 2 / R) + Math.PI * 2, true);
-    x.lineTo(cx + neckW / 2, cy - R * 0.92 - neckH);
-    x.stroke();
-    x.strokeStyle = P(0.4); x.beginPath(); x.arc(cx, cy, R + 3, 0, Math.PI * 2); x.stroke();
-    x.beginPath(); x.ellipse(cx, cy - R * 0.92 - neckH, neckW * 0.75, 3, 0, 0, Math.PI * 2); x.strokeStyle = P(0.9); x.stroke();
-    // Солнце — сусальное золото, Луна — серебро с лазурью
-    const sr = R * 0.2, sx = cx - R * 0.38, sy = cy - R * 0.12, lx = cx + R * 0.38;
-    x.fillStyle = C('gold', 0.9); x.beginPath(); x.arc(sx, sy, sr, 0, Math.PI * 2); x.fill();
-    x.strokeStyle = P(0.9); x.lineWidth = 1.1; x.stroke();
-    x.fillStyle = P(0.9); x.beginPath(); x.arc(sx, sy, 2, 0, Math.PI * 2); x.fill();
-    x.strokeStyle = C('gold', 0.95);
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      x.beginPath(); x.moveTo(sx + Math.cos(a) * (sr + 3), sy + Math.sin(a) * (sr + 3)); x.lineTo(sx + Math.cos(a) * (sr + 8), sy + Math.sin(a) * (sr + 8)); x.stroke();
-    }
-    x.beginPath(); x.arc(lx, sy, sr, Math.PI * 0.3, Math.PI * 1.7, false);
-    x.arc(lx - sr * 0.45, sy, sr * 0.85, Math.PI * 1.6, Math.PI * 0.4, true); x.closePath();
-    x.fillStyle = 'rgba(206,216,232,0.9)'; x.fill(); x.strokeStyle = P(0.9); x.stroke();
-    // четыре стихии — четыре оператора, в алхимической раскраске
-    const el = [['ignis', -1, -1, 'up', false, 'red'], ['aer', 1, -1, 'up', true, 'gold'], ['aqua', -1, 1, 'down', false, 'blue'], ['terra', 1, 1, 'down', true, 'green']];
-    const pos = el.map(([, ex, ey]) => [cx + ex * R * 1.55, cy + ey * R * 1.3]);
-    x.setLineDash([2, 5]); x.strokeStyle = P(0.5); x.lineWidth = 1;
-    x.beginPath(); [0, 1, 3, 2, 0].forEach((i, j) => (j ? x.lineTo(...pos[i]) : x.moveTo(...pos[i]))); x.stroke();
-    for (const p of pos) { x.beginPath(); x.moveTo(...p); x.lineTo(cx, cy); x.stroke(); }
-    x.setLineDash([]);
-    el.forEach(([name, , , dir, bar, col], i) => {
-      const [X, Y] = pos[i], s = 15, u = dir === 'up' ? -1 : 1;
-      x.fillStyle = '#f3e8cf'; x.beginPath(); x.arc(X, Y, s + 6, 0, Math.PI * 2); x.fill();
-      x.strokeStyle = P(0.45); x.stroke();
-      x.beginPath(); x.moveTo(X, Y + u * s); x.lineTo(X - s * 0.9, Y - u * s * 0.6); x.lineTo(X + s * 0.9, Y - u * s * 0.6); x.closePath();
-      x.fillStyle = C(col, 0.75); x.fill(); x.strokeStyle = P(0.95); x.lineWidth = 1.2; x.stroke();
-      if (bar) { x.beginPath(); x.moveTo(X - s * 0.75, Y + u * s * 0.05); x.lineTo(X + s * 0.75, Y + u * s * 0.05); x.stroke(); }
-      itext(x, name, X, Y + (dir === 'up' ? -s - 18 : s + 18), 13, P(0.85));
-    });
-    // розы: алые лепестки, зелёные стебли
-    const rose = (X, Y, r) => {
-      x.strokeStyle = C('green', 0.9); x.lineWidth = 1;
-      x.beginPath(); x.moveTo(X, Y + r); x.quadraticCurveTo(X - r * 0.6, Y + r * 2.2, X - r * 0.2, Y + r * 3.4); x.stroke();
-      x.fillStyle = C('green', 0.55); x.beginPath(); x.ellipse(X - r * 0.55, Y + r * 2.1, r * 0.45, r * 0.2, -0.6, 0, Math.PI * 2); x.fill(); x.stroke();
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
-        x.fillStyle = C('red', 0.7); x.beginPath(); x.arc(X + Math.cos(a) * r * 0.55, Y + Math.sin(a) * r * 0.55, r * 0.5, 0, Math.PI * 2); x.fill();
-      }
-      x.strokeStyle = P(0.8); x.lineWidth = 0.9;
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
-        x.beginPath(); x.arc(X + Math.cos(a) * r * 0.55, Y + Math.sin(a) * r * 0.55, r * 0.5, a - 1.6, a + 1.6); x.stroke();
-      }
-      x.beginPath();
-      for (let t = 0; t < 12; t += 0.2) { const rr = r * 0.05 * t; const px = X + Math.cos(t) * rr, py = Y + Math.sin(t) * rr; t ? x.lineTo(px, py) : x.moveTo(px, py); }
-      x.stroke();
+    const cx = W * 0.47, top = H * 0.17, u = (H * 0.6) / 4.8, hx = Math.min(W * 0.27, u * 1.15);
+    const S = {
+      Kether: [0, 0, '250,248,240'], Chokmah: [1, 0.6, '150,150,160'], Binah: [-1, 0.6, '24,24,30'],
+      Chesed: [1, 1.8, '50,90,190'], Geburah: [-1, 1.8, '190,40,40'], Tiphareth: [0, 2.4, '226,184,74'],
+      Netzach: [1, 3.0, '40,160,90'], Hod: [-1, 3.0, '226,128,40'], Yesod: [0, 3.6, '120,60,170'], Malkuth: [0, 4.8, null],
     };
-    rose(W * 0.18, H * 0.78, 13); rose(W * 0.5, H * 0.83, 11); rose(W * 0.8, H * 0.76, 12);
-    itext(x, 'modulatio frequentiae', W / 2, by + 34, 13, P(0.7));
+    const pt = (k) => [cx + S[k][0] * hx, top + S[k][1] * u];
+    // ось и круг небесного свода
+    x.strokeStyle = C('gold', 0.12); x.lineWidth = 1;
+    x.beginPath(); x.arc(cx, top + 2.4 * u, 3.1 * u, 0, Math.PI * 2); x.stroke();
+    x.beginPath();
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; const R = 3.1 * u; x.moveTo(cx + Math.cos(a) * R, top + 2.4 * u + Math.sin(a) * R); x.lineTo(cx + Math.cos(a) * (R + 8), top + 2.4 * u + Math.sin(a) * (R + 8)); }
+    x.stroke();
+    // луч солнца из угла в Тиферет
+    const sc = sunCorner(2), tp = pt('Tiphareth');
+    for (let k = -3; k <= 3; k++) {
+      x.strokeStyle = C('gold', 0.22 - Math.abs(k) * 0.05); x.lineWidth = 1;
+      x.beginPath(); x.moveTo(sc[0], sc[1]); x.lineTo(tp[0] + k * 6, tp[1] + k * 3); x.stroke();
+    }
+    // 22 пути
+    const paths = [['Kether', 'Chokmah', 'א'], ['Kether', 'Binah', 'ב'], ['Kether', 'Tiphareth', 'ג'], ['Chokmah', 'Binah', 'ד'], ['Chokmah', 'Tiphareth', 'ה'], ['Chokmah', 'Chesed', 'ו'],
+      ['Binah', 'Tiphareth', 'ז'], ['Binah', 'Geburah', 'ח'], ['Chesed', 'Geburah', 'ט'], ['Chesed', 'Tiphareth', 'י'], ['Chesed', 'Netzach', 'כ'], ['Geburah', 'Tiphareth', 'ל'],
+      ['Geburah', 'Hod', 'מ'], ['Tiphareth', 'Netzach', 'נ'], ['Tiphareth', 'Yesod', 'ס'], ['Tiphareth', 'Hod', 'ע'], ['Netzach', 'Hod', 'פ'], ['Netzach', 'Yesod', 'צ'],
+      ['Netzach', 'Malkuth', 'ק'], ['Hod', 'Yesod', 'ר'], ['Hod', 'Malkuth', 'ש'], ['Yesod', 'Malkuth', 'ת']];
+    for (const [a, b] of paths) {
+      const [x1, y1] = pt(a), [x2, y2] = pt(b);
+      x.strokeStyle = C('gold', 0.75); x.lineWidth = 3.2; x.beginPath(); x.moveTo(x1, y1); x.lineTo(x2, y2); x.stroke();
+      x.strokeStyle = PALS[2].disc2; x.lineWidth = 1.6; x.beginPath(); x.moveTo(x1, y1); x.lineTo(x2, y2); x.stroke();
+    }
+    x.font = `13px "Times New Roman", serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    for (const [a, b, l] of paths) {
+      const [x1, y1] = pt(a), [x2, y2] = pt(b), mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      x.fillStyle = PALS[2].disc2; x.beginPath(); x.arc(mx, my, 7, 0, Math.PI * 2); x.fill();
+      x.fillStyle = C('gold', 0.95); x.fillText(l, mx, my + 1);
+    }
+    // десять сфирот
+    const R = Math.min(17, u * 0.3);
+    for (const [k, [, , col]] of Object.entries(S)) {
+      const [X, Y] = pt(k);
+      if (col) { x.fillStyle = `rgb(${col})`; x.beginPath(); x.arc(X, Y, R, 0, Math.PI * 2); x.fill(); }
+      else {                                              // Малкут — четыре цвета стихий
+        ['200,180,60', '110,120,50', '140,60,40', '20,20,20'].forEach((c, i) => {
+          x.fillStyle = `rgb(${c})`; x.beginPath(); x.moveTo(X, Y); x.arc(X, Y, R, -Math.PI / 4 + (i * Math.PI) / 2, Math.PI / 4 + (i * Math.PI) / 2); x.closePath(); x.fill();
+        });
+      }
+      x.strokeStyle = C('gold', 1); x.lineWidth = 1.4; x.beginPath(); x.arc(X, Y, R, 0, Math.PI * 2); x.stroke();
+      x.strokeStyle = C('gold', 0.35); x.lineWidth = 1; x.beginPath(); x.arc(X, Y, R + 4, 0, Math.PI * 2); x.stroke();
+      const side = S[k][0];
+      itext(x, k, X + (side ? side * (R + 8) : 0), Y + (side ? 0 : R + 13), 12, C('gold', 0.85), side > 0 ? 'left' : side < 0 ? 'right' : 'center');
+    }
+    caps(x, 'CABBALA', W / 2, H * 0.06 + 16, 18, C('gold', 1), 6);
+    itext(x, 'arbor vitae · decem sephiroth', W / 2, H * 0.06 + 38, 13, C('white', 0.8));
   }
 
-  // III — Hermetica: гримуар и Изумрудная скрижаль: небесные сферы со знаками планет, уроборос, фигура Хладни
-  function artHermetica(x) {
-    let seed = 3;
-    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    for (let i = 0; i < 900; i++) { x.fillStyle = C('gold', 0.04 + rnd() * 0.1); x.fillRect(rnd() * W, rnd() * H, 1, 1); }
-    const cx = W * 0.5, cy = H * 0.5, R = Math.min(W, H) * 0.42;
-    // изумрудное свечение скрижали за фигурой
-    const glow = x.createRadialGradient(cx, cy, 0, cx, cy, R * 0.9);
-    glow.addColorStop(0, C('green', 0.28)); glow.addColorStop(1, C('green', 0));
-    x.fillStyle = glow; x.fillRect(cx - R, cy - R, 2 * R, 2 * R);
-    // уроборос: золотое кольцо с чешуёй, глаз — бычья кровь
-    x.strokeStyle = C('gold', 0.95); x.lineWidth = 1.2;
-    x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.stroke();
-    x.beginPath(); x.arc(cx, cy, R - 9, 0, Math.PI * 2); x.stroke();
-    x.strokeStyle = C('gold', 0.55); x.beginPath();
-    for (let i = 0; i < 90; i++) {
-      const a = (i / 90) * Math.PI * 2, a2 = a + 0.035;
-      x.moveTo(cx + Math.cos(a) * (R - 9), cy + Math.sin(a) * (R - 9)); x.lineTo(cx + Math.cos(a2) * R, cy + Math.sin(a2) * R);
+  // III — Rosarium: алхимический пейзаж — философское дерево с плодами-солнцами и лунами, ртутный фонтан,
+  // розовый сад, холмы; зелёный лев вверху справа кусает солнце, красный лев сидит у фонтана
+  function lion(x, X, Y, s, rot, body, flip = 1) {
+    x.save(); x.translate(X, Y); x.rotate(rot); x.scale(s * flip, s);
+    x.lineJoin = 'round'; x.lineWidth = 1.2 / s;
+    const ink = P(0.9);
+    // хвост
+    x.strokeStyle = ink; x.beginPath(); x.moveTo(-28, -4); x.bezierCurveTo(-42, -6, -36, -26, -46, -30); x.stroke();
+    x.fillStyle = body; x.beginPath(); x.ellipse(-47, -31, 4, 3, -0.6, 0, Math.PI * 2); x.fill(); x.stroke();
+    // лапы — в прыжке: задние отброшены назад, передние вытянуты вперёд
+    for (const [lx, sl] of [[-22, -9], [-14, -5], [14, 7], [22, 11]]) {
+      x.fillStyle = body; x.beginPath();
+      x.moveTo(lx - 3, 3); x.lineTo(lx - 3 + sl, 20); x.lineTo(lx + 3 + sl, 22); x.lineTo(lx + 3, 3); x.closePath(); x.fill(); x.stroke();
+      x.beginPath(); x.ellipse(lx + sl + 1, 22, 4, 2, 0, 0, Math.PI * 2); x.fill(); x.stroke();
     }
-    x.stroke();
-    const hx = cx, hy = cy - (R - 4.5);
-    x.fillStyle = PALS[3].disc; x.strokeStyle = C('gold', 1);
-    x.beginPath(); x.ellipse(hx - 4, hy, 13, 9, 0, 0, Math.PI * 2); x.fill(); x.stroke();
-    x.fillStyle = C('red', 1); x.beginPath(); x.arc(hx - 8, hy - 2, 2.4, 0, Math.PI * 2); x.fill();
-    // небесные сферы, знаки планет золотом
-    const signs = ['☽', '☿', '♀', '☉', '♂', '♃', '♄'];
-    signs.forEach((sg, i) => {
-      const r = R * (0.32 + i * 0.085);
-      x.strokeStyle = C('gold', 0.22 + (i === 3 ? 0.18 : 0)); x.lineWidth = 0.8; x.setLineDash(i % 2 ? [2, 4] : []);
-      x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.stroke(); x.setLineDash([]);
-      const a = -Math.PI / 2 + 0.9 + i * 0.83;
-      const X = cx + Math.cos(a) * r, Y = cy + Math.sin(a) * r;
-      x.fillStyle = PALS[3].disc; x.beginPath(); x.arc(X, Y, 10, 0, Math.PI * 2); x.fill();
-      x.font = `15px ${MAP}, "Apple Symbols", "Segoe UI Symbol", serif`; x.fillStyle = C('gold', 1); x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.fillText(sg, X, Y + 1);
+    // туловище — поджарое, с полосой штриховки по брюху
+    x.fillStyle = body; x.beginPath(); x.ellipse(0, 0, 30, 11, 0, 0, Math.PI * 2); x.fill(); x.stroke();
+    x.strokeStyle = P(0.35); x.lineWidth = 0.8 / s;
+    for (let i = -18; i <= 18; i += 5) { x.beginPath(); x.moveTo(i, 4); x.lineTo(i + 2, 9); x.stroke(); }
+    x.strokeStyle = ink; x.lineWidth = 1.2 / s;
+    // грива — зубчатый венец вокруг головы
+    const hx = 36, hy = -14;
+    x.beginPath();
+    for (let i = 0; i <= 28; i++) { const a = (i / 28) * Math.PI * 2, r = i % 2 ? 13 : 19; i ? x.lineTo(hx + Math.cos(a) * r, hy + Math.sin(a) * r) : x.moveTo(hx + r, hy); }
+    x.closePath(); x.fill(); x.stroke();
+    // голова и раскрытая пасть
+    x.beginPath(); x.arc(hx, hy, 10, 0, Math.PI * 2); x.fill(); x.stroke();
+    x.beginPath(); x.moveTo(hx + 6, hy - 6); x.lineTo(hx + 24, hy - 12); x.lineTo(hx + 9, hy - 1); x.closePath(); x.fill(); x.stroke();
+    x.beginPath(); x.moveTo(hx + 7, hy + 3); x.lineTo(hx + 22, hy + 8); x.lineTo(hx + 6, hy + 8); x.closePath(); x.fill(); x.stroke();
+    x.fillStyle = ink; x.beginPath(); x.arc(hx + 3, hy - 4, 1.4, 0, Math.PI * 2); x.fill();
+    x.restore();
+  }
+
+  function artRosarium(x) {
+    hatch(x, Math.PI / 4, 9, P(0.035));
+    const hz = H * 0.6;
+    // холмы и земля
+    const hills = [[0, hz + 10], [W * 0.2, hz - 26], [W * 0.42, hz + 4], [W * 0.66, hz - 34], [W * 0.88, hz - 4], [W, hz - 14], [W, H], [0, H]];
+    x.fillStyle = 'rgba(150,140,80,0.25)'; x.beginPath(); hills.forEach((p, i) => (i ? x.lineTo(...p) : x.moveTo(...p))); x.closePath(); x.fill();
+    x.save(); x.beginPath(); hills.forEach((p, i) => (i ? x.lineTo(...p) : x.moveTo(...p))); x.closePath(); x.clip(); hatch(x, -0.3, 6, C('green', 0.25)); x.restore();
+    x.strokeStyle = P(0.8); x.lineWidth = 1.1; x.beginPath(); hills.slice(0, 6).forEach((p, i) => (i ? x.lineTo(...p) : x.moveTo(...p))); x.stroke();
+    // философское дерево: ствол, ветви, плоды — солнца и луны
+    const tx = W * 0.27, ty = hz - 6;
+    x.strokeStyle = P(0.9); x.lineWidth = 3; x.beginPath(); x.moveTo(tx, ty); x.lineTo(tx, ty - 120); x.stroke();
+    const br = [[-50, -150], [-36, -186], [0, -205], [36, -186], [52, -150], [-24, -130], [26, -128]];
+    x.lineWidth = 1.6;
+    for (const [bx, by] of br) { x.beginPath(); x.moveTo(tx, ty - 100); x.quadraticCurveTo(tx + bx * 0.3, ty + by * 0.75, tx + bx, ty + by); x.stroke(); }
+    x.fillStyle = C('green', 0.4); x.strokeStyle = C('green', 0.8); x.lineWidth = 0.9;
+    for (const [bx, by] of br) for (let k = 0; k < 4; k++) { x.beginPath(); x.ellipse(tx + bx + (k - 1.5) * 7, ty + by - 4 + (k % 2) * 6, 5, 2.6, k, 0, Math.PI * 2); x.fill(); x.stroke(); }
+    br.forEach(([bx, by], i) => {
+      const X = tx + bx, Y = ty + by - 10;
+      if (i % 2) { x.fillStyle = 'rgba(210,218,232,0.95)'; x.beginPath(); x.arc(X, Y, 6, Math.PI * 0.3, Math.PI * 1.7); x.arc(X - 3, Y, 5, Math.PI * 1.6, Math.PI * 0.4, true); x.closePath(); x.fill(); x.strokeStyle = P(0.8); x.stroke(); }
+      else { x.fillStyle = C('gold', 0.95); x.beginPath(); x.arc(X, Y, 6, 0, Math.PI * 2); x.fill(); x.strokeStyle = P(0.8); x.stroke(); }
     });
-    // фигура Хладни: песок собирается на узловых линиях пластины — изумрудом
-    const S = R * 0.42, m = 2, n = 5, N = 170;
-    x.fillStyle = 'rgba(4,14,10,0.75)'; x.fillRect(cx - S, cy - S, 2 * S, 2 * S);
-    x.strokeStyle = C('gold', 0.6); x.strokeRect(cx - S, cy - S, 2 * S, 2 * S);
-    for (const [sz, al] of [[2.4, 0.18], [1, 0.95]]) {
-      x.fillStyle = C('green', al);
-      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
-        const u = i / (N - 1), v = j / (N - 1);
-        const z = Math.cos(n * Math.PI * u) * Math.cos(m * Math.PI * v) + Math.cos(m * Math.PI * u) * Math.cos(n * Math.PI * v);
-        if (Math.abs(z) < 0.06) x.fillRect(cx - S + u * 2 * S - sz / 2 + 0.5, cy - S + v * 2 * S - sz / 2 + 0.5, sz, sz);
-      }
+    itext(x, 'arbor philosophica', tx, ty + 16, 12, P(0.7));
+    // ртутный фонтан: чаша на колонне, три струи, красная вода
+    const fx0 = W * 0.64, fy = hz + H * 0.13;
+    x.fillStyle = 'rgba(255,250,235,0.5)'; x.strokeStyle = P(0.9); x.lineWidth = 1.2;
+    x.beginPath(); x.ellipse(fx0, fy, 46, 12, 0, 0, Math.PI * 2); x.fill(); x.stroke();
+    x.beginPath(); x.moveTo(fx0 - 46, fy); x.quadraticCurveTo(fx0, fy + 46, fx0 + 46, fy); x.stroke();
+    x.fillStyle = C('red', 0.45); x.beginPath(); x.ellipse(fx0, fy, 40, 9, 0, 0, Math.PI * 2); x.fill();
+    x.beginPath(); x.moveTo(fx0 - 5, fy + 22); x.lineTo(fx0 - 5, fy + 62); x.lineTo(fx0 + 5, fy + 62); x.lineTo(fx0 + 5, fy + 22); x.stroke();
+    x.beginPath(); x.moveTo(fx0, fy - 4); x.lineTo(fx0, fy - 54); x.stroke();
+    for (const s of [-1, 0, 1]) {
+      x.strokeStyle = C('red', 0.8); x.beginPath(); x.moveTo(fx0 + s * 4, fy - 50); x.quadraticCurveTo(fx0 + s * 30, fy - 62, fx0 + s * 26, fy - 6); x.stroke();
     }
-    caps(x, 'HERMETICA', W / 2, H * 0.09, 17, C('gold', 1), 5);
-    itext(x, 'modi resonantes', W / 2, H * 0.09 + 22, 13, C('green', 0.85));
-    itext(x, 'quod est superius est sicut quod est inferius', W / 2, cy + R + 32, 13, C('gold', 0.75));
+    x.fillStyle = C('gold', 0.95); x.beginPath(); x.arc(fx0, fy - 56, 6, 0, Math.PI * 2); x.fill(); x.strokeStyle = P(0.9); x.stroke();
+    itext(x, 'fons mercurialis', fx0, fy + 76, 12, P(0.7));
+    // красный лев у фонтана
+    lion(x, fx0 - 96, fy + 30, 0.7, 0, C('red', 0.7));
+    // розовый сад внизу: живая изгородь и розы
+    const gy = H * 0.86;
+    x.strokeStyle = C('green', 0.85); x.lineWidth = 1;
+    for (let gx = 20; gx < W - 20; gx += 22) { x.beginPath(); x.arc(gx + 11, gy, 11, Math.PI, 0); x.stroke(); }
+    for (let gx = 30; gx < W - 20; gx += 44) {
+      for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; x.fillStyle = C('red', 0.75); x.beginPath(); x.arc(gx + Math.cos(a) * 3.2, gy - 10 + Math.sin(a) * 3.2, 3.2, 0, Math.PI * 2); x.fill(); }
+      x.fillStyle = C('gold', 0.9); x.beginPath(); x.arc(gx, gy - 10, 1.6, 0, Math.PI * 2); x.fill();
+    }
+    // лента с названием и четыре стихии — четыре оператора
+    const by = H * 0.11;
+    x.strokeStyle = P(0.8); x.lineWidth = 1; x.fillStyle = '#f6edd6';
+    x.beginPath();
+    x.moveTo(W * 0.06, by - 14); x.quadraticCurveTo(W * 0.36, by - 24, W * 0.66, by - 14);
+    x.lineTo(W * 0.66, by + 14); x.quadraticCurveTo(W * 0.36, by + 4, W * 0.06, by + 14); x.closePath(); x.fill(); x.stroke();
+    caps(x, 'ROSARIUM', W * 0.36, by - 5, 15, C('red', 0.95), 4);
+    caps(x, 'PHILOSOPHORUM', W * 0.36, by + 9, 10, P(0.85), 2.5);
+    const el = [['up', false, 'red'], ['up', true, 'gold'], ['down', false, 'blue'], ['down', true, 'green']];
+    el.forEach(([dir, bar, col], i) => {
+      const X = W * 0.12 + i * 30, Y = by + 42, s = 9, u2 = dir === 'up' ? -1 : 1;
+      x.beginPath(); x.moveTo(X, Y + u2 * s); x.lineTo(X - s * 0.9, Y - u2 * s * 0.6); x.lineTo(X + s * 0.9, Y - u2 * s * 0.6); x.closePath();
+      x.fillStyle = C(col, 0.75); x.fill(); x.strokeStyle = P(0.9); x.lineWidth = 1; x.stroke();
+      if (bar) { x.beginPath(); x.moveTo(X - s * 0.7, Y); x.lineTo(X + s * 0.7, Y); x.stroke(); }
+    });
+    itext(x, 'operatores quattuor', W * 0.12 + 45, by + 64, 12, P(0.7));
+    // после солнца: зелёный лев кусает солнце, с солнца капает кровь
+    return () => {
+      lion(x, W - 52, 70, 1.1, -0.75, C('green', 0.85));   // пасть — на солнечном диске в углу
+      x.fillStyle = C('red', 0.9);
+      for (const [dx, dy, r] of [[-12, 36, 2.6], [-6, 52, 2.2], [-16, 64, 1.8], [-4, 78, 1.5], [-10, 92, 1.2]]) {
+        x.beginPath(); x.arc(W + dx, dy, r, 0, Math.PI * 2); x.moveTo(W + dx - r, dy); x.lineTo(W + dx, dy - r * 2.4); x.lineTo(W + dx + r, dy); x.fill();
+      }
+      itext(x, 'leo viridis solem devorat', W - 96, 150, 12, P(0.75));
+    };
   }
 
   // IV — Terra: средневековая живопись — ультрамариновое небо, золотые волны, малахитовые холмы, озеро, охряная земля
@@ -3023,6 +3054,11 @@
       const X = 20 + rnd() * (W - 40), Y = 20 + rnd() * (hz * 0.5);
       x.fillStyle = C('gold', 0.7 + 0.3 * rnd());
       x.beginPath(); for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2, r = k % 2 ? 1 : 2.6; k ? x.lineTo(X + Math.cos(a) * r, Y + Math.sin(a) * r) : x.moveTo(X + r, Y); } x.closePath(); x.fill();
+    }
+    for (let k = 0; k < 14; k++) {                       // солнце в углу светит на всё небо
+      const a = 0.08 + (k / 13) * (Math.PI / 2 - 0.16);
+      x.strokeStyle = C('gold', k % 2 ? 0.12 : 0.22); x.lineWidth = k % 2 ? 1 : 1.6;
+      x.beginPath(); x.moveTo(Math.cos(a) * 70, Math.sin(a) * 70); x.lineTo(Math.cos(a) * hz * 1.4, Math.sin(a) * hz * 1.4); x.stroke();
     }
     caps(x, 'TERRA', W / 2, H * 0.1 + 40, 20, C('gold', 1), 6);
     itext(x, 'tres undae · echo et reverberatio', W / 2, H * 0.1 + 62, 13, C('white', 0.85));
