@@ -722,6 +722,11 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     jg = await p.js('()=>t2d.lab.jug()'); await p.tap(jg['x'], jg['y']); await p.pg.wait_for_timeout(700)
     await p.shot('lab-jug'); await p.pg.wait_for_timeout(300)
     assert not await p.js('()=>t2d.lab.fire') and not any(v['latched'] for v in await p.js('()=>t2d.lab.voices')), 'jug — fire out, kept jars quiet'
+    await p.js("()=>{t2d.lab.setFx('solve', 0.8); t2d.lab.setFx('coagula', 0.7)}"); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.lab.solveOn'), 'coagula up — solve·coagula on'
+    await p.shot('lab-solve')
+    await p.js("()=>t2d.lab.setFx('coagula', 0)"); await p.pg.wait_for_timeout(100)
+    assert not await p.js('()=>t2d.lab.solveOn'), 'coagula at zero — off, no ticking'
     w = await p.js('()=>Array.from(t2d.lab.waveOf(0))'); assert max(w) > 0.9 and min(w) < -0.9, 'flask surface is its waveform'
     await p.shot('lab')
 

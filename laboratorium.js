@@ -5,7 +5,9 @@
 // кто никуда не льёт — несущая, внизу, сливает в яйцо на атаноре. Цвета смешиваются по трубкам. Тап по печи — огонь:
 // горит — дрон звучит; кувшин с водой у печи — тап: заливает огонь, всё затихает. Семь банок металлов (♄ ♃ ♂ ☉ ♀ ☿ ☽) — клавиши, как сенсоры Lyra: держишь — аппарат
 // звучит на ноте банки (до трёх разом), двойной тап — оставить звучать, банку вверх-вниз — её нота. Поверхность жидкости — форма волны
-// колбы (FM считается напрямую), в яйце — живая осциллограмма выхода. FX: athanor — жар (сатуратор), vitrum — стеклянный ревер, circulatio — медленное бурление индексов.
+// колбы (FM считается напрямую), в яйце — живая осциллограмма выхода. FX: athanor — жар (сатуратор), vitrum — стеклянный ревер, circulatio — медленное бурление индексов,
+// solve · coagula — грязная задержка с фильтром в петле, как у Make Noise Strega (караоке-чип PT2399): solve — время (коротко — резонанс,
+// дальше эхо, длинно — крошево: меньше бит, слышно тиканье часов чипа), coagula — сколько эффекта и повторов (0 — выключен).
 // Солнце — четверть в правом верхнем углу (к центру карты), тап — карта; в правом нижнем — четверть древа жизни (корни — у змей).
 // Спека: docs/superpowers/specs/2026-10-20-laboratorium-design.md
 (() => {
@@ -24,7 +26,7 @@
     { key: 'terra', col: [74, 156, 92], up: false, bar: true, shape: 'gourd', f: 331, level: 0.35, fb: 0.4 },
   ];
   let mods = [[3, 2], [2, 0]];               // terra → aqua → ignis; aer — несущая сама по себе
-  const fx = { athanor: 0.35, vitrum: 0.35, circulatio: 0.25 };
+  const fx = { athanor: 0.35, vitrum: 0.35, circulatio: 0.25, solve: 0.35, coagula: 0 };
   let fire = false, heat = 0;                // огонь: горит ли и как разгорелся (картинка)
   // банки: ноты в полутонах от 55 Гц (по умолчанию — A натуральный минор от A2); нота банки транспонирует весь аппарат относительно A2
   const JAR_DEF = [12, 14, 15, 17, 19, 20, 22], REF = 110;
@@ -397,6 +399,17 @@
   // ---------- стена: бледные алхимические рисунки, одна картинка на размер экрана ----------
   // квадратура круга (круг — треугольник — круг — квадрат — круг, как в Atalanta Fugiens), девиз, уроборос, знаки веществ
   let wallC = null, wallKey = '';
+  const emblem = (G) => ({ cx: G.W * 0.62, cy: G.top + 0.36 * G.h, R: Math.min(G.W * 0.34, G.h * 0.2) });
+  // девиз по дуге под кругом — живой: разгорается с coagula, буквы дрожат, когда solve длинный (крошево)
+  function drawMotto(c, G, now) {
+    const { cx, cy, R } = emblem(G), motto = 'SOLVE  ET  COAGVLA', span = 1.1, a0 = 0.16 + 0.6 * fx.coagula, jit = fx.coagula > 0.02 ? fx.solve * fx.solve * 2.5 : 0;
+    c.font = `italic 13px ${T.MAP}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    [...motto].forEach((ch, i) => {
+      const a = Math.PI / 2 + span / 2 - (i / (motto.length - 1)) * span, j = jit * Math.sin(now * 0.013 * (1 + (i % 3)) + i * 1.7);
+      c.fillStyle = T.ink(a0 * (0.85 + 0.15 * Math.sin(now * 0.002 + i)));
+      c.save(); c.translate(cx + Math.cos(a) * (R + 20 + j), cy + Math.sin(a) * (R + 20 + j)); c.rotate(a - Math.PI / 2); c.fillText(ch, 0, 0); c.restore();
+    });
+  }
   function wall(G) {
     const key = `${G.W}x${G.H}x${T.DPR}|${G.top}|${G.bot}`;
     if (wallC && key === wallKey) return wallC;
@@ -408,7 +421,7 @@
     x.fillStyle = T.BG; x.fillRect(0, 0, G.W, G.H);
     const ink = (a) => `rgba(237,237,237,${a})`;
     // квадратура круга
-    const cx = G.W * 0.62, cy = G.top + 0.36 * G.h, R = Math.min(G.W * 0.34, G.h * 0.2);
+    const { cx, cy, R } = emblem(G);
     x.strokeStyle = ink(0.1); x.lineWidth = 1;
     const circ = (r) => { x.beginPath(); x.arc(cx, cy, r, 0, TAU); x.stroke(); };
     circ(R); circ(R + 4);
@@ -421,13 +434,6 @@
       const a = (d * Math.PI) / 180, l = d % 30 ? 3 : 6;
       x.beginPath(); x.moveTo(cx + Math.cos(a) * (R + 4), cy + Math.sin(a) * (R + 4)); x.lineTo(cx + Math.cos(a) * (R + 4 + l), cy + Math.sin(a) * (R + 4 + l)); x.stroke();
     }
-    // девиз по дуге под кругом
-    x.font = `italic 13px ${T.MAP}`; x.fillStyle = ink(0.16); x.textAlign = 'center'; x.textBaseline = 'middle';
-    const motto = 'SOLVE  ET  COAGVLA', span = 1.1;
-    [...motto].forEach((ch, i) => {
-      const a = Math.PI / 2 + span / 2 - (i / (motto.length - 1)) * span;
-      x.save(); x.translate(cx + Math.cos(a) * (R + 20), cy + Math.sin(a) * (R + 20)); x.rotate(a - Math.PI / 2); x.fillText(ch, 0, 0); x.restore();
-    });
     // уроборос слева от печи: змей кусает свой хвост; чешуя — засечки
     const ox = G.W * 0.15, oy = G.furn.y0 + 26, orr = Math.min(28, G.W * 0.07);
     x.strokeStyle = ink(0.14); x.lineWidth = 1;
@@ -501,13 +507,52 @@
     const sum = g(1), shaper = ctx.createWaveShaper(), out = g(1.3), hallSend = g(0), h = T.hall(), an = ctx.createAnalyser();
     shaper.oversample = '2x'; an.fftSize = 1024;
     sum.connect(shaper).connect(out);
+    const sc = makeSolve(ctx); shaper.connect(sc.input); sc.wet.connect(out); sc.wet.connect(hallSend);
     shaper.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
     out.connect(input); out.connect(an);
-    bus = { sum, shaper, out, hallSend, hall: h, an, buf: new Float32Array(1024) };
+    bus = { sum, shaper, out, hallSend, hall: h, an, buf: new Float32Array(1024), sc };
     voices.clear(); curveK = -1;
     applyFx();
     if (fire) setFire(true);
   }
+  // solve · coagula: три отвода одной задержки → фильтр → «биты» (ступенчатый шейпер) → срез низа → петля; тиканье часов чипа
+  function makeSolve(ctx) {
+    const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
+    const bq = (type, f, q) => { const n = ctx.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; return n; };
+    const input = g(0), head = g(1), mix = g(1), lp = bq('lowpass', 6000, 1.4), hp = bq('highpass', 70, 0.7), crush = ctx.createWaveShaper(), fb = g(0), wet = g(0);
+    const taps = [[1, 1], [2 / 3, 0.4], [1 / 3, 0.25]].map(([k, a]) => { const d = ctx.createDelay(2.5); head.connect(d); d.connect(g(a)).connect(mix); return { d, k }; });
+    input.connect(head); mix.connect(lp).connect(crush).connect(hp); hp.connect(fb).connect(head); hp.connect(wet);
+    return { input, taps, lp, crush, fb, wet, mix, tick: null, tickG: null, bits: 0 };
+  }
+  function solveFx(t) {
+    const sc = bus.sc, ctx = actx, on = fx.coagula > 0.02, sec = 0.002 * 600 ** fx.solve, S = (p, v, tau = 0.05) => p.setTargetAtTime(v, t, tau);
+    S(sc.input.gain, on ? 1 : 0); S(sc.wet.gain, Math.min(1, fx.coagula * 1.4)); S(sc.fb.gain, fx.coagula * 0.55);
+    for (const tp of sc.taps) S(tp.d.delayTime, sec * tp.k, 0.08);   // время едет — тон плывёт, как у чипа
+    S(sc.lp.frequency, 600 + 9000 * (1 - fx.solve) ** 2);             // длиннее — темнее
+    const bits = Math.round(12 - 8 * fx.solve);   // плохой чип: длиннее задержка — меньше бит
+    if (bits !== sc.bits) {                                            // меньше бит — грубее ступени
+      sc.bits = bits;
+      const n = 4096, cv = new Float32Array(n), st = 2 ** (bits - 1);
+      for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; cv[i] = Math.round(x * st) / st; }
+      sc.crush.curve = cv;
+    }
+    if (on && !sc.tick) {                                              // тиканье часов и шип чипа — только пока эффект включён
+      sc.tick = ctx.createOscillator(); sc.tick.type = 'square'; sc.tickG = g0(ctx, 0);
+      sc.tick.connect(sc.tickG).connect(sc.mix); sc.tick.start();
+      const n = ctx.sampleRate, buf = ctx.createBuffer(1, n, n), d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      sc.hissSrc = ctx.createBufferSource(); sc.hissSrc.buffer = buf; sc.hissSrc.loop = true; sc.hissG = g0(ctx, 0);
+      sc.hissSrc.connect(sc.hissG).connect(sc.mix); sc.hissSrc.start();
+    } else if (!on && sc.tick) {
+      sc.tick.stop(); sc.tick.disconnect(); sc.tick = null;
+      sc.hissSrc.stop(); sc.hissSrc.disconnect(); sc.hissSrc = null;
+    }
+    if (sc.tick) {
+      S(sc.tick.frequency, Math.min(3000, 30 / sec)); S(sc.tickG.gain, 0.006 * fx.solve * fx.solve);
+      S(sc.hissG.gain, 0.012 * fx.solve ** 3);
+    }
+  }
+  const g0 = (ctx, v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
   function scope(n) {                              // n точек осциллограммы выхода от восходящего нуля; null — тихо
     if (!bus || !voices.size) return null;
     const b = bus.buf; bus.an.getFloatTimeDomainData(b);
@@ -531,6 +576,7 @@
     bus.hallSend.gain.setTargetAtTime(fx.vitrum * fx.vitrum * 1.3, t, 0.05);
     const tail = 0.4 + fx.vitrum * 2.4;
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / tail), t, 0.05);
+    solveFx(t);
     setParams();
   }
   // граф аппарата: ratio — транспонирование (банка), gate входит за tau
@@ -741,10 +787,12 @@
   const fxw = {
     sectors: [
       { key: 'athanor', label: 'athanor', ang: deg(180) },
-      { key: 'vitrum', label: 'vitrum', ang: deg(150) },
-      { key: 'circulatio', label: 'circulatio', ang: deg(120) },
+      { key: 'vitrum', label: 'vitrum', ang: deg(162) },
+      { key: 'circulatio', label: 'circulatio', ang: deg(144) },
+      { key: 'solve', label: 'solve', ang: deg(126) },
+      { key: 'coagula', label: 'coagula', ang: deg(108) },
     ],
-    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
+    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => { if (k === 'solve') { const ms = 2 * 600 ** fx.solve; return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} s`; } return `${Math.round(fx[k] * 100)}%`; },
     arc: () => fx.vitrum, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   // кубик: алхимическая схема (цепь, два брака, квинтэссенция, …) и высоты от одной тоники, с лёгким дрейфом, как у Lyra
@@ -774,6 +822,7 @@
       heat += ((fire ? 1 : 0) - heat) * (1 - Math.exp(-dt / (fire ? 0.35 : 0.6)));
       tubes.length = 0;
       c.drawImage(wall(G), 0, 0, T.W, T.H);
+      drawMotto(c, G, now);
       drawSun(c, G, now);
       drawScroll(c, G, now);
       drawFurnace(c, G, now);
@@ -805,7 +854,7 @@
   };
   T.registerWorld(3, lab);
   window.t2d.lab = {
-    OPS, fx, geo, mixed, jars, waveOf, waveOut, get focus() { return focusI; }, get mods() { return mods; }, get fire() { return fire; }, get live() { return voices.has('fire'); },
+    OPS, fx, geo, mixed, jars, waveOf, waveOut, get focus() { return focusI; }, setFx: (k, v) => fxw.set(k, v), get solveOn() { return !!(bus && bus.sc.tick); }, get mods() { return mods; }, get fire() { return fire; }, get live() { return voices.has('fire'); },
     get voices() { return [...voices].map(([k, v]) => ({ k, on: v.on, latched: v.latched })); },
     jar: (i) => { const b = jarBox(geo(), i); return { x: b.X, y: b.y - b.h / 2 }; },
     at: (i) => { const q = flaskGeo(geo(), i); return { x: q.p.x, y: (q.yTop + q.yBot) / 2, neckY: q.neckTop + 4 }; },
