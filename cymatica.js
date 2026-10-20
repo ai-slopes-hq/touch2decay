@@ -52,6 +52,33 @@
     }
     return out;
   }
+  // поворот кольца: первые len гнёзд сдвигаются по кругу (i → i + k), остальные — как были
+  function rotateSteps(steps, len, k) {
+    const out = steps.slice();
+    for (let i = 0; i < len; i++) out[(((i + k) % len) + len) % len] = steps[i];
+    return out;
+  }
+  // транспонирование мелодии на k ступеней по списку допустимых полутонов, с упором в края; паузы остаются
+  function transposeMelody(steps, k, list) {
+    return steps.map((s) => {
+      if (s == null) return null;
+      let j = 0;
+      for (let i = 1; i < list.length; i++) if (Math.abs(list[i] - s) < Math.abs(list[j] - s)) j = i;
+      return list[Math.min(list.length - 1, Math.max(0, j + k))];
+    });
+  }
+  // ноты клавиш: от тоники в октаве основного тона пластины — вверх по классам высот лада, 8 штук
+  function keyNotes(f0, pcs, tonic) {
+    const s = 12 * Math.log2(f0 / F_MIN), out = [];
+    for (let n = tonic + 12 * Math.floor((s - tonic) / 12); out.length < 8; n++) if (pcs.includes(((n % 12) + 12) % 12)) out.push(n);
+    return out;
+  }
+  // два пальца: поворот или щипок — что изменилось сильнее (угол через ±180° — в градусах, расстояние — в px)
+  function twistOrPinch(a0, a1, d0, d1) {
+    const dA = Math.abs(((((a1 - a0) * 180) / Math.PI + 540) % 360) - 180), dD = Math.abs(d1 - d0);
+    if (dA < 10 && dD < 20) return null;
+    return dA / 10 >= dD / 20 ? 'twist' : 'pinch';
+  }
   // ступени для кубика: лад, если включён, иначе пентатоника; 0–48 полутонов от 55 Гц
   function scaleSemis() {
     const out = [];
@@ -601,7 +628,7 @@
       if (o.melody) seq.melody = { len: o.melody.len, steps: pad(o.melody.steps) };
       sendSeq();
     },
-    core: { euclid, nearestStep, walkMelody },
+    core: { euclid, nearestStep, walkMelody, rotateSteps, transposeMelody, keyNotes, twistOrPinch },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
     bow(x, y, on = true) { send({ t: 'bow', id: 'dbg', x, y, on, exciter: 0, pressure: 0.5, amp: 0.8 }); },
     sandSpread() {                               // среднее поле под крупинками: песок в узлах — меньше

@@ -35,3 +35,36 @@ test('walkMelody', () => {
   w.forEach((s) => assert.ok(list.includes(s), `in the scale: ${s}`));
   for (let i = 1; i < w.length; i++) assert.ok(Math.abs(list.indexOf(w[i]) - list.indexOf(w[i - 1])) <= 2, 'small steps');
 });
+
+const seq16 = () => Array.from({ length: 16 }, (_, i) => i);
+
+test('rotateSteps', () => {
+  assert.deepEqual(Array.from(C.rotateSteps(seq16(), 16, 2)), [14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.deepEqual(Array.from(C.rotateSteps(seq16(), 4, 1)), [3, 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  assert.deepEqual(Array.from(C.rotateSteps(seq16(), 4, -1)), [1, 2, 3, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+});
+
+test('transposeMelody', () => {
+  const list = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
+  const steps = [12, null, 15, ...Array(13).fill(null)];
+  assert.deepEqual(Array.from(C.transposeMelody(steps, 2, list)).slice(0, 3), [17, null, 19]);
+  assert.equal(C.transposeMelody(steps, 99, list)[0], 24);
+  assert.equal(C.transposeMelody(steps, -99, list)[2], 0);
+});
+
+test('keyNotes', () => {
+  assert.deepEqual(Array.from(C.keyNotes(110, [0, 3, 5, 7, 10], 0)), [12, 15, 17, 19, 22, 24, 27, 29]);
+  assert.deepEqual(Array.from(C.keyNotes(55, [0, 3, 5, 7, 10], 0)), [0, 3, 5, 7, 10, 12, 15, 17]);
+  const minorC = [0, 2, 3, 5, 7, 8, 10].map((s) => (s + 3) % 12);
+  const k = Array.from(C.keyNotes(110, minorC, 3));
+  assert.equal(k[0], 3);
+  assert.equal(k.length, 8);
+  k.forEach((n) => assert.ok(minorC.includes(n % 12), `in the scale: ${n}`));
+});
+
+test('twistOrPinch', () => {
+  assert.equal(C.twistOrPinch(0, 0.35, 100, 105), 'twist');
+  assert.equal(C.twistOrPinch(0, 0.05, 100, 160), 'pinch');
+  assert.equal(C.twistOrPinch(0, 0.05, 100, 105), null);
+  assert.equal(C.twistOrPinch(3.1, -3.1, 100, 100), null);   // через ±180°: ≈4.6°, а не 355°
+});
