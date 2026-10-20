@@ -368,7 +368,8 @@
     });
     if (!seq.playing) {                          // курсор пошагового ввода — дужка у гнезда мелодии
       const A = astro(g), p = slotXY(g, cursor % seq.melody.len, A.R1 + 16);
-      T.ring(p.x, p.y, 12, 0.85, 1.4);
+      T.ring(p.x, p.y, 15, 0.9, 1.6);
+      T.mapText(`step ${(cursor % seq.melody.len) + 1} / ${seq.melody.len}`, A.playX - 62, A.ty, 13, 0.7, 'center');   // куда пишет клавиша
     }
   }
 
@@ -636,7 +637,7 @@
   // стрелки — пока часы идут; выступы длины; ▶/■ и ● внизу; метки ударов на пластине вспыхивают на своём шаге
   function drawAstro(g, now) {
     const c = T.g, A = astro(g), stepMs = 60000 / seq.bpm / 4;
-    for (const R of [A.R1, A.R2]) { T.ring(g.cx, g.cy, R, 0.4, 1); T.ring(g.cx, g.cy, R + 2.5, 0.15, 1); }
+    for (const R of [A.R1, A.R2]) { T.ring(g.cx, g.cy, R, 0.6, 1.1); T.ring(g.cx, g.cy, R + 2.5, 0.2, 1); }
     c.lineWidth = 1;
     const tr = (ringTurn.rhythm * Math.PI) / 180, tm = (ringTurn.melody * Math.PI) / 180;
     // узор колец — шкала, как у лимба астролябии: мелкие деления и звезда-указатель; крутится вместе с кольцом
@@ -666,21 +667,27 @@
       c.strokeStyle = T.ink(onR ? 0.45 : 0.12); c.lineWidth = 1;
       c.beginPath(); c.moveTo(g.cx + x * (A.R2 + 8), g.cy + y * (A.R2 + 8)); c.lineTo(g.cx + x * (A.R2 + 8 + lg), g.cy + y * (A.R2 + 8 + lg)); c.stroke();
       const rx = g.cx + x * A.R2, ry = g.cy + y * A.R2, br = blink(pulse.r[i]);
-      if (st) { T.dot(rx, ry, 4.5 + 3 * br, onR ? 0.95 : 0.3); if (br) T.ring(rx, ry, 9 + 6 * (1 - br), br, 1.4); }
-      else if (onR) T.ring(rx, ry, 2.5, 0.35, 1); else T.dot(rx, ry, 1, 0.15);
+      if (st && onR) { T.dot(rx, ry, 5.5 + 3 * br, 1); if (br) T.ring(rx, ry, 10 + 6 * (1 - br), br, 1.6); }
+      else if (onR) { c.fillStyle = T.BG; c.beginPath(); c.arc(rx, ry, 3.5, 0, Math.PI * 2); c.fill(); T.ring(rx, ry, 3.5, 0.6, 1.1); }
+      else T.dot(rx, ry, 1, 0.12);                 // за длиной кольца — гаснет
       flash(born.r[i], rx, ry, now);
       a = slotAng(i) + tm; x = Math.cos(a); y = Math.sin(a);
       const mx = g.cx + x * (A.R1 + 16), my = g.cy + y * (A.R1 + 16), bm = blink(pulse.m[i]);
-      if (s != null) {
-        T.mapText(noteName(F_MIN * 2 ** (clamp(fs() + s, 0, 48) / 12)), mx, my, 12 + 4 * bm, onM ? Math.min(1, 0.8 + bm) : 0.25, 'center');
-        if (bm) T.ring(mx, my, 12 + 5 * (1 - bm), bm, 1.3);
-      } else T.dot(mx, my, 1.4, onM ? 0.45 : 0.12);
+      if (!onM) T.dot(mx, my, 1, 0.12);            // за длиной кольца — гаснет, подписи нет
+      else {
+        c.fillStyle = 'rgba(0,0,0,0.85)'; c.beginPath(); c.arc(mx, my, 11, 0, Math.PI * 2); c.fill();   // тёмная подложка — читается поверх волн
+        if (s != null) T.mapText(noteName(F_MIN * 2 ** (clamp(fs() + s, 0, 48) / 12)), mx, my, 14 + 4 * bm, 1, 'center');
+        else T.dot(mx, my, 2, 0.6);
+        T.ring(mx, my, 11, 0.25 + 0.75 * bm, 1 + 0.6 * bm);
+      }
       flash(born.m[i], mx, my, now);
     }
     for (const [ring, R] of [['rhythm', A.R2 + 12], ['melody', A.R1 - 11]]) {   // выступы длины колец — ромбики
       const p = slotXY(g, seq[ring].len - 0.5, R);
       c.strokeStyle = T.ink(0.6); c.beginPath();
       c.moveTo(p.x, p.y - 4); c.lineTo(p.x + 4, p.y); c.lineTo(p.x, p.y + 4); c.lineTo(p.x - 4, p.y); c.closePath(); c.stroke();
+      const q = slotXY(g, seq[ring].len - 0.5, ring === 'rhythm' ? A.R2 - 9 : A.R1 + 16);   // длина кольца — цифрой у ромбика
+      T.mapText(String(seq[ring].len), q.x, q.y, 11, 0.6, 'center');
     }
     if (seq.playing && lastStep) {               // стрелки: от края стола к своему кольцу, плавно между тиками
       const fr = clamp((now - lastStep.atMs) / stepMs);
