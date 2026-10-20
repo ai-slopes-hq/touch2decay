@@ -37,7 +37,7 @@
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const out = g(1);
     out.connect(input);
-    // зал — общий с Sol Niger по устройству, свой экземпляр; хвост 4 с
+    // зал — общий с Tenebrae по устройству, свой экземпляр; хвост 4 с
     const h = T.hall(), hallSend = g(0);
     for (const l of h.lines) l.g.gain.value = 10 ** ((-3 * l.len) / 4);
     hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
@@ -57,7 +57,7 @@
     sendParams();
     for (const b of plate.bows) sendBow(b, true);
   }
-  // модуль пластины — только когда в Cymatica впервые зашли и звук уже есть: тем, кто играет лишь в Sol Niger, он ничего не стоит
+  // модуль пластины — только когда в Cymatica впервые зашли и звук уже есть: тем, кто играет лишь в Tenebrae, он ничего не стоит
   function start() {
     if (started || !actx) return;
     started = true;
@@ -271,7 +271,7 @@
     load: (o) => { Object.assign(plate.fx, o); sendParams(); applyFx(); },
   };
 
-  // ---------- рисование: строгая гравюра, как Sol Niger ----------
+  // ---------- рисование: строгая гравюра, как Tenebrae ----------
   function drawPlate(g) {
     const c = T.g;
     T.ring(g.cx, g.cy, g.rMax, 0.08, 1);               // стол — едва видно, сколько места под щипок

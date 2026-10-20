@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Карта Universum снова включена; Sol Niger работает как раньше, но через общий интерфейс мира; Cymatica — второй мир в четверти II (пока пустая пластина с резонатором Гельмгольца, без звука); III и IV — бледные гравюры *nondum*, не открываются.
+**Goal:** Карта Universum снова включена; Tenebrae работает как раньше, но через общий интерфейс мира; Cymatica — второй мир в четверти II (пока пустая пластина с резонатором Гельмгольца, без звука); III и IV — бледные гравюры *nondum*, не открываются.
 
-**Architecture:** `app.js` (одна IIFE) становится хозяином: реестр миров, общая верхняя строка, общая отмена/корзина/кубик/FX по текущему миру, карта. Sol Niger оборачивается в объект мира тонким адаптером над существующими функциями (без переписывания). Новый файл `cymatica.js` — отдельная IIFE, регистрирует мир через глобальный `T2D`.
+**Architecture:** `app.js` (одна IIFE) становится хозяином: реестр миров, общая верхняя строка, общая отмена/корзина/кубик/FX по текущему миру, карта. Tenebrae оборачивается в объект мира тонким адаптером над существующими функциями (без переписывания). Новый файл `cymatica.js` — отдельная IIFE, регистрирует мир через глобальный `T2D`.
 
 **Tech Stack:** ванильный JS (Web Audio, canvas 2D), без сборки и зависимостей; проверка — `node --check`, Playwright-сценарии `tools/shot.py` (headless Chromium, касания через CDP).
 
@@ -14,7 +14,7 @@
 
 - Одна страница без сборки: `index.html` + обычные скрипты; новые файлы — в `SHELL` (`sw.js`) и с тем же `?v=` в `index.html`.
 - При выкладке поднять **вместе** `CACHE` в `sw.js` и `?v=` у всех скриптов в `index.html` (одно число; сейчас 44 → 45).
-- На экране — только английский/латынь; заголовок мира — его `title` («Sol Niger», «Cymatica»).
+- На экране — только английский/латынь; заголовок мира — его `title` («Tenebrae», «Cymatica»).
 - Мир I — строго ч/б (`INK = 237,237,237` на чёрном); Cymatica пока тоже ч/б.
 - Один шрифт — IM Fell English (`MAP`); без `shadowBlur`, без полноэкранных проходов в кадре сверх существующих.
 - Звук не прерывается при переходах; все миры звучат одновременно.
@@ -24,14 +24,14 @@
 ## Review Focus
 
 1. Палец лёг в одном мире, а мир сменился до того, как его отпустили (второй палец тапнул солнце) — отпускание обрабатывает тот мир, где касание началось, без ошибок (`f.world`). Тест — в Task 2.
-2. Сервис-воркер перезагружает страницу «когда ничего не звучит» — проверка должна учитывать все миры, не только голоса Sol Niger (`t2d.sounding()`). Тест — в Task 2.
-3. Отмена в Cymatica не трогает Sol Niger (у каждого мира своя история). Тест — в Task 2.
-4. Колесо/щипок тачпада в Cymatica не меняет зум Sol Niger. Тест — в Task 2.
+2. Сервис-воркер перезагружает страницу «когда ничего не звучит» — проверка должна учитывать все миры, не только голоса Tenebrae (`t2d.sounding()`). Тест — в Task 2.
+3. Отмена в Cymatica не трогает Tenebrae (у каждого мира своя история). Тест — в Task 2.
+4. Колесо/щипок тачпада в Cymatica не меняет зум Tenebrae. Тест — в Task 2.
 5. Смена размера окна, пока открыта карта или Cymatica, — без ошибок, снимки миров масштабируются. Тест — в Task 2.
 
 ---
 
-### Task 1: Хозяин миров и адаптер Sol Niger (поведение не меняется)
+### Task 1: Хозяин миров и адаптер Tenebrae (поведение не меняется)
 
 **Files:**
 - Modify: `app.js` — реестр миров, адаптер `solNiger`, разбиение `frame` на `tick`/`draw`, маршрутизация касаний/колеса, общая отмена, `T2D`, `t2d`.
@@ -49,7 +49,7 @@
 - [ ] **Step 1: Сценарий `solniger` в `tools/shot.py` (пока падает)**
 
 ```python
-async def sc_solniger(p):                          # Sol Niger через интерфейс мира: всё как раньше
+async def sc_solniger(p):                          # Tenebrae через интерфейс мира: всё как раньше
     assert await p.js('()=>t2d.world') == 1
     await p.pin(150, 600)
     assert await p.js('()=>t2d.hist(1)') == 1, 'pin -> one undo step'
@@ -71,7 +71,7 @@ Expected: `solniger FAILED` (нет `t2d.world` / `t2d.hist`), код выход
 - Адаптер `solNiger` собирать из существующих функций: `fx.get/set/text` = `fxGet/fxSet/fxText`, `fx.sectors` = `FX_SECTORS`, `fx.arc` = `() => fx.rev`, `fx.save/load` — копия/`Object.assign(fx, o); applyFx()` (это то, что сейчас делает `restore` в `openFx`); `dice` = `rollDice`; `clear` = `clearAll`; `snapshot/restore` — существующие; `sounding` = `() => V.some((v) => v.active)`; `wheel` = `wheelZoom`; `corner.hit` = `(f) => WORLDS_ON && !editor && Math.hypot(f.x - geo.ox, f.y - geo.oy) < 46`; `corner.draw` — пустая (солнце рисует `drawField`).
 - `frame`: всё, что сейчас до проверки `drawNav`, — `solNiger.tick(now, dt)`; всё от `drawField()` до `drawHeld`/`drawLfoPanel`/`drawAmpStrip`/`drawCloseChip` включительно — `solNiger.draw(now, dt)`. В `frame` остаются: вызов `tick` у **всех** миров, `drawNav`, `cur().draw(now, dt)`, затем общие `drawUI()`, веер FX, `drawStrain()`, `measureStrain`.
 - Касания: в `down` запомнить `f.world = nav.world`; после `navDown` и общего `uiHit` → `worlds[f.world].down(f)`. Нынешнее тело `down` после `uiHit` — это `solNiger.down`. В `move`/`up`: после ветки `f.ui` → `worlds[f.world].move/up(f)`; нынешние тела — `solNiger.move/up`.
-- `uiHit`: сначала общие (громкость, кнопки строки), затем `cur().corner.hit(f)` → `{ k: 'corner' }` (в `uiDown`: `goMap()`), затем — только если `nav.world === 1` — нынешние хиты Sol Niger (призрак-булавка, кольца, редактор). Кнопка `rev` хитится, только если `cur().fx`.
+- `uiHit`: сначала общие (громкость, кнопки строки), затем `cur().corner.hit(f)` → `{ k: 'corner' }` (в `uiDown`: `goMap()`), затем — только если `nav.world === 1` — нынешние хиты Tenebrae (призрак-булавка, кольца, редактор). Кнопка `rev` хитится, только если `cur().fx`.
 - `openFx`: лучи и функции — из `cur().fx`, откат — `fx.load(fx.save())` текущего мира.
 - Кнопки: `clr` → `cur().clear()`, `dice` → `cur().dice()`, `undo` → общий `undo()`; точки под отменой — по `hists[nav.world]`.
 - Общая отмена: перенести `hist/lastState/commit/undo` на `hists[n]/lasts[n]` с `cur().snapshot()/restore()`; `lasts[n]` инициализировать при `registerWorld`.
@@ -88,7 +88,7 @@ Expected: все сценарии (`vol, planets, ring, map, sun, hole, solniger
 
 ```bash
 git add app.js tools/shot.py index.html
-git commit -m "Worlds host: registry, Sol Niger adapter, per-world undo"   # тело-список + Co-Authored-By
+git commit -m "Worlds host: registry, Tenebrae adapter, per-world undo"   # тело-список + Co-Authored-By
 ```
 
 ---
@@ -113,7 +113,7 @@ git commit -m "Worlds host: registry, Sol Niger adapter, per-world undo"   # т�
 
 ```python
 async def sc_worlds(p):
-    await p.pin(150, 600)                                  # Sol Niger: закреплённая планета
+    await p.pin(150, 600)                                  # Tenebrae: закреплённая планета
     a, b = {'x': 200, 'y': 450, 'id': 1}, {'x': 10, 'y': 844 - 8, 'id': 2}
     await p.T('touchStart', [a]); await p.pg.wait_for_timeout(60)        # палец держит новую планету...
     await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60)     # ...второй — солнце: карта
@@ -125,12 +125,12 @@ async def sc_worlds(p):
     await p.tap(100, 200); await p.pg.wait_for_timeout(800)  # четверть II — Cymatica
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 2]
     await p.shot('cymatica')
-    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned&&v.env>0.5)'), 'Sol Niger keeps sounding'
+    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned&&v.env>0.5)'), 'Tenebrae keeps sounding'
     assert await p.js('()=>t2d.sounding()')
     z = await p.js('()=>t2d.zoom'); await p.pg.mouse.move(200, 400); await p.pg.mouse.wheel(0, -300)
-    assert await p.js('()=>t2d.zoom') == z, 'wheel in Cymatica keeps Sol Niger zoom'
+    assert await p.js('()=>t2d.zoom') == z, 'wheel in Cymatica keeps Tenebrae zoom'
     await p.tap(await p.js("()=>t2d.btnPos('undo').x"), await p.js("()=>t2d.btnPos('undo').y"))
-    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned)'), 'undo in Cymatica leaves Sol Niger alone'
+    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned)'), 'undo in Cymatica leaves Tenebrae alone'
     await p.tap(await p.js("()=>t2d.btnPos('rev').x"), await p.js("()=>t2d.btnPos('rev').y"))   # FX без набора — ничего
     await p.pg.set_viewport_size({'width': 430, 'height': 900}); await p.pg.wait_for_timeout(300)
     await p.pg.set_viewport_size({'width': 390, 'height': 844}); await p.pg.wait_for_timeout(300)

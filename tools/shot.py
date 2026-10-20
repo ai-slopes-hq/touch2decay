@@ -74,7 +74,7 @@ async def sc_ring(p):
 
 
 async def sc_worlds(p):                            # карта, Cymatica в четверти II, III и IV не открываются
-    await p.pin(150, 600)                                  # Sol Niger: закреплённая планета
+    await p.pin(150, 600)                                  # Tenebrae: закреплённая планета
     a, b = {'x': 200, 'y': 450, 'id': 1}, {'x': 10, 'y': H - 8, 'id': 2}
     await p.T('touchStart', [a]); await p.pg.wait_for_timeout(60)        # палец держит новую планету...
     await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60)     # ...второй — солнце: карта
@@ -87,13 +87,13 @@ async def sc_worlds(p):                            # карта, Cymatica в ч�
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 2], 'II -> Cymatica'
     assert await p.js('()=>t2d.T2D_ok'), 'T2D helpers for worlds'
     await p.shot('cymatica')
-    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned&&v.env>0.5)'), 'Sol Niger keeps sounding'
-    assert await p.js('()=>t2d.sounding()'), 'sounding() sees Sol Niger from Cymatica'
+    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned&&v.env>0.5)'), 'Tenebrae keeps sounding'
+    assert await p.js('()=>t2d.sounding()'), 'sounding() sees Tenebrae from Cymatica'
     z = await p.js('()=>t2d.zoom'); await p.pg.mouse.move(200, 400); await p.pg.mouse.wheel(0, -300)
     await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.zoom') == z, 'wheel in Cymatica keeps Sol Niger zoom'
+    assert await p.js('()=>t2d.zoom') == z, 'wheel in Cymatica keeps Tenebrae zoom'
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned)'), 'undo in Cymatica leaves Sol Niger alone'
+    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned)'), 'undo in Cymatica leaves Tenebrae alone'
     r = await p.js("()=>t2d.btnPos('rev')"); await p.tap(r['x'], r['y'])  # FX без набора — ничего
     await p.pg.set_viewport_size({'width': 430, 'height': 900}); await p.pg.wait_for_timeout(300)
     await p.pg.set_viewport_size({'width': W, 'height': H}); await p.pg.wait_for_timeout(300)
@@ -103,7 +103,7 @@ async def sc_worlds(p):                            # карта, Cymatica в ч�
     await p.pg.set_viewport_size({'width': W, 'height': H}); await p.pg.wait_for_timeout(300)
     await p.shot('map')
     await p.tap(300, 200); await p.pg.wait_for_timeout(800)              # четверть I
-    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 1], 'I -> Sol Niger'
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 1], 'I -> Tenebrae'
 
 
 
@@ -145,7 +145,7 @@ async def sc_vol(p):                               # фейдер громкос
     await p.shot('vol-bar')
 
 
-async def sc_solniger(p):                          # Sol Niger через интерфейс мира: всё как раньше
+async def sc_solniger(p):                          # Tenebrae через интерфейс мира: всё как раньше
     assert await p.js('()=>t2d.world') == 1
     await p.pin(150, 600)
     assert await p.js('()=>t2d.hist(1)') == 1, 'pin -> one undo step'
@@ -166,7 +166,7 @@ async def sc_hold(p):                              # держишь планет
     assert not await p.js('()=>!!t2d.editor'), 'no hidden ring opened while on the map'
 
 
-async def sc_undo(p):                              # лад общий: переключён в Cymatica — откатывается отменой Cymatica, не Sol Niger
+async def sc_undo(p):                              # лад общий: переключён в Cymatica — откатывается отменой Cymatica, не Tenebrae
     await p.pin(150, 600)
     await p.tap(10, H - 8); await p.pg.wait_for_timeout(800)
     await p.tap(100, 200); await p.pg.wait_for_timeout(800)              # Cymatica
@@ -174,14 +174,14 @@ async def sc_undo(p):                              # лад общий: пере
     on = await p.js('()=>t2d.scl.on')
     assert await p.js('()=>t2d.hist(2)') == 1, 'scale change is a Cymatica undo step'
     await p.tap(W - 10, H - 8); await p.pg.wait_for_timeout(800)
-    await p.tap(300, 200); await p.pg.wait_for_timeout(800)              # обратно в Sol Niger
-    assert await p.js('()=>t2d.hist(1)') == 1, 'Sol Niger history untouched'
+    await p.tap(300, 200); await p.pg.wait_for_timeout(800)              # обратно в Tenebrae
+    assert await p.js('()=>t2d.hist(1)') == 1, 'Tenebrae history untouched'
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
-    assert await p.js('()=>t2d.scl.on') == on, 'undo in Sol Niger keeps the scale set in Cymatica'
-    s = await p.js("()=>t2d.btnPos('scl')"); await p.tap(s['x'], s['y']); await p.pg.wait_for_timeout(300)   # лад в самом Sol Niger
+    assert await p.js('()=>t2d.scl.on') == on, 'undo in Tenebrae keeps the scale set in Cymatica'
+    s = await p.js("()=>t2d.btnPos('scl')"); await p.tap(s['x'], s['y']); await p.pg.wait_for_timeout(300)   # лад в самом Tenebrae
     assert await p.js('()=>t2d.scl.on') != on
     await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
-    assert await p.js('()=>t2d.scl.on') == on, 'undo in Sol Niger reverts its own scale change'
+    assert await p.js('()=>t2d.scl.on') == on, 'undo in Tenebrae reverts its own scale change'
 
 
 async def sc_plate(p):                             # Cymatica: удар, смычок, закреплённый смычок, кольцо, высота, FX, отмена
@@ -225,7 +225,7 @@ async def sc_plate(p):                             # Cymatica: удар, смы�
         for _ in range(20): await p.pg.mouse.wheel(0, d)
         await p.pg.wait_for_timeout(100)
         f = await p.js('()=>t2d.cym.f0'); assert 55 <= f <= 880, f'pitch clamped: {f}'
-    assert await p.js('()=>t2d.zoom') == z, 'wheel in Cymatica keeps Sol Niger zoom'
+    assert await p.js('()=>t2d.zoom') == z, 'wheel in Cymatica keeps Tenebrae zoom'
     s0 = await p.js('()=>t2d.cym.fx.structure'); rv = await p.js("()=>t2d.btnPos('rev')")
     pid = await p.hold(rv['x'], rv['y'], ms=120); await p.drag(pid, rv['x'], rv['y'], rv['x'] - 80, rv['y'], steps=10); await p.up()
     assert await p.js('()=>t2d.cym.fx.structure') != s0, 'FX fan moves structure'

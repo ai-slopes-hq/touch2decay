@@ -591,7 +591,7 @@
     worlds[f.world].down(f, e);
   }
 
-  // Sol Niger: касание поля — планета, мост, Shift-нить, щипок зума
+  // Tenebrae: касание поля — планета, мост, Shift-нить, щипок зума
   function solDown(f, e) {
     const now = f.t0;
     let v = hit(f.x, f.y);
@@ -2679,7 +2679,7 @@
       for (const v of V) if (v.active && loop.length > 2 && pointIn(loop, vx(v), vy(v))) ring(vx(v), vy(v), 48, 0.9, 1.5);
     }
     if (sclF && !sclF.lasso) {
-      // слева от кнопки — карандаш: туда повести палец, чтобы обвести кружки (обводить есть что только в Sol Niger)
+      // слева от кнопки — карандаш: туда повести палец, чтобы обвести кружки (обводить есть что только в Tenebrae)
       const px = b.x - 64, py = b.y;
       if (nav.world === 1) {
       g.save(); g.translate(px, py); g.rotate((-3 * Math.PI) / 4);
@@ -2807,9 +2807,9 @@
     measureStrain(now, performance.now() - t0);
   }
 
-  // Sol Niger: звук и состояние — каждый кадр, даже когда на экране другой мир
+  // Tenebrae: звук и состояние — каждый кадр, даже когда на экране другой мир
   function solTick(now, dt) {
-    // долгое касание пойманного кружка — кольцо свойств на весу (только пока Sol Niger на экране: с карты кольцо не открыть)
+    // долгое касание пойманного кружка — кольцо свойств на весу (только пока Tenebrae на экране: с карты кольцо не открыть)
     const shown = nav.view === 'play' && !nav.anim && nav.world === 1;
     for (const f of F.values()) {
       if (!shown || f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
@@ -2939,11 +2939,11 @@
   }
 
   // ---------- смежные миры: солнце — начало координат, вокруг него четыре четверти ----------
-  // Universum: I (x>0, y>0) — Sol Niger, чёрный космос с планетами, играет. II, III, IV — пока только гравюры (идеи — в ROADMAP.md).
+  // Universum: I (x>0, y>0) — Tenebrae, чёрный космос с планетами, играет. II, III, IV — пока только гравюры (идеи — в ROADMAP.md).
   // Тап по солнцу — карта миров; тап по четверти — влететь в мир; в мире тап по солнцу — снова карта
   const WORLDS = [
     null,
-    { n: 'I', title: 'Sol Niger', sub: 'orbes · strepitus' },
+    { n: 'I', title: 'Tenebrae', sub: 'orbes · strepitus' },
     null,                                                   // II — подпись из мира cymatica.js; Cabbala снята с карты
     { n: 'III', title: 'Rosarium', sub: 'operatores quattuor' },
     { n: 'IV', title: 'Regnum', sub: 'echo et reverberatio' },
@@ -3310,12 +3310,12 @@
     document.fonts.load(`italic 13px ${MAP}`).catch(() => {});
   }
 
-  // ---------- миры: реестр; Sol Niger — мир I поверх своих функций ----------
+  // ---------- миры: реестр; Tenebrae — мир I поверх своих функций ----------
   function registerWorld(n, w) {
     worlds[n] = w; hists[n] = []; lasts[n] = entry(n);
   }
   const solNiger = {
-    n: 'I', title: 'Sol Niger', sub: 'orbes · strepitus',
+    n: 'I', title: 'Tenebrae', sub: 'orbes · strepitus',
     corner: { hit: (f) => WORLDS_ON && !editor && Math.hypot(f.x - geo.ox, f.y - geo.oy) < 46, draw: () => {} },   // солнце рисует drawField
     fx: { sectors: FX_SECTORS, get: fxGet, set: fxSet, text: fxText, arc: () => fx.rev, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); } },
     tick: solTick, draw: solDraw, down: solDown, move: solMove, up: solUp, wheel: wheelZoom,
