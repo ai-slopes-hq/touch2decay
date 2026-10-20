@@ -763,6 +763,14 @@ async def sc_natura(p):                           # Natura: лодочка — �
     await p.drag(pid, w1['x'], w1['y'], w2['x'], w2['y'], steps=10); await p.pg.wait_for_timeout(150)
     await p.shot('natura-skiff'); await p.up(); await p.pg.wait_for_timeout(1300)
     sk = await p.js('()=>t2d.nat.skiff()'); assert not sk['playing'] and sk['home'], f'released — quiet, back on the bank: {sk}'
+    k0 = await p.js('()=>t2d.nat.skiff()'); pd = await p.js('()=>t2d.nat.pond()')   # кинуть кораблик в уток — улетают, огибающая открыта
+    pid = await p.hold(k0['x'], k0['y'], ms=60)
+    for i in range(1, 4):
+        await p.T('touchMove', [{'x': k0['x'] + (pd['x'] - k0['x']) * 0.15 * i, 'y': k0['y'] + (pd['y'] - k0['y']) * 0.15 * i, 'id': pid}]); await p.pg.wait_for_timeout(16)
+    await p.up(); await p.pg.wait_for_timeout(1100); await p.shot('natura-ducks-away')
+    assert await p.js('()=>t2d.nat.ducksGone && t2d.nat.envOpen'), 'skiff thrown at the ducks — they fly off, envelope open'
+    await p.pg.wait_for_timeout(3600)
+    assert not await p.js('()=>t2d.nat.ducksGone'), 'ducks come back'
     for kind, key, dx, dy in (('cloud()', 'cutoff', 0, -60), ("duck('A')", 'att', 0, -50), ("duck('R')", 'rel', 0, -50)):   # туча вверх — ярче; утки вверх — длиннее attack / release
         await p.js(f"()=>t2d.nat.setFx('{key}', 0.3)"); q = await p.js(f'()=>t2d.nat.{kind}')
         pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] + dx, q['y'] + dy, steps=8)

@@ -29,7 +29,11 @@
   let heldPad = -1;                                   // держишь кувшинку — сцена показывает её значения
   const shown = (k) => val(heldPad >= 0 ? pads.at[heldPad] : null, k);
   const attOf = (v) => 0.002 + v * v * 0.6, relOf = (v) => 0.05 + v * v * 1.85;
-  const attSec = (pd) => attOf(val(pd, 'att')), relSec = (pd) => relOf(val(pd, 'rel'));
+  // утки улетели (в них кинули кораблик) — огибающая открыта: attack в ноль, release до конца, пока не вернутся
+  let ducksGone = null;                              // { t0 } — время спугивания
+  const GONE = { away: 700, back: 3000, land: 4000 };   // улетают 0.7 с, вдали до 3 с, за секунду возвращаются
+  const envOpen = () => ducksGone && performance.now() - ducksGone.t0 < GONE.land;
+  const attSec = (pd) => attOf(envOpen() ? 0 : val(pd, 'att')), relSec = (pd) => relOf(envOpen() ? 1 : val(pd, 'rel'));
   const envAt = (ms, pd) => { const a = attSec(pd) * 1000; return ms < a ? ms / a : Math.exp(-(ms - a) / (relSec(pd) * 1000 / 2.5)); };
   let shake = 0, birdsAt = -1e9;                   // как сильно тормошат дерево (0…1, само затихает); когда спугнули птиц
   const seq = { playing: false, bpm: 96, next: 0, step: 0 };
@@ -392,8 +396,46 @@
       c.beginPath(); c.ellipse(x0 + 2.6, y0 - h + 4, 1.8, 4.5, 0.15, 0, TAU); c.fillStyle = ink(0.75); c.fill();
     }
   }
+  let splash = null;
+  function flyer(c, x, y, s, dir, flap) {            // утка в полёте: тело, шея вперёд, крылья машут
+    c.save(); c.translate(x, y); c.scale(dir * s, s);
+    c.lineWidth = 1.1 / s; c.strokeStyle = ink(0.9); c.fillStyle = pap(1);
+    c.beginPath(); c.ellipse(0, 0, 0.75, 0.24, 0, 0, TAU); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(0.6, -0.08); c.quadraticCurveTo(0.95, -0.2, 1.15, -0.18); c.stroke();
+    c.beginPath(); c.arc(1.2, -0.2, 0.13, 0, TAU); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(1.3, -0.2); c.lineTo(1.48, -0.16); c.stroke();
+    const wy = flap * 0.9;
+    c.beginPath(); c.moveTo(-0.15, -0.1); c.quadraticCurveTo(-0.05, -0.1 - wy * 0.6, 0.25, -0.1 - wy); c.moveTo(-0.15, -0.1); c.quadraticCurveTo(-0.45, -0.1 - wy * 0.5, -0.4, -0.1 - wy * 0.9); c.stroke();
+    c.restore();
+  }
   function drawDucks(c, G, now) {
     drawPond(c, G, now);
+    if (splash) {                                     // плюх: брызги и круги
+      const k = (now - splash.t0) / 900;
+      if (k > 1) splash = null;
+      else {
+        c.strokeStyle = ink(0.6 * (1 - k)); c.lineWidth = 1;
+        for (const q of [0, 0.3]) { const kk = k - q; if (kk > 0) { c.beginPath(); c.ellipse(splash.x, splash.y + 2, 8 + 30 * kk, (8 + 30 * kk) * 0.3, 0, 0, TAU); c.stroke(); } }
+        c.beginPath();
+        for (let i = 0; i < 6; i++) { const an = Math.PI * (1.15 + i * 0.14), r = 6 + 16 * k; c.moveTo(splash.x + Math.cos(an) * r, splash.y + Math.sin(an) * r * 1.4 - 10 * Math.sin(Math.PI * k)); c.lineTo(splash.x + Math.cos(an) * (r + 3), splash.y + Math.sin(an) * (r + 3) * 1.4 - 10 * Math.sin(Math.PI * k)); }
+        c.stroke();
+      }
+    }
+    if (ducksGone) {                                  // утки улетели: туда — за горы, вдали, обратно — садятся
+      const D = ducksAt(G), e = now - ducksGone.t0;
+      if (e >= GONE.land) ducksGone = null;
+      else {
+        const far = { x: G.W * 0.2, y: G.hor - G.h * 0.12 };
+        let k = e < GONE.away ? e / GONE.away : e < GONE.back ? 1 : 1 - (e - GONE.back) / (GONE.land - GONE.back);
+        k = k * k * (3 - 2 * k);
+        if (k < 0.995) for (const [d, side] of [[D.A, 0], [D.R, 1]]) {
+          const x = d.x + (far.x + side * 22 - d.x) * k, y = d.y - 10 + (far.y + side * 8 - (d.y - 10)) * k - Math.sin(Math.PI * k) * 30;
+          const back = e > GONE.back, dir = (far.x - d.x) * (back ? -1 : 1) > 0 ? 1 : -1;
+          flyer(c, x, y, d.s * (1 - 0.65 * k), dir, Math.sin(now * 0.03 + side));
+        }
+        return;
+      }
+    }
     const D = ducksAt(G), ms = now - noteAt, a = attSec(notePd) * 1000, r = relSec(notePd) * 1000;
     const dur = Math.max(a, 140), nod = noteAt > -1e8 && ms > 0 && ms < dur ? Math.sin((Math.PI * ms) / dur) : 0;
     if (noteAt > -1e8 && ms > a && ms < a + r * 2) {     // круги от правой утки: расходятся за release
@@ -415,8 +457,13 @@
   function drawSkiff(c, G, now) {
     const home = skiffHome(G);
     if (skiff.home) { skiff.x = home.x; skiff.y = home.y; }
-    else if (!skiff.held && skiff.back) {             // отпустили — сам плывёт к берегу
-      const k = clamp((now - skiff.back.t0) / 900), e = 1 - (1 - k) ** 3;
+    else if (!skiff.held && skiff.fly) {              // брошен в заводь — летит дугой, плюх, утки взлетают
+      const F = skiff.fly, k = clamp((now - F.t0) / F.ms);
+      skiff.x = F.x0 + (F.x1 - F.x0) * k; skiff.y = F.y0 + (F.y1 - F.y0) * k - Math.sin(Math.PI * k) * 40;
+      if (k >= 1) { skiff.fly = null; splash = { x: F.x1, y: F.y1, t0: now }; ducksGone = { t0: now }; skiff.back = { x: F.x1, y: F.y1, t0: now + 600 }; }
+    }
+    else if (!skiff.held && skiff.back && now >= skiff.back.t0) {             // отпустили — сам плывёт к берегу
+      const k = clamp((now - skiff.back.t0) / 1200), e = 1 - (1 - k) ** 3;
       skiff.x = skiff.back.x + (home.x - skiff.back.x) * e; skiff.y = skiff.back.y + (home.y - skiff.back.y) * e;
       if (k >= 1) { skiff.home = true; skiff.back = null; }
     }
@@ -764,7 +811,7 @@
     const br = river(G, bridgeT()), bdx = f.x - br.x, bdy = f.y - br.y, al = bdx * br.tx + bdy * br.ty, ac = bdx * br.nx + bdy * br.ny;
     if (Math.abs(al) < 24 && Math.abs(ac) < br.w / 2 + 22) { touches.set(f.id, { kind: 'bridge' }); return; }
     const D = ducksAt(G);
-    for (const [kind, key] of [['duckA', 'att'], ['duckR', 'rel']]) {
+    if (!ducksGone) for (const [kind, key] of [['duckA', 'att'], ['duckR', 'rel']]) {
       const d = D[kind === 'duckA' ? 'A' : 'R'];
       if (Math.hypot(f.x - d.x, f.y - (d.y - d.s * 0.35)) < Math.max(22, d.s * 1.5)) { touches.set(f.id, { kind, key, ...lockOf(key) }); return; }
     }
@@ -793,6 +840,7 @@
     if (!t.moved && Math.hypot(dx, dy) > 8) t.moved = true;
     if (t.kind === 'skiff') {                         // ведёшь кораблик: на воде — звучит
       skiff.x = f.x + skiff.dx; skiff.y = f.y + skiff.dy;
+      (t.hist = t.hist || []).push({ x: skiff.x, y: skiff.y, t: performance.now() }); if (t.hist.length > 8) t.hist.shift();
       const o = inRiver(G, skiff.x, skiff.y) ? onRiver(G, skiff.x, skiff.y) : null;
       skiffSound(o);
       const last = skiff.trail[skiff.trail.length - 1];
@@ -827,7 +875,22 @@
       if (k >= 0) { pickWave(k); menu = null; } else { menu.held = false; menu.hover = -1; }
       return;
     }
-    if (t.kind === 'skiff') { skiff.held = false; skiffSound(null); skiff.back = { x: skiff.x, y: skiff.y, t0: performance.now() }; return; }
+    if (t.kind === 'skiff') {
+      skiff.held = false; skiffSound(null);
+      const now = performance.now(), P = pondAt(G), h = (t.hist || []).filter((q) => now - q.t < 160);
+      const inPond = (x, y) => ((x - P.x) / P.rx) ** 2 + ((y - P.y) / P.ry) ** 2 < 1.3;
+      let hit = inPond(skiff.x, skiff.y) ? { x: skiff.x, y: skiff.y } : null;
+      if (!hit && h.length >= 2 && !envOpen()) {      // бросок: продолжить движение пальца — попадёт ли в заводь
+        const a = h[0], b = h[h.length - 1], dt = Math.max(16, b.t - a.t), vx = (b.x - a.x) / dt, vy = (b.y - a.y) / dt;
+        if (Math.hypot(vx, vy) > 0.35) for (let d = 0; d < 520; d += 8) {
+          const sp = Math.hypot(vx, vy), x = skiff.x + (vx / sp) * d, y = skiff.y + (vy / sp) * d;
+          if (inPond(x, y)) { hit = { x: P.x + (x - P.x) * 0.5, y: P.y + (y - P.y) * 0.3 }; break; }
+        }
+      }
+      if (hit && !envOpen()) skiff.fly = { x0: skiff.x, y0: skiff.y, x1: hit.x, y1: hit.y, t0: now, ms: 120 + 0.6 * Math.hypot(hit.x - skiff.x, hit.y - skiff.y) };
+      else skiff.back = { x: skiff.x, y: skiff.y, t0: now };
+      return;
+    }
     if (['cloud', 'mountains', 'duckA', 'duckR'].includes(t.kind) && t.lock >= 0) {
       const pd = pads.at[t.lock];
       if (pd && !t.moved && pd.lock) for (const k of [t.key || (t.kind === 'cloud' ? 'cutoff' : 'res')]) delete pd.lock[k];   // тап вторым пальцем — снять своё значение
@@ -1007,6 +1070,7 @@
   window.t2d.nat = {
     fx, pads, geo, seq, play, get phase() { return phase(); }, get shake() { return shake; }, get birdsAt() { return birdsAt; },
     skiff: () => ({ x: skiff.x, y: skiff.y - 4, playing: !!skiff.voice, home: skiff.home }),
+    get ducksGone() { return !!ducksGone; }, get envOpen() { return envOpen(); }, pond: () => pondAt(geo()),
     cloud: () => { const cl = cloudAt(geo()); return { x: cl.cx, y: cl.cy }; },
     menu: () => menu && { open: true, held: menu.held, opts: menuOpts(geo()) },
     duck: (k) => { const d = ducksAt(geo())[k]; return { x: d.x, y: d.y - d.s * 0.35, s: d.s }; },
