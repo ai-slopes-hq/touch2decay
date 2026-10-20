@@ -351,6 +351,7 @@
     src.buffer = buf; bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 0.8;
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.18, t + 0.25); g.gain.exponentialRampToValueAtTime(0.001, t + 1.35);
     src.connect(bp).connect(g).connect(bus.out); src.start(t); src.stop(t + 1.4);
+    lastSound = performance.now(); setLive(true);
   }
   function douse() {                                  // залить огонь: гаснет всё — огонь и оставленные банки
     pourAt = performance.now();
@@ -529,8 +530,7 @@
     sum.connect(shaper).connect(out);
     const sc = makeSolve(ctx); shaper.connect(sc.input); sc.wet.connect(out); sc.wet.connect(hallSend);
     shaper.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-    out.connect(input); out.connect(an);
-    bus = { sum, shaper, out, hallSend, hall: h, an, buf: new Float32Array(1024), sc };
+    bus = { sum, shaper, out, hallSend, hall: h, an, buf: new Float32Array(1024), sc, input, live: false };
     voices.clear(); curveK = -1;
     applyFx();
     if (fire) setFire(true);
@@ -573,6 +573,18 @@
     }
   }
   const g0 = (ctx, v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
+  // молчит дольше хвоста — лаборатория отцеплена от выхода и от анализатора: её граф, стекло и solve не считаются
+  let lastSound = 0;
+  function setLive(on) {
+    if (!bus || bus.live === on) return;
+    bus.live = on;
+    if (on) { bus.out.connect(bus.input); bus.out.connect(bus.an); } else bus.out.disconnect();
+  }
+  setInterval(() => {
+    if (!bus) return;
+    if (voices.size) lastSound = performance.now();
+    else if (performance.now() - lastSound > 7000) setLive(false);
+  }, 1000);
   function scope(n) {                              // n точек осциллограммы выхода от восходящего нуля; null — тихо
     if (!bus || !voices.size) return null;
     const b = bus.buf; bus.an.getFloatTimeDomainData(b);
@@ -615,6 +627,7 @@
     for (const n of oscs) n.start();
     lfo.start();
     const gr = { oscs, lfo, edges, fbs, outs, xf, car, ratio, on, latched: false, t0: performance.now() };
+    lastSound = performance.now(); setLive(true);
     setParams(true, gr);
     xf.gain.setTargetAtTime(on ? 1 : 0, t, tau);
     return gr;

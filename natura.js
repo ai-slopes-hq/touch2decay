@@ -411,7 +411,7 @@
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const vin = g(1), pre = g(1), out = g(1.5), chOut = g(0);
+    const vin = g(1), pre = g(1), out = g(1.2), chOut = g(0);
     vin.connect(pre);
     const ch = [0, 1].map((k) => {                   // хор: две плавающие задержки
       const d = ctx.createDelay(0.05), l = ctx.createOscillator(), lg = g(0);
@@ -426,10 +426,18 @@
     const rSend = g(0), h = T.hall();                 // зал — туман
     pre.connect(rSend).connect(h.input); h.out.connect(g(0.9)).connect(out);
     dlp.connect(rSend);
-    out.connect(input);
-    bus = { vin, chOut, ch, dSend, dl, dfb, rSend, hall: h };
+    bus = { vin, chOut, ch, dSend, dl, dfb, rSend, hall: h, out, input, live: false };
+    setLive(true);
     applyFx();
   }
+  // молчит дольше хвоста — мир отцеплен от выхода: его хор, задержка и зал не считаются (меньше нагрузки, нет треска)
+  let lastSound = 0;
+  function setLive(on) {
+    if (!bus || bus.live === on) return;
+    bus.live = on;
+    if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+  }
+  setInterval(() => { if (bus && !seq.playing && performance.now() - lastSound > 9000) setLive(false); }, 1000);
   function applyFx() {
     if (!bus) return;
     const t = actx.currentTime, S = (p, v, tau = 0.05) => p.setTargetAtTime(v, t, tau);
@@ -456,20 +464,23 @@
     const base = 180 * 2 ** (fx.cutoff * 6.6), peak = Math.min(16000, base * (1 + fx.env * 10)), dec = 0.08 + fx.env * 0.6;
     lp.type = 'lowpass'; lp.Q.value = 2;
     lp.frequency.setValueAtTime(peak, t); lp.frequency.setTargetAtTime(base, t + 0.005, 0.04 + fx.env * 0.5);
-    const lvl = [0.32, 0.13, 0.3][pd.wave];
-    a.gain.setValueAtTime(0, t); a.gain.linearRampToValueAtTime(lvl, t + 0.006); a.gain.setTargetAtTime(0, t + 0.01, dec);
+    const lvl = [0.32, 0.13, 0.3][pd.wave], end = t + 0.012 + dec * 5;
+    // огибающая доходит до настоящей тишины раньше, чем генератор остановится, — без щелчка в конце
+    a.gain.setValueAtTime(0, t); a.gain.linearRampToValueAtTime(lvl, t + 0.008); a.gain.exponentialRampToValueAtTime(0.0001, end);
+    a.gain.linearRampToValueAtTime(0, end + 0.01);
     o.connect(lp).connect(a).connect(bus.vin);
-    o.start(t); o.stop(t + 0.05 + dec * 7);
+    o.start(t); o.stop(end + 0.03);
+    lastSound = performance.now(); setLive(true);
     o.onended = () => { o.disconnect(); lp.disconnect(); a.disconnect(); };
   }
-  // часы — по звуковому времени с запасом вперёд (таймер 25 мс, окно 120 мс)
+  // часы — по звуковому времени с запасом вперёд (таймер 25 мс, окно 200 мс)
   function schedule() {
     if (!seq.playing || !actx) return;
-    const ahead = actx.currentTime + 0.12;
-    if (!seq.next) seq.next = actx.currentTime + 0.05;
+    const now = actx.currentTime, ahead = now + 0.2;     // запас 200 мс: телефон занят картинкой — ноты всё равно вовремя
+    if (!seq.next) seq.next = now + 0.05;
     while (seq.next < ahead) {
       const pd = pads.at[seq.step % pads.len];
-      if (pd) playNote(pd, seq.next);
+      if (pd && seq.next > now + 0.003) playNote(pd, seq.next);   // опоздавшую ноту пропускаем — задним числом она щёлкает
       seq.step++; seq.next += stepSec();
     }
   }
