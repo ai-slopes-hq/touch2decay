@@ -161,11 +161,12 @@
   // как прежде делили ширину: нижним октавам — больше всего места (sub и bass — около двух третей)
   const EDGE = 26;            // отступ кружков от краёв поля
   const EDGE_B = EDGE;        // снизу кнопок нет
+  const SUN_R = 54;
   const EDGE_T = 64;          // сверху — ниже строки с заголовком и кнопками
   const geo = { ox: 0, oy: 0, top: 0, bot: 0, step: 2, r: [0], a: [0] };
   function arcSpan(r) {
     const w = W - EDGE, h = geo.oy - geo.top - EDGE_T;
-    if (r <= EDGE_B) return null;
+    if (r <= SUN_R) return null;             // у самого солнца планет нет — там кнопка карты миров
     const lo = Math.max(Math.asin(Math.min(1, EDGE_B / r)), Math.acos(Math.min(1, w / r)));
     const hi = Math.min(Math.acos(Math.min(1, EDGE / r)), Math.asin(Math.min(1, h / r)));
     return hi > lo ? [lo, hi] : null;
@@ -550,6 +551,8 @@
     };
     F.set(e.pointerId, f);
 
+    if (nav.view !== 'play' || nav.anim) { navDown(f); return; }
+
     const ui = uiHit(f);
     if (ui) { f.ui = ui.k; f.hit = ui; uiDown(f); return; }
 
@@ -755,6 +758,7 @@
   }
 
   function uiHit(f) {
+    if (!editor && Math.hypot(f.x - geo.ox, f.y - geo.oy) < 46) return { k: 'sun' };   // солнце — карта миров
     if (ghost) {                              // любое касание гасит призрак; по булавке — закрепляет
       const gh = ghost, p = pinPos(gh.menu.cx, gh.menu.cy);
       ghost = null;
@@ -873,6 +877,7 @@
 
   function uiDown(f) {
     if (f.ui === 'clr') { clearAll(); return; }
+    if (f.ui === 'sun') { goMap(); return; }
     if (f.ui === 'undo') { undo(); return; }
     if (f.ui === 'dice') { rollDice(); return; }
     if (f.ui === 'rev') { openFx(f); return; }
@@ -2589,6 +2594,9 @@
     }
     if (!anyActive && lock) { lock.release().catch(() => {}); lock = null; }
 
+    // карта миров или другой мир — вместо поля (звук идёт дальше)
+    if ((nav.view !== 'play' || nav.anim) && drawNav(now)) { measureStrain(now, performance.now() - t0); return; }
+
     // фон: зерно (ось шума) и полосы частот или октав (ось высоты)
     drawField();                                // фон, звёзды и орбиты — одной готовой картинкой
 
@@ -2657,6 +2665,345 @@
     if (fxF) drawFx(fxF);                       // веер FX — поверх верхней строки
     drawStrain();
     measureStrain(now, performance.now() - t0);
+  }
+
+  // ---------- смежные миры: солнце — начало координат, вокруг него четыре четверти ----------
+  // I (x>0, y>0) — touch2decay, играет. II, III, IV — пока только гравюры (идеи — в ROADMAP.md).
+  // Тап по солнцу — карта миров; тап по четверти — влететь в мир; в мире тап по солнцу — снова карта
+  const WORLDS = [
+    null,
+    { n: 'I', title: 'touch2decay', sub: 'mundus sonorum' },
+    { n: 'II', title: 'Rosarium', sub: 'operatores quattuor' },
+    { n: 'III', title: 'Hermetica', sub: 'modi resonantes' },
+    { n: 'IV', title: 'Terra', sub: 'echo et reverberatio' },
+  ];
+  const nav = { view: 'play', world: 1, anim: null };   // view: play | map | world; anim: { t0, dir: 'out' | 'in', w }
+  const NAV_MS = 520;
+  let snapC = null;                                       // снимок мира I для карты
+  const arts = {};                                        // гравюры миров II–IV, рисуются один раз на размер экрана
+
+  // прямоугольник четверти на карте; солнце — в центре экрана
+  function panel(w) {
+    const hw = W / 2, hh = H / 2;
+    return [null, [hw, 0, hw, hh], [0, 0, hw, hh], [0, hh, hw, hh], [hw, hh, hw, hh]][w];
+  }
+  // угол, где в каждом мире стоит солнце (смежный с центром карты)
+  const sunCorner = (w) => [null, [0, geo.bot], [W, H], [W, 0], [0, 0]][w];
+
+  function goMap() {
+    if (!snapC) snapC = document.createElement('canvas');
+    snapC.width = cv.width; snapC.height = cv.height;
+    if (nav.view === 'play') snapC.getContext('2d').drawImage(cv, 0, 0);
+    nav.anim = { t0: performance.now(), dir: 'out', w: nav.world };
+    nav.view = 'map';
+  }
+  function goWorld(w) {
+    nav.anim = { t0: performance.now(), dir: 'in', w };
+    nav.world = w;
+  }
+
+  // касание, пока на экране карта или другой мир
+  function navDown(f) {
+    if (nav.anim) return;
+    if (nav.view === 'map') {
+      const dx = f.x - W / 2, dy = f.y - H / 2;
+      if (Math.hypot(dx, dy) < 44) { goWorld(nav.world); return; }   // солнце — обратно в свой мир
+      goWorld(dx >= 0 ? (dy < 0 ? 1 : 4) : dy < 0 ? 2 : 3);
+      return;
+    }
+    const c = sunCorner(nav.world);                       // в мирах II–IV: тап по солнцу — карта
+    if (Math.hypot(f.x - c[0], f.y - c[1]) < 90) goMap();
+  }
+
+  const easeIO = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+  function worldImage(w) { return w === 1 ? snapC : artFor(w); }
+
+  function drawNav(now) {
+    let k = 1, a = nav.anim;
+    if (a) {
+      k = clamp((now - a.t0) / NAV_MS);
+      if (k >= 1) {
+        nav.anim = null;
+        if (a.dir === 'in') nav.view = a.w === 1 ? 'play' : 'world';
+        if (nav.view === 'play') return false;          // дальше рисует обычный кадр
+        a = null; k = 1;
+      }
+    }
+    g.fillStyle = BG; g.fillRect(0, 0, W, H);
+    if (nav.view === 'world' && !a) {                    // мир II–IV во весь экран
+      g.drawImage(artFor(nav.world), 0, 0, W, H);
+      return true;
+    }
+    // карта: доля «отъезда» камеры — 0 во весь экран мира, 1 — карта
+    const out = a ? (a.dir === 'out' ? easeIO(k) : 1 - easeIO(k)) : 1;
+    const focus = a ? a.w : 0;
+    for (let w = 1; w <= 4; w++) {
+      const p = panel(w), img = worldImage(w);
+      if (!img) continue;
+      if (w === focus) {
+        const r = [p[0] * out, p[1] * out, W + (p[2] - W) * out, H + (p[3] - H) * out];
+        g.drawImage(img, r[0], r[1], r[2], r[3]);
+      } else {
+        g.globalAlpha = out; g.drawImage(img, p[0], p[1], p[2], p[3]); g.globalAlpha = 1;
+      }
+    }
+    if (out > 0.02) drawMapChrome(out, now);
+    return true;
+  }
+
+  // карта: декартовы оси с делениями, солнце в центре, номера и имена миров
+  function drawMapChrome(al, now) {
+    const cx = W / 2, cy = H / 2;
+    g.globalAlpha = al;
+    g.strokeStyle = ink(0.55); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, cy + 0.5); g.lineTo(W, cy + 0.5); g.moveTo(cx + 0.5, 0); g.lineTo(cx + 0.5, H); g.stroke();
+    g.strokeStyle = ink(0.35); g.beginPath();
+    for (let i = 1; i * 12 < Math.max(W, H) / 2; i++) {
+      const l = i % 5 ? 3 : 6, d = i * 12;
+      g.moveTo(cx + d, cy - l); g.lineTo(cx + d, cy + l); g.moveTo(cx - d, cy - l); g.lineTo(cx - d, cy + l);
+      g.moveTo(cx - l, cy + d); g.lineTo(cx + l, cy + d); g.moveTo(cx - l, cy - d); g.lineTo(cx + l, cy - d);
+    }
+    g.stroke();
+    for (let w = 1; w <= 4; w++) {
+      const p = panel(w), info = WORLDS[w];
+      const right = p[0] >= cx, below = p[1] >= cy;
+      const tx = right ? p[0] + 16 : p[0] + p[2] - 16, ty = below ? p[1] + p[3] - 34 : p[1] + 64;
+      g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(right ? tx - 6 : tx - 150, ty - 20, 156, 46);
+      mapText(`${info.n} · ${info.title}`, tx, ty - 4, 19, 0.95, right ? 'left' : 'right');
+      mapText(info.sub, tx, ty + 16, 13, 0.6, right ? 'left' : 'right');
+    }
+    // солнце целиком
+    g.fillStyle = BG; g.beginPath(); g.arc(cx, cy, 40, 0, Math.PI * 2); g.fill();
+    sunGlyph(g, cx, cy, 0, Math.PI * 2, 1, now);
+    mapText('tap a world', cx, cy + 62, 13, 0.5, 'center');
+    g.globalAlpha = 1;
+  }
+
+  // гравированное солнце для карты и миров: двойной диск, лучи прямые и волнистые через один (в секторе a0..a1)
+  function sunGlyph(x, ox, oy, a0, a1, scale = 1, now = 0) {
+    const rot = now * 0.00004, N = 28;
+    x.lineWidth = 0.9;
+    for (let k = 0; k < N; k++) {
+      const a = (k / N) * Math.PI * 2 + rot;
+      const aa = ((a - a0) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+      if (aa > a1 - a0 + 0.05) continue;
+      const c = Math.cos(a), s = Math.sin(a), px = -s, py = c;
+      if (k % 2) {
+        const l = 50 * scale, w = 2.6;
+        x.strokeStyle = `rgba(${INK},0.55)`;
+        x.beginPath(); x.moveTo(ox + c * 17 + px * w, oy + s * 17 + py * w); x.lineTo(ox + c * l, oy + s * l);
+        x.lineTo(ox + c * 17 - px * w, oy + s * 17 - py * w); x.stroke();
+      } else {
+        const l = 38 * scale;
+        x.strokeStyle = `rgba(${INK},0.4)`;
+        x.beginPath();
+        for (let i = 0; i <= 14; i++) {
+          const t = i / 14, r = 17 + t * (l - 17), wv = Math.sin(t * Math.PI * 3) * 2.2 * (1 - t * 0.5);
+          const X = ox + c * r + px * wv, Y = oy + s * r + py * wv;
+          if (i) x.lineTo(X, Y); else x.moveTo(X, Y);
+        }
+        x.stroke();
+      }
+    }
+    x.fillStyle = BG; x.beginPath(); x.arc(ox, oy, 14, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = `rgba(${INK},0.7)`; x.lineWidth = 1; x.beginPath(); x.arc(ox, oy, 14, 0, Math.PI * 2); x.stroke();
+    x.strokeStyle = `rgba(${INK},0.35)`; x.lineWidth = 0.8; x.beginPath(); x.arc(ox, oy, 10.5, 0, Math.PI * 2); x.stroke();
+  }
+
+  // ---------- гравюры миров ----------
+  function artFor(w) {
+    const key = `${w}|${W}x${H}|${DPR}`;
+    if (arts[w] && arts[w].key === key) return arts[w].c;
+    const c = document.createElement('canvas');
+    c.width = Math.round(W * DPR); c.height = Math.round(H * DPR);
+    const x = c.getContext('2d');
+    x.setTransform(DPR, 0, 0, DPR, 0, 0);
+    x.fillStyle = BG; x.fillRect(0, 0, W, H);
+    ({ 2: artRosarium, 3: artHermetica, 4: artTerra })[w](x);
+    // общее: двойная рамка, солнце в смежном углу, «terra incognita»
+    x.strokeStyle = `rgba(${INK},0.25)`; x.lineWidth = 1; x.strokeRect(4.5, 4.5, W - 9, H - 9);
+    x.strokeStyle = `rgba(${INK},0.1)`; x.strokeRect(9.5, 9.5, W - 19, H - 19);
+    const sc = sunCorner(w), q = { 2: [Math.PI, Math.PI * 1.5], 3: [Math.PI / 2, Math.PI], 4: [0, Math.PI / 2] }[w];
+    sunGlyph(x, sc[0], sc[1], q[0], q[1]);
+    const t = (s, X, Y, size, a, align = 'center', it = true) => {
+      x.font = `${it ? 'italic ' : ''}${size}px ${MAP}`; x.fillStyle = `rgba(${INK},${a})`; x.textAlign = align; x.textBaseline = 'middle'; x.fillText(s, X, Y);
+    };
+    t('terra incognita · nondum', W / 2, w === 2 ? H - 36 : w === 3 ? H - 30 : H - 30, 15, 0.55);
+    arts[w] = { key, c };
+    return c;
+  }
+
+  const P = (a) => `rgba(${INK},${a})`;
+  function caps(x, s, X, Y, size, a, spacing = 3) {    // разрядка заглавных, как на гравюре
+    x.font = `${size}px ${MAP}`; x.fillStyle = P(a); x.textBaseline = 'middle'; x.textAlign = 'left';
+    const w = [...s].reduce((n, ch) => n + x.measureText(ch).width + spacing, -spacing);
+    let px = X - w / 2;
+    for (const ch of s) { x.fillText(ch, px, Y); px += x.measureText(ch).width + spacing; }
+  }
+  function hatch(x, ang, step, a, clipFn) {             // штриховка, как резцом
+    x.save(); if (clipFn) { x.beginPath(); clipFn(); x.clip(); }
+    x.strokeStyle = P(a); x.lineWidth = 0.7; x.beginPath();
+    const L = Math.hypot(W, H), c = Math.cos(ang), s = Math.sin(ang);
+    for (let d = -L; d < L; d += step) {
+      const mx = W / 2 + -s * d, my = H / 2 + c * d;
+      x.moveTo(mx - c * L, my - s * L); x.lineTo(mx + c * L, my + s * L);
+    }
+    x.stroke(); x.restore();
+  }
+
+  // II — Rosarium philosophorum: сосуд, в нём Солнце и Луна; вокруг четыре стихии — четыре FM-оператора; розы
+  function artRosarium(x) {
+    hatch(x, Math.PI / 4, 8, 0.03);
+    const cx = W * 0.46, cy = H * 0.5, R = Math.min(W, H) * 0.2;
+    // лента с названием
+    const by = H * 0.13;
+    x.strokeStyle = P(0.6); x.lineWidth = 1; x.fillStyle = BG;
+    x.beginPath();
+    x.moveTo(W * 0.1, by - 14); x.quadraticCurveTo(W * 0.5, by - 26, W * 0.9, by - 14);
+    x.lineTo(W * 0.9, by + 14); x.quadraticCurveTo(W * 0.5, by + 2, W * 0.1, by + 14); x.closePath(); x.fill(); x.stroke();
+    for (const s of [-1, 1]) {                          // загнутые концы ленты
+      const ex = s < 0 ? W * 0.1 : W * 0.9;
+      x.beginPath(); x.moveTo(ex, by - 14); x.lineTo(ex + s * 16, by - 6); x.lineTo(ex + s * 6, by); x.lineTo(ex + s * 16, by + 8); x.lineTo(ex, by + 14); x.stroke();
+    }
+    caps(x, 'ROSARIUM', W / 2, by - 6, 15, 0.9, 4);
+    caps(x, 'PHILOSOPHORUM', W / 2, by + 9, 11, 0.75, 3);
+    // сосуд: круглое тело, горлышко, жидкость в штриховку
+    x.lineWidth = 1.2; x.strokeStyle = P(0.85);
+    const neckW = R * 0.26, neckH = R * 1.15;
+    x.beginPath();
+    x.moveTo(cx - neckW / 2, cy - R * 0.92 - neckH);
+    x.lineTo(cx - neckW / 2, cy - R * 0.94);
+    x.arc(cx, cy, R, -Math.PI / 2 - Math.asin(neckW / 2 / R), -Math.PI / 2 + Math.asin(neckW / 2 / R) + Math.PI * 2, true);
+    x.lineTo(cx + neckW / 2, cy - R * 0.92 - neckH);
+    x.stroke();
+    x.strokeStyle = P(0.35); x.beginPath(); x.arc(cx, cy, R + 3, 0, Math.PI * 2); x.stroke();
+    x.beginPath(); x.ellipse(cx, cy - R * 0.92 - neckH, neckW * 0.75, 3, 0, 0, Math.PI * 2); x.strokeStyle = P(0.85); x.stroke();
+    x.save(); x.beginPath(); x.rect(cx - R, cy + R * 0.25, 2 * R, R); x.clip();
+    hatch(x, 0, 4, 0.22, () => x.arc(cx, cy, R - 2, 0, Math.PI * 2)); x.restore();
+    // Солнце и Луна в сосуде
+    const sr = R * 0.2;
+    x.strokeStyle = P(0.9); x.lineWidth = 1.1;
+    x.beginPath(); x.arc(cx - R * 0.38, cy - R * 0.12, sr, 0, Math.PI * 2); x.stroke();
+    x.fillStyle = P(0.9); x.beginPath(); x.arc(cx - R * 0.38, cy - R * 0.12, 2, 0, Math.PI * 2); x.fill();
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2, X = cx - R * 0.38, Y = cy - R * 0.12;
+      x.beginPath(); x.moveTo(X + Math.cos(a) * (sr + 3), Y + Math.sin(a) * (sr + 3)); x.lineTo(X + Math.cos(a) * (sr + 8), Y + Math.sin(a) * (sr + 8)); x.stroke();
+    }
+    x.beginPath(); x.arc(cx + R * 0.38, cy - R * 0.12, sr, Math.PI * 0.3, Math.PI * 1.7, false);
+    x.arc(cx + R * 0.38 - sr * 0.45, cy - R * 0.12, sr * 0.85, Math.PI * 1.6, Math.PI * 0.4, true); x.closePath(); x.stroke();
+    // четыре стихии — четыре оператора: кольцо связей и нити к сосуду
+    const el = [['ignis', -1, -1, 'up', false], ['aer', 1, -1, 'up', true], ['aqua', -1, 1, 'down', false], ['terra', 1, 1, 'down', true]];
+    const pos = el.map(([, sx, sy]) => [cx + sx * R * 1.55, cy + sy * R * 1.3]);
+    x.setLineDash([2, 5]); x.strokeStyle = P(0.4); x.lineWidth = 1;
+    x.beginPath(); [0, 1, 3, 2, 0].forEach((i, j) => (j ? x.lineTo(...pos[i]) : x.moveTo(...pos[i]))); x.stroke();
+    for (const p of pos) { x.beginPath(); x.moveTo(...p); x.lineTo(cx, cy); x.stroke(); }
+    x.setLineDash([]);
+    el.forEach(([name, , , dir, bar], i) => {
+      const [X, Y] = pos[i], s = 15, u = dir === 'up' ? -1 : 1;
+      x.fillStyle = BG; x.beginPath(); x.arc(X, Y, s + 6, 0, Math.PI * 2); x.fill();
+      x.strokeStyle = P(0.9); x.lineWidth = 1.2;
+      x.beginPath(); x.moveTo(X, Y + u * s); x.lineTo(X - s * 0.9, Y - u * s * 0.6); x.lineTo(X + s * 0.9, Y - u * s * 0.6); x.closePath(); x.stroke();
+      if (bar) { x.beginPath(); x.moveTo(X - s * 0.75, Y + u * s * 0.05); x.lineTo(X + s * 0.75, Y + u * s * 0.05); x.stroke(); }
+      x.strokeStyle = P(0.3); x.beginPath(); x.arc(X, Y, s + 6, 0, Math.PI * 2); x.stroke();
+      x.font = `italic 13px ${MAP}`; x.fillStyle = P(0.7); x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText(name, X, Y + (dir === 'up' ? -s - 18 : s + 18));
+    });
+    // розы
+    const rose = (X, Y, r) => {
+      x.strokeStyle = P(0.6); x.lineWidth = 0.9;
+      x.beginPath(); x.moveTo(X, Y + r); x.quadraticCurveTo(X - r * 0.6, Y + r * 2.2, X - r * 0.2, Y + r * 3.4); x.stroke();
+      x.beginPath(); x.ellipse(X - r * 0.55, Y + r * 2.1, r * 0.45, r * 0.2, -0.6, 0, Math.PI * 2); x.stroke();
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+        x.beginPath(); x.arc(X + Math.cos(a) * r * 0.55, Y + Math.sin(a) * r * 0.55, r * 0.5, a - 1.6, a + 1.6); x.stroke();
+      }
+      x.beginPath();
+      for (let t = 0; t < 12; t += 0.2) { const rr = r * 0.05 * t; const px = X + Math.cos(t) * rr, py = Y + Math.sin(t) * rr; t ? x.lineTo(px, py) : x.moveTo(px, py); }
+      x.stroke();
+    };
+    rose(W * 0.18, H * 0.78, 13); rose(W * 0.5, H * 0.83, 11); rose(W * 0.8, H * 0.76, 12);
+    x.font = `italic 13px ${MAP}`; x.fillStyle = P(0.55); x.textAlign = 'center';
+    x.fillText('modulatio frequentiae', W / 2, by + 34);
+  }
+
+  // III — Hermetica: небесные сферы со знаками планет, уроборос, в центре — фигура Хладни (резонансные моды)
+  function artHermetica(x) {
+    let seed = 3;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 900; i++) { x.fillStyle = P(0.04 + rnd() * 0.08); x.fillRect(rnd() * W, rnd() * H, 1, 1); }
+    const cx = W * 0.5, cy = H * 0.5, R = Math.min(W, H) * 0.42;
+    // уроборос: толстое кольцо с чешуёй, голова кусает хвост
+    x.strokeStyle = P(0.8); x.lineWidth = 1.1;
+    x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.stroke();
+    x.beginPath(); x.arc(cx, cy, R - 9, 0, Math.PI * 2); x.stroke();
+    x.strokeStyle = P(0.45); x.beginPath();
+    for (let i = 0; i < 90; i++) {
+      const a = (i / 90) * Math.PI * 2, a2 = a + 0.035;
+      x.moveTo(cx + Math.cos(a) * (R - 9), cy + Math.sin(a) * (R - 9)); x.lineTo(cx + Math.cos(a2) * R, cy + Math.sin(a2) * R);
+    }
+    x.stroke();
+    const ha = -Math.PI / 2, hx = cx + Math.cos(ha) * (R - 4.5), hy = cy + Math.sin(ha) * (R - 4.5);
+    x.fillStyle = BG; x.strokeStyle = P(0.9);
+    x.beginPath(); x.ellipse(hx - 4, hy, 13, 9, 0, 0, Math.PI * 2); x.fill(); x.stroke();
+    x.fillStyle = P(0.9); x.beginPath(); x.arc(hx - 8, hy - 3, 1.5, 0, Math.PI * 2); x.fill();
+    // небесные сферы и знаки планет
+    const signs = ['☽', '☿', '♀', '☉', '♂', '♃', '♄'];
+    signs.forEach((sg, i) => {
+      const r = R * (0.32 + i * 0.085);
+      x.strokeStyle = P(0.18 + (i === 3 ? 0.15 : 0)); x.lineWidth = 0.8; x.setLineDash(i % 2 ? [2, 4] : []);
+      x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.stroke(); x.setLineDash([]);
+      const a = -Math.PI / 2 + 0.9 + i * 0.83;
+      const X = cx + Math.cos(a) * r, Y = cy + Math.sin(a) * r;
+      x.fillStyle = BG; x.beginPath(); x.arc(X, Y, 10, 0, Math.PI * 2); x.fill();
+      x.font = `15px ${MAP}, "Apple Symbols", "Segoe UI Symbol", serif`; x.fillStyle = P(0.85); x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText(sg, X, Y + 1);
+    });
+    // фигура Хладни: узловые линии квадратной пластины — моды (m, n)
+    const S = R * 0.42, m = 2, n = 5, N = 170;
+    x.strokeStyle = P(0.35); x.strokeRect(cx - S, cy - S, 2 * S, 2 * S);
+    x.fillStyle = P(0.75);
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+      const u = i / (N - 1), v = j / (N - 1);
+      const z = Math.cos(n * Math.PI * u) * Math.cos(m * Math.PI * v) + Math.cos(m * Math.PI * u) * Math.cos(n * Math.PI * v);
+      if (Math.abs(z) < 0.06) x.fillRect(cx - S + u * 2 * S, cy - S + v * 2 * S, 1, 1);   // песок собирается на узловых линиях
+    }
+    caps(x, 'HERMETICA', W / 2, H * 0.09, 17, 0.9, 5);
+    x.font = `italic 13px ${MAP}`; x.fillStyle = P(0.6); x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText('quod est superius est sicut quod est inferius', W / 2, cy + R + 32);
+    x.fillText('modi resonantes', W / 2, H * 0.09 + 22);
+  }
+
+  // IV — Terra: три волны в небе (синус, меандр, треугольник), горы и их отражение в озере, круги эха по воде
+  function artTerra(x) {
+    const hz = H * 0.55;
+    caps(x, 'TERRA', W / 2, H * 0.1 + 40, 19, 0.9, 6);
+    x.font = `italic 13px ${MAP}`; x.fillStyle = P(0.6); x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText('tres undae · echo et reverberatio', W / 2, H * 0.1 + 62);
+    // три волны
+    const waves = [['sinus', (t) => Math.sin(t * Math.PI * 2)], ['quadratum', (t) => (t % 1 < 0.5 ? 1 : -1)], ['triangulum', (t) => 1 - 4 * Math.abs((t % 1) - 0.5)]];
+    waves.forEach(([name, fn], i) => {
+      const y0 = H * 0.24 + i * H * 0.075, A = 11;
+      x.strokeStyle = P(0.75); x.lineWidth = 1.1; x.beginPath();
+      for (let px = 24; px <= W - 24; px += 1) { const v = fn((px - 24) / 70); const py = y0 - v * A; px > 24 ? x.lineTo(px, py) : x.moveTo(px, py); }
+      x.stroke();
+      x.font = `italic 12px ${MAP}`; x.fillStyle = P(0.55); x.textAlign = 'right'; x.fillText(name, W - 26, y0 - A - 9);
+    });
+    // горы
+    const ridge = [[0, hz], [W * 0.08, hz - 40], [W * 0.18, hz - 22], [W * 0.32, hz - 92], [W * 0.43, hz - 48], [W * 0.55, hz - 118], [W * 0.68, hz - 60], [W * 0.78, hz - 84], [W * 0.9, hz - 30], [W, hz - 46], [W, hz]];
+    x.strokeStyle = P(0.85); x.lineWidth = 1.1; x.beginPath(); ridge.forEach((p, i) => (i ? x.lineTo(...p) : x.moveTo(...p))); x.stroke();
+    x.save(); x.beginPath(); ridge.forEach((p, i) => (i ? x.lineTo(...p) : x.moveTo(...p))); x.closePath(); x.clip();
+    hatch(x, -Math.PI / 3, 5, 0.25); x.restore();
+    // отражение в озере — пунктиром, и горизонт
+    x.setLineDash([2, 4]); x.strokeStyle = P(0.35); x.beginPath(); ridge.forEach(([X, Y], i) => (i ? x.lineTo(X, 2 * hz - Y) : x.moveTo(X, 2 * hz - Y))); x.stroke(); x.setLineDash([]);
+    x.strokeStyle = P(0.7); x.beginPath(); x.moveTo(0, hz + 0.5); x.lineTo(W, hz + 0.5); x.stroke();
+    // круги эха
+    const ex = W * 0.56, ey = hz + H * 0.13;
+    for (let i = 0; i < 9; i++) {
+      x.strokeStyle = P(0.6 * 0.72 ** i); x.lineWidth = 1;
+      x.beginPath(); x.ellipse(ex, ey, 10 + i * 19, (10 + i * 19) * 0.28, 0, 0, Math.PI * 2); x.stroke();
+    }
+    // берег — горизонтальная штриховка
+    x.save(); x.beginPath(); x.rect(0, H * 0.82, W, H * 0.18); x.clip(); hatch(x, 0, 6, 0.12); x.restore();
   }
 
   // ---------- события ----------
