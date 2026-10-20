@@ -83,7 +83,14 @@ async def sc_map(p):
     await p.tap(300, 200); await p.pg.wait_for_timeout(800)       # обратно в Systema
 
 
-SCENARIOS = {'planets': sc_planets, 'ring': sc_ring, 'map': sc_map}
+async def sc_sun(p):                               # планету тянут на солнце — солнце бьёт её лучами
+    pid = await p.hold(160, 560, ms=60)
+    await p.drag(pid, 160, 560, 30, H - 40, steps=14)
+    await p.pg.wait_for_timeout(250); await p.shot('sun')
+    await p.up()
+
+
+SCENARIOS = {'planets': sc_planets, 'ring': sc_ring, 'map': sc_map, 'sun': sc_sun}
 
 
 async def main(names):

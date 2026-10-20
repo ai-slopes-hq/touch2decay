@@ -2227,6 +2227,27 @@
         g.stroke();
       }
     }
+    // планету тянут на солнце (палец заходит в его зону) — солнце бьёт её лучами-молниями; глубже — чаще и ярче
+    for (const f of F.values()) {
+      const v = f.voice;
+      if (!v || !f.moved || f.ui || f.parked || f.bridge || f.menu) continue;
+      const t = clamp((SUN_R + 24 - Math.hypot(f.x + v.ox - ox, f.y + v.oy - oy)) / 70);
+      if (t <= 0) continue;
+      const px = vx(v), py = vy(v), d = Math.hypot(px - ox, py - oy), R = planetR(v), a0 = Math.atan2(py - oy, px - ox);
+      for (let s = 0, n = 1 + Math.round(2 * t); s < n; s++) {
+        if (Math.random() > 0.35 + 0.6 * t) continue;   // удары, а не ровный луч
+        const a = a0 + ((Math.random() - 0.5) * R) / d, end = d - R * 0.85, c = Math.cos(a), s2 = Math.sin(a);
+        g.strokeStyle = ink(0.35 + 0.55 * t); g.lineWidth = 0.8 + 0.8 * t;
+        g.beginPath();
+        for (let i = 0; i <= 8; i++) {
+          const r = 17 + ((end - 17) * i) / 8, j = i && i < 8 ? (Math.random() - 0.5) * (6 + 8 * t) : 0;
+          const X = ox + c * r - s2 * j, Y = oy + s2 * r + c * j;
+          if (i) g.lineTo(X, Y); else g.moveTo(X, Y);
+        }
+        g.stroke();
+        glowAt(ox + c * end, oy + s2 * end, 10 + 14 * t, 0.2 + 0.4 * t);
+      }
+    }
     g.fillStyle = BG; g.beginPath(); g.arc(ox, oy, 14, 0, Math.PI * 2); g.fill();
     ring(ox, oy, 14, 0.7, 1); ring(ox, oy, 10.5, 0.35, 0.8);
   }
