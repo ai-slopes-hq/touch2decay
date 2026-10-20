@@ -3,7 +3,7 @@
 // поверхность жидкости — синус с ratio волнами. Алгоритм — как колбы стоят: модулятор выше и льёт по трубке в того, кого модулирует,
 // несущие — нижний ряд, сливают в общий приёмник на атаноре. Цвета смешиваются по трубкам. Обратная связь — «пеликан»,
 // трубка из колбы в саму себя. Играть — семь банок металлов-планет (♄ ♃ ♂ ☉ ♀ ☿ ☽) — семь ступеней лада.
-// Солнце — четверть в левом верхнем углу, тап — карта; в правом нижнем углу череп с костями (пока просто картинка). Спека: docs/superpowers/specs/2026-10-20-laboratorium-design.md
+// Солнце — четверть в правом верхнем углу (угол к центру карты), тап — карта; на стене — бледные алхимические рисунки; в правом нижнем углу череп с костями (пока просто картинка). Спека: docs/superpowers/specs/2026-10-20-laboratorium-design.md
 (() => {
   'use strict';
   const T = window.T2D;
@@ -55,7 +55,7 @@
         pos[i] = { x: x + (k - (at.length - 1) / 2) * W * 0.3, y: L0 - l * dy };
       });
     }
-    return { W, H, top, bot, h, shelf, egg, furn, r, pos, sun: { x: 0, y: T.topY + 2, r: Math.min(64, W * 0.16) } };
+    return { W, H, top, bot, h, shelf, egg, furn, r, pos, sun: { x: W, y: T.topY + 2, r: Math.min(64, W * 0.16) } };   // солнце — в правом верхнем углу, к центру карты
   }
 
   // ---------- колбы: форма — ratio ----------
@@ -225,8 +225,69 @@
     }
   }
 
-  // солнце — четверть из левого верхнего угла, как в Natura (там — справа); белым по чёрному
-  function drawSun(c, G, now) { T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, 1, now); }
+  // солнце — четверть из правого верхнего угла (угол к центру карты); белым по чёрному
+  function drawSun(c, G, now) { T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, -1, now); }
+
+  // ---------- стена: бледные алхимические рисунки, одна картинка на размер экрана ----------
+  // квадратура круга (круг — треугольник — круг — квадрат — круг, как в Atalanta Fugiens), девиз, уроборос, знаки веществ
+  let wallC = null, wallKey = '';
+  function wall(G) {
+    const key = `${G.W}x${G.H}x${T.DPR}|${G.top}|${G.bot}`;
+    if (wallC && key === wallKey) return wallC;
+    wallKey = key;
+    wallC = document.createElement('canvas');
+    wallC.width = Math.round(G.W * T.DPR); wallC.height = Math.round(G.H * T.DPR);
+    const x = wallC.getContext('2d');
+    x.setTransform(T.DPR, 0, 0, T.DPR, 0, 0);
+    x.fillStyle = T.BG; x.fillRect(0, 0, G.W, G.H);
+    const ink = (a) => `rgba(237,237,237,${a})`;
+    // квадратура круга
+    const cx = G.W * 0.62, cy = G.top + 0.36 * G.h, R = Math.min(G.W * 0.34, G.h * 0.2);
+    x.strokeStyle = ink(0.1); x.lineWidth = 1;
+    const circ = (r) => { x.beginPath(); x.arc(cx, cy, r, 0, TAU); x.stroke(); };
+    circ(R); circ(R + 4);
+    x.beginPath(); for (let k = 0; k < 3; k++) { const a = -Math.PI / 2 + (k * TAU) / 3; k ? x.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R) : x.moveTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R); } x.closePath(); x.stroke();
+    circ(R / 2);
+    const q = R / 2 / Math.SQRT2; x.strokeRect(cx - q, cy - q, 2 * q, 2 * q);
+    circ(q);
+    x.beginPath(); x.moveTo(cx, cy - R - 10); x.lineTo(cx, cy + R + 10); x.moveTo(cx - R - 10, cy); x.lineTo(cx + R + 10, cy); x.setLineDash([2, 5]); x.stroke(); x.setLineDash([]);
+    for (let d = 0; d < 360; d += 10) {                // шкала по внешнему кругу
+      const a = (d * Math.PI) / 180, l = d % 30 ? 3 : 6;
+      x.beginPath(); x.moveTo(cx + Math.cos(a) * (R + 4), cy + Math.sin(a) * (R + 4)); x.lineTo(cx + Math.cos(a) * (R + 4 + l), cy + Math.sin(a) * (R + 4 + l)); x.stroke();
+    }
+    // девиз по дуге под кругом
+    x.font = `italic 13px ${T.MAP}`; x.fillStyle = ink(0.16); x.textAlign = 'center'; x.textBaseline = 'middle';
+    const motto = 'SOLVE  ET  COAGVLA', span = 1.1;
+    [...motto].forEach((ch, i) => {
+      const a = Math.PI / 2 + span / 2 - (i / (motto.length - 1)) * span;
+      x.save(); x.translate(cx + Math.cos(a) * (R + 20), cy + Math.sin(a) * (R + 20)); x.rotate(a - Math.PI / 2); x.fillText(ch, 0, 0); x.restore();
+    });
+    // уроборос слева от печи: змей кусает свой хвост; чешуя — засечки
+    const ox = G.W * 0.15, oy = G.furn.y0 + 26, orr = Math.min(28, G.W * 0.07);
+    x.strokeStyle = ink(0.14); x.lineWidth = 1;
+    x.beginPath(); x.arc(ox, oy, orr + 4, -Math.PI / 2 + 0.25, -Math.PI / 2 + TAU - 0.05); x.stroke();
+    x.beginPath(); x.arc(ox, oy, orr - 4, -Math.PI / 2 + 0.25, -Math.PI / 2 + TAU - 0.05); x.stroke();
+    for (let k = 0; k < 36; k++) { const a = -Math.PI / 2 + 0.35 + k * 0.165; x.beginPath(); x.moveTo(ox + Math.cos(a) * (orr - 3), oy + Math.sin(a) * (orr - 3)); x.lineTo(ox + Math.cos(a + 0.08) * (orr + 3), oy + Math.sin(a + 0.08) * (orr + 3)); x.stroke(); }
+    const hx = ox + 3, hy = oy - orr;                 // голова у хвоста
+    x.beginPath(); x.ellipse(hx, hy, 8, 5.5, 0, 0, TAU); x.stroke();
+    x.beginPath(); x.arc(hx + 2, hy - 1.5, 1, 0, TAU); x.stroke();
+    x.beginPath(); x.moveTo(hx - 8, hy); x.lineTo(hx - 13, hy + 1); x.stroke();
+    // знаки веществ по стене: сера, соль, ртуть, сурьма, купорос, огонь философов
+    const glyphs = [[0.1, 0.12], [0.88, 0.5], [0.12, 0.47], [0.9, 0.7], [0.5, 0.06], [0.42, 0.62]];
+    x.strokeStyle = ink(0.13); x.lineWidth = 1;
+    glyphs.forEach(([gx, gy], i) => {
+      const X = G.W * gx, Y = G.top + G.h * gy, s = 7;
+      x.beginPath();
+      if (i === 0) { x.moveTo(X, Y - s); x.lineTo(X - s * 0.8, Y + s * 0.3); x.lineTo(X + s * 0.8, Y + s * 0.3); x.closePath(); x.moveTo(X, Y + s * 0.3); x.lineTo(X, Y + s * 1.3); x.moveTo(X - s * 0.45, Y + s * 0.85); x.lineTo(X + s * 0.45, Y + s * 0.85); }   // сера
+      else if (i === 1) { x.arc(X, Y, s * 0.7, 0, TAU); x.moveTo(X - s * 0.7, Y); x.lineTo(X + s * 0.7, Y); }   // соль
+      else if (i === 2) { x.arc(X, Y, s * 0.5, 0, TAU); x.moveTo(X - s * 0.5, Y - s); x.quadraticCurveTo(X, Y - s * 0.3, X + s * 0.5, Y - s); x.moveTo(X, Y + s * 0.5); x.lineTo(X, Y + s * 1.3); x.moveTo(X - s * 0.35, Y + s * 0.9); x.lineTo(X + s * 0.35, Y + s * 0.9); }   // ртуть
+      else if (i === 3) { x.arc(X, Y + s * 0.3, s * 0.6, 0, TAU); x.moveTo(X, Y - s * 0.3); x.lineTo(X, Y - s * 1.2); x.moveTo(X - s * 0.4, Y - s * 0.8); x.lineTo(X + s * 0.4, Y - s * 0.8); }   // сурьма
+      else if (i === 4) { x.moveTo(X - s, Y - s * 0.6); x.lineTo(X + s, Y - s * 0.6); x.lineTo(X, Y + s); x.closePath(); x.moveTo(X - s * 0.5, Y); x.lineTo(X + s * 0.5, Y); }   // воздух
+      else { x.arc(X, Y, s * 0.8, 0, TAU); x.moveTo(X - s * 0.8, Y); x.lineTo(X + s * 0.8, Y); x.moveTo(X, Y - s * 0.8); x.lineTo(X, Y + s * 0.8); }   // купорос
+      x.stroke();
+    });
+    return wallC;
+  }
 
   // череп с костями в правом нижнем углу (у Natura напротив — надгробие); пока ни к чему не ведёт
   const skullAt = () => ({ x: T.W - 38, y: T.H - T.safeBot - 40 });
@@ -276,7 +337,7 @@
     fx: fxw,
     draw(now) {
       const c = T.g, G = geo();
-      c.fillStyle = T.BG; c.fillRect(0, 0, T.W, T.H);
+      c.drawImage(wall(G), 0, 0, T.W, T.H);
       drawSun(c, G, now);
       drawFurnace(c, G, now);
       drawTubes(c, G, now);
