@@ -222,7 +222,7 @@
   // снизу тень штрихом. Контур — объединение кругов: сначала все обводятся толстой линией, потом заливаются бумагой
   const LOBES = [[-0.3, -0.02, 0.19], [-0.1, -0.2, 0.25], [0.15, -0.16, 0.23], [0.34, -0.02, 0.17],
     [0.22, 0.11, 0.15], [0.0, 0.13, 0.17], [-0.22, 0.12, 0.15], [-0.42, 0.05, 0.12]];
-  function cloud(c, X, Y, s, a) {
+  function cloud(c, X, Y, s, a, heavy = 0) {
     const w = 64 * s;
     c.save(); c.translate(X, Y);
     const each = (fn) => { for (const [dx, dy, r] of LOBES) { c.beginPath(); c.arc(dx * w, dy * w, r * w, 0, TAU); fn(); } };
@@ -230,8 +230,8 @@
     c.fillStyle = pap(1); each(() => c.fill());
     c.beginPath(); for (const [dx, dy, r] of LOBES) { c.moveTo(dx * w + r * w, dy * w); c.arc(dx * w, dy * w, r * w, 0, TAU); } c.clip();
     c.strokeStyle = ink(a * 0.3); c.lineWidth = 0.7; c.beginPath();      // тень снизу — короткие дуги-штрихи
-    for (let y = 0.11 * w; y < 0.32 * w; y += 3) { c.moveTo(-0.5 * w, y); c.quadraticCurveTo(0, y + 0.04 * w, 0.5 * w, y); }
-    c.stroke();
+    for (let y = (0.11 - 0.3 * heavy) * w; y < 0.32 * w; y += 3 - heavy) { c.moveTo(-0.6 * w, y); c.quadraticCurveTo(0, y + 0.04 * w, 0.6 * w, y); }
+    c.stroke();   // низкая туча (cutoff закрыт) — тень поднимается выше, туча тяжелеет — только внутри клубов
     c.strokeStyle = ink(a * 0.75); c.lineWidth = 1;   // завитки у верхних клубов
     LOBES.slice(0, 4).forEach(([dx, dy, r], i) => {
       const cx = dx * w, cy = dy * w + r * w * 0.25, rr = r * w * 0.55;
@@ -517,15 +517,10 @@
       cloud(c, cx + dx * G.W, cy + dy * 40 + bob, s * k, 0.55 + 0.1 * (i % 2));
     }
     rain(c, cx, cy + 0.2 * 64 * s, G.W * 0.3, G.tree.y + 20, 0.42, now, 0.4 + 1.6 * fx.time);
-    cloud(c, cx, cy, s, 0.95);
-    if (shown('cutoff') < 0.6) {                            // низкая туча — тяжёлая: гуще тень снизу
-      c.save(); c.translate(cx, cy); c.strokeStyle = ink(0.35 * (0.6 - shown('cutoff')) / 0.6); c.lineWidth = 0.8; c.beginPath();
-      for (let y = 0; y < 14 * s; y += 2.2) { c.moveTo(-22 * s, y); c.lineTo(22 * s, y); }
-      c.stroke(); c.restore();
-    }
+    cloud(c, cx, cy, s, 0.95, clamp((0.6 - shown('cutoff')) / 0.6));
   }
   // туча: выше — фильтр открыт, ниже — глухо
-  const cloudAt = (G) => { const s = (G.W * 0.34) / 64; return { s, cx: Math.min(G.tree.x, G.W - 34 * s), cy: G.cloudY + G.h * 0.04 + (1 - shown('cutoff')) * G.h * 0.12 }; };
+  const cloudAt = (G) => { const s = (G.W * 0.34) / 64; return { s, cx: Math.min(G.tree.x, G.W - 34 * s), cy: G.cloudY + G.h * 0.04 + (1 - shown('cutoff')) * G.h * 0.07 }; };
   // птицы — хор: больше chorus — больше птиц; машут крыльями, медленно кружат над горами
   // птицы — хор: больше chorus — больше птиц; тап — спугнуть: вспархивают вверх и врассыпную, через пару секунд возвращаются
   function birdList(G, now) {
