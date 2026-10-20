@@ -723,6 +723,10 @@
   // полоса громкости над панелью LFO — в опциях планеты, без лишнего луча
   const ampStrip = () => { const p = lfoPanel(); return { x: p.x, w: p.w, y: p.top - 52, h: 34 }; };
   const ampT = (amp) => invLog(AMP_MIN, AMP_MAX, amp);          // шкала в децибелах
+  // «off» в заголовке панели LFO — снять LFO; «close» над полосой amp — закрыть закреплённое кольцо
+  const offChip = () => { const p = lfoPanel(); return { x: p.x + p.w - 46, y: p.top - 6, w: 46, h: 24 }; };
+  const closeChip = () => { const a = ampStrip(); return { x: a.x + a.w - 64, y: a.y - 38, w: 64, h: 26 }; };
+  const inBox = (f, b, pad = 6) => f.x > b.x - pad && f.x < b.x + b.w + pad && f.y > b.y - pad && f.y < b.y + b.h + pad;
   function ampHit(f) {
     const a = ampStrip();
     return f.x > a.x - 8 && f.x < a.x + a.w + 8 && f.y > a.y - 6 && f.y < a.y + a.h + 4 ? { k: 'amp' } : null;
@@ -752,11 +756,21 @@
       if (Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 12) return { k: 'pin', holder: o };
     }
     if (editor) {
-      if (editor.kind === 'voice') { const l = ampHit(f) || lfoHit(f); if (l) return l; }
+      if (editor.kind === 'voice') {
+        if (inBox(f, closeChip())) return { k: 'void' };
+        const tg = modTarget(f);
+        if (tg && tg.v.lfo[tg.key] && inBox(f, offChip())) return { k: 'lfooff' };
+        const l = ampHit(f) || lfoHit(f); if (l) return l;
+      }
+      if (editor.kind === 'link' && inBox(f, closeChip())) return { k: 'void' };
       if (Math.hypot(f.x - editor.cx, f.y - editor.cy) < ringR()) return { k: 'ring' };
       return { k: 'void' };                   // тап мимо — закрыть
     }
-    if (modTarget(f)) { const l = ampHit(f) || lfoHit(f); if (l) return l; }
+    const mt = modTarget(f);
+    if (mt) {
+      if (mt.v.lfo[mt.key] && inBox(f, offChip())) return { k: 'lfooff' };
+      const l = ampHit(f) || lfoHit(f); if (l) return l;
+    }
     for (const v of V) {                      // ручка на середине связи
       if (!v.active) continue;
       for (const m of v.mods) {
@@ -859,6 +873,11 @@
     if (f.ui === 'void') { closeEditor(); return; }
     if (f.ui === 'link') { openLink(f, f.hit.dst, f.hit.m); return; }
     if (f.ui === 'ring') { ringTouch(f, true); return; }
+    if (f.ui === 'lfooff') {                  // снять LFO с выбранного параметра
+      const tg = modTarget(f);
+      if (tg) for (const u of tg.group) { removeLfo(u, tg.key); u.dirty = true; }
+      return;
+    }
     if (f.ui === 'amp') {
       const tg = modTarget(f);
       if (!tg) return;
@@ -1002,7 +1021,7 @@
     const v = f.voice, group = groupOf(v);
     f.menuWas = true;
     const origs = group.map((u) => ({ u, o: { wave: u.wave, cut: u.cut, res: u.res, beat: u.beat, fm: u.fm, shift: u.shift } }));
-    const rc = ringCenter(vx(v), vy(v), lfoPanel().top - 26);   // низ занят панелью LFO; подпись нижнего луча — над ней
+    const rc = ringCenter(vx(v), vy(v), closeChip().y - 6);   // низ занят панелью LFO, полосой amp и кнопкой close
     f.menu = {
       cx: rc.cx, cy: rc.cy, gx: f.x, gy: f.y, sector: null, sectors: SECTORS, span: MENU_SPAN, voice: v, group, overPin: true,
       get: (k) => norm(v, k),
@@ -1896,6 +1915,13 @@
   }
   const readoutAt = (cx, cy) => ({ x: clamp(cx, 90, W - 90), y: Math.max(scopeY + 56, cy - MENU_DEAD - MENU_SPAN - 48) });
 
+  function drawCloseChip() {
+    const c = closeChip(), on = [...F.values()].some((f) => f.ui === 'void');
+    g.fillStyle = 'rgba(0,0,0,0.9)'; g.fillRect(c.x, c.y, c.w, c.h);
+    hairBox(c.x, c.y, c.w, c.h, on ? 0.9 : 0.5);
+    text('close', c.x + c.w / 2, c.y + c.h / 2, 12, on ? 1 : 0.8, 400, 'center');
+  }
+
   // закреплённое кольцо кружка или связи
   function drawEditor() {
     const e = editor;
@@ -1988,7 +2014,10 @@
     text(`LFO → ${LFO_TARGET_LABEL[tg.key]}${many}`, p.x, p.top + 6, 13, 1, 500);
     if (spec) {
       const hz = spec.rate < 1 ? spec.rate.toFixed(2) : spec.rate.toFixed(spec.rate < 10 ? 2 : 1);
-      text(`${hz} Hz · ${Math.round(spec.depth * 100)}%`, p.x + p.w, p.top + 6, 15, 1, 500, 'right');
+      text(`${hz} Hz · ${Math.round(spec.depth * 100)}%`, p.x + p.w - 58, p.top + 6, 15, 1, 500, 'right');
+      const o = offChip(), on = [...F.values()].some((f) => f.ui === 'lfooff');
+      hairBox(o.x, o.y, o.w, o.h, on ? 0.9 : 0.45);
+      text('off', o.x + o.w / 2, o.y + o.h / 2, 12, on ? 1 : 0.75, 400, 'center');
     } else text('drag the pad', p.x + p.w, p.top + 6, 12, 0.5, 400, 'right');
 
     // форма: таблицы по местам, рамка — текущая
@@ -2274,12 +2303,17 @@
     g.lineCap = 'butt';
     for (let i = 0; i < hist.length; i++) dot(u.x - ((hist.length - 1) * 4) / 2 + i * 4, u.y + CLR_R + 7, 1.1, 0.5);
 
-    // убрать всё: крестик вверху справа
+    // убрать всё: корзина (не крестик — его легко принять за «закрыть»)
     const c = btnPos('clr');
     const live = V.some((v) => v.active);
     ring(c.x, c.y, CLR_R, live ? 0.45 : 0.18, 1.2);
-    g.strokeStyle = ink(live ? 0.75 : 0.25); g.lineWidth = 1.4;
-    g.beginPath(); g.moveTo(c.x - 6, c.y - 6); g.lineTo(c.x + 6, c.y + 6); g.moveTo(c.x + 6, c.y - 6); g.lineTo(c.x - 6, c.y + 6); g.stroke();
+    g.strokeStyle = ink(live ? 0.75 : 0.25); g.lineWidth = 1.2;
+    g.beginPath();
+    g.moveTo(c.x - 7, c.y - 4.5); g.lineTo(c.x + 7, c.y - 4.5);                 // крышка
+    g.moveTo(c.x - 2.5, c.y - 7); g.lineTo(c.x + 2.5, c.y - 7);                 // ручка
+    g.moveTo(c.x - 5.5, c.y - 4.5); g.lineTo(c.x - 4.3, c.y + 7); g.lineTo(c.x + 4.3, c.y + 7); g.lineTo(c.x + 5.5, c.y - 4.5);
+    g.moveTo(c.x - 1.6, c.y - 1.5); g.lineTo(c.x - 1.4, c.y + 4.5); g.moveTo(c.x + 1.6, c.y - 1.5); g.lineTo(c.x + 1.4, c.y + 4.5);
+    g.stroke();
 
     // лад: лесенка; зажата — список ладов и тоники; вправо — карандаш
     const L = sclList(), b = L.b;
@@ -2522,6 +2556,7 @@
     readLevel();
     const tg = modTarget(null);
     if (tg) { drawLfoPanel(tg, now); drawAmpStrip(tg); }
+    if (editor) drawCloseChip();
     drawUI();
     if (fxF) drawFx(fxF);                       // веер FX — поверх верхней строки
     drawStrain();
