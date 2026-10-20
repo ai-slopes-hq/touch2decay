@@ -2668,11 +2668,11 @@
   }
 
   // ---------- смежные миры: солнце — начало координат, вокруг него четыре четверти ----------
-  // I (x>0, y>0) — Caelum, небо: планеты и орбиты, играет. II, III, IV — пока только гравюры (идеи — в ROADMAP.md).
+  // Universum: I (x>0, y>0) — Systema, солнечная система: планеты и орбиты, играет. II, III, IV — пока только гравюры (идеи — в ROADMAP.md).
   // Тап по солнцу — карта миров; тап по четверти — влететь в мир; в мире тап по солнцу — снова карта
   const WORLDS = [
     null,
-    { n: 'I', title: 'Caelum', sub: 'orbes · strepitus' },
+    { n: 'I', title: 'Systema', sub: 'orbes · strepitus' },
     { n: 'II', title: 'Rosarium', sub: 'operatores quattuor' },
     { n: 'III', title: 'Hermetica', sub: 'modi resonantes' },
     { n: 'IV', title: 'Terra', sub: 'echo et reverberatio' },
@@ -2776,6 +2776,9 @@
     g.fillStyle = BG; g.beginPath(); g.arc(cx, cy, 40, 0, Math.PI * 2); g.fill();
     sunGlyph(g, cx, cy, 0, Math.PI * 2, 1, now);
     mapText('tap a world', cx, cy + 62, 13, 0.5, 'center');
+    g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(cx - 92, scopeY - 6, 184, 34);   // имя всей карты
+    g.font = `20px ${MAP}`; g.fillStyle = ink(0.95); g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('U N I V E R S U M', cx, scopeY + 11);
     g.globalAlpha = 1;
   }
 
