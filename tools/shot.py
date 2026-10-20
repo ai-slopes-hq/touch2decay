@@ -700,15 +700,13 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     await p.shot('lab-broken')
     await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(200)
     assert not await p.js('()=>t2d.lab.broken[2]'), 'double tap again — mended'
-    x0 = await p.js('()=>t2d.lab.catX'); await p.js("()=>t2d.lab.setFx('athanor', 1)"); await p.pg.wait_for_timeout(2500)
-    assert await p.js('()=>t2d.lab.catX') < x0 - 30, 'athanor at max — the cat moves away from the heat'
-    await p.shot('lab-cat'); await p.js("()=>t2d.lab.setFx('athanor', 0.35)")
-    await p.pg.wait_for_timeout(2500); cx = await p.js('()=>t2d.lab.catX'); fb2 = await p.js('()=>t2d.lab.furnace()')
-    cy = await p.js('()=>{const g=t2d.lab.geo(); return g.furn.y1 - 10}')
-    await p.tap(cx, cy); await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>performance.now() - t2d.lab.catUp') < 500 and not await p.js('()=>t2d.lab.catGone'), 'touch the cat — it looks up'
-    for _ in range(5): await p.tap(cx, cy); await p.pg.wait_for_timeout(120)
-    assert await p.js('()=>t2d.lab.catGone'), 'pester the cat — it leaves for good'
+    a = await p.js('()=>t2d.lab.at(0)'); f0 = await p.js('()=>t2d.lab.OPS[0].f')   # держишь колбу — плашка: высота, уровень, пеликан
+    await p.hold(a['x'], a['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a flask — its sheet'
+    fg = await p.js('()=>t2d.fxGeo()'); r = next(q for q in fg['rows'] if q['k'] == 'pitch'); y = r['y'] + r['h'] / 2
+    pid = await p.hold(fg['tx0'] + 40, y, ms=60); await p.drag(pid, fg['tx0'] + 40, y, fg['tx0'] + 100, y, steps=6); await p.shot('lab-flask-sheet'); await p.up()
+    assert await p.js('()=>t2d.lab.OPS[0].f') > f0 * 1.3, 'flask sheet: pitch row up'
+    await p.tap(200, fg['top'] - 60); await p.pg.wait_for_timeout(100)
     a = await p.js('()=>t2d.lab.at(0)'); f0 = await p.js('()=>t2d.lab.OPS[0].f')
     pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], a['x'] + 60, a['y'], steps=8)
     assert await p.js('()=>t2d.lab.focus') == 0, 'holding a flask — its waveform in the scroll'
@@ -755,13 +753,13 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     await p.shot('lab-jug'); await p.pg.wait_for_timeout(300)
     assert not await p.js('()=>t2d.lab.fire') and not any(v['latched'] for v in await p.js('()=>t2d.lab.voices')), 'jug — fire out, kept jars quiet'
     await p.js("()=>{t2d.lab.setFx('solve', 0.2); t2d.lab.setFx('coagula', 0)}")
-    for k, d in (('solve', 96), ('coagula', 112)):                        # уроборосы у печи: вверх — больше
+    for k, d in (('solve', 96), ('coagula', 112)):                        # склянки на атаноре: вверх — больше
         q = await p.js(f"()=>t2d.lab.knob('{k}')"); pid = await p.hold(q['x'], q['y'], ms=60)
         await p.drag(pid, q['x'], q['y'], q['x'], q['y'] - d, steps=8)
         if k == 'coagula': await p.shot('lab-knob')
         await p.up(); await p.pg.wait_for_timeout(100)
     v = await p.js('()=>t2d.lab.fx')
-    assert abs(v['solve'] - 0.8) < 0.02 and abs(v['coagula'] - 0.7) < 0.02, f'ouroboros knobs set solve and coagula: {v}'
+    assert abs(v['solve'] - 0.8) < 0.02 and abs(v['coagula'] - 0.7) < 0.02, f'vials set solve and coagula: {v}'
     assert await p.js('()=>t2d.lab.solveOn'), 'coagula up — solve·coagula on'
     await p.shot('lab-solve')
     await p.js("()=>t2d.lab.setFx('coagula', 0)"); await p.pg.wait_for_timeout(100)
