@@ -679,6 +679,7 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     assert await p.js('()=>t2d.sounding()'), 'sounding while the fire burns'
     a = await p.js('()=>t2d.lab.at(0)'); f0 = await p.js('()=>t2d.lab.OPS[0].f')
     pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], a['x'] + 60, a['y'], steps=8)
+    assert await p.js('()=>t2d.lab.focus') == 0, 'holding a flask — its waveform in the scroll'
     await p.shot('lab-pitch'); await p.up(); await p.pg.wait_for_timeout(100)
     f1 = await p.js('()=>t2d.lab.OPS[0].f')
     assert abs(12 * math.log2(f1 / f0) - 10) < 0.6, f'drag right 60 px — ten semitones up: {f0} -> {f1}'
@@ -702,7 +703,11 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
     assert await p.js('()=>t2d.lab.mods') == m0 and await p.js('()=>t2d.lab.fire'), 'undo brings tubes and fire back'
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
-    assert await p.js('()=>t2d.lab.fire && t2d.lab.live'), 'dice lights the fire'
+    assert await p.js('()=>t2d.lab.fire && t2d.lab.live'), 'dice keeps a burning fire burning'
+    jg = await p.js('()=>t2d.lab.jug()'); await p.tap(jg['x'], jg['y']); await p.pg.wait_for_timeout(1200)
+    m1 = await p.js('()=>t2d.lab.mods'); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(300)
+    assert not await p.js('()=>t2d.lab.fire'), 'dice does not light the fire'
+    await p.tap(fb['x'], fb['y']); await p.pg.wait_for_timeout(1500)
     j = await p.js('()=>t2d.lab.jar(3)'); pid = await p.hold(j['x'], j['y'], ms=400)
     assert any(v['k'] == 3 and v['on'] for v in await p.js('()=>t2d.lab.voices')), 'hold a jar — the apparatus sounds on its note'
     await p.shot('lab-jar'); await p.up(); await p.pg.wait_for_timeout(100)

@@ -55,10 +55,18 @@
   function geo() {
     const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, h = bot - top;
     const shelf = bot - 18, egg = { x: W / 2, y: shelf - 0.25 * h }, furn = { y0: egg.y + 22, y1: shelf - 62 };
-    const dy = 0.18 * h, r = Math.min(34, W * 0.085, dy / 4.3), L0 = egg.y - 0.17 * h;
+    // свиток с формой волны — вверху, слева от солнца; под ним ярусы колб растягиваются на всю высоту:
+    // меньше ярусов — крупнее колбы и шире шаг
+    const scroll = { x0: 16, x1: W - 96, y0: top + 8, y1: top + 8 + Math.min(64, 0.09 * h) };
+    const lv = OPS.map((_, i) => levelOf(i)), nT = Math.max(...lv) + 1;
+    const perTier = Math.max(...Array.from({ length: nT }, (_, l) => lv.filter((v) => v === l).length));
+    const L0 = egg.y - 0.17 * h, yMin = scroll.y1 + 34;
+    let r = Math.min(42, W / (perTier * 3.2));
+    if (nT > 1) r = Math.min(r, (L0 - yMin) / (3.6 * (nT - 1) + 2.4));
+    r = Math.max(18, r);
+    const dy = nT > 1 ? (L0 - yMin - 2.4 * r) / (nT - 1) : 0;
     const pos = [], car = carriers();
-    car.forEach((i, k) => { pos[i] = { x: W * (car.length === 1 ? 0.5 : 0.24 + (0.52 * k) / (car.length - 1)), y: L0 }; });
-    const lv = OPS.map((_, i) => levelOf(i));
+    car.forEach((i, k) => { pos[i] = { x: W * (car.length === 1 ? 0.5 : 0.22 + (0.56 * k) / (car.length - 1)), y: L0 }; });
     for (let l = 1; l <= 3; l++) {
       const at = OPS.map((_, i) => i).filter((i) => lv[i] === l);
       at.forEach((i, k) => {
@@ -67,7 +75,7 @@
         pos[i] = { x: clamp(x + (k - (at.length - 1) / 2) * W * 0.3, W * 0.16, W * 0.84), y: L0 - l * dy };
       });
     }
-    return { W, H, top, bot, h, shelf, egg, furn, r, pos, sun: { x: W, y: T.topY + 2, r: Math.min(64, W * 0.16) } };   // солнце — в правом верхнем углу, к центру карты
+    return { W, H, top, bot, h, shelf, egg, furn, r, pos, scroll, sun: { x: W, y: T.topY + 2, r: Math.min(64, W * 0.16) } };   // солнце — в правом верхнем углу, к центру карты
   }
   const shown = [];                          // где колбы нарисованы сейчас (едут к своим ярусам)
   function ease(G, dt) {
@@ -104,17 +112,16 @@
   // форма волны колбы — то, что она звучит: FM считается напрямую по фазе (как в звуке: девиация = уровень × 3 × частота приёмника),
   // окно — тем больше периодов, чем выше колба звучит; кеш по параметрам
   const waveCache = new Map();
-  function waveOf(i) {
-    const key = `${i}|${OPS.map((o) => `${o.f.toFixed(2)},${o.level.toFixed(3)},${o.fb}`).join(';')}|${mods.join(';')}`;
+  const paramKey = () => `${OPS.map((o) => `${o.f.toFixed(2)},${o.level.toFixed(3)},${o.fb}`).join(';')}|${mods.join(';')}`;
+  function sim(key, dur, pick) {                    // фаза всех четырёх колб сразу; pick(y) — что записывать
     let w = waveCache.get(key);
     if (w) return w;
     if (waveCache.size > 64) waveCache.clear();
-    const per = clamp(1 + Math.log2(OPS[i].f / F_LO) * 0.8, 1, 6), N = 72, STEP = 9, M = (N - 1) * STEP + 1, dt = per / OPS[i].f / M;
-    const ph = new Float64Array(4), y = new Float64Array(4);
+    const N = 72, STEP = 9, M = (N - 1) * STEP + 1, dt = dur / M, ph = new Float64Array(4), y = new Float64Array(4);
     w = new Float32Array(N);
     for (let s = 0; s < M; s++) {
       for (let k = 0; k < 4; k++) y[k] = Math.sin(ph[k]);
-      if (s % STEP === 0) w[s / STEP] = y[i];
+      if (s % STEP === 0) w[s / STEP] = pick(y);
       for (let k = 0; k < 4; k++) {
         const o = OPS[k];
         let fr = o.f + o.fb * o.f * 1.2 * y[k];
@@ -124,6 +131,58 @@
     }
     waveCache.set(key, w);
     return w;
+  }
+  function waveOf(i) {
+    const per = clamp(1 + Math.log2(OPS[i].f / F_LO) * 0.8, 1, 6);
+    return sim(`${i}|${paramKey()}`, per / OPS[i].f, (y) => y[i]);
+  }
+  function waveOut() {                              // то, что выходит из аппарата: сумма несущих, два периода самой низкой
+    const car = carriers();
+    if (!car.length) return null;
+    const base = Math.min(...car.map((i) => OPS[i].f)), tot = car.reduce((s, i) => s + OPS[i].level, 0) || 1;
+    const w = sim(`out|${paramKey()}`, 2 / base, (y) => car.reduce((s, i) => s + OPS[i].level * y[i], 0) / tot);
+    let m = 0;
+    for (const v of w) m = Math.max(m, Math.abs(v));
+    return m > 1e-3 ? w.map((v) => v / m) : w;
+  }
+
+  // свиток: крупно форма волны — колбы, которую держишь (её цветом, с нотой), иначе бледно — всего аппарата
+  let focusI = null, focusUntil = 0;
+  function drawScroll(c, G, now) {
+    const { x0, x1, y0, y1 } = G.scroll, cy = (y0 + y1) / 2, hh = (y1 - y0) / 2;
+    const live = focusI != null && now < focusUntil;
+    c.fillStyle = T.BG; c.fillRect(x0 + 6, y0, x1 - x0 - 12, y1 - y0);
+    c.strokeStyle = T.ink(0.75); c.lineWidth = 1.1;
+    c.beginPath(); c.moveTo(x0 + 6, y0 + 0.5); c.lineTo(x1 - 6, y0 + 0.5); c.moveTo(x0 + 6, y1 - 0.5); c.lineTo(x1 - 6, y1 - 0.5); c.stroke();
+    for (const [x, d] of [[x0 + 6, -1], [x1 - 6, 1]]) {   // свёрнутые концы свитка
+      c.beginPath(); c.ellipse(x, cy, 6, hh, 0, 0, TAU); c.stroke();
+      c.beginPath(); c.arc(x + d * 1, cy - hh * 0.35, 2.5, 0, TAU); c.stroke();
+    }
+    c.strokeStyle = T.ink(0.15); c.lineWidth = 0.8; c.setLineDash([2, 4]);
+    c.beginPath(); c.moveTo(x0 + 14, cy); c.lineTo(x1 - 14, cy); c.stroke(); c.setLineDash([]);
+    const w = live ? waveOf(focusI) : waveOut();
+    if (!w) return;
+    const n = w.length, xa = x0 + 16, xb = x1 - 16, amp = hh - 7;
+    c.strokeStyle = live ? rgba(mixed(focusI).map((v) => Math.min(255, v + 50)), 0.95) : T.ink(heat > 0.05 || voices.size ? 0.55 : 0.3);
+    c.lineWidth = live ? 1.8 : 1.2; c.lineJoin = 'round';
+    c.beginPath();
+    for (let k = 0; k < n; k++) { const X = xa + (k / (n - 1)) * (xb - xa), Y = cy - w[k] * amp; k ? c.lineTo(X, Y) : c.moveTo(X, Y); }
+    c.stroke();
+    if (live) { const o = OPS[focusI]; T.mapText(`${o.key} · ${noteName(o.f)}`, xa, y0 + 10, 12, 0.75, 'left'); }
+  }
+  // пар из горлышек — хвост стекла (vitrum): выше и дольше, пока звучит
+  function drawSteam(c, G, now) {
+    const on = heat > 0.05 || [...voices.values()].some((v) => v.on);
+    if (!on || fx.vitrum < 0.03) return;
+    c.lineWidth = 1;
+    for (let i = 0; i < OPS.length; i++) {
+      const q = flaskGeo(G, i), H = 16 + fx.vitrum * 70;
+      for (let k = 0; k < 3; k++) {
+        const t = ((now / (1800 + k * 300) + k / 3 + i * 0.21) % 1), y = q.neckTop - 6 - t * H, x = q.p.x + Math.sin(t * 5 + i + k) * (3 + t * 6);
+        c.strokeStyle = T.ink(0.32 * (1 - t) * Math.min(1, heat + 0.3));
+        c.beginPath(); c.arc(x, y, 2.5 + t * 4, Math.PI * (0.9 + 0.2 * k), Math.PI * (1.7 + 0.2 * k)); c.stroke();
+      }
+    }
   }
 
   const tubes = [];                          // для попадания пальцем: [{ s, d, pts }] и пеликаны [{ i, pts }]
@@ -155,7 +214,7 @@
       tube(c, () => { c.beginPath(); c.moveTo(...cp[0]); c.bezierCurveTo(...cp[1], ...cp[2], ...cp[3]); }, 2 + 3 * o.fb, rgba(col, 0.85), now, o.fb * heat);
       tubes.push({ i, pts: sample([cp]) });
     }
-    const out = p.x <= G.W / 2 ? -1 : 1, lx = p.x + out * (hw + 16), ly = Math.max(yTop + 8, p.y + r * 0.2);   // стихия — снаружи, у тела колбы
+    const out = p.x <= G.W / 2 ? -1 : 1, lx = clamp(p.x + out * (hw + 16), 16, G.W - 16), ly = Math.max(yTop + 8, p.y + r * 0.2);   // стихия — снаружи, у тела колбы
     elementGlyph(c, lx, ly, o.up, o.bar, 6, 0.75);
     T.mapText(o.key, lx, ly + 18, 11, 0.4, 'center');
   }
@@ -602,7 +661,7 @@
     if (h && h.part === 'neck') { touches.set(f.id, { kind: 'tube', src: h.i }); return; }
     const tb = hitTube(f.x, f.y);                    // трубка — раньше тела колбы: её конец лежит у горлышка
     if (tb && !(h && h.part === 'body')) { touches.set(f.id, { kind: 'tubeTap', t: tb }); return; }
-    if (h) { const o = OPS[h.i]; touches.set(f.id, { kind: 'flask', i: h.i, f0: o.f, l0: o.level, axis: null }); return; }
+    if (h) { const o = OPS[h.i]; touches.set(f.id, { kind: 'flask', i: h.i, f0: o.f, l0: o.level, axis: null }); focusI = h.i; focusUntil = performance.now() + 1500; return; }
     const jb = jugBox(G);
     if (Math.abs(f.x - jb.x) < 26 && f.y > jb.y - jb.h - 12 && f.y < jb.y + 10) { touches.set(f.id, { kind: 'jug' }); return; }
     const b = furnBox(G);
@@ -623,6 +682,7 @@
       return;
     }
     if (t.kind !== 'flask') return;
+    focusI = t.i; focusUntil = performance.now() + 1500;
     if (!t.axis && Math.hypot(dx, dy) > 8) t.axis = Math.abs(dx) > Math.abs(dy) ? 'pitch' : 'level';
     const o = OPS[t.i];
     if (t.axis === 'pitch') {                        // вбок: 6 px на полутон; с ладом — по ступеням
@@ -698,7 +758,7 @@
     OPS.forEach((o) => { o.f = clamp(base * ratios[Math.floor(R() * ratios.length)] * (1 + (R() - 0.5) * 0.008), F_LO, F_HI); o.level = 0.25 + R() * 0.6; o.fb = 0; });
     const top = OPS.map((_, i) => i).filter((i) => !mods.some((m) => m[1] === i) && mods.some((m) => m[0] === i));
     if (top.length && R() < 0.6) OPS[top[0]].fb = 0.3 + R() * 0.4;
-    rewire(); setFire(true);
+    rewire();                                         // огонь не трогает: погашен — так и остаётся
   }
 
   let last = performance.now();
@@ -715,11 +775,13 @@
       tubes.length = 0;
       c.drawImage(wall(G), 0, 0, T.W, T.H);
       drawSun(c, G, now);
+      drawScroll(c, G, now);
       drawFurnace(c, G, now);
       drawJug(c, G, now);
       drawTubes(c, G, now);
       const held = new Set([...touches.values()].filter((t) => t.kind === 'flask').map((t) => t.i));
       for (let i = 0; i < OPS.length; i++) drawFlask(c, i, G, now, held.has(i));
+      drawSteam(c, G, now);
       drawEgg(c, G, now);
       drawJars(c, G, now);
       drawRoot(c);
@@ -743,7 +805,7 @@
   };
   T.registerWorld(3, lab);
   window.t2d.lab = {
-    OPS, fx, geo, mixed, jars, waveOf, get mods() { return mods; }, get fire() { return fire; }, get live() { return voices.has('fire'); },
+    OPS, fx, geo, mixed, jars, waveOf, waveOut, get focus() { return focusI; }, get mods() { return mods; }, get fire() { return fire; }, get live() { return voices.has('fire'); },
     get voices() { return [...voices].map(([k, v]) => ({ k, on: v.on, latched: v.latched })); },
     jar: (i) => { const b = jarBox(geo(), i); return { x: b.X, y: b.y - b.h / 2 }; },
     at: (i) => { const q = flaskGeo(geo(), i); return { x: q.p.x, y: (q.yTop + q.yBot) / 2, neckY: q.neckTop + 4 }; },
