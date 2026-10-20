@@ -44,14 +44,6 @@ test('rotateSteps', () => {
   assert.deepEqual(Array.from(C.rotateSteps(seq16(), 4, -1)), [1, 2, 3, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
 });
 
-test('transposeMelody', () => {
-  const list = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
-  const steps = [12, null, 15, ...Array(13).fill(null)];
-  assert.deepEqual(Array.from(C.transposeMelody(steps, 2, list)).slice(0, 3), [17, null, 19]);
-  assert.equal(C.transposeMelody(steps, 99, list)[0], 24);
-  assert.equal(C.transposeMelody(steps, -99, list)[2], 0);
-});
-
 test('twistOrPinch', () => {
   assert.equal(C.twistOrPinch(0, 0.35, 100, 105), 'twist');
   assert.equal(C.twistOrPinch(0, 0.05, 100, 160), 'pinch');
