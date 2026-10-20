@@ -703,6 +703,16 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     assert await p.js('()=>t2d.lab.mods') == m0 and await p.js('()=>t2d.lab.fire'), 'undo brings tubes and fire back'
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
     assert await p.js('()=>t2d.lab.fire && t2d.lab.live'), 'dice lights the fire'
+    j = await p.js('()=>t2d.lab.jar(3)'); pid = await p.hold(j['x'], j['y'], ms=400)
+    assert any(v['k'] == 3 and v['on'] for v in await p.js('()=>t2d.lab.voices')), 'hold a jar — the apparatus sounds on its note'
+    await p.shot('lab-jar'); await p.up(); await p.pg.wait_for_timeout(100)
+    assert not any(v['k'] == 3 for v in await p.js('()=>t2d.lab.voices')), 'lift the finger — the jar is quiet'
+    j = await p.js('()=>t2d.lab.jar(2)'); await p.pin(j['x'], j['y']); await p.pg.wait_for_timeout(200)
+    assert any(v['k'] == 2 and v['latched'] for v in await p.js('()=>t2d.lab.voices')), 'double tap — the jar keeps sounding'
+    s0 = await p.js('()=>t2d.lab.jars[4]'); j = await p.js('()=>t2d.lab.jar(4)')
+    pid = await p.hold(j['x'], j['y'], ms=60); await p.drag(pid, j['x'], j['y'], j['x'], j['y'] - 30, steps=6); await p.up()
+    assert await p.js('()=>t2d.lab.jars[4]') == s0 + 5, 'jar up 30 px — its note five semitones up'
+    w = await p.js('()=>Array.from(t2d.lab.waveOf(0))'); assert max(w) > 0.9 and min(w) < -0.9, 'flask surface is its waveform'
     await p.shot('lab')
 
 
