@@ -416,6 +416,9 @@ async def sc_entry(p):                             # клавиш нет: кур
     hz = await p.js('()=>t2d.cym.lastStrike.hz'); m = await p.js('()=>t2d.cym.seq.melody.steps')
     assert m[3] is not None and abs(55 * 2 ** (m[3] / 12) - hz) < 0.01, f'plate tap writes its note into the cursor slot: {m[3]} vs {hz}'
     assert await p.js('()=>t2d.cym.cursor') == 4, 'cursor moves on'
+    await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(100)          # тот же тап по метке — та же нота в следующее гнездо
+    m = await p.js('()=>t2d.cym.seq.melody.steps')
+    assert m[4] == m[3] and await p.js('()=>t2d.cym.cursor') == 5, f'step entry repeats a note on the same spot: {m[3:6]}'
     await p.shot('entry')
     await p.tap(15, g['ty']); await p.pg.wait_for_timeout(100)             # мимо пластины и колец — курсор убран
     assert await p.js('()=>t2d.cym.cursor') is None, 'tap away clears the cursor'
@@ -581,6 +584,20 @@ async def sc_handpan(p):                           # нота — от клет�
     hz = await p.js('()=>t2d.cym.lastStrike.hz'); L = await p.js('()=>t2d.cym.core.noteList()')
     assert round(12 * math.log2(hz / 55)) in L, f'with a scale the centre plays a scale note: {hz}'
     await p.js('()=>{t2d.scl.on = false}'); await p.pg.wait_for_timeout(100)
+    await p.js("()=>{const C=t2d.cym.core,n=C.degPerOct(),a=C.cellCenter(0,0,n),b=C.cellCenter(0,1,n); t2d.cym.load({rhythm:{len:8, steps:[{...a,vel:1},{...b,vel:1}]}})}")
+    await p.js('()=>{t2d.scl.on = true}'); await p.pg.wait_for_timeout(100)   # лад сменили — в worklet уходят новые ноты
+    assert await p.js('()=>JSON.stringify(t2d.cym.sentSeq.melody.steps) === JSON.stringify(t2d.cym.seq.melody.steps)'), 'scale change reaches the worklet'
+    await p.js('()=>{t2d.scl.on = false}'); await p.pg.wait_for_timeout(100)
+    born0 = await p.js('()=>t2d.cym.bornM'); await p.pg.wait_for_timeout(600)
+    g1 = await p.js('()=>t2d.cym.geo'); a1, b1 = {'x': g1['cx'] - 30, 'y': g1['cy'] + 200, 'id': 23}, {'x': g1['cx'] + 30, 'y': g1['cy'] + 200, 'id': 24}
+    await p.T('touchStart', [a1]); await p.T('touchStart', [a1, b1]); await p.pg.wait_for_timeout(30)
+    for k in range(1, 8):
+        a1, b1 = dict(a1, x=g1['cx'] - 30 - 4 * k), dict(b1, x=g1['cx'] + 30 + 4 * k)
+        await p.T('touchMove', [a1, b1]); await p.pg.wait_for_timeout(16)
+    await p.T('touchEnd', [a1, b1]); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.cym.f0') != 110 and await p.js('()=>t2d.cym.bornM') == born0, 'pinch does not make the beads flash'
+    for _ in range(3):
+        u0 = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u0['x'], u0['y']); await p.pg.wait_for_timeout(100)
     await p.js("()=>{const C=t2d.cym.core,n=C.degPerOct(),a=C.cellCenter(0,0,n),b=C.cellCenter(0,1,n); t2d.cym.load({rhythm:{len:8, steps:[{...a,vel:1},{...b,vel:1}]}})}")
     q = await cell(0, 3); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(150)   # жест — чтобы узор попал в историю отмены
     L = await p.js('()=>t2d.cym.core.noteList()'); b = await p.js('()=>t2d.cym.base')

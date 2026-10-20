@@ -32,19 +32,22 @@
   // ноты считаются из мест: размер пластины (щипок) — база раскладки, поэтому щипок транспонирует всю музыку
   const fs = () => 12 * Math.log2(plate.f0 / F_MIN);
   const born = { r: new Float64Array(SLOTS), m: new Float64Array(SLOTS) }, pulse = { r: new Float64Array(SLOTS), m: new Float64Array(SLOTS) };
-  const sent = { r: [], m: [] };
-  let sentSeq = null;
+  const sent = { r: [], m: [], o: [] };
+  let sentSeq = null, sentKey = '';
+  const scaleKey = () => `${!!T.scaleOn}|${T.scalePCs}`;   // лад меняется в общей строке — ноты надо переслать
   function notesOf(steps) {                      // нота каждого удара: полутоны от 55 Гц или null (клетка за пределом)
     const list = noteList(), b = nearestIdx(list, fs()), n = degPerOct();
     return steps.map((st) => (st ? noteAt(st.x, st.y, b, n, list) : null));
   }
   function sendSeq() {
     const now = performance.now(), notes = notesOf(seq.rhythm.steps);   // новое в гнезде — вспышка: видно, куда легло
+    // нота сменила клетку — вспышка; щипок двигает базу, клетки те же — без вспышек
+    const n = degPerOct(), offs = seq.rhythm.steps.map((st) => (st ? cellIdx(st.x, st.y, 0, n) : null));
     for (let i = 0; i < SLOTS; i++) {
       if (seq.rhythm.steps[i] && seq.rhythm.steps[i] !== sent.r[i]) born.r[i] = now;
-      if (notes[i] != null && notes[i] !== sent.m[i]) born.m[i] = now;
+      if (notes[i] != null && offs[i] !== sent.o[i]) born.m[i] = now;
     }
-    sent.r = seq.rhythm.steps.slice(); sent.m = notes;
+    sent.r = seq.rhythm.steps.slice(); sent.m = notes; sent.o = offs; sentKey = scaleKey();
     // в worklet: мелодия той же длины — ноты ударов; удар в молчащей клетке уходит пустым
     const len = seq.rhythm.len, rhythm = { len, steps: seq.rhythm.steps.map((st, i) => (notes[i] == null ? null : st)) };
     sentSeq = { rhythm, melody: { len, steps: notes } };
@@ -495,7 +498,7 @@
     touches.set(f.id, f);
     const b = BOWS_ON ? bowAt(f, g) : null;
     if (b) { f.cb = b; return; }
-    const mk = seq.rec ? -1 : markAt(f, g);   // при записи метки не мешают: барабанишь в одну точку — каждый тап пишется
+    const mk = seq.rec || (cursor != null && !seq.playing) ? -1 : markAt(f, g);   // при записи и пошаговом вводе метки не мешают: тап в ту же точку — снова пишется
     if (mk >= 0) {                              // тап по метке звучит сразу; повёл — тащишь метку
       f.mk = mk;
       const st = seq.rhythm.steps[mk], note = notesOf([st])[0];
@@ -596,6 +599,7 @@
   }
   // каждый кадр: держишь дольше 150 мс — удар становится смычком; держишь метку — кольцо
   function tick(now) {
+    if (scaleKey() !== sentKey && seq.rhythm.steps.some(Boolean)) sendSeq();   // лад сменили (здесь, в Tenebrae или отменой) — ноты в worklet заново
     const g = plateGeo();
     for (const f of touches.values()) {
       if (BOWS_ON && f.live && !f.bowing && now - f.t0 > BOW_AFTER) {
@@ -978,7 +982,7 @@
     get echo() { return { label: echoDiv()[0], sec: echoSec(), fb: echoFb() }; }, get echoMax() { return echoes.length ? echoes[echoes.length - 1].dL.delayTime.maxValue : 0; },
     get echoChains() { return echoes.map((p) => ({ sec: p.sec, real: p.dL.delayTime.value })); },
     get gesture() { return gesture; }, get shownF0() { return shownF0; }, bowsOn: BOWS_ON, get ringTurn() { return { ...ringTurn }; }, get grid() { return grid; }, get waveStep() { return waveStep(); },
-    get cursor() { return cursor; }, get showNotes() { return showNotes(performance.now()); }, get lastStrike() { return lastStrike; },
+    get cursor() { return cursor; }, get bornM() { return Array.from(born.m); }, get showNotes() { return showNotes(performance.now()); }, get lastStrike() { return lastStrike; },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
     bow(x, y, on = true) { send({ t: 'bow', id: 'dbg', x, y, on, exciter: 0, pressure: 0.5, amp: 0.8 }); },
     sandSpread() {                               // среднее поле под крупинками: песок в узлах — меньше
