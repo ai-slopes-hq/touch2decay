@@ -17,6 +17,52 @@
   let bowId = 1;
   const touches = new Map();                 // палец → касание пластины
   let ringF = null, pinch = null, lastTap = null, labelUntil = 0;
+
+  // ---------- секвенсер: узор (ритм и мелодия разной длины), часы — в worklet ----------
+  const SLOTS = 16;
+  const seq = {
+    bpm: 96, playing: false, rec: false,
+    rhythm: { len: 16, steps: Array(SLOTS).fill(null) },   // { x, y, vel } — удар в точку пластины
+    melody: { len: 7, steps: Array(SLOTS).fill(null) },    // полутоны от 55 Гц; null — текущий размер пластины
+  };
+  let lastStep = null, lastHit = { x: 0.3, y: 0 };          // последний тик { r, m, atMs }; место последнего удара
+  function sendSeq() {
+    send({ t: 'seq', bpm: seq.bpm, playing: seq.playing, rhythm: seq.rhythm, melody: seq.melody });
+    if (nodes) for (const d of [nodes.dL, nodes.dR]) d.delayTime.setTargetAtTime((0.75 * 60) / seq.bpm, T.ctx.currentTime, 0.05);   // эхо — восьмая с точкой
+  }
+  // ритм по Евклиду: k ударов на n шагов как можно ровнее, первый — удар
+  function euclid(k, n) { return Array.from({ length: n }, (_, i) => (i * k) % n < k); }
+  // шаг ритма, ближайший ко времени касания: с последнего тика прошло больше полшага — уже следующий
+  function nearestStep(nowMs, stepAtMs, idx, stepMs, len) {
+    return (idx + Math.round((nowMs - stepAtMs) / stepMs)) % len;
+  }
+  // мелодия — случайное блуждание по ступеням (scaleSemis — допустимые полутоны по возрастанию)
+  function walkMelody(len, startSemi, scaleSemis) {
+    let i = 0;
+    for (let k = 1; k < scaleSemis.length; k++) if (Math.abs(scaleSemis[k] - startSemi) < Math.abs(scaleSemis[i] - startSemi)) i = k;
+    const out = [];
+    for (let n = 0; n < len; n++) {
+      out.push(scaleSemis[i]);
+      const d = [-2, -1, 1, 2][Math.floor(Math.random() * 4)];
+      i = Math.min(scaleSemis.length - 1, Math.max(0, i + d));
+    }
+    return out;
+  }
+  // ступени для кубика: лад, если включён, иначе пентатоника; 0–48 полутонов от 55 Гц
+  function scaleSemis() {
+    const out = [];
+    for (let s = 0; s <= 48; s++) if (T.scaleOn ? T.snapSemi(s) === s : [0, 3, 5, 7, 10].includes(s % 12)) out.push(s);
+    return out;
+  }
+  // записать удар игрой: в ближайший шаг ритма
+  function recordHit(x, y) {
+    lastHit = { x, y };
+    if (!seq.rec || !seq.playing || !lastStep) return;
+    seq.rhythm.steps[nearestStep(performance.now(), lastStep.atMs, lastStep.r, 60000 / seq.bpm / 4, seq.rhythm.len)] = { x, y, vel: 1 };
+    sendSeq();
+  }
+  function play(on = !seq.playing) { seq.playing = on; if (!on) seq.rec = false; sendSeq(); }
+  function rec(on = !seq.rec) { seq.rec = on; if (on && !seq.playing) play(true); }
   let energy = new Float32Array(24), level = 0;
 
   // ---------- звук: worklet, зал и эхо; пока узел грузится, сообщения ждут в очереди ----------
@@ -43,13 +89,13 @@
     hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
     // эхо: две линии крест-накрест, восьмая с точкой (0.375 с) — до секвенсера
     const echoSend = g(0), dL = ctx.createDelay(2), dR = ctx.createDelay(2), merge = ctx.createChannelMerger(2);
-    dL.delayTime.value = 0.375; dR.delayTime.value = 0.375;
+    dL.delayTime.value = (0.75 * 60) / seq.bpm; dR.delayTime.value = (0.75 * 60) / seq.bpm;   // восьмая с точкой
     const lp = (n) => { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3000; return n.connect(f); };
     echoSend.connect(dL);
     lp(dL).connect(g(0.4)).connect(dR);
     lp(dR).connect(g(0.4)).connect(dL);
     dL.connect(merge, 0, 0); dR.connect(merge, 0, 1); merge.connect(out);
-    nodes = { out, hallSend, echoSend };
+    nodes = { out, hallSend, echoSend, dL, dR };
     actx = ctx;
     applyFx();
     if (entered) start();
@@ -71,6 +117,7 @@
     });
   }
   function onMsg(d) {
+    if (d.t === 'step') { lastStep = { r: d.r, m: d.m, atMs: performance.now() }; return; }
     if (d.t === 'energy') { energy = d.e; level = d.voices.reduce((s, v) => s + v.level, 0); updateField(); }
     else if (d.t === 'shapes') shapes = d;
   }
@@ -127,11 +174,15 @@
   function sendBow(b, on) { send({ t: 'bow', id: b.id, x: b.x, y: b.y, on, exciter: b.exciter, pressure: b.pressure, amp: b.amp }); }
 
   // ---------- высота = размер пластины ----------
-  function setF0(hz) {
+  function setF0(hz, record = false) {
     const s = T.snapSemi(12 * Math.log2(clamp(hz, F_MIN, F_MAX) / F_MIN));
     plate.f0 = clamp(F_MIN * 2 ** (s / 12), F_MIN, F_MAX);
     labelUntil = performance.now() + 1000;
     send({ t: 'f0', hz: plate.f0 });
+    if (record && seq.rec && seq.playing && lastStep) {   // щипок при записи — нота в текущий шаг мелодии
+      seq.melody.steps[lastStep.m % seq.melody.len] = Math.round(12 * Math.log2(plate.f0 / F_MIN));
+      sendSeq();
+    }
   }
   const NOTES = ['A', 'A♯', 'B', 'C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯'];
   function noteName(hz) {
@@ -172,6 +223,7 @@
     if (Math.hypot(p.x, p.y) > 1) return;    // вне пластины (но на столе) — только для щипка
     f.live = true; f.bid = `t${f.id}`;
     send({ t: 'strike', x: p.x, y: p.y, vel: 1, hard: 0.5 });
+    recordHit(p.x, p.y);
   }
   function move(f) {
     if (!touches.has(f.id)) return;
@@ -179,7 +231,7 @@
     const g = plateGeo();
     if (f.pinch && pinch) {
       const d = Math.max(20, Math.hypot(pinch.a.x - pinch.b.x, pinch.a.y - pinch.b.y));
-      setF0(pinch.f0 * (pinch.d0 / d) ** 2);   // развёл — пластина больше и ниже
+      setF0(pinch.f0 * (pinch.d0 / d) ** 2, true);   // развёл — пластина больше и ниже
       return;
     }
     if (f.cb && f.moved) { const p = toPlate(f, g); f.cb.x = p.x; f.cb.y = p.y; sendBow(f.cb, true); return; }
@@ -354,19 +406,30 @@
     down, move, up,
     wheel(e) {                                   // колесо / щипок тачпада: вверх (развёл) — больше и ниже
       const k = e.ctrlKey ? 0.01 : 0.0025, d = e.deltaMode ? e.deltaY * 16 : e.deltaY;
-      setF0(plate.f0 * Math.exp(clamp(d * k, -0.5, 0.5)));
+      setF0(plate.f0 * Math.exp(clamp(d * k, -0.5, 0.5)), true);
     },
-    dice() {                                     // случайная пластина: строй, затухание, яркость, высота по ладу
-      const R = Math.random;
-      Object.assign(plate.fx, { structure: R(), damping: 0.25 + 0.6 * R(), brightness: R() });
-      sendParams();
-      setF0(F_MIN * 2 ** ((R() * 36) / 12));
+    dice() {                                     // генеративный узор: Евклид, случайные места, мелодия по ладу; часы идут
+      const R = Math.random, n = 8 + Math.floor(R() * 9), k = 3 + Math.floor(R() * (n - 4)), e = euclid(k, n);
+      seq.rhythm = { len: n, steps: Array.from({ length: SLOTS }, (_, i) => {
+        if (i >= n || !e[i]) return null;
+        const r = 0.85 * Math.sqrt(R()), a = R() * Math.PI * 2;
+        return { x: r * Math.cos(a), y: r * Math.sin(a), vel: 1 };
+      }) };
+      const ml = 3 + Math.floor(R() * 7), w = walkMelody(ml, 12 * Math.log2(plate.f0 / F_MIN), scaleSemis());
+      seq.melody = { len: ml, steps: Array.from({ length: SLOTS }, (_, i) => (i < ml ? w[i] : null)) };
+      seq.playing = true;
+      sendSeq();
     },
-    clear() { detach(); for (const b of plate.bows) sendBow(b, false); plate.bows = []; },
+    clear() {                                    // узор и смычки — прочь; длины колец и часы остаются
+      detach(); for (const b of plate.bows) sendBow(b, false); plate.bows = [];
+      seq.rhythm.steps.fill(null); seq.melody.steps.fill(null);
+      sendSeq();
+    },
     snapshot: () => JSON.stringify({
       f0: r4(plate.f0),
       fx: Object.fromEntries(Object.entries(plate.fx).map(([k, v]) => [k, r4(v)])),
       bows: plate.bows.map((b) => ({ x: r4(b.x), y: r4(b.y), exciter: r4(b.exciter), pressure: r4(b.pressure), amp: r4(b.amp) })),
+      seq: { bpm: seq.bpm, rhythm: seq.rhythm, melody: seq.melody },
     }),
     restore(js) {
       const st = JSON.parse(js);
@@ -374,10 +437,13 @@
       for (const b of plate.bows) sendBow(b, false);
       plate.f0 = st.f0; Object.assign(plate.fx, st.fx);
       plate.bows = st.bows.map((b) => ({ ...b, id: `b${bowId++}` }));
-      send({ t: 'f0', hz: plate.f0 }); sendParams(); applyFx();
+      seq.bpm = st.seq.bpm;
+      seq.rhythm = { len: st.seq.rhythm.len, steps: st.seq.rhythm.steps.slice() };
+      seq.melody = { len: st.seq.melody.len, steps: st.seq.melody.steps.slice() };
+      send({ t: 'f0', hz: plate.f0 }); sendParams(); applyFx(); sendSeq();
       for (const b of plate.bows) sendBow(b, true);
     },
-    sounding: () => touches.size > 0 || plate.bows.length > 0 || level > 1e-4,
+    sounding: () => touches.size > 0 || plate.bows.length > 0 || level > 1e-4 || (seq.playing && seq.rhythm.steps.some(Boolean)),
   };
   T.registerWorld(2, cymatica);
 
@@ -387,6 +453,9 @@
     get bows() { return plate.bows.map((b) => ({ ...b })); }, get energy() { return Array.from(energy); },
     get ringOpen() { return !!ringF; }, get live() { return [...touches.values()].filter((f) => f.bowing).length; },
     get geo() { return plateGeo(); },
+    get seq() { return JSON.parse(JSON.stringify(seq)); }, get lastStep() { return lastStep; },
+    play, rec,
+    core: { euclid, nearestStep, walkMelody },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
     bow(x, y, on = true) { send({ t: 'bow', id: 'dbg', x, y, on, exciter: 0, pressure: 0.5, amp: 0.8 }); },
     sandSpread() {                               // среднее поле под крупинками: песок в узлах — меньше
