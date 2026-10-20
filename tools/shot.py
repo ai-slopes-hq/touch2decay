@@ -115,10 +115,21 @@ async def sc_vol(p):                               # фейдер громкос
     await p.shot('vol-bar')
 
 
-SCENARIOS = {'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'map': sc_map, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_solniger(p):                          # Sol Niger через интерфейс мира: всё как раньше
+    assert await p.js('()=>t2d.world') == 1
+    await p.pin(150, 600)
+    assert await p.js('()=>t2d.hist(1)') == 1, 'pin -> one undo step'
+    assert await p.js('()=>t2d.sounding()'), 'pinned planet sounds'
+    u = await p.js("()=>t2d.btnPos('undo')")
+    await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.voices.filter(v=>v.active&&v.pinned).length') == 0, 'undo removes the pin'
+
+
+SCENARIOS = {'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'map': sc_map, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
+    failed = False
     async with async_playwright() as pw:
         for n in names:
             b = await pw.chromium.launch(args=['--autoplay-policy=no-user-gesture-required'])
@@ -127,8 +138,13 @@ async def main(names):
             errs = []
             pg.on('pageerror', lambda e: errs.append(str(e)))
             await pg.goto(URL); await pg.wait_for_timeout(600)
-            await SCENARIOS[n](Phone(pg, await c.new_cdp_session(pg)))
+            try:
+                await SCENARIOS[n](Phone(pg, await c.new_cdp_session(pg)))
+            except AssertionError as e:             # проверка в сценарии не прошла
+                print(n, 'FAILED:', e or 'assert'); failed = True
             print(n, 'errors:', errs)
+            if errs: failed = True
             await b.close()
+    sys.exit(1 if failed else 0)
 
 asyncio.run(main(sys.argv[1:] or list(SCENARIOS)))

@@ -570,6 +570,7 @@
     const f = {
       id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: now,
       voice: null, caught: false, moved: false, menu: null, menuWas: false, parked: false, bridge: null, wasBridge: false,
+      world: nav.world,                       // касание до конца принадлежит миру, где началось
     };
     F.set(e.pointerId, f);
 
@@ -577,7 +578,12 @@
 
     const ui = uiHit(f);
     if (ui) { f.ui = ui.k; f.hit = ui; uiDown(f); return; }
+    worlds[f.world].down(f, e);
+  }
 
+  // Sol Niger: касание поля — планета, мост, Shift-нить, щипок зума
+  function solDown(f, e) {
+    const now = f.t0;
     let v = hit(f.x, f.y);
     // на компьютере второго пальца нет: Shift + тянуть от планеты A к B — та же связь, что мост (B модулирует A)
     if (v && e.shiftKey) { f.ui = 'thread'; f.A = v; return; }
@@ -617,6 +623,9 @@
     f.x = e.clientX; f.y = e.clientY;
     if (!f.moved && Math.hypot(f.x - f.x0, f.y - f.y0) > HOLD_MOVE) f.moved = true;
     if (f.ui) { if (f.menu) menuMove(f); else uiMove(f); return; }
+    worlds[f.world].move(f);
+  }
+  function solMove(f) {
     if (f.zc && !f.zoom && performance.now() - f.zc.t0 < 700 && Math.abs(fdist(f.zc.a, f.zc.b) - f.zc.d0) > 26) startZoom(f.zc);
     if (f.zoom) {
       const z = f.zoom;
@@ -660,6 +669,9 @@
     F.delete(e.pointerId);
     if (f.zoom) { const z = f.zoom; z.a.zoom = null; z.b.zoom = null; return; }
     if (f.ui) { uiUp(f); return; }
+    worlds[f.world].up(f);
+  }
+  function solUp(f) {
     if (f.menu) leaveMenu(f.menu);
     f.menu = null;
     const v = f.voice;
@@ -806,8 +818,8 @@
   }
 
   function uiHit(f) {
-    if (WORLDS_ON && !editor && Math.hypot(f.x - geo.ox, f.y - geo.oy) < 46) return { k: 'sun' };   // солнце — карта миров
-    if (ghost) {                              // любое касание гасит призрак; по булавке — закрепляет
+    if (cur().corner.hit(f)) return { k: 'corner' };   // солнце / предмет в углу — карта миров
+    if (nav.world === 1 && ghost) {                              // любое касание гасит призрак; по булавке — закрепляет
       const gh = ghost, p = pinPos(gh.menu.cx, gh.menu.cy);
       ghost = null;
       if (performance.now() < gh.until && Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 14) return { k: 'pin', ghost: gh.menu };
@@ -816,8 +828,9 @@
     if (Math.hypot(f.x - vb.x, f.y - vb.y) < CLR_R + 4) return { k: 'vol' };
     for (const k of ['rev', 'scl', 'clr', 'undo', 'dice']) {
       const b = btnPos(k), r = SMALL.has(k) ? CLR_R + 4 : BTN_R + 6;
-      if (Math.hypot(f.x - b.x, f.y - b.y) < r) return { k };
+      if (Math.hypot(f.x - b.x, f.y - b.y) < r && (k !== 'rev' || cur().fx)) return { k };
     }
+    if (nav.world !== 1) return null;
     for (const o of F.values()) {             // булавка на кольце, открытом на весу
       if (o === f || !o.menu || o.menu.fx) continue;
       const p = pinPos(o.menu.cx, o.menu.cy);
@@ -855,8 +868,7 @@
   // ---------- отмена: 10 шагов. Шаг — законченный жест, после которого изменилось сохраняемое:
   // закреплённые кружки (место, тембр, LFO, связи между ними), FX и лад. Временные кружки не в счёт ----------
   const UNDO_MAX = 10;
-  const hist = [];
-  let lastState = null;
+  const hists = {}, lasts = {};               // мир → история и последнее сохранённое
   const r4 = (x) => Math.round(x * 1e4) / 1e4;
   function snapshot() {
     const pins = V.filter((v) => v.active && v.pinned);
@@ -874,12 +886,12 @@
   // после каждого жеста: если сохраняемое изменилось — прежнее состояние в историю
   function commit() {
     if (F.size) return;                         // ждём, пока отпущены все пальцы — один жест, один шаг
-    const now = snapshot();
-    if (lastState !== null && now !== lastState) {
-      hist.push(lastState);
-      if (hist.length > UNDO_MAX) hist.shift();
+    const n = nav.world, h = hists[n], now = worlds[n].snapshot();
+    if (now !== lasts[n]) {
+      h.push(lasts[n]);
+      if (h.length > UNDO_MAX) h.shift();
     }
-    lastState = now;
+    lasts[n] = now;
   }
   function restore(js) {
     const st = JSON.parse(js);
@@ -910,9 +922,10 @@
     }
   }
   function undo() {
-    if (!hist.length) return;
-    restore(hist.pop());
-    lastState = snapshot();
+    const n = nav.world, h = hists[n];
+    if (!h.length) return;
+    worlds[n].restore(h.pop());
+    lasts[n] = worlds[n].snapshot();
     undoAt = performance.now();
   }
   let undoAt = -1e9;
@@ -926,10 +939,10 @@
   }
 
   function uiDown(f) {
-    if (f.ui === 'clr') { clearAll(); return; }
-    if (f.ui === 'sun') { goMap(); return; }
+    if (f.ui === 'clr') { cur().clear(); return; }
+    if (f.ui === 'corner') { goMap(); return; }
     if (f.ui === 'undo') { undo(); return; }
-    if (f.ui === 'dice') { rollDice(); return; }
+    if (f.ui === 'dice') { cur().dice(); return; }
     if (f.ui === 'rev') { openFx(f); return; }
     if (f.ui === 'vol') { f.vol0 = vol; return; }
     if (f.ui === 'pin') {
@@ -1001,7 +1014,7 @@
     if (f.ui !== 'scl') return;
     const L = sclList(), b = L.b;
     // повёл палец влево вдоль верха — карандаш: обводишь кружки
-    if (!f.lasso && !f.picked && f.x < b.x - 50 && f.y < b.y + 36) {
+    if (nav.world === 1 && !f.lasso && !f.picked && f.x < b.x - 50 && f.y < b.y + 36) {
       f.lasso = [];
       if (scl.on !== f.wasOn) { scl.on = f.wasOn; scl.slideUntil = performance.now() + 500; allDirty(); }
     }
@@ -1078,12 +1091,12 @@
   }
 
   function openFx(f) {
-    const b = btnPos('rev'), orig = { ...fx };
+    const b = btnPos('rev'), X = cur().fx, orig = X.save();
     f.menuWas = true;
     f.menu = {
-      cx: b.x, cy: b.y, gx: b.x, gy: b.y, sector: null, sectors: FX_SECTORS, span: MENU_SPAN, fx: true,
-      get: fxGet, set: fxSet, text: fxText,
-      restore: () => { Object.assign(fx, orig); applyFx(); },
+      cx: b.x, cy: b.y, gx: b.x, gy: b.y, sector: null, sectors: X.sectors, span: MENU_SPAN, fx: true,
+      get: X.get, set: X.set, text: X.text,
+      restore: () => X.load(orig),
     };
   }
 
@@ -2574,7 +2587,6 @@
     text(volText(vol), b.x + 14, sy(vol), 14, 0.95);
   }
 
-  const TITLE = 'Sol Niger';                  // заголовок — имя мира: чёрное солнце
   function drawUI() {
     let revF = null, sclF = null, volF = null;
     for (const f of F.values()) { if (f.ui === 'rev') revF = f; if (f.ui === 'scl') sclF = f; if (f.ui === 'vol') volF = f; }
@@ -2584,17 +2596,21 @@
     const tb = g.createLinearGradient(0, 0, 0, scopeY + 64);
     tb.addColorStop(0, 'rgba(0,0,0,0.85)'); tb.addColorStop(0.6, 'rgba(0,0,0,0.55)'); tb.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = tb; g.fillRect(0, 0, W, scopeY + 64);
-    mapText(TITLE, 16, scopeY + 20, 21, sclF || revF ? 0.12 : 0.85);   // при открытом тулбоксе или веере FX заголовок уходит в тень
-    g.font = `italic 21px ${MAP}`; titleW = g.measureText(TITLE).width;
+    const title = cur().title;                  // заголовок — имя мира
+    mapText(title, 16, scopeY + 20, 21, sclF || revF ? 0.12 : 0.85);   // при открытом тулбоксе или веере FX заголовок уходит в тень
+    g.font = `italic 21px ${MAP}`; titleW = g.measureText(title).width;
     drawVol(!!volF, !!(sclF || revF));
     // кнопки лежат поверх карты — у каждой тёмная подложка
     const pad = (p, rr) => { g.fillStyle = 'rgba(0,0,0,0.88)'; g.beginPath(); g.arc(p.x, p.y, rr, 0, Math.PI * 2); g.fill(); };
     pad(btnPos('rev'), BTN_R + 1); pad(btnPos('scl'), BTN_R + 1); pad(btnPos('undo'), CLR_R + 1); pad(btnPos('clr'), CLR_R + 1); pad(btnPos('dice'), CLR_R + 1);
     const r = btnPos('rev');
-    ring(r.x, r.y, BTN_R, revF ? 1 : 0.45, 1.2);
-    for (const [rr, a] of [[6, 0.9], [11, 0.55], [16, 0.3]]) ring(r.x, r.y, rr, a * (revF ? 1 : 0.8), 1);
-    g.strokeStyle = ink(0.9); g.lineWidth = 2;
-    g.beginPath(); g.arc(r.x, r.y, BTN_R + 5, -Math.PI / 2, -Math.PI / 2 + fx.rev * Math.PI * 2); g.stroke();
+    const X = cur().fx, dimFx = X ? 1 : 0.35;   // у мира нет веера FX — кнопка тусклая
+    ring(r.x, r.y, BTN_R, (revF ? 1 : 0.45) * dimFx, 1.2);
+    for (const [rr, a] of [[6, 0.9], [11, 0.55], [16, 0.3]]) ring(r.x, r.y, rr, a * (revF ? 1 : 0.8) * dimFx, 1);
+    if (X) {
+      g.strokeStyle = ink(0.9); g.lineWidth = 2;
+      g.beginPath(); g.arc(r.x, r.y, BTN_R + 5, -Math.PI / 2, -Math.PI / 2 + X.arc() * Math.PI * 2); g.stroke();
+    }
 
     // кубик: кружок с костью; после броска кость крутится
     const dq = btnPos('dice'), diceF = [...F.values()].some((f) => f.ui === 'dice');
@@ -2607,7 +2623,7 @@
     g.restore();
 
     // отмена: стрелка по дуге; под ней — точки по числу шагов в запасе
-    const u = btnPos('undo'), can = hist.length > 0, flash = performance.now() - undoAt < 250;
+    const hist = hists[nav.world], u = btnPos('undo'), can = hist.length > 0, flash = performance.now() - undoAt < 250;
     ring(u.x, u.y, CLR_R, flash ? 1 : can ? 0.45 : 0.18, flash ? 2 : 1.2);
     g.strokeStyle = ink(can ? 0.8 : 0.25); g.lineWidth = 1.4; g.lineCap = 'round';
     g.beginPath(); g.arc(u.x + 1, u.y + 1, 6, Math.PI * 1.05, Math.PI * 2.35); g.stroke();
@@ -2617,7 +2633,7 @@
 
     // убрать всё: корзина (не крестик — его легко принять за «закрыть»)
     const c = btnPos('clr');
-    const live = V.some((v) => v.active);
+    const live = cur().sounding();
     ring(c.x, c.y, CLR_R, live ? 0.45 : 0.18, 1.2);
     g.strokeStyle = ink(live ? 0.75 : 0.25); g.lineWidth = 1.2;
     g.beginPath();
@@ -2747,13 +2763,25 @@
     g.restore();
   }
 
+  // кадр: звук и состояние — у всех миров (звучат все), рисуется — карта или текущий мир; верхняя строка общая
   function frame(now) {
     requestAnimationFrame(frame);
     const t0 = performance.now();
-    const dtMs = now - last;
-    const dt = Math.min(0.05, dtMs / 1000);
+    const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    for (const w of Object.values(worlds)) if (w.tick) w.tick(now, dt);
+    readLevel();
+    if ((nav.view !== 'play' || nav.anim) && drawNav(now)) { measureStrain(now, performance.now() - t0); return; }
+    cur().draw(now, dt);
+    drawUI();
+    const fxF = [...F.values()].find((f) => f.menu && f.menu.fx);
+    if (fxF) drawFx(fxF);                       // веер FX — поверх верхней строки
+    drawStrain();
+    measureStrain(now, performance.now() - t0);
+  }
 
+  // Sol Niger: звук и состояние — каждый кадр, даже когда на экране другой мир
+  function solTick(now, dt) {
     // долгое касание пойманного кружка — кольцо свойств на весу
     for (const f of F.values()) {
       if (f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
@@ -2806,9 +2834,9 @@
     }
     if (!anyActive && lock) { lock.release().catch(() => {}); lock = null; }
 
-    // карта миров или другой мир — вместо поля (звук идёт дальше)
-    if ((nav.view !== 'play' || nav.anim) && drawNav(now)) { measureStrain(now, performance.now() - t0); return; }
+  }
 
+  function solDraw(now, dt) {
     // фон: зерно (ось шума) и полосы частот или октав (ось высоты)
     drawField();                                // фон, звёзды и орбиты — одной готовой картинкой
 
@@ -2846,8 +2874,8 @@
       ring(x, y, 34, 0.25 + 0.2 * breathe, 1.4);
     }
 
-    let fxF = null, heldF = null, bridge = null;
-    for (const f of F.values()) { if (f.menu) { if (f.menu.fx) fxF = f; else heldF = f; } if (f.bridge) bridge = f.bridge; }
+    let heldF = null, bridge = null;
+    for (const f of F.values()) { if (f.menu && !f.menu.fx) heldF = f; if (f.bridge) bridge = f.bridge; }
     drawLinks(now, bridge && bridge.m);
     for (const f of F.values()) {               // Shift-нить: пунктир от A за курсором, планета под курсором подсвечена
       if (f.ui !== 'thread' || !f.A.active) continue;
@@ -2876,14 +2904,9 @@
     }
     if (heldF) drawHeld(heldF.menu, { x: heldF.menu.cx + (heldF.x - heldF.menu.gx), y: heldF.menu.cy + (heldF.y - heldF.menu.gy) });
 
-    readLevel();
     const tg = modTarget(null);
     if (tg) { drawLfoPanel(tg, now); drawAmpStrip(tg); }
     if (editor) drawCloseChip();
-    drawUI();
-    if (fxF) drawFx(fxF);                       // веер FX — поверх верхней строки
-    drawStrain();
-    measureStrain(now, performance.now() - t0);
   }
 
   // ---------- смежные миры: солнце — начало координат, вокруг него четыре четверти ----------
@@ -2898,7 +2921,9 @@
   ];
   // Universum выключен, пока звук и идеи не готовы (сначала звук, потом графика); код миров и гравюры остаются
   const WORLDS_ON = false;
-  const nav = { view: 'play', world: 1, anim: null };   // view: play | map | world; anim: { t0, dir: 'out' | 'in', w }
+  const nav = { view: 'play', world: 1, anim: null };
+  const worlds = {};                                      // номер четверти → мир
+  const cur = () => worlds[nav.world];   // view: play | map | world; anim: { t0, dir: 'out' | 'in', w }
   const NAV_MS = 520;
   let snapC = null;                                       // снимок мира I для карты
   const arts = {};                                        // гравюры миров II–IV, рисуются один раз на размер экрана
@@ -3241,11 +3266,11 @@
   document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
   ['gesturestart', 'gesturechange', 'dblclick', 'contextmenu'].forEach((t) =>
     document.addEventListener(t, (e) => e.preventDefault()));
-  cv.addEventListener('wheel', wheelZoom, { passive: false });
+  cv.addEventListener('wheel', (e) => { e.preventDefault(); if (nav.view === 'play' && cur().wheel) cur().wheel(e); }, { passive: false });
   // Safari на Mac шлёт щипок тачпада жестом; на iPhone жест идёт вместе с касаниями — там зумит свой щипок
   let gestZ = 0;
   document.addEventListener('gesturestart', () => { gestZ = zoomT; });
-  document.addEventListener('gesturechange', (e) => { if (!F.size && nav.view === 'play' && e.scale) setZoom(gestZ / e.scale); });
+  document.addEventListener('gesturechange', (e) => { if (!F.size && nav.view === 'play' && nav.world === 1 && e.scale) setZoom(gestZ / e.scale); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && V.some((v) => v.active)) wake();
   });
@@ -3256,12 +3281,33 @@
     document.fonts.load(`italic 13px ${MAP}`).catch(() => {});
   }
 
+  // ---------- миры: реестр; Sol Niger — мир I поверх своих функций ----------
+  function registerWorld(n, w) {
+    worlds[n] = w; hists[n] = []; lasts[n] = w.snapshot();
+  }
+  const solNiger = {
+    n: 'I', title: 'Sol Niger', sub: 'orbes · strepitus',
+    corner: { hit: (f) => WORLDS_ON && !editor && Math.hypot(f.x - geo.ox, f.y - geo.oy) < 46, draw: () => {} },   // солнце рисует drawField
+    fx: { sectors: FX_SECTORS, get: fxGet, set: fxSet, text: fxText, arc: () => fx.rev, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); } },
+    tick: solTick, draw: solDraw, down: solDown, move: solMove, up: solUp, wheel: wheelZoom,
+    dice: rollDice, clear: clearAll, snapshot, restore, sounding: () => V.some((v) => v.active),
+  };
+  registerWorld(1, solNiger);
+
+  // общее для миров из других файлов (cymatica.js): регистрация и помощники рисования
+  window.T2D = {
+    registerWorld, BG, MAP, ink, ring, dot, text, glowAt, hairBox,
+    get g() { return g; }, get W() { return W; }, get H() { return H; }, get DPR() { return DPR; },
+    get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
+  };
+
   window.t2d = {
+    worlds, get world() { return nav.world; }, get view() { return nav.view; },
+    hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
     get ctx() { return ctx; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; },
   };   // для отладки из консоли
 
   resize();
-  lastState = snapshot();
   requestAnimationFrame(frame);
 })();

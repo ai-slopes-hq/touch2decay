@@ -42,7 +42,7 @@
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     const hadController = !!navigator.serviceWorker.controller;
     let pending = false;
-    const quiet = () => !(window.t2d && t2d.voices.some((v) => v.active));
+    const quiet = () => !(window.t2d && t2d.sounding());   // молчат все миры
     const reloadWhenQuiet = () => { if (quiet()) location.reload(); else pending = true; };
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
       document.addEventListener('visibilitychange', () => {
