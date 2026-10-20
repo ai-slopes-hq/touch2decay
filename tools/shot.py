@@ -779,18 +779,6 @@ async def sc_natura(p):                           # Natura: лодочка — �
     await p.js("()=>t2d.nat.setFx('res', 0.2)"); g = await p.js('()=>t2d.nat.geo()')
     pid = await p.hold(60, g['hor'] - 20, ms=60); await p.drag(pid, 60, g['hor'] - 20, 60, g['hor'] - 80, steps=8); await p.shot('natura-mountains'); await p.up()
     assert await p.js('()=>t2d.nat.fx.res') > 0.4, 'mountains up — more resonance'
-    # p-lock: держишь кувшинку, вторым пальцем тянешь тучу — значение только у этой кувшинки
-    await p.js("()=>{t2d.nat.setFx('cutoff', 0.5); const a=t2d.nat.pads.at; a[4]={note:6,wave:1}}")
-    q = await p.js('()=>t2d.nat.pad(4)'); cl = await p.js('()=>t2d.nat.cloud()'); p.nid += 2; a, b = p.nid - 1, p.nid
-    await p.T('touchStart', [{'x': q['x'], 'y': q['y'], 'id': a}]); await p.pg.wait_for_timeout(120)
-    await p.T('touchStart', [{'x': q['x'], 'y': q['y'], 'id': a}, {'x': cl['x'], 'y': cl['y'], 'id': b}]); await p.pg.wait_for_timeout(60)
-    for k in range(1, 9):
-        await p.T('touchMove', [{'x': q['x'], 'y': q['y'], 'id': a}, {'x': cl['x'], 'y': cl['y'] - 8 * k, 'id': b}]); await p.pg.wait_for_timeout(16)
-    await p.pg.wait_for_timeout(500); await p.shot('natura-plock')
-    await p.T('touchEnd', [{'x': q['x'], 'y': q['y'], 'id': a}]); await p.pg.wait_for_timeout(50); await p.up(); await p.pg.wait_for_timeout(100)
-    lk = await p.js('()=>[t2d.nat.pads.at[4] && t2d.nat.pads.at[4].lock, t2d.nat.pads.at[4] && t2d.nat.pads.at[4].wave, t2d.nat.fx.cutoff]')
-    assert lk[0] and lk[0].get('cutoff', 0) > 0.6 and lk[1] == 1 and abs(lk[2] - 0.5) < 1e-6, f'p-lock: cutoff only on the held lily, flower kept: {lk}'
-    await p.js("()=>t2d.nat.pads.at[4]=null")
     pads0 = await p.js('()=>JSON.stringify(t2d.nat.pads.at)')
     await p.js("()=>{const a=t2d.nat.pads.at; for (let i=0;i<16;i++) a[i]=null; a[5]={note:3,wave:0}; a[6]={note:9,wave:0}}")
     p0 = await p.js('()=>t2d.nat.slot(4, 6)'); p5 = await p.js('()=>t2d.nat.pad(5)'); p6 = await p.js('()=>t2d.nat.pad(6)'); p7 = await p.js('()=>t2d.nat.slot(7, 6)')
@@ -808,14 +796,22 @@ async def sc_natura(p):                           # Natura: лодочка — �
     pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] + 40, q['y'], steps=8)
     await p.shot('natura-note'); await p.up(); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.nat.pads.at[2] && t2d.nat.pads.at[2].note') > n0, 'drag a lily across — higher note'
-    q = await p.js('()=>t2d.nat.pad(3)'); pid = await p.hold(q['x'], q['y'], ms=700)   # держишь кувшинку — меню волн, ведёшь на пилу
-    m = await p.js('()=>t2d.nat.menu()'); assert m and m['held'], f'hold a lily — wave menu: {m}'
-    o = m['opts'][3]; await p.drag(pid, q['x'], q['y'], o['x'], o['y'], steps=8); await p.shot('natura-menu'); await p.up(); await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.nat.pads.at[3] && t2d.nat.pads.at[3].wave') == 3 and not await p.js('()=>t2d.nat.menu()'), 'release on the saw flower — saw'
-    q = await p.js('()=>t2d.nat.pad(3)'); await p.hold(q['x'], q['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(100)   # отпустил мимо — меню ждёт тапа
-    m = await p.js('()=>t2d.nat.menu()'); assert m and not m['held'], f'menu stays after release: {m}'
-    o = m['opts'][4]; await p.tap(o['x'], o['y']); await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.nat.pads.at[3].wave') == 4, 'tap the thistle — sharp'
+    q = await p.js('()=>t2d.nat.pad(3)'); pid = await p.hold(q['x'], q['y'], ms=700)   # держишь кувшинку — кольцо на весу; вверх — волна
+    r = await p.js('()=>t2d.nat.ring()'); assert r and not r['pinned'], f'hold a lily — its ring: {r}'
+    d = r['dead'] + r['span'] * 0.76; await p.drag(pid, q['x'], q['y'], q['x'], q['y'] - d, steps=10); await p.shot('natura-ring'); await p.up(); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.nat.pads.at[3].wave') == 3 and not await p.js('()=>t2d.nat.ring()'), 'ring: wave ray up — saw, released off-center — closed'
+    await p.js("()=>t2d.nat.setFx('cutoff', 0.4)")
+    q = await p.js('()=>t2d.nat.pad(3)'); await p.hold(q['x'], q['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(100)   # отпустил в центре — закреплено
+    r = await p.js('()=>t2d.nat.ring()'); assert r and r['pinned'], f'released in the center — pinned: {r}'
+    def ray(ang, k): a = math.radians(ang); dd = r['dead'] + r['span'] * k; return r['cx'] + math.cos(a) * dd, r['cy'] + math.sin(a) * dd
+    x, y = ray(-30, 0.9); await p.tap(x, y); await p.pg.wait_for_timeout(80)
+    x, y = ray(210, 0.5); await p.tap(x, y); await p.pg.wait_for_timeout(80); await p.shot('natura-ring-pinned')
+    st = await p.js('()=>[t2d.nat.pads.at[3].lock, t2d.nat.pads.at[3].chance, t2d.nat.fx.cutoff]')
+    assert st[0] and st[0]['cutoff'] > 0.8 and abs(st[1] - 0.5) < 0.06 and abs(st[2] - 0.4) < 1e-6, f'pinned ring: own cutoff and chance, landscape untouched: {st}'
+    x, y = ray(-30, 0.9); pid = await p.hold(x, y, ms=40); await p.drag(pid, x, y, r['cx'], r['cy'], steps=8); await p.up(); await p.pg.wait_for_timeout(80)
+    assert not await p.js('()=>t2d.nat.pads.at[3].lock'), 'drag the ray into the center — back to general'
+    await p.tap(20, r['cy'] + 300 if r['cy'] < 400 else 20); await p.pg.wait_for_timeout(80)
+    assert not await p.js('()=>t2d.nat.ring()'), 'tap outside — ring closed'
     k0 = await p.js('()=>t2d.nat.skiff()'); await p.hold(k0['x'], k0['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(100)   # кораблик на берегу — тоже меню
     m = await p.js('()=>t2d.nat.menu()'); assert m, 'hold the skiff — wave menu'
     o = m['opts'][3]; await p.tap(o['x'], o['y']); await p.pg.wait_for_timeout(100)

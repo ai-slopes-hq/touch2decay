@@ -21,13 +21,12 @@
   const pap = (a) => `rgba(${PAPER},${a})`;
 
   // ---------- состояние (демо) ----------
-  const fx = { reverb: 0.4, delay: 0.45, time: 0.5, chorus: 0.4, cutoff: 0.62, res: 0.25, att: 0.08, rel: 0.45 };
+  const fx = { reverb: 0.4, delay: 0.45, time: 0.5, chorus: 0.4, cutoff: 0.62, res: 0.25, att: 0.08, rel: 0.45, chance: 1 };
   // огибающая: attack 2 мс … 0.6 с, release 50 мс … 1.9 с (мельница)
-  // p-lock, как у Elektron: у кувшинки может быть своё значение cutoff / res / att / rel (pd.lock), иначе — общее
+  // у кувшинки могут быть свои cutoff / res / att / rel (pd.lock — задаются в её кольце), иначе — общие из пейзажа
   const LOCKS = ['cutoff', 'res', 'att', 'rel'];
   const val = (pd, k) => (pd && pd.lock && pd.lock[k] != null ? pd.lock[k] : fx[k]);
-  let heldPad = -1;                                   // держишь кувшинку — сцена показывает её значения
-  const shown = (k) => val(heldPad >= 0 ? pads.at[heldPad] : null, k);
+  const shown = (k) => fx[k];                        // пейзаж — общие настройки
   const attOf = (v) => 0.002 + v * v * 0.6, relOf = (v) => 0.05 + v * v * 1.85;
   // утки улетели (в них кинули кораблик) — огибающая открыта: attack в ноль, release до конца, пока не вернутся
   let ducksGone = null;                              // { t0 } — время спугивания
@@ -298,15 +297,17 @@
   }
 
   // кувшинка: лист с вырезом, сверху цветок-голос; на шаге раскрывается, от неё круги (с delay — повторяются)
-  function lily(c, p, wave, open, a, locked) {
-    const rx = 15 * p.s, ry = rx * 0.48;
+  const LILY = 18;                                   // полуширина листа (×перспектива): под палец
+  function lily(c, p, wave, open, a, locked, chance = 1) {
+    const rx = LILY * p.s, ry = rx * 0.48;
     if (locked) { c.strokeStyle = ink(a * 0.55); c.lineWidth = 0.7; c.beginPath(); c.ellipse(p.x, p.y, rx + 3.5, ry + 2.2, 0, 0.35, TAU - 0.05); c.stroke(); }   // своё значение — двойной обвод, как рамка гравюры
     c.fillStyle = pap(1); c.strokeStyle = ink(a); c.lineWidth = 1.1;
-    c.beginPath(); c.ellipse(p.x, p.y, rx, ry, 0, 0.35, TAU - 0.05); c.lineTo(p.x, p.y); c.closePath(); c.fill(); c.stroke();
+    if (chance < 1) { a *= 0.45 + 0.55 * chance; c.strokeStyle = ink(a); c.setLineDash([4, 2.5]); }   // шанс < 100 % — бледнее, лист пунктиром
+    c.beginPath(); c.ellipse(p.x, p.y, rx, ry, 0, 0.35, TAU - 0.05); c.lineTo(p.x, p.y); c.closePath(); c.fill(); c.stroke(); c.setLineDash([]);
     c.lineWidth = 0.6; c.strokeStyle = ink(a * 0.5); c.beginPath();
     for (const q of [1.2, 2.1, 3.0, 3.9, 4.8]) { c.moveTo(p.x, p.y); c.lineTo(p.x + Math.cos(q) * rx * 0.8, p.y + Math.sin(q) * ry * 0.8); }
     c.stroke();
-    flower(c, p.x - rx * 0.15, p.y - ry * 0.4, wave, (4 + 4 * p.s) * (0.75 + 0.45 * open), a);
+    flower(c, p.x - rx * 0.15, p.y - ry * 0.4, wave, (5 + 5.5 * p.s) * (0.75 + 0.45 * open), a);
   }
   function drawPads(c, G, now) {
     const stepMs = stepSec() * 1000, ph = phase(), playing = ph != null, pos = playing ? ph : 0, cur = playing ? Math.floor(pos) % pads.len : -1;
@@ -328,7 +329,7 @@
       if (!pd) continue;
       const p = padXY(G, i, pd.note), on = i === cur && i < pads.len;
       const open = on ? envAt((pos % 1) * stepMs, pd) : 0, held = [...touches.values()].some((t) => t.kind === 'pad' && t.i === i);
-      lily(c, p, pd.wave, open, i < pads.len ? (held ? 1 : 0.95) : 0.3, pd.lock && Object.keys(pd.lock).length);   // за запрудаом — бледные, не играют
+      lily(c, p, pd.wave, open, i < pads.len ? (held ? 1 : 0.95) : 0.3, pd.lock && Object.keys(pd.lock).length, pd.chance ?? 1);   // за запрудаом — бледные, не играют
     }
     if (pads.len >= 16) drawBridge(c, G);
     // лист-лодочка плывёт по течению: между местами — плавно
@@ -350,7 +351,7 @@
   const pondAt = (G) => ({ x: G.W * 0.36, y: G.y1 - G.h * 0.115, rx: G.W * 0.16, ry: 19 });   // заводь на ближнем берегу: утки не мешают кувшинкам
   function ducksAt(G) {
     const P = pondAt(G), gap = P.rx * 0.4, r = { x: P.x, y: P.y + 3 };
-    const bob = (k) => Math.sin(performance.now() * 0.0014 + k * 2.1) * 1.2, S = (v) => 10 + 12 * v;
+    const bob = (k) => Math.sin(performance.now() * 0.0014 + k * 2.1) * 1.2, S = (v) => 12 + 14 * v;
     return {
       A: { x: r.x - gap, y: r.y + bob(0), s: S(shown('att')), dir: 1 },
       R: { x: r.x + gap, y: r.y + bob(1), s: S(shown('rel')), dir: -1 },
@@ -774,7 +775,7 @@
     if (!seq.next) seq.next = now + 0.05;
     while (seq.next < ahead) {
       const pd = pads.at[seq.step % pads.len];
-      if (pd && seq.next > now + 0.003) playNote(pd, seq.next);   // опоздавшую ноту пропускаем — задним числом она щёлкает
+      if (pd && seq.next > now + 0.003 && Math.random() < (pd.chance ?? 1) * fx.chance) playNote(pd, seq.next);   // опоздавшую ноту пропускаем — задним числом она щёлкает
       seq.step++; seq.next += stepSec();
     }
   }
@@ -787,18 +788,31 @@
   const slotOf = (o) => clamp(Math.round(((o.t - T0) / TS) * 16 - 0.5), 0, 15);
   const noteOf = (o) => clamp(Math.round((o.q / 0.78 + 0.5) * 14), 0, 14);
   const inRiver = (G, x, y) => { const o = onRiver(G, x, y); return o && o.t > 0.1 && o.t < 0.995 && Math.abs(o.q) < 0.5 + 6 / river(G, o.t).w; };
-  function lockOf(k) {                              // второй палец, пока держишь кувшинку, — пишет в неё (p-lock)
-    const t = [...touches.values()].find((u) => u.kind === 'pad' && pads.at[u.i]);
-    if (!t) return { lock: -1, v0: fx[k] };
-    t.cycled = true; t.locking = true; if (menu && menu.tid === t) menu = null;
-    return { lock: t.i, v0: val(pads.at[t.i], k) };
+  const lockOf = (k) => ({ lock: -1, v0: fx[k] });   // пейзаж — общие настройки (свои у кувшинки — в её кольце)
+  const setP = (t, k, v) => { fx[k] = v; };
+  // ближайшая кувшинка под пальцем (листья крупные и могут касаться соседей)
+  function padAt(G, x, y, extra = 12) {
+    let best = -1, bd = 1e9;
+    for (let i = 0; i < 16; i++) {
+      const pd = pads.at[i];
+      if (!pd) continue;
+      const p = padXY(G, i, pd.note), d = Math.hypot(x - p.x, (y - p.y) * 1.4);
+      if (d < LILY * p.s + extra && d < bd) { bd = d; best = i; }
+    }
+    return best;
   }
-  const setP = (t, k, v) => {
-    const pd = t.lock >= 0 && pads.at[t.lock];
-    if (pd) { pd.lock = pd.lock || {}; pd.lock[k] = v; } else fx[k] = v;
-  };
   function down(f) {
     const G = geo(), now = performance.now(), pq = pierXY(G);
+    if (ring && ring.pinned) {                         // закреплённое кольцо кувшинки: лучи — любым пальцем, мимо — закрыть
+      const d = Math.hypot(f.x - ring.cx, f.y - ring.cy);
+      if (d < T.MENU_DEAD + T.MENU_SPAN + 30 && d > T.MENU_DEAD * 0.6) {
+        const a = Math.atan2(f.y - ring.cy, f.x - ring.cx);
+        let bd = 9, sec = null;
+        for (const sc of RING) { const df = Math.abs(Math.atan2(Math.sin(a - sc.ang), Math.cos(a - sc.ang))); if (df < bd) { bd = df; sec = sc; } }
+        ring.sector = sec; ringSet(sec.key, d); touches.set(f.id, { kind: 'ring', x: f.x, y: f.y }); return;
+      }
+      ring = null; touches.set(f.id, { kind: 'none' }); return;
+    }
     if (menu && !menu.held) {                         // открытое меню волн: тап по цветку — выбрать, мимо — закрыть
       const k = menuHit(G, f.x, f.y);
       if (k >= 0) pickWave(k);
@@ -813,16 +827,12 @@
     const D = ducksAt(G);
     if (!ducksGone) for (const [kind, key] of [['duckA', 'att'], ['duckR', 'rel']]) {
       const d = D[kind === 'duckA' ? 'A' : 'R'];
-      if (Math.hypot(f.x - d.x, f.y - (d.y - d.s * 0.35)) < Math.max(22, d.s * 1.5)) { touches.set(f.id, { kind, key, ...lockOf(key) }); return; }
+      if (Math.hypot(f.x - d.x, f.y - (d.y - d.s * 0.35)) < Math.max(28, d.s * 1.6)) { touches.set(f.id, { kind, key, ...lockOf(key) }); return; }
     }
-    for (let i = 0; i < 16; i++) {                    // кувшинки — раньше лодочки: та плывёт мимо и не должна перехватывать
-      const pd = pads.at[i];
-      if (!pd) continue;
-      const p = padXY(G, i, pd.note);
-      if (Math.hypot(f.x - p.x, (f.y - p.y) * 1.4) < 15 * p.s + 8) { touches.set(f.id, { kind: 'pad', i, t0: now }); return; }
-    }
+    const pi = padAt(G, f.x, f.y);                    // кувшинки — раньше лодочки: та плывёт мимо и не должна перехватывать
+    if (pi >= 0) { touches.set(f.id, { kind: 'pad', i: pi, t0: now, fx: f.x, fy: f.y }); return; }
 
-    if (Math.hypot(f.x - pq.x - 4, f.y - pq.y) < 24) { touches.set(f.id, { kind: 'boat', bpm0: seq.bpm }); return; }   // причал — после кувшинок
+    if (Math.hypot(f.x - pq.x - 4, f.y - pq.y) < 30) { touches.set(f.id, { kind: 'boat', bpm0: seq.bpm }); return; }   // причал — после кувшинок
     if (inRiver(G, f.x, f.y)) { touches.set(f.id, { kind: 'plant', path: [[f.x, f.y]] }); return; }
     const cl = cloudAt(G);
     if (Math.abs(f.x - cl.cx) < 34 * cl.s && f.y > cl.cy - 22 * cl.s && f.y < cl.cy + 12 * cl.s) { touches.set(f.id, { kind: 'cloud', ...lockOf('cutoff') }); return; }
@@ -836,7 +846,24 @@
     const t = touches.get(f.id);
     if (!t) return;
     const G = geo(), dx = f.x - f.x0, dy = f.y - f.y0;
+    t.x = f.x; t.y = f.y;
     if (menu && menu.tid === t) { menu.hover = menuHit(G, f.x, f.y); return; }   // меню волн: тот же палец ведёт по цветкам
+    if (t.kind === 'ring') {                          // закреплённое кольцо: тянешь по лучу; к центру — вернуть общее
+      const d = Math.hypot(f.x - ring.cx, f.y - ring.cy);
+      if (ring && ring.sector) { if (d < T.MENU_DEAD * 0.8) ringClear(ring.sector.key); else ringSet(ring.sector.key, d); }
+      return;
+    }
+    if (ring && ring.tid === t) {                     // кольцо на весу: тот же палец ведёт по лучу (как в Tenebrae)
+      const dx0 = f.x - ring.gx, dy0 = f.y - ring.gy, d = Math.hypot(dx0, dy0);
+      ring.overPin = d < T.MENU_DEAD;
+      if (ring.overPin) { ring.sector = null; return; }
+      if (!ring.sector && d > T.MENU_DEAD + 16) {
+        const a = Math.atan2(dy0, dx0); let bd = 9;
+        for (const sc of RING) { const df = Math.abs(Math.atan2(Math.sin(a - sc.ang), Math.cos(a - sc.ang))); if (df < bd) { bd = df; ring.sector = sc; } }
+      }
+      if (ring.sector) ringSet(ring.sector.key, d);
+      return;
+    }
     if (!t.moved && Math.hypot(dx, dy) > 8) t.moved = true;
     if (t.kind === 'skiff') {                         // ведёшь кораблик: на воде — звучит
       skiff.x = f.x + skiff.dx; skiff.y = f.y + skiff.dy;
@@ -869,6 +896,11 @@
     touches.delete(f.id);
     if (!t) return;
     const G = geo();
+    if (t.kind === 'ring') { if (ring) ring.sector = null; return; }
+    if (ring && ring.tid === t) {                     // отпустил в центре — кольцо закреплено; иначе гаснет, значения остаются
+      if (ring.overPin || !ring.sector) { ring.pinned = true; ring.tid = null; ring.sector = null; } else ring = null;
+      return;
+    }
     if (menu && menu.tid === t) {                     // отпустил на цветке — выбран; мимо — меню ждёт тапа
       const k = menuHit(G, f.x, f.y);
       if (t.kind === 'skiff') { skiff.held = false; skiff.home = true; skiffSound(null); }
@@ -877,7 +909,7 @@
     }
     if (t.kind === 'skiff') {
       skiff.held = false; skiffSound(null);
-      const now = performance.now(), P = pondAt(G), h = (t.hist || []).filter((q) => now - q.t < 160);
+      const now = performance.now(), P = pondAt(G), h = (t.hist || []).filter((q) => now - q.t < 250).slice(-4);
       const inPond = (x, y) => ((x - P.x) / P.rx) ** 2 + ((y - P.y) / P.ry) ** 2 < 1.3;
       let hit = inPond(skiff.x, skiff.y) ? { x: skiff.x, y: skiff.y } : null;
       if (!hit && h.length >= 2 && !envOpen()) {      // бросок: продолжить движение пальца — попадёт ли в заводь
@@ -891,13 +923,6 @@
       else skiff.back = { x: skiff.x, y: skiff.y, t0: now };
       return;
     }
-    if (['cloud', 'mountains', 'duckA', 'duckR'].includes(t.kind) && t.lock >= 0) {
-      const pd = pads.at[t.lock];
-      if (pd && !t.moved && pd.lock) for (const k of [t.key || (t.kind === 'cloud' ? 'cutoff' : 'res')]) delete pd.lock[k];   // тап вторым пальцем — снять своё значение
-      if (pd && pd.lock && !Object.keys(pd.lock).length) delete pd.lock;
-      if (pd && actx && !seq.playing) playNote(pd, actx.currentTime);   // послушать
-      return;
-    }
     if (t.kind === 'boat' && !t.moved) play();
     else if (t.kind === 'pad' && !t.moved && !t.cycled) pads.at[t.i] = null;      // тап по кувшинке — убрать
     else if (t.kind === 'birds' && !t.moved) { birdsAt = performance.now(); laser(); }   // спугнули — лазер
@@ -907,7 +932,7 @@
         const pd = pads.at[i];
         if (!pd) continue;
         const p = padXY(G, i, pd.note);
-        if (t.path.some(([x, y]) => Math.hypot(x - p.x, (y - p.y) * 1.4) < 15 * p.s + 10)) hit.push(pd);
+        if (t.path.some(([x, y]) => Math.hypot(x - p.x, (y - p.y) * 1.4) < LILY * p.s + 8)) hit.push(pd);
       }
       const on = !hit.every((pd) => pd.glide);          // все уже скользили — снять
       for (const pd of hit) pd.glide = on;
@@ -920,23 +945,80 @@
   let lastTick = performance.now();
   function tick(now) {                                // держишь кувшинку — сменить цветок (голос); дерево успокаивается
     shakeTick(Math.min(0.1, (now - lastTick) / 1000)); lastTick = now;
-    const hp = [...touches.values()].find((t) => t.kind === 'pad' || t.lock >= 0);
-    heldPad = hp ? (hp.kind === 'pad' ? hp.i : hp.lock) : -1;
-    for (const t of touches.values()) {               // держишь кувшинку или кораблик на берегу — меню волн
-      if ((t.kind !== 'pad' && t.kind !== 'skiff') || t.moved || t.cycled || now - t.t0 < 450 || menu) continue;
+    for (const t of touches.values()) {               // держишь кувшинку — её кольцо; кораблик на берегу — меню волн
+      if ((t.kind !== 'pad' && t.kind !== 'skiff') || t.moved || t.cycled || now - t.t0 < T.HOLD_MS || menu) continue;
       if (t.kind === 'pad' && !pads.at[t.i]) continue;
-      const G = geo(), p = t.kind === 'pad' ? padXY(G, t.i, pads.at[t.i].note) : { x: skiff.x, y: skiff.y };
+      const G = geo();
       t.cycled = true;
-      menu = { tid: t, kind: t.kind, i: t.i, x: p.x, y: p.y, held: true, hover: -1 };
+      if (t.kind === 'pad') {
+        const p = padXY(G, t.i, pads.at[t.i].note), c = T.ringCenter(p.x, p.y);
+        ring = { i: t.i, tid: t, cx: c.cx, cy: c.cy, gx: t.fx, gy: t.fy, sector: null, pinned: false, overPin: true };
+      } else menu = { tid: t, kind: t.kind, i: t.i, x: skiff.x, y: skiff.y, held: true, hover: -1 };
     }
   }
-  // меню волн: пять цветов дугой над кувшинкой (или корабликом); тот же палец ведёт и отпускает на цветке, или тап потом
+  // кольцо кувшинки — как в Tenebrae: долгое касание, тот же палец ведёт по лучу; отпустил в центре — закреплено
+  const deg2 = (d) => (d * Math.PI) / 180;
+  const RING = [
+    { key: 'form', label: 'wave', ang: deg2(-90), marks: WAVES },
+    { key: 'cutoff', label: 'cutoff', ang: deg2(-30) },
+    { key: 'res', label: 'res', ang: deg2(30) },
+    { key: 'rel', label: 'release', ang: deg2(90) },
+    { key: 'att', label: 'attack', ang: deg2(150) },
+    { key: 'chance', label: 'chance', ang: deg2(210) },
+  ];
+  let ring = null, ringHeard = 0;
+  const ringPd = () => ring && pads.at[ring.i];
+  function ringGet(k) {
+    const pd = ringPd();
+    if (!pd) return 0;
+    if (k === 'form') return pd.wave / (WAVES.length - 1);
+    if (k === 'chance') return pd.chance ?? 1;
+    return val(pd, k);
+  }
+  function ringSet(k, d) {
+    const pd = ringPd();
+    if (!pd) return;
+    const v = clamp((d - T.MENU_DEAD) / T.MENU_SPAN);
+    if (k === 'form') { const w = Math.round(v * (WAVES.length - 1)); if (w !== pd.wave) { pd.wave = w; lastWave = w; ringHeard = 0; } }
+    else if (k === 'chance') pd.chance = Math.round(v * 20) / 20;
+    else { pd.lock = pd.lock || {}; pd.lock[k] = v; }
+    const now = performance.now();
+    if (actx && !seq.playing && now - ringHeard > 260) { ringHeard = now; playNote(pd, actx.currentTime); }   // послушать
+  }
+  function ringClear(k) {                             // луч к центру — снова общее значение из пейзажа
+    const pd = ringPd();
+    if (!pd || !pd.lock || pd.lock[k] == null) return;
+    delete pd.lock[k]; if (!Object.keys(pd.lock).length) delete pd.lock;
+  }
+  const msTxt = (v) => (v < 1 ? `${Math.round(v * 1000)} ms` : `${v.toFixed(2)} s`);
+  function ringText(k) {
+    const pd = ringPd(), own = pd && pd.lock && pd.lock[k] != null;
+    if (k === 'form') return WAVES[pd.wave];
+    if (k === 'chance') return `${Math.round((pd.chance ?? 1) * 100)}%`;
+    const t = k === 'cutoff' ? `${Math.round(180 * 2 ** (val(pd, k) * 6.6))} Hz` : k === 'res' ? `${Math.round(val(pd, k) * 100)}%` : msTxt(k === 'att' ? attOf(val(pd, k)) : relOf(val(pd, k)));
+    return own ? t : `${t} · general`;
+  }
+  function drawLilyRing(c, G) {
+    if (!ring) return;
+    const pd = ringPd();
+    if (!pd) { ring = null; return; }
+    const sel = ring.sector ? ring.sector.key : null, rt = [...touches.values()].find((u) => u.kind === 'ring');
+    let pointer = null;
+    if (sel && ring.tid && ring.tid.x != null) pointer = { x: ring.cx + (ring.tid.x - ring.gx), y: ring.cy + (ring.tid.y - ring.gy) };
+    else if (sel && rt && rt.x != null) pointer = { x: rt.x, y: rt.y };
+    T.drawRing({
+      cx: ring.cx, cy: ring.cy, span: T.MENU_SPAN, sectors: RING, sel, get: ringGet, centerOn: !ring.pinned && ring.overPin,
+      pointer, readout: sel ? `${ring.sector.label} · ${ringText(sel)}` : `${ring.i + 1} · ${noteName(noteHz(pd.note))}`, readoutAt: T.readoutAt(ring.cx, ring.cy),
+    });
+    flower(c, ring.cx, ring.cy, pd.wave, 9, 0.9);
+  }
+  // меню волн: пять цветов дугой над корабликом; тот же палец ведёт и отпускает на цветке, или тап потом
   let menu = null;
   function menuOpts(G) {
-    const R = 62, cx = clamp(menu.x, R + 22, G.W - R - 22), up = menu.y - R - 30 > G.top + 40, cy = up ? menu.y - 8 : menu.y + 8;
+    const R = 74, cx = clamp(menu.x, R + 26, G.W - R - 26), up = menu.y - R - 30 > G.top + 40, cy = up ? menu.y - 8 : menu.y + 8;
     return WAVES.map((_, k) => { const an = up ? Math.PI + ((k + 0.5) / WAVES.length) * Math.PI : Math.PI - ((k + 0.5) / WAVES.length) * Math.PI; return { x: cx + Math.cos(an) * R, y: cy + Math.sin(an) * R }; });
   }
-  const menuHit = (G, x, y) => menuOpts(G).findIndex((o) => Math.hypot(x - o.x, y - o.y) < 22);
+  const menuHit = (G, x, y) => menuOpts(G).findIndex((o) => Math.hypot(x - o.x, y - o.y) < 26);
   const menuWave = () => (menu.kind === 'pad' ? pads.at[menu.i] && pads.at[menu.i].wave : lastWave);
   function pickWave(k) {
     lastWave = k;
@@ -948,9 +1030,9 @@
     const O = menuOpts(G), cur = menuWave();
     O.forEach((o, k) => {
       const on = k === menu.hover || (menu.hover < 0 && k === cur);
-      c.fillStyle = pap(1); c.beginPath(); c.arc(o.x, o.y, 18, 0, TAU); c.fill();
-      T.ring(o.x, o.y, 18, on ? 0.95 : 0.6, 1); if (k === cur) T.ring(o.x, o.y, 21, 0.5, 0.7);
-      flower(c, o.x, o.y + 1, k, 8, on ? 1 : 0.75);
+      c.fillStyle = pap(1); c.beginPath(); c.arc(o.x, o.y, 22, 0, TAU); c.fill();
+      T.ring(o.x, o.y, 22, on ? 0.95 : 0.6, 1); if (k === cur) T.ring(o.x, o.y, 25, 0.5, 0.7);
+      flower(c, o.x, o.y + 1, k, 10, on ? 1 : 0.75);
     });
     const k = menu.hover >= 0 ? menu.hover : cur;
     if (k != null && k >= 0) { const o = O[k]; T.mapText(WAVES[k], o.x, o.y - 30, 14, 0.9, 'center'); }
@@ -982,11 +1064,11 @@
     for (const t of touches.values()) {
       if (!t.moved) continue;
       if (t.kind === 'boat') { const q = pierXY(G); T.mapText(`${seq.bpm} BPM`, q.x, q.y - 26, 15, 0.9, 'center'); }
-      else if (t.kind === 'cloud') { const cl = cloudAt(G); T.mapText(`${t.lock >= 0 ? `${t.lock + 1} · ` : ''}cutoff · ${Math.round(180 * 2 ** (shown('cutoff') * 6.6))} Hz`, Math.min(cl.cx, G.W - 90), cl.cy + 24 * cl.s, 14, 0.9, 'center'); }
-      else if (t.kind === 'mountains') T.mapText(`${t.lock >= 0 ? `${t.lock + 1} · ` : ''}res · ${Math.round(shown('res') * 100)}%`, G.W / 2, G.hor - 0.26 * G.h, 14, 0.9, 'center');
+      else if (t.kind === 'cloud') { const cl = cloudAt(G); T.mapText(`cutoff · ${Math.round(180 * 2 ** (shown('cutoff') * 6.6))} Hz`, Math.min(cl.cx, G.W - 90), cl.cy + 24 * cl.s, 14, 0.9, 'center'); }
+      else if (t.kind === 'mountains') T.mapText(`res · ${Math.round(shown('res') * 100)}%`, G.W / 2, G.hor - 0.26 * G.h, 14, 0.9, 'center');
       else if (t.kind === 'duckA' || t.kind === 'duckR') {
         const d = ducksAt(G)[t.kind === 'duckA' ? 'A' : 'R'], v = t.kind === 'duckA' ? attOf(shown('att')) : relOf(shown('rel')), ms = v < 1 ? `${Math.round(v * 1000)} ms` : `${v.toFixed(2)} s`;
-        T.mapText(`${t.lock >= 0 ? `${t.lock + 1} · ` : ''}${t.kind === 'duckA' ? 'attack' : 'release'} · ${ms}`, clamp(d.x, 80, G.W - 80), d.y - d.s * 1.4 - 14, 14, 0.9, 'center');
+        T.mapText(`${t.kind === 'duckA' ? 'attack' : 'release'} · ${ms}`, clamp(d.x, 80, G.W - 80), d.y - d.s * 1.4 - 14, 14, 0.9, 'center');
       }
       else if (t.kind === 'bridge') { const r = river(G, bridgeT()), p = across(r, 0.5 + 22 / r.w); T.mapText(String(pads.len), p.x, p.y - 12, 16, 0.9, 'center'); }
       else if (t.kind === 'pad' && pads.at[t.i]) { const p = padXY(G, t.i, pads.at[t.i].note); T.mapText(noteName(noteHz(pads.at[t.i].note)), p.x, p.y - 24 - 8 * p.s, 15, 0.95, 'center'); }
@@ -1000,7 +1082,8 @@
       { key: 'reverb', label: 'reverb', ang: deg(180) },
       { key: 'delay', label: 'delay', ang: deg(162) },
       { key: 'time', label: 'time', ang: deg(144) },
-      { key: 'chorus', label: 'chorus', ang: deg(126) },   // cutoff, res и огибающая — в сцене: туча, горы, мельница
+      { key: 'chorus', label: 'chorus', ang: deg(126) },
+      { key: 'chance', label: 'chance', ang: deg(108) },   // cutoff, res и огибающая — в сцене: туча, горы, мельница
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); },
     text: (k) => (k === 'time' ? div()[0] : `${Math.round(fx[k] * 100)}%`),
@@ -1035,6 +1118,7 @@
       drawStone(c, G);
       drawTouches(c, G);
       drawMenu(c, G);
+      drawLilyRing(c, G);
     },
     build, tick, down, move, up,
     mapShot(on) { noSun = on; },
@@ -1051,17 +1135,18 @@
           for (const k of LOCKS) if (R() < 0.4) pd.lock[k] = k === 'res' ? R() * 0.85 : k === 'att' ? R() * 0.6 : R();
           if (!Object.keys(pd.lock).length) pd.lock.cutoff = R();
         }
+        if (R() < 0.2) pd.chance = 0.5 + Math.round(R() * 8) / 20;
         return pd;
       });
-      Object.assign(fx, { cutoff: 0.35 + R() * 0.5, res: R() * 0.6, att: R() * R() * 0.5, rel: 0.2 + R() * 0.6 });   // туча, горы и мельница тоже
+      Object.assign(fx, { chance: 1, cutoff: 0.35 + R() * 0.5, res: R() * 0.6, att: R() * R() * 0.5, rel: 0.2 + R() * 0.6 });   // туча, горы и мельница тоже
       applyFx();
       if (!seq.playing) play(true);
     },
-    clear() { pads.at = Array(16).fill(null); },
+    clear() { pads.at = Array(16).fill(null); ring = null; },
     snapshot: () => JSON.stringify({ fx, len: pads.len, at: pads.at, bpm: seq.bpm }),
     restore(js) {
       const st = JSON.parse(js);
-      Object.assign(fx, st.fx); delete fx.env; pads.len = st.len; pads.at = st.at.map((p) => (p ? { ...p, ...(p.lock ? { lock: { ...p.lock } } : {}) } : null)); seq.bpm = st.bpm;
+      Object.assign(fx, { chance: 1 }, st.fx); delete fx.env; ring = null; pads.len = st.len; pads.at = st.at.map((p) => (p ? { ...p, ...(p.lock ? { lock: { ...p.lock } } : {}) } : null)); seq.bpm = st.bpm;
       applyFx();
     },
     sounding: () => seq.playing && pads.at.slice(0, pads.len).some(Boolean),
@@ -1070,6 +1155,7 @@
   window.t2d.nat = {
     fx, pads, geo, seq, play, get phase() { return phase(); }, get shake() { return shake; }, get birdsAt() { return birdsAt; },
     skiff: () => ({ x: skiff.x, y: skiff.y - 4, playing: !!skiff.voice, home: skiff.home }),
+    ring: () => ring && { i: ring.i, pinned: ring.pinned, cx: ring.cx, cy: ring.cy, dead: T.MENU_DEAD, span: T.MENU_SPAN, sector: ring.sector && ring.sector.key },
     get ducksGone() { return !!ducksGone; }, get envOpen() { return envOpen(); }, pond: () => pondAt(geo()),
     cloud: () => { const cl = cloudAt(geo()); return { x: cl.cx, y: cl.cy }; },
     menu: () => menu && { open: true, held: menu.held, opts: menuOpts(geo()) },
