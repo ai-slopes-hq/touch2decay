@@ -42,7 +42,7 @@
   const NW = WAVES.length;
 
   // ---------- LFO: панель внизу, пока открыто кольцо; пад — скорость и глубина одним жестом ----------
-  const LFO_TARGET_LABEL = { pitch: 'pitch', wave: 'wave', cut: 'cutoff', res: 'res', beat: 'detune', fm: 'fm', shift: 'shift' };
+  const LFO_TARGET_LABEL = { pitch: 'pitch', wave: 'wave', cut: 'cutoff', res: 'res', beat: 'detune', fm: 'fm', shift: 'shift', amp: 'amp' };
   const LFO_RATE_MIN = 0.03, LFO_RATE_MAX = 20;
 
   // ---------- жесты ----------
@@ -280,7 +280,7 @@
   function follow(v) {
     if (v.fingers.length !== 1) return;
     const f = F.get(v.fingers[0]);
-    if (!f || f.menu || f.parked || f.bridge || f.pinch) return;
+    if (!f || f.menu || f.parked || f.bridge) return;
     const q = unplace(f.x + v.ox, f.y + v.oy);
     v.x = q.p; v.y = q.c;
     v.dirty = true;
@@ -435,6 +435,7 @@
     if (key === 'res') return [n.lp.Q];
     if (key === 'beat') return [n.c2.freq];
     if (key === 'shift') return [n.shf.cos.frequency, n.shf.sin.frequency];
+    if (key === 'amp') return [n.lvl.gain];
     return [n.sfm.gain];
   }
 
@@ -447,7 +448,7 @@
       for (const p of lfoTargets(n, key)) out.connect(p);
       const sum = gainNode(1);
       const mp = morphPos(spec.morph, false);
-      const mo = morphOsc(mp.shapers, sum);
+      const mo = morphOsc(mp.shapers, sum, true);
       sum.connect(out);
       n.lfo[key] = { out, mp, mo };
     }
@@ -552,18 +553,6 @@
     const ui = uiHit(f);
     if (ui) { f.ui = ui.k; f.hit = ui; uiDown(f); return; }
 
-    // второй палец на планету, которую уже держат, — щипок громкости
-    for (const o of F.values()) {
-      if (o === f || !o.voice || o.bridge || o.menu || o.parked || o.pinch || o.zoom) continue;
-      const pv = o.voice;
-      if (Math.hypot(f.x - vx(pv), f.y - vy(pv)) < planetR(pv) + 22) {
-        const pz = { v: pv, a: o, b: f, d0: Math.max(24, fdist(o, f)), a0: pv.amp };
-        o.pinch = pz; f.pinch = pz;
-        o.menuWas = true; o.moved = true;       // это не тап и не удержание для кольца
-        return;
-      }
-    }
-
     let v = hit(f.x, f.y);
     if (v) {
       // другой палец уже держит кружок — это мост
@@ -601,12 +590,6 @@
     f.x = e.clientX; f.y = e.clientY;
     if (!f.moved && Math.hypot(f.x - f.x0, f.y - f.y0) > HOLD_MOVE) f.moved = true;
     if (f.ui) { if (f.menu) menuMove(f); else uiMove(f); return; }
-    if (f.pinch) {                            // громкость: развёл — громче, свёл — тише
-      const p = f.pinch;
-      p.v.amp = clamp((p.a0 * fdist(p.a, p.b)) / p.d0, AMP_MIN, AMP_MAX);
-      p.v.dirty = true;
-      return;
-    }
     if (f.zc && !f.zoom && performance.now() - f.zc.t0 < 700 && Math.abs(fdist(f.zc.a, f.zc.b) - f.zc.d0) > 26) startZoom(f.zc);
     if (f.zoom) {
       const z = f.zoom;
@@ -637,11 +620,6 @@
     if (f.bridge) endBridge(f.bridge);
     F.delete(e.pointerId);
     if (f.zoom) { const z = f.zoom; z.a.zoom = null; z.b.zoom = null; return; }
-    if (f.pinch) {
-      const p = f.pinch;
-      p.a.pinch = null; p.b.pinch = null;
-      if (f === p.b) { if (p.a.voice) rebase(p.a.voice); return; }   // второй палец ушёл — первый снова ведёт планету
-    }
     if (f.ui) { uiUp(f); return; }
     if (f.menu) leaveMenu(f.menu);
     f.menu = null;
@@ -669,13 +647,15 @@
   }
 
   // ---------- кнопки — в верхней строке: слева заголовок, справа лад, FX, отмена, убрать всё ----------
-  const BTN_R = 22, ITEM_H = 46, CLR_R = 17;
+  const BTN_R = 20, ITEM_H = 46, CLR_R = 17;
+  const SMALL = new Set(['clr', 'undo', 'dice']);
   const btnPos = (k) => {
     const y = scopeY + 20;
-    if (k === 'clr') return { x: W - 30, y };
-    if (k === 'undo') return { x: W - 72, y };
-    if (k === 'rev') return { x: W - 128, y };
-    return { x: W - 186, y };
+    if (k === 'clr') return { x: W - 28, y };
+    if (k === 'undo') return { x: W - 70, y };
+    if (k === 'dice') return { x: W - 112, y };
+    if (k === 'rev') return { x: W - 160, y };
+    return { x: W - 210, y };
   };
   // панель LFO внизу, под большой палец: полоса формы и пад — вправо скорость, вверх глубина
   const lfoPanel = () => {
@@ -695,16 +675,21 @@
     const cw = TON_W, bx = W - 12 - (2 * cw + 8) - LIST_W, rx = bx + LIST_W + 8, ch = (rows * ITEM_H) / 6;
     return { b, rows, top, bx, rx, cw, ch };
   };
-  // тулбокс вдоль верха влево от кнопки лада: карандаш, за ним кубик
-  const dicePos = () => { const b = btnPos('scl'); return { x: b.x - 128, y: b.y }; };
-  const overDice = (f) => { const d = dicePos(); return Math.abs(f.x - d.x) < 30 && Math.abs(f.y - d.y) < 34; };
-
-  // кубик: случайный тембр выделенным кружкам (или всем) — волна, фильтр, detune, fm, сдвиг;
-  // заодно связи и LFO. Высота и место не трогаются
+  // кубик (кнопка вверху): случайный тембр выделенным планетам (или всем) — волна, фильтр, detune, fm, сдвиг;
+  // заодно связи и LFO; высота и место не трогаются. Планет нет — кубик сам ставит закреплённый тон
+  // в случайном месте видимой части карты, с ладом — сразу на ноту лада
   function rollDice() {
     const R = Math.random;
-    let vs = [...sel].filter((v) => v.active);
-    if (!vs.length) vs = V.filter((v) => v.active);
+    const live = (v) => v.active && v.envT > 0;   // гаснущие не в счёт
+    let vs = [...sel].filter(live);
+    if (!vs.length) vs = V.filter(live);
+    if (!vs.length) {
+      const pt = place(zoom * (0.08 + 0.75 * R()), 0.1 + 0.6 * R());
+      const v = spawn({ x: pt.x, y: pt.y });
+      if (!v) return;
+      v.pinned = true; v.t = performance.now();
+      vs = [v];
+    }
     for (const v of vs) {
       v.wave = R();
       v.cut = 0.3 + 0.62 * R();
@@ -734,6 +719,14 @@
   function linkMid(dst, m) { return { x: (vx(dst) + vx(m.src)) / 2, y: (vy(dst) + vy(m.src)) / 2 }; }
   const ringR = () => MENU_DEAD + MENU_SPAN + 34;
 
+  // полоса громкости над панелью LFO — в опциях планеты, без лишнего луча
+  const ampStrip = () => { const p = lfoPanel(); return { x: p.x, w: p.w, y: p.top - 52, h: 34 }; };
+  const ampT = (amp) => invLog(AMP_MIN, AMP_MAX, amp);          // шкала в децибелах
+  function ampHit(f) {
+    const a = ampStrip();
+    return f.x > a.x - 8 && f.x < a.x + a.w + 8 && f.y > a.y - 6 && f.y < a.y + a.h + 4 ? { k: 'amp' } : null;
+  }
+
   function lfoHit(f) {
     const p = lfoPanel();
     if (f.x < p.x - 8 || f.x > p.x + p.w + 8) return null;
@@ -748,8 +741,8 @@
       ghost = null;
       if (performance.now() < gh.until && Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 14) return { k: 'pin', ghost: gh.menu };
     }
-    for (const k of ['rev', 'scl', 'clr', 'undo']) {
-      const b = btnPos(k), r = k === 'clr' || k === 'undo' ? CLR_R + 6 : BTN_R + 6;
+    for (const k of ['rev', 'scl', 'clr', 'undo', 'dice']) {
+      const b = btnPos(k), r = SMALL.has(k) ? CLR_R + 4 : BTN_R + 6;
       if (Math.hypot(f.x - b.x, f.y - b.y) < r) return { k };
     }
     for (const o of F.values()) {             // булавка на кольце, открытом на весу
@@ -758,11 +751,11 @@
       if (Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 12) return { k: 'pin', holder: o };
     }
     if (editor) {
-      if (editor.kind === 'voice') { const l = lfoHit(f); if (l) return l; }
+      if (editor.kind === 'voice') { const l = ampHit(f) || lfoHit(f); if (l) return l; }
       if (Math.hypot(f.x - editor.cx, f.y - editor.cy) < ringR()) return { k: 'ring' };
       return { k: 'void' };                   // тап мимо — закрыть
     }
-    if (modTarget(f)) { const l = lfoHit(f); if (l) return l; }
+    if (modTarget(f)) { const l = ampHit(f) || lfoHit(f); if (l) return l; }
     for (const v of V) {                      // ручка на середине связи
       if (!v.active) continue;
       for (const m of v.mods) {
@@ -852,6 +845,7 @@
   function uiDown(f) {
     if (f.ui === 'clr') { clearAll(); return; }
     if (f.ui === 'undo') { undo(); return; }
+    if (f.ui === 'dice') { rollDice(); return; }
     if (f.ui === 'rev') { openFx(f); return; }
     if (f.ui === 'pin') {
       if (f.hit.ghost) {                      // кольцо уже гасло — кружки снова звучат
@@ -864,6 +858,14 @@
     if (f.ui === 'void') { closeEditor(); return; }
     if (f.ui === 'link') { openLink(f, f.hit.dst, f.hit.m); return; }
     if (f.ui === 'ring') { ringTouch(f, true); return; }
+    if (f.ui === 'amp') {
+      const tg = modTarget(f);
+      if (!tg) return;
+      f.tg = tg;
+      if (editor && editor.kind === 'voice') editor.key = 'amp';   // в закреплённом кольце LFO переключается на громкость
+      ampSet(f);
+      return;
+    }
     if (f.ui === 'lfo') {
       const tg = modTarget(f);
       if (!tg) return;
@@ -882,6 +884,12 @@
     allDirty();
   }
 
+  function ampSet(f) {
+    if (!f.tg) return;
+    const a = ampStrip(), amp = lerpLog(AMP_MIN, AMP_MAX, clamp((f.x - a.x - PAD_IN) / (a.w - 2 * PAD_IN)));
+    for (const u of f.tg.group) { u.amp = Math.abs(20 * Math.log10(amp)) < 0.6 ? 1 : amp; u.dirty = true; }   // у 0 дБ — защёлка
+  }
+
   // панель LFO: форма — где палец на полосе; на паде одним жестом скорость (вправо) и глубина (вверх)
   function lfoStrip(f) {
     if (!f.tg) return;
@@ -897,6 +905,7 @@
 
   function uiMove(f) {
     if (f.ui === 'lfo') { lfoStrip(f); return; }
+    if (f.ui === 'amp') { ampSet(f); return; }
     if (f.ui === 'ring') { ringTouch(f, false); return; }
     if (f.ui !== 'scl') return;
     const L = sclList(), b = L.b;
@@ -906,8 +915,6 @@
       if (scl.on !== f.wasOn) { scl.on = f.wasOn; scl.slideUntil = performance.now() + 500; allDirty(); }
     }
     if (f.lasso) {
-      f.dice = overDice(f);                   // доехал до кубика — бросок по отпусканию
-      if (f.dice) return;
       const lp = f.lasso[f.lasso.length - 1];
       if (!lp || Math.hypot(f.x - lp.x, f.y - lp.y) > 4) f.lasso.push({ x: f.x, y: f.y });
       return;
@@ -947,7 +954,7 @@
       return;
     }
     if (f.ui !== 'scl') return;
-    if (f.lasso) { if (f.dice) rollDice(); else finishLasso(f.lasso); return; }
+    if (f.lasso) { finishLasso(f.lasso); return; }
     // короткий тап по уже включённому ладу — выключить; выбор из списка остаётся как есть
     if (!f.picked && f.wasOn && performance.now() - f.t0 < 300) {
       scl.on = false;
@@ -1166,8 +1173,22 @@
       for (let i = 0; i < N; i++) { const ph = (2 * Math.PI * h * i) / N; a += smp[i] * Math.cos(ph); b += smp[i] * Math.sin(ph); }
       re[h] = (2 * a) / N; im[h] = (2 * b) / N;
     }
-    w.pw = ctx.createPeriodicWave(re, im);
+    w.re = re; w.im = im;
+    w.pwLfo = ctx.createPeriodicWave(re, im);   // LFO — исходная форма: её видно и слышно как форму
     w.level = 0.24 / Math.sqrt(rms);
+  }
+  // для голосов фазы гармоник у всех таблиц одни (как у saw): морф между соседями — чистая
+  // интерполяция амплитуд гармоник, без провалов громкости и взаимного гашения посередине
+  function alignWaves() {
+    const ref = WAVES.find((w) => w.label === 'saw');
+    for (const w of WAVES) {
+      const re = new Float32Array(w.re.length), im = new Float32Array(w.im.length);
+      for (let h = 1; h < re.length; h++) {
+        const m = Math.hypot(w.re[h], w.im[h]), th = Math.atan2(ref.im[h], ref.re[h]);
+        re[h] = m * Math.cos(th); im[h] = m * Math.sin(th);
+      }
+      w.pw = ctx.createPeriodicWave(re, im);
+    }
   }
 
   // нормированные циклы для рисования считаются сразу, без звука
@@ -1195,12 +1216,12 @@
 
   // генератор с морфингом: по осциллятору на таблицу, их веса — из позиции (позиция — звуковой сигнал,
   // поэтому её можно модулировать хоть на звуковой скорости). Частота и строй — общие на весь набор.
-  function morphOsc(shapers, dest) {
+  function morphOsc(shapers, dest, lfoShapes = false) {
     const fq = ctx.createConstantSource(); fq.offset.value = 0;
     const dt = ctx.createConstantSource(); dt.offset.value = 0;
     const oscs = [fq, dt];
     WAVES.forEach((w, i) => {
-      const o = ctx.createOscillator(); o.setPeriodicWave(w.pw); o.frequency.value = 0;
+      const o = ctx.createOscillator(); o.setPeriodicWave(lfoShapes ? w.pwLfo : w.pw); o.frequency.value = 0;
       fq.connect(o.frequency); dt.connect(o.detune);
       const gn = gainNode(0);
       shapers[i].connect(gn.gain);
@@ -1215,7 +1236,7 @@
   function morphPos(p, withLevel) {
     const c = ctx.createConstantSource(); c.offset.value = 2 * p - 1; c.start();
     const shapers = WAVES.map((w, i) => {
-      const sh = ctx.createWaveShaper(); sh.curve = withLevel ? weightCurve(i, w.level, 0.72) : weightCurve(i, 1);
+      const sh = ctx.createWaveShaper(); sh.curve = withLevel ? weightCurve(i, w.level, 0.85) : weightCurve(i, 1);   // 0.85 — ровная громкость по ходу морфа
       c.connect(sh);
       return sh;
     });
@@ -1291,6 +1312,7 @@
     const AC = window.AudioContext || window.webkitAudioContext;
     ctx = new AC({ latencyHint: 'interactive' });
     for (const w of WAVES) makeWave(w);
+    alignWaves();
     noiseBuf = noiseBuffer(4);
     const noise = ctx.createBufferSource();
     noise.buffer = noiseBuf; noise.loop = true; noise.start();
@@ -1470,7 +1492,7 @@
       L.mp.pos.setTargetAtTime(2 * spec.morph - 1, t, 0.05);
       const d2 = spec.depth;
       const depth = key === 'pitch' ? d2 * 700 : key === 'wave' ? d2 * 2 : key === 'cut' ? d2 * 4800
-        : key === 'res' ? d2 * 20 : key === 'beat' ? d2 * 16 : key === 'shift' ? d2 * 300 : d2 * f * FM_MAX;
+        : key === 'res' ? d2 * 20 : key === 'beat' ? d2 * 16 : key === 'shift' ? d2 * 300 : key === 'amp' ? d2 * 0.55 * v.amp : d2 * f * FM_MAX;
       L.out.gain.setTargetAtTime(depth, t, 0.05);
     }
   }
@@ -1657,7 +1679,7 @@
   const AMP_MIN = 0.05, AMP_MAX = 1.8;
   const planetR = (v) => 34 * (0.55 + 0.45 * v.amp);   // громче — крупнее
   // орбита спутника (LFO) — по параметру: у каждого своя высота
-  const MOON_R = { pitch: 50, wave: 56, cut: 62, res: 68, beat: 74, fm: 80, shift: 86 };
+  const MOON_R = { pitch: 50, wave: 56, cut: 62, res: 68, beat: 74, fm: 80, shift: 86, amp: 92 };
 
   // планета — осциллятор. Контур — его звук (атмосфера); внутри двойная звезда — пара генераторов,
   // которая вращается со скоростью биений detune. Закреплённая — с кольцом, как у Сатурна;
@@ -1707,10 +1729,6 @@
       const t = v.bph * Math.PI * 2;
       dot(x + Math.cos(t) * 5, y + Math.sin(t) * 5, 1.9, a);
       dot(x - Math.cos(t) * 5, y - Math.sin(t) * 5, 1.9, a * 0.75);
-    }
-    for (const f of F.values()) if (f.pinch && f.pinch.v === v && f === f.pinch.a) {
-      const db = 20 * Math.log10(v.amp);
-      text(`amp ${db >= 0 ? '+' : '−'}${Math.abs(db).toFixed(1)} dB`, x, y - R - 24, 13, 1, 500, 'center');
     }
     if (sel.has(v)) {                           // выделен лассо — бегущий пунктир
       g.save(); g.setLineDash([4, 5]); g.lineDashOffset = -now * 0.03;
@@ -1888,8 +1906,8 @@
       drawRing({
         cx: e.cx, cy: e.cy, span: MENU_SPAN, sectors: e.sectors, sel: e.key,
         get: (k) => norm(v, k), live: (k) => liveRange(v, k), lfoOn: (k) => !!v.lfo[k], centerOn: !e.key,
-        centerLabel: e.key ? null : 'pitch',
-        readout: sc ? `${sc.label} · ${valueText(v, sc.key)}${many}` : null,
+        centerLabel: e.key === 'amp' ? 'amp' : e.key ? null : 'pitch',
+        readout: sc ? `${sc.label} · ${valueText(v, sc.key)}${many}` : e.key === 'amp' ? `amp · ${(20 * Math.log10(v.amp)).toFixed(1)} dB${many}` : null,
         readoutAt: readoutAt(e.cx, e.cy),
       });
       if (e.key === 'wave') drawCurve(morphFn(clamp(v.wave + v.wv)), e.cx, e.cy, 30, 18, 1, 2, 1.4);
@@ -2025,6 +2043,30 @@
     dot(p.x + p.w - PAD_IN, mid - fn(spec.ph || 0) * amp, 2.5, 0.9);
     ring(cx, cy, on ? 11 : 8, 1, on ? 2 : 1.4);
     dot(cx, cy, 2.5, 1);
+  }
+
+  // полоса громкости: шкала в дБ, риски −24 · −12 · −6 · 0, бегунок; при LFO на громкость — полоса размаха
+  function drawAmpStrip(tg) {
+    const a = ampStrip(), v = tg.v;
+    let af = null;
+    for (const f of F.values()) if (f.ui === 'amp') af = f;
+    g.fillStyle = 'rgba(0,0,0,0.9)'; g.fillRect(0, a.y - 10, W, a.h + 16);
+    hairBox(a.x, a.y, a.w, a.h, af ? 0.8 : 0.3);
+    const X = (amp) => a.x + PAD_IN + ampT(amp) * (a.w - 2 * PAD_IN), by = a.y + a.h - 8;
+    g.strokeStyle = ink(0.3); g.lineWidth = 1; g.beginPath();
+    for (const db of [-24, -18, -12, -6, 0]) { const x = Math.round(X(10 ** (db / 20))) + 0.5; g.moveTo(x, by); g.lineTo(x, by - (db === 0 ? 8 : 4)); }
+    g.stroke();
+    const spec = v.lfo.amp;
+    if (spec) {                                  // тремоло: размах
+      const lo = Math.max(AMP_MIN, v.amp * (1 - spec.depth)), hi = Math.min(AMP_MAX, v.amp * (1 + spec.depth));
+      g.fillStyle = ink(0.12); g.fillRect(X(lo), a.y + 4, X(hi) - X(lo), a.h - 8);
+    }
+    const x = X(v.amp);
+    g.strokeStyle = ink(1); g.lineWidth = 2;
+    g.beginPath(); g.moveTo(a.x + PAD_IN, by + 0.5); g.lineTo(x, by + 0.5); g.moveTo(x, a.y + 5); g.lineTo(x, by + 3); g.stroke();
+    const db = 20 * Math.log10(v.amp), many = tg.group && tg.group.length > 1 ? ` ×${tg.group.length}` : '';
+    text('amp' + (spec ? ' ~' : ''), a.x + 10, a.y + 12, 11, 0.55);
+    text(`${Math.abs(db) < 0.05 ? '0' : (db > 0 ? '+' : '−') + Math.abs(db).toFixed(1)} dB${many}`, a.x + a.w - 10, a.y + 12, 13, 1, 500, 'right');
   }
 
   // поле по горизонтали — вертикальные полосы в оттенках серого. Без лада — диапазоны частот,
@@ -2176,7 +2218,7 @@
   // долгое касание пойманного кружка: дуга дорисовывается — и открывается кольцо
   function drawHold(now) {
     for (const f of F.values()) {
-      if (f.menu || f.menuWas || f.moved || f.bridge || f.pinch || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
+      if (f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
       const p = (now - f.t0) / HOLD_MS;
       if (p < 0.15 || p >= 1) continue;
       const v = f.voice;
@@ -2194,16 +2236,26 @@
     const tb = g.createLinearGradient(0, 0, 0, scopeY + 64);
     tb.addColorStop(0, 'rgba(0,0,0,0.85)'); tb.addColorStop(0.6, 'rgba(0,0,0,0.55)'); tb.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = tb; g.fillRect(0, 0, W, scopeY + 64);
-    mapText('touch2decay', 16, scopeY + 20, 23, sclF ? 0.25 : 0.85);   // при открытом тулбоксе заголовок уходит в тень
-    g.font = `italic 23px ${MAP}`; titleW = g.measureText('touch2decay').width;
+    mapText('touch2decay', 16, scopeY + 20, 21, sclF ? 0.25 : 0.85);   // при открытом тулбоксе заголовок уходит в тень
+    g.font = `italic 21px ${MAP}`; titleW = g.measureText('touch2decay').width;
     // кнопки лежат поверх карты — у каждой тёмная подложка
     const pad = (p, rr) => { g.fillStyle = 'rgba(0,0,0,0.88)'; g.beginPath(); g.arc(p.x, p.y, rr, 0, Math.PI * 2); g.fill(); };
-    pad(btnPos('rev'), BTN_R + 1); pad(btnPos('scl'), BTN_R + 1); pad(btnPos('undo'), CLR_R + 1); pad(btnPos('clr'), CLR_R + 1);
+    pad(btnPos('rev'), BTN_R + 1); pad(btnPos('scl'), BTN_R + 1); pad(btnPos('undo'), CLR_R + 1); pad(btnPos('clr'), CLR_R + 1); pad(btnPos('dice'), CLR_R + 1);
     const r = btnPos('rev');
     ring(r.x, r.y, BTN_R, revF ? 1 : 0.45, 1.2);
     for (const [rr, a] of [[6, 0.9], [11, 0.55], [16, 0.3]]) ring(r.x, r.y, rr, a * (revF ? 1 : 0.8), 1);
     g.strokeStyle = ink(0.9); g.lineWidth = 2;
     g.beginPath(); g.arc(r.x, r.y, BTN_R + 5, -Math.PI / 2, -Math.PI / 2 + fx.rev * Math.PI * 2); g.stroke();
+
+    // кубик: кружок с костью; после броска кость крутится
+    const dq = btnPos('dice'), diceF = [...F.values()].some((f) => f.ui === 'dice');
+    ring(dq.x, dq.y, CLR_R, diceF ? 1 : 0.45, 1.2);
+    g.save(); g.translate(dq.x, dq.y); g.rotate(0.18 + (performance.now() - diceAt < 400 ? (performance.now() - diceAt) / 60 : 0));
+    g.strokeStyle = ink(0.8); g.lineWidth = 1.2;
+    g.beginPath(); g.roundRect ? g.roundRect(-7, -7, 14, 14, 2.5) : g.rect(-7, -7, 14, 14); g.stroke();
+    g.fillStyle = ink(0.85);
+    for (const [px, py] of [[-3.2, -3.2], [3.2, -3.2], [0, 0], [-3.2, 3.2], [3.2, 3.2]]) { g.beginPath(); g.arc(px, py, 1.1, 0, Math.PI * 2); g.fill(); }
+    g.restore();
 
     // отмена: стрелка по дуге; под ней — точки по числу шагов в запасе
     const u = btnPos('undo'), can = hist.length > 0, flash = performance.now() - undoAt < 250;
@@ -2230,17 +2282,6 @@
       g.stroke(); g.restore();
       const loop = loopOf(sclF.lasso);
       for (const v of V) if (v.active && loop.length > 2 && pointIn(loop, vx(v), vy(v))) ring(vx(v), vy(v), 48, 0.9, 1.5);
-    }
-    if (sclF) {                                 // кубик — в конце тулбокса
-      const d = dicePos(), on = !!sclF.dice;
-      if (on) { g.save(); g.shadowColor = ink(0.9); g.shadowBlur = 16; }
-      g.strokeStyle = ink(on ? 1 : 0.8); g.lineWidth = on ? 1.8 : 1.3;
-      g.save(); g.translate(d.x, d.y); g.rotate(0.18 + (performance.now() - diceAt < 400 ? (performance.now() - diceAt) / 60 : 0));
-      g.beginPath(); g.roundRect ? g.roundRect(-11, -11, 22, 22, 4) : g.rect(-11, -11, 22, 22); g.stroke();
-      g.fillStyle = ink(on ? 1 : 0.85);
-      for (const [px, py] of [[-5, -5], [5, -5], [0, 0], [-5, 5], [5, 5]]) { g.beginPath(); g.arc(px, py, 1.7, 0, Math.PI * 2); g.fill(); }
-      g.restore();
-      if (on) g.restore();
     }
     if (sclF && !sclF.lasso) {
       // слева от кнопки — карандаш: туда повести палец, чтобы обвести кружки
@@ -2333,7 +2374,7 @@
   // индикатор нагрузки — маленький Сатурн в правом верхнем углу поля. До 80 % почти не виден,
   // дальше проступает гуще; краснеет постепенно, вместе с нагрузкой
   function drawStrain() {
-    const L = strain.lvl, x = 16 + titleW + 26, y = scopeY + 20;   // в верхней строке, сразу за заголовком
+    const L = strain.lvl, x = 16 + titleW + 20, y = scopeY + 20;   // в верхней строке, сразу за заголовком
     const vis = L < 0.8 ? 0.07 + 0.05 * (L / 0.8) : 0.12 + 0.88 * ((L - 0.8) / 0.2);
     const gb = Math.round(237 * (1 - L));
     const col = (a) => `rgba(237,${gb},${gb},${a})`;
@@ -2361,7 +2402,7 @@
 
     // долгое касание пойманного кружка — кольцо свойств на весу
     for (const f of F.values()) {
-      if (f.menu || f.menuWas || f.moved || f.bridge || f.pinch || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
+      if (f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
       if (now - f.t0 > HOLD_MS) openMenu(f);
     }
 
@@ -2472,7 +2513,7 @@
 
     readLevel();
     const tg = modTarget(null);
-    if (tg) drawLfoPanel(tg, now);
+    if (tg) { drawLfoPanel(tg, now); drawAmpStrip(tg); }
     drawUI();
     if (fxF) drawFx(fxF);                       // веер FX — поверх верхней строки
     drawStrain();
