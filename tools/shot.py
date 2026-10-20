@@ -664,8 +664,8 @@ async def sc_sketches(p):                         # эскизы миров III 
     assert await p.js('()=>t2d.view') == 'map', 'Natura sun -> map'
     await p.tap(100, 600); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 3], 'III opens'
-    await p.tap(W - 38, H - 40); await p.pg.wait_for_timeout(300)        # череп — пока ни к чему не ведёт
-    assert await p.js('()=>t2d.view') == 'play', 'skull does nothing yet'
+    await p.tap(W - 38, H - 40); await p.pg.wait_for_timeout(300)        # древо в углу — пока ни к чему не ведёт
+    assert await p.js('()=>t2d.view') == 'play', 'corner tree does nothing yet'
     s = await p.js('()=>t2d.lab.geo().sun'); await p.tap(s['x'] - 25, s['y'] + 25); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>t2d.view') == 'map', 'Laboratorium sun -> map'
     await p.shot('map-sketches')

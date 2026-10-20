@@ -3,7 +3,7 @@
 // поверхность жидкости — синус с ratio волнами. Алгоритм — как колбы стоят: модулятор выше и льёт по трубке в того, кого модулирует,
 // несущие — нижний ряд, сливают в общий приёмник на атаноре. Цвета смешиваются по трубкам. Обратная связь — «пеликан»,
 // трубка из колбы в саму себя. Играть — семь банок металлов-планет (♄ ♃ ♂ ☉ ♀ ☿ ☽) — семь ступеней лада.
-// Солнце — четверть в правом верхнем углу (угол к центру карты), тап — карта; на стене — бледные алхимические рисунки; в правом нижнем углу череп с костями (пока просто картинка). Спека: docs/superpowers/specs/2026-10-20-laboratorium-design.md
+// Солнце — четверть в правом верхнем углу (угол к центру карты), тап — карта; на стене — бледные алхимические рисунки; в правом нижнем углу — четверть древа жизни (крона; корни — у змей, в мире под нами). Спека: docs/superpowers/specs/2026-10-20-laboratorium-design.md
 (() => {
   'use strict';
   const T = window.T2D;
@@ -289,35 +289,39 @@
     return wallC;
   }
 
-  // череп с костями в правом нижнем углу (у Natura напротив — надгробие); пока ни к чему не ведёт
-  const skullAt = () => ({ x: T.W - 38, y: T.H - T.safeBot - 40 });
-  function drawSkull(c) {
-    const { x, y } = skullAt();
-    const bone = (a) => {                             // кость: стержень и по два мыщелка на концах
-      const cs = Math.cos(a), sn = Math.sin(a), L = 30, px = -sn, py = cs;
-      c.strokeStyle = T.ink(0.85); c.lineWidth = 1.1; c.fillStyle = T.BG;
-      c.beginPath(); c.moveTo(x - cs * L + px * 2.5, y + 8 - sn * L + py * 2.5); c.lineTo(x + cs * L + px * 2.5, y + 8 + sn * L + py * 2.5);
-      c.moveTo(x - cs * L - px * 2.5, y + 8 - sn * L - py * 2.5); c.lineTo(x + cs * L - px * 2.5, y + 8 + sn * L - py * 2.5); c.stroke();
-      for (const e of [-1, 1]) for (const q of [-1, 1]) {
-        const ex = x + e * cs * (L + 2) + q * px * 3.5, ey = y + 8 + e * sn * (L + 2) + q * py * 3.5;
-        c.beginPath(); c.arc(ex, ey, 4, 0, TAU); c.fill(); c.stroke();
-      }
-    };
-    bone(Math.PI / 5); bone(-Math.PI / 5);
-    c.fillStyle = T.BG; c.strokeStyle = T.ink(0.9); c.lineWidth = 1.3;
-    c.beginPath(); c.arc(x, y - 4, 17, Math.PI * 0.82, Math.PI * 2.18);   // свод
-    c.lineTo(x + 10, y + 12); c.lineTo(x + 9, y + 20); c.lineTo(x - 9, y + 20); c.lineTo(x - 10, y + 12); c.closePath(); c.fill(); c.stroke();
-    c.lineWidth = 1.1;
-    c.strokeStyle = T.ink(0.85);
-    for (const e of [-1, 1]) { c.beginPath(); c.ellipse(x + e * 7, y - 2, 5, 5.5, e * 0.3, 0, TAU); c.stroke(); }   // глазницы — тёмные, обведены
-    c.beginPath(); c.moveTo(x, y + 4); c.lineTo(x - 2.5, y + 9); c.lineTo(x + 2.5, y + 9); c.closePath(); c.stroke();
-    c.strokeStyle = T.ink(0.35); c.lineWidth = 0.7; c.beginPath();      // штриховка в глазницах
-    for (const e of [-1, 1]) for (let q = -3; q <= 3; q += 2) { c.moveTo(x + e * 7 - 3, y - 2 + q); c.lineTo(x + e * 7 + 3, y - 2 + q + 1.5); }
-    c.stroke(); c.lineWidth = 1.1;
-    c.strokeStyle = T.ink(0.75); c.beginPath(); c.moveTo(x - 8, y + 15); c.lineTo(x + 8, y + 15);
-    for (let k = -6; k <= 6; k += 3) { c.moveTo(x + k, y + 12.5); c.lineTo(x + k, y + 18); }
+  // четверть древа жизни в правом нижнем углу: медальон с центром на границе с Serpentes (мир под нами) —
+  // здесь видна верхняя четверть, крона и ствол; у змей в правом верхнем углу — нижняя, корни. Пока ни к чему не ведёт
+  function drawRoot(c) {
+    const W = T.W, x = W, y = T.H - T.safeBot, R = Math.min(84, W * 0.22);
+    c.save(); c.beginPath(); c.rect(0, 0, W, y); c.clip();   // только верхняя четверть — нижняя у змей
+    c.fillStyle = T.BG; c.beginPath(); c.arc(x, y, R + 6, 0, TAU); c.fill();
+    T.ring(x, y, R, 0.85, 1.4); T.ring(x, y, R - 5, 0.4, 0.9);
+    c.beginPath(); c.arc(x, y, R - 7, 0, TAU); c.clip();
+    c.fillStyle = T.ink(0.85);                          // ствол — по краю экрана, уходит вниз к змеям
+    c.beginPath(); c.moveTo(x - 6, y + 2); c.quadraticCurveTo(x - 4, y - R * 0.25, x - 2.5, y - R * 0.42); c.lineTo(x, y - R * 0.42); c.lineTo(x, y + 2); c.closePath(); c.fill();
+    c.strokeStyle = T.ink(0.85); c.lineWidth = 1.4; c.lineCap = 'round';
+    for (const [a, l] of [[-2.2, 0.32], [-2.6, 0.26], [-1.9, 0.3]]) {   // ветви
+      const sx = x - 2, sy = y - R * 0.4, ex = sx + Math.cos(a) * R * l, ey = sy + Math.sin(a) * R * l;
+      c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo((sx + ex) / 2, (sy + ey) / 2 - 4, ex, ey); c.stroke();
+    }
+    c.lineCap = 'butt';
+    const cx = x, cy = y - R * 0.6, cr = R * 0.36;       // крона: фестоны по кругу, внутри плоды
+    c.fillStyle = T.BG; c.strokeStyle = T.ink(0.9); c.lineWidth = 1.2;
+    c.beginPath();
+    for (let k = 0; k < 9; k++) {
+      const a0 = (k / 9) * TAU, a1 = ((k + 1) / 9) * TAU, am = (a0 + a1) / 2;
+      if (!k) c.moveTo(cx + Math.cos(a0) * cr, cy + Math.sin(a0) * cr);
+      c.quadraticCurveTo(cx + Math.cos(am) * cr * 1.35, cy + Math.sin(am) * cr * 1.3, cx + Math.cos(a1) * cr, cy + Math.sin(a1) * cr);
+    }
+    c.closePath(); c.fill(); c.stroke();
+    for (const [dx, dy] of [[-0.45, -0.2], [-0.2, 0.35], [-0.6, 0.3], [-0.25, -0.55]]) {
+      c.beginPath(); c.arc(cx + dx * cr, cy + dy * cr, 2.6, 0, TAU); c.stroke();
+      c.beginPath(); c.moveTo(cx + dx * cr, cy + dy * cr - 2.6); c.lineTo(cx + dx * cr + 1.2, cy + dy * cr - 5); c.stroke();
+    }
+    c.strokeStyle = T.ink(0.6); c.lineWidth = 1; c.beginPath();   // корешки начинаются у самой границы
+    for (const d of [0.35, 0.6]) { c.moveTo(x - 3, y - 2); c.quadraticCurveTo(x - R * d * 0.5, y - 1, x - R * d, y + 4); }
     c.stroke();
-    c.strokeStyle = T.ink(0.3); c.beginPath(); c.arc(x - 3, y - 6, 12, Math.PI * 1.1, Math.PI * 1.45); c.stroke();   // блик на своде
+    c.restore();
   }
 
   // ---------- мир ----------
@@ -333,7 +337,7 @@
   };
   const lab = {
     n: 'III', title: 'Laboratorium', sub: 'operatores quattuor · nondum sonat',
-    corner: { hit: (f) => { const G = geo(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце — карта; череп пока просто лежит
+    corner: { hit: (f) => { const G = geo(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце — карта; древо в углу пока просто стоит
     fx: fxw,
     draw(now) {
       const c = T.g, G = geo();
@@ -344,7 +348,7 @@
       for (let i = 0; i < OPS.length; i++) drawFlask(c, i, G, now);
       drawEgg(c, G, now);
       drawJars(c, G, now);
-      drawSkull(c);
+      drawRoot(c);
     },
     down() {}, move() {}, up() {},
     clear() {}, snapshot: () => JSON.stringify({ fx }), restore(js) { Object.assign(fx, JSON.parse(js).fx); },
