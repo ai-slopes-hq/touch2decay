@@ -1016,7 +1016,12 @@
     if (f.ui === 'dice') { cur().dice(); return; }
     if (f.ui === 'rev') { fxSheet = { w: nav.world }; return; }   // FX — плашка снизу
     if (f.ui === 'fxclose') { fxSheet = null; return; }
-    if (f.ui === 'fxrow') { const X = sheetSpec(); f.key = f.hit.key; f.v0 = X.get(f.key); return; }
+    if (f.ui === 'fxrow') {                  // строка плашки; двойной тап — reset, если мир его дал (например, кувшинка: снова общее)
+      const X = sheetSpec(), now = performance.now(); f.key = f.hit.key; f.v0 = X.get(f.key);
+      if (X.reset && lastFxTap && lastFxTap.k === f.key && now - lastFxTap.t < DTAP_MS) { X.reset(f.key); lastFxTap = null; f.done = true; return; }
+      lastFxTap = { k: f.key, t: now };
+      return;
+    }
     if (f.ui === 'none') return;
     if (f.ui === 'swave') { sheetWave(f); return; }
     if (f.ui === 'srow') {
@@ -1094,7 +1099,7 @@
     }
   }
 
-  let lastRowTap = null;
+  let lastRowTap = null, lastFxTap = null;
   function sheetWave(f) {                     // волна: где палец на полосе — та таблица (морфинг между ними)
     const s = sheetGeo(), t = clamp((f.x - s.x - 18) / (s.w - 36));
     for (const u of editor.group) { u.wave = t; u.dirty = true; }
@@ -1107,7 +1112,7 @@
       for (const u of editor.group) if (f.key === 'amp') setAmpT(u, t); else setNorm(u, f.key, t);
       return;
     }
-    if (f.ui === 'fxrow') { const X = sheetSpec(), s = fxGeo(); if (X) X.set(f.key, clamp(f.v0 + (f.x - f.x0) / (s.tx1 - s.tx0))); return; }
+    if (f.ui === 'fxrow' && !f.done) { const X = sheetSpec(), s = fxGeo(); if (X) X.set(f.key, clamp(f.v0 + (f.x - f.x0) / (s.tx1 - s.tx0))); if (f.moved) lastFxTap = null; return; }
     if (f.ui === 'lfo') { lfoStrip(f); return; }
     if (f.ui === 'amp') { ampSet(f); return; }
     if (f.ui === 'ring') { ringTouch(f, false); return; }
