@@ -746,6 +746,25 @@ async def sc_natura(p):                           # Natura: лодочка — �
     await p.shot('natura-play')
     b = await p.js('()=>t2d.nat.boat()'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(200)
     assert not await p.js('()=>t2d.nat.seq.playing'), 'tap the boat — it stops'
+    t = await p.js('()=>t2d.nat.tree()'); pid = await p.hold(t['x'], t['y'], ms=60)   # тормошим дерево — срез вверх
+    for k in range(8):
+        await p.drag(pid, t['x'] + (-30 if k % 2 else 30), t['y'], t['x'] + (30 if k % 2 else -30), t['y'], steps=3)
+    sh = await p.js('()=>t2d.nat.shake'); await p.shot('natura-shake'); await p.up()
+    assert sh > 0.5, f'shaking the tree: {sh}'
+    await p.js("()=>t2d.nat.setFx('chorus', 0.8)"); bd = await p.js('()=>t2d.nat.bird()')
+    await p.tap(bd['x'], bd['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>performance.now() - t2d.nat.birdsAt') < 1000, 'tap the birds — they scatter (laser)'
+    await p.shot('natura-birds')
+    await p.js("()=>t2d.nat.setFx('res', 0.95)"); await p.pg.wait_for_timeout(200); await p.shot('natura-res')
+    pads0 = await p.js('()=>JSON.stringify(t2d.nat.pads.at)')
+    await p.js("()=>{const a=t2d.nat.pads.at; for (let i=0;i<16;i++) a[i]=null; a[5]={note:3,wave:0}; a[6]={note:9,wave:0}}")
+    p0 = await p.js('()=>t2d.nat.slot(4, 6)'); p5 = await p.js('()=>t2d.nat.pad(5)'); p6 = await p.js('()=>t2d.nat.pad(6)'); p7 = await p.js('()=>t2d.nat.slot(7, 6)')
+    pid = await p.hold(p0['x'], p0['y'], ms=60)
+    for a2, b2 in ((p0, p5), (p5, p6), (p6, p7)): await p.drag(pid, a2['x'], a2['y'], b2['x'], b2['y'], steps=5)
+    await p.shot('natura-glide-draw'); await p.up(); await p.pg.wait_for_timeout(100)
+    g = await p.js('()=>[t2d.nat.pads.at[5].glide, t2d.nat.pads.at[6].glide]')
+    assert g == [True, True], f'a stroke on the water through lilies — glide: {g}'
+    await p.js(f"()=>{{const v={pads0}; v.forEach((x,i)=>t2d.nat.pads.at[i]=x)}}")
     q = await p.js('()=>t2d.nat.pad(0)'); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>t2d.nat.pads.at[0]') is None, 'tap a lily — gone'
     q = await p.js('()=>t2d.nat.slot(1, 10)'); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(150)

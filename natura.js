@@ -18,7 +18,8 @@
   const pap = (a) => `rgba(${PAPER},${a})`;
 
   // ---------- состояние (демо) ----------
-  const fx = { reverb: 0.4, delay: 0.45, time: 0.5, chorus: 0.4, cutoff: 0.62, env: 0.5 };
+  const fx = { reverb: 0.4, delay: 0.45, time: 0.5, chorus: 0.4, cutoff: 0.62, res: 0.25, env: 0.5 };
+  let shake = 0, birdsAt = -1e9;                   // как сильно тормошат дерево (0…1, само затихает); когда спугнули птиц
   const seq = { playing: false, bpm: 96, next: 0, step: 0 };
   let lastWave = 0;
   // кувшинки: место по течению — шаг; note — ступень лада (0–14); wave — какой цветок (голос)
@@ -63,7 +64,7 @@
   let skyC = null, landC = null, key = '';
   function canvas() { const c = document.createElement('canvas'); c.width = Math.round(T.W * T.DPR); c.height = Math.round(T.H * T.DPR); const x = c.getContext('2d'); x.setTransform(T.DPR, 0, 0, T.DPR, 0, 0); return [c, x]; }
   function layers(G) {
-    const k = `${G.W}x${G.H}x${T.DPR}|${G.top}|${G.bot}`;
+    const k = `${G.W}x${G.H}x${T.DPR}|${G.top}|${G.bot}|${Math.round(fx.res * 12)}`;   // горы растут с резонансом
     if (k === key) return;
     key = k;
     let x;
@@ -119,8 +120,9 @@
   function drawLand(x, G, rnd) {
     const { W } = G;
     x.save(); x.beginPath(); x.rect(13, 13, W - 26, G.H - T.safeBot - 26); x.clip();
-    ridge(x, G, G.hor, 4, 0.08 * G.h, 0.14 * G.h, 0.45, 5);
-    ridge(x, G, G.hor + 0.02 * G.h, 6, 0.03 * G.h, 0.06 * G.h, 0.8, 9);
+    const mh = 0.45 + 1.3 * (Math.round(fx.res * 12) / 12);   // резонанс — выше горы
+    ridge(x, G, G.hor, 4, 0.08 * G.h * mh, 0.14 * G.h * mh, 0.45, 5);
+    ridge(x, G, G.hor + 0.02 * G.h, 6, 0.03 * G.h * mh, 0.06 * G.h * mh, 0.8, 9);
     // река: заливка бумагой, берега, пунктир по течению — октавы (ступени 0, 7, 14)
     const N = 80, edge = (s) => { for (let k = 0; k <= N; k++) { const p = across(river(G, k / N), s / 2); k ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y); } };
     x.fillStyle = `rgb(${PAPER})`; x.beginPath(); edge(-1); for (let k = N; k >= 0; k--) { const p = across(river(G, k / N), 0.5); x.lineTo(p.x, p.y); } x.closePath(); x.fill();
@@ -356,7 +358,8 @@
   }
   // древо жизни на правом берегу: ствол с корнями, круглая крона-фестон с листьями и плодами — просто древо, без нот
   function drawTree(c, G) {
-    const { x, y } = G.tree, R = Math.min(G.W * 0.16, G.h * 0.09), cy = y - G.h * 0.13 - R * 0.6;
+    const { y } = G.tree, R = Math.min(G.W * 0.16, G.h * 0.09), cy = y - G.h * 0.13 - R * 0.6;
+    const x = G.tree.x + Math.sin(performance.now() * 0.03) * shake * 5;   // тормошат — крона ходит
     c.fillStyle = ink(0.9);
     c.beginPath(); c.moveTo(x - 6, y); c.quadraticCurveTo(x - 3, (y + cy) / 2, x - 2.5, cy); c.lineTo(x + 2.5, cy); c.quadraticCurveTo(x + 3, (y + cy) / 2, x + 6, y); c.closePath(); c.fill();
     c.strokeStyle = ink(0.9); c.lineWidth = 1.2; c.beginPath();
@@ -378,6 +381,11 @@
       if (k % 2) { c.fillStyle = pap(1); c.strokeStyle = ink(0.85); c.lineWidth = 1; c.beginPath(); c.arc(lx, ly, 3.2, 0, TAU); c.fill(); c.stroke(); c.beginPath(); c.moveTo(lx, ly - 3.2); c.lineTo(lx + 1.5, ly - 6); c.stroke(); }
       else leaf(c, lx, ly + 5, a, 0.75, 0.75);
     }
+    const nf = Math.round(shake * 8), now = performance.now();       // опадают листья
+    for (let k = 0; k < nf; k++) {
+      const t = ((now / (900 + k * 130) + k * 0.31) % 1), lx = x + Math.sin(k * 2.7) * R * 0.9 + Math.sin(t * 9 + k) * 8, ly = cy + R * 0.6 + t * G.h * 0.14;
+      leaf(c, lx, ly, t * 6 + k, 0.6, 0.7 * (1 - t));
+    }
   }
   // туча над древом, поливает его и берег; облака вокруг — delay
   const EXTRA = [[-0.3, 0.6, 0.55], [0.12, -0.5, 0.6], [-0.55, -0.3, 0.45], [-0.15, 0.9, 0.5], [0.05, 0.4, 0.4]];
@@ -392,16 +400,24 @@
     cloud(c, cx, cy, s, 0.95);
   }
   // птицы — хор: больше chorus — больше птиц; машут крыльями, медленно кружат над горами
-  function drawBirds(c, G, now) {
-    const n = Math.round(fx.chorus * 16);
-    c.strokeStyle = ink(0.8); c.lineWidth = 1.2;
+  // птицы — хор: больше chorus — больше птиц; тап — спугнуть: вспархивают вверх и врассыпную, через пару секунд возвращаются
+  function birdList(G, now) {
+    const n = Math.round(fx.chorus * 16), k = clamp((now - birdsAt) / 2600), up = k < 1 ? Math.sin(k * Math.PI) : 0, out = [];
     for (let i = 0; i < n; i++) {
       const h1 = ((i * 7919) % 1000) / 1000, h2 = ((i * 3301) % 1000) / 1000;
-      const X = G.W * (0.3 + 0.55 * h1) + Math.sin(now * 0.0002 + i) * 18, Y = G.top + G.h * (0.12 + 0.13 * h2) + Math.cos(now * 0.00027 + i * 1.3) * 6;
-      const s = 1 + 0.8 * h2, f = Math.sin(now * 0.006 + i * 2.1) * 3 * s;
+      const X = G.W * (0.3 + 0.55 * h1) + Math.sin(now * 0.0002 + i) * 18 + up * (h1 - 0.5) * 160, Y = G.top + G.h * (0.12 + 0.13 * h2) + Math.cos(now * 0.00027 + i * 1.3) * 6 - up * (60 + 50 * h2);
+      out.push({ X, Y, s: 1 + 0.8 * h2, i, fast: up });
+    }
+    return out;
+  }
+  function drawBirds(c, G, now) {
+    c.strokeStyle = ink(0.8); c.lineWidth = 1.2;
+    for (const { X, Y, s, i, fast } of birdList(G, now)) {
+      const f = Math.sin(now * (0.006 + 0.03 * fast) + i * 2.1) * 3 * s;
       c.beginPath(); c.moveTo(X - 6 * s, Y - f * 0.4); c.quadraticCurveTo(X - 3 * s, Y - 3 * s - f, X, Y); c.quadraticCurveTo(X + 3 * s, Y - 3 * s - f, X + 6 * s, Y - f * 0.4); c.stroke();
     }
   }
+
 
   // надгробие в левом нижнем углу; выступает из угла поверх рамки
   function drawStone(c, G) {                        // четверть надгробия из левого нижнего угла, как древо жизни у алхимиков: ось камня — край экрана
@@ -432,12 +448,13 @@
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const vin = g(1), pre = g(1), out = g(1.2), chOut = g(0);
-    vin.connect(pre);
+    const vin = g(1), pre = g(1), out = g(1.2), chOut = g(0), hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 20; hp.Q.value = 0.9;   // тормошат дерево — срез вверх
+    vin.connect(hp).connect(pre);
     const ch = [0, 1].map((k) => {                   // хор: две плавающие задержки
       const d = ctx.createDelay(0.05), l = ctx.createOscillator(), lg = g(0);
       d.delayTime.value = 0.012 + k * 0.007; l.frequency.value = 0.31 + k * 0.17;
-      l.connect(lg).connect(d.delayTime); l.start(); vin.connect(d); d.connect(chOut);
+      l.connect(lg).connect(d.delayTime); l.start(); hp.connect(d); d.connect(chOut);
       return { lg };
     });
     chOut.connect(pre); pre.connect(out);
@@ -447,7 +464,7 @@
     const rSend = g(0), h = T.hall();                 // зал — туман
     pre.connect(rSend).connect(h.input); h.out.connect(g(0.9)).connect(out);
     dlp.connect(rSend);
-    bus = { vin, chOut, ch, dSend, dl, dfb, rSend, hall: h, out, input, live: false };
+    bus = { vin, hp, chOut, ch, dSend, dl, dfb, rSend, hall: h, out, input, live: false, pre };
     setLive(true);
     applyFx();
   }
@@ -478,12 +495,17 @@
   }
   const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const noteName = (f) => { const m = Math.round(33 + 12 * Math.log2(f / 55)); return `${NAMES[((m % 12) + 12) % 12]}${Math.floor(m / 12) - 1}`; };
+  let prevHz = 0;
   function playNote(pd, t) {
     if (!bus) return;
     const ctx = actx, o = ctx.createOscillator(), lp = ctx.createBiquadFilter(), a = ctx.createGain();
-    o.type = ['sine', 'square', 'triangle'][pd.wave]; o.frequency.value = noteHz(pd.note);
+    o.type = ['sine', 'square', 'triangle'][pd.wave];
+    const hz = noteHz(pd.note);
+    if (pd.glide && prevHz) { o.frequency.setValueAtTime(prevHz, t); o.frequency.exponentialRampToValueAtTime(hz, t + stepSec() * 0.8); }   // глайд из прошлой ноты
+    else o.frequency.setValueAtTime(hz, t);
+    prevHz = hz;
     const base = 180 * 2 ** (fx.cutoff * 6.6), peak = Math.min(16000, base * (1 + fx.env * 10)), dec = 0.08 + fx.env * 0.6;
-    lp.type = 'lowpass'; lp.Q.value = 2;
+    lp.type = 'lowpass'; lp.Q.value = 0.7 + fx.res * 16;   // резонанс — луч res (и горы)
     lp.frequency.setValueAtTime(peak, t); lp.frequency.setTargetAtTime(base, t + 0.005, 0.04 + fx.env * 0.5);
     const lvl = [0.32, 0.13, 0.3][pd.wave], end = t + 0.012 + dec * 5;
     // огибающая доходит до настоящей тишины раньше, чем генератор остановится, — без щелчка в конце
@@ -494,6 +516,41 @@
     lastSound = performance.now(); setLive(true);
     o.onended = () => { o.disconnect(); lp.disconnect(); a.disconnect(); };
   }
+  // спугнули птиц — лазерный всплеск: меандр с падающим тоном сквозь резонансный фильтр, который тоже падает
+  function laser() {
+    if (!bus) return;
+    const ctx = actx, t = ctx.currentTime, o = ctx.createOscillator(), lp = ctx.createBiquadFilter(), a = ctx.createGain();
+    o.type = 'square'; o.frequency.setValueAtTime(2400, t); o.frequency.exponentialRampToValueAtTime(70, t + 0.38);
+    lp.type = 'lowpass'; lp.Q.value = 22; lp.frequency.setValueAtTime(9000, t); lp.frequency.exponentialRampToValueAtTime(260, t + 0.42);
+    a.gain.setValueAtTime(0, t); a.gain.linearRampToValueAtTime(0.16, t + 0.004); a.gain.exponentialRampToValueAtTime(0.0001, t + 0.48); a.gain.linearRampToValueAtTime(0, t + 0.5);
+    o.connect(lp).connect(a).connect(bus.pre);         // мимо среза дерева, но в хор, задержку и зал
+    o.start(t); o.stop(t + 0.52);
+    o.onended = () => { o.disconnect(); lp.disconnect(); a.disconnect(); };
+    lastSound = performance.now(); setLive(true);
+  }
+  // шелест листвы, пока тормошат дерево; высокий срез — по тому, как сильно
+  let rustle = null;
+  function shakeTick(dt) {
+    shake *= Math.exp(-dt / 1.4);
+    if (!bus) return;
+    const t = actx.currentTime;
+    bus.hp.frequency.setTargetAtTime(20 * 2 ** (shake * 9), t, 0.05);
+    if (shake > 0.03 && !rustle) {
+      const n = actx.sampleRate, buf = actx.createBuffer(1, n, n), d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      const src = actx.createBufferSource(), bp = actx.createBiquadFilter(), g = actx.createGain();
+      src.buffer = buf; src.loop = true; bp.type = 'bandpass'; bp.frequency.value = 3500; bp.Q.value = 0.6; g.gain.value = 0;
+      src.connect(bp).connect(g).connect(bus.pre); src.start();
+      rustle = { src, g };
+      setLive(true);
+    }
+    if (rustle) {
+      rustle.g.gain.setTargetAtTime(Math.min(0.06, shake * 0.06), t, 0.05);
+      if (shake < 0.01) { rustle.src.stop(); rustle.src.disconnect(); rustle = null; }
+      else lastSound = performance.now();
+    }
+  }
+
   // часы — по звуковому времени с запасом вперёд (таймер 25 мс, окно 200 мс)
   function schedule() {
     if (!seq.playing || !actx) return;
@@ -526,7 +583,10 @@
     }
 
     if (Math.hypot(f.x - pq.x - 4, f.y - pq.y) < 24) { touches.set(f.id, { kind: 'boat', bpm0: seq.bpm }); return; }   // причал — после кувшинок
-    if (inRiver(G, f.x, f.y)) { touches.set(f.id, { kind: 'plant' }); return; }
+    if (inRiver(G, f.x, f.y)) { touches.set(f.id, { kind: 'plant', path: [[f.x, f.y]] }); return; }
+    const tr = G.tree, R = Math.min(G.W * 0.16, G.h * 0.09), cy = tr.y - G.h * 0.13 - R * 0.6;
+    if (Math.hypot(f.x - tr.x, f.y - cy) < R * 1.3 || (Math.abs(f.x - tr.x) < 14 && f.y > cy && f.y < tr.y + 6)) { touches.set(f.id, { kind: 'tree', lx: f.x, ly: f.y }); return; }
+    if (birdList(G, now).some((b) => Math.hypot(f.x - b.X, f.y - b.Y) < 22)) { touches.set(f.id, { kind: 'birds' }); return; }
     touches.set(f.id, { kind: 'none' });
   }
   function move(f) {
@@ -534,6 +594,11 @@
     if (!t) return;
     const G = geo(), dx = f.x - f.x0, dy = f.y - f.y0;
     if (!t.moved && Math.hypot(dx, dy) > 8) t.moved = true;
+    if (t.kind === 'tree') {                          // тормошим: чем быстрее водишь по дереву, тем сильнее
+      const v = Math.hypot(f.x - t.lx, f.y - t.ly); t.lx = f.x; t.ly = f.y;
+      shake = Math.min(1, shake + v / 260); return;
+    }
+    if (t.kind === 'plant' && t.moved) { t.path.push([f.x, f.y]); return; }   // рисуем по воде
     if (!t.moved) return;
     if (t.kind === 'boat') { seq.bpm = Math.round(clamp(t.bpm0 + dx / 2, 40, 200)); applyFx(); }
     else if (t.kind === 'bridge') { const o = onRiver(G, f.x, f.y); if (o) pads.len = clamp(slotOf({ t: o.t + 0.02 }) + 1, 2, 16); }
@@ -550,18 +615,55 @@
     const G = geo();
     if (t.kind === 'boat' && !t.moved) play();
     else if (t.kind === 'pad' && !t.moved && !t.cycled) pads.at[t.i] = null;      // тап по кувшинке — убрать
-    else if (t.kind === 'plant' && !t.moved) {                                     // тап по воде — посадить
+    else if (t.kind === 'birds' && !t.moved) { birdsAt = performance.now(); laser(); }   // спугнули — лазер
+    else if (t.kind === 'plant' && t.moved) {                                      // провёл по воде через кувшинки — глайд в них
+      const hit = [];
+      for (let i = 0; i < 16; i++) {
+        const pd = pads.at[i];
+        if (!pd) continue;
+        const p = padXY(G, i, pd.note);
+        if (t.path.some(([x, y]) => Math.hypot(x - p.x, (y - p.y) * 1.4) < 15 * p.s + 10)) hit.push(pd);
+      }
+      const on = !hit.every((pd) => pd.glide);          // все уже скользили — снять
+      for (const pd of hit) pd.glide = on;
+      wake = { path: t.path, at: performance.now() };
+    } else if (t.kind === 'plant' && !t.moved) {                                     // тап по воде — посадить
       const o = onRiver(G, f.x, f.y), i = slotOf(o);
       if (!pads.at[i]) { pads.at[i] = { note: noteOf(o), wave: lastWave }; if (actx) playNote(pads.at[i], actx.currentTime); }
     }
   }
-  function tick(now) {                                // держишь кувшинку — сменить цветок (голос)
+  let lastTick = performance.now();
+  function tick(now) {                                // держишь кувшинку — сменить цветок (голос); дерево успокаивается
+    shakeTick(Math.min(0.1, (now - lastTick) / 1000)); lastTick = now;
     for (const t of touches.values()) {
       if (t.kind !== 'pad' || t.moved || t.cycled || now - t.t0 < 450) continue;
       const pd = pads.at[t.i];
       if (!pd) continue;
       pd.wave = (pd.wave + 1) % 3; lastWave = pd.wave; t.cycled = true;
       if (actx) playNote(pd, actx.currentTime);
+    }
+  }
+  // глайд: от прошлой кувшинки к скользящей — волнистая струя по воде; свежий след пальца гаснет
+  let wake = null;
+  function drawGlides(c, G, now) {
+    let prev = null;
+    c.strokeStyle = ink(0.55); c.lineWidth = 1.1;
+    for (let i = 0; i < pads.len; i++) {
+      const pd = pads.at[i];
+      if (!pd) continue;
+      const p = padXY(G, i, pd.note);
+      if (pd.glide && prev) {
+        c.beginPath();
+        for (let k = 0; k <= 16; k++) { const u = k / 16, x = prev.x + (p.x - prev.x) * u, y = prev.y + (p.y - prev.y) * u + Math.sin(u * TAU * 2 + now * 0.004) * 2.2; k ? c.lineTo(x, y) : c.moveTo(x, y); }
+        c.stroke();
+      }
+      prev = p;
+    }
+    const trails = [...touches.values()].filter((t) => t.kind === 'plant' && t.moved).map((t) => ({ path: t.path, a: 0.7 }));
+    if (wake) { const k = (now - wake.at) / 900; if (k < 1) trails.push({ path: wake.path, a: 0.6 * (1 - k) }); else wake = null; }
+    for (const tr of trails) {
+      c.strokeStyle = ink(tr.a); c.lineWidth = 1.4; c.setLineDash([4, 4]);
+      c.beginPath(); tr.path.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke(); c.setLineDash([]);
     }
   }
   function drawTouches(c, G) {                      // подписи — только пока тянешь
@@ -578,10 +680,11 @@
   const fxw = {
     sectors: [
       { key: 'reverb', label: 'reverb', ang: deg(180) },
-      { key: 'delay', label: 'delay', ang: deg(162) },
-      { key: 'time', label: 'time', ang: deg(144) },
-      { key: 'chorus', label: 'chorus', ang: deg(126) },
-      { key: 'cutoff', label: 'cutoff', ang: deg(108) },
+      { key: 'delay', label: 'delay', ang: deg(165) },
+      { key: 'time', label: 'time', ang: deg(150) },
+      { key: 'chorus', label: 'chorus', ang: deg(135) },
+      { key: 'cutoff', label: 'cutoff', ang: deg(120) },
+      { key: 'res', label: 'res', ang: deg(105) },
       { key: 'env', label: 'env', ang: deg(90) },
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); },
@@ -607,6 +710,7 @@
       drawFog(c, G, now);
       drawRainRings(c, G, now);
       drawPier(c, G);
+      drawGlides(c, G, now);
       drawPads(c, G, now);
       drawReeds(c, G, now);
       drawTree(c, G);
@@ -638,7 +742,10 @@
   };
   T.registerWorld(4, natura);
   window.t2d.nat = {
-    fx, pads, geo, seq, play, get phase() { return phase(); },
+    fx, pads, geo, seq, play, get phase() { return phase(); }, get shake() { return shake; }, get birdsAt() { return birdsAt; },
+    tree: () => { const G = geo(), R = Math.min(G.W * 0.16, G.h * 0.09); return { x: G.tree.x, y: G.tree.y - G.h * 0.13 - R * 0.6 }; },
+    bird: () => { const b = birdList(geo(), performance.now())[0]; return b && { x: b.X, y: b.Y }; },
+    setFx: (k, v) => fxw.set(k, v),
     pad: (i) => { const pd = pads.at[i]; const p = padXY(geo(), i, pd ? pd.note : 7); return { x: p.x, y: p.y }; },
     slot: (i, note) => { const p = padXY(geo(), i, note); return { x: p.x, y: p.y }; },
     boat: () => { const q = pierXY(geo()); return { x: q.x, y: q.y }; },
