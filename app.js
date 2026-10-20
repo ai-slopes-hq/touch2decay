@@ -758,7 +758,7 @@
   }
 
   function uiHit(f) {
-    if (!editor && Math.hypot(f.x - geo.ox, f.y - geo.oy) < 46) return { k: 'sun' };   // солнце — карта миров
+    if (WORLDS_ON && !editor && Math.hypot(f.x - geo.ox, f.y - geo.oy) < 46) return { k: 'sun' };   // солнце — карта миров
     if (ghost) {                              // любое касание гасит призрак; по булавке — закрепляет
       const gh = ghost, p = pinPos(gh.menu.cx, gh.menu.cy);
       ghost = null;
@@ -2677,6 +2677,8 @@
     { n: 'III', title: 'Rosarium', sub: 'operatores quattuor' },
     { n: 'IV', title: 'Terra', sub: 'echo et reverberatio' },
   ];
+  // Universum выключен, пока звук и идеи не готовы (сначала звук, потом графика); код миров и гравюры остаются
+  const WORLDS_ON = false;
   const nav = { view: 'play', world: 1, anim: null };   // view: play | map | world; anim: { t0, dir: 'out' | 'in', w }
   const NAV_MS = 520;
   let snapC = null;                                       // снимок мира I для карты

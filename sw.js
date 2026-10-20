@@ -1,11 +1,12 @@
 // Офлайн без залипания старой версии.
 // Код и страница — сначала из сети (мимо HTTP-кеша), кеш — только запасной вариант без сети.
 // Шрифты, иконки и гравюры не меняются — сразу из кеша.
-const CACHE = 't2d-v34';   // при выкладке менять вместе с app.js?v= в index.html
+const CACHE = 't2d-v35';   // при выкладке менять вместе с app.js?v= в index.html
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest'];
 const STATIC = ['./icon-180.png', './icon-192.png', './icon-512.png',
-  './fonts/im-fell-english-latin-400-italic.woff2', './fonts/im-fell-english-latin-400-normal.woff2',
-  './art/kircher-tree.png', './art/leo-viridis.png', './art/leo-viridis-wash.png', './art/fons-mercurialis.png', './art/terra-octobre.jpg'];
+  './fonts/im-fell-english-latin-400-italic.woff2', './fonts/im-fell-english-latin-400-normal.woff2'];
+// гравюры миров II–IV — вернуть в STATIC, когда Universum включится (WORLDS_ON в app.js)
+const ART = ['./art/kircher-tree.png', './art/leo-viridis.png', './art/leo-viridis-wash.png', './art/fons-mercurialis.png', './art/terra-octobre.jpg'];
 const NET_WAIT = 3500;      // плохая сеть — не ждать дольше, отдать кеш
 
 self.addEventListener('install', (e) => {
