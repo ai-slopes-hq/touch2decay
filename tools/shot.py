@@ -97,8 +97,8 @@ async def sc_worlds(p):                            # карта, Cymatica в ч�
     await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(200)         # палец с планеты отпущен уже на карте — без ошибок
     await p.tap(100, 600); await p.pg.wait_for_timeout(800)              # четверть III — эскиз Laboratorium
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 3], 'III opens (sketch)'
-    await p.tap(W - 38, H - 40); await p.pg.wait_for_timeout(800)
-    assert await p.js('()=>t2d.view') == 'map', 'skull -> map'
+    s = await p.js('()=>t2d.lab.geo().sun'); await p.tap(s['x'] + 25, s['y'] + 25); await p.pg.wait_for_timeout(800)
+    assert await p.js('()=>t2d.view') == 'map', 'sun -> map'
     await p.tap(100, 200); await p.pg.wait_for_timeout(800)              # четверть II — Cymatica
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 2], 'II -> Cymatica'
     assert await p.js('()=>t2d.T2D_ok'), 'T2D helpers for worlds'
@@ -654,12 +654,16 @@ async def sc_sketches(p):                         # эскизы миров III 
     await p.js('()=>t2d.go(4)'); await p.pg.wait_for_timeout(900); await p.shot('natura')
     await p.js("()=>Object.assign(t2d.nat.fx,{reverb:1,delay:0.9,chorus:1,cutoff:1,env:0.9})"); await p.pg.wait_for_timeout(500); await p.shot('natura-fx')
     await p.js("()=>Object.assign(t2d.nat.fx,{reverb:0,delay:0.1,chorus:0,cutoff:0})"); await p.pg.wait_for_timeout(500); await p.shot('natura-clear')
-    await p.tap(30, H - 30); await p.pg.wait_for_timeout(900)            # надгробие в углу — карта
-    assert await p.js('()=>t2d.view') == 'map', 'Natura tombstone -> map'
+    await p.tap(30, H - 30); await p.pg.wait_for_timeout(300)            # надгробие — пока ни к чему не ведёт
+    assert await p.js('()=>t2d.view') == 'play', 'Natura tombstone does nothing yet'
+    s = await p.js('()=>t2d.nat.geo().sun'); await p.tap(s['x'] - 25, s['y'] + 25); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'Natura sun -> map'
     await p.tap(100, 600); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 3], 'III opens'
-    await p.tap(W - 38, H - 40); await p.pg.wait_for_timeout(900)
-    assert await p.js('()=>t2d.view') == 'map', 'Laboratorium skull -> map'
+    await p.tap(W - 38, H - 40); await p.pg.wait_for_timeout(300)        # череп — пока ни к чему не ведёт
+    assert await p.js('()=>t2d.view') == 'play', 'skull does nothing yet'
+    s = await p.js('()=>t2d.lab.geo().sun'); await p.tap(s['x'] + 25, s['y'] + 25); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'Laboratorium sun -> map'
     await p.shot('map-sketches')
 
 

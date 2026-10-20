@@ -3127,6 +3127,44 @@
     x.strokeStyle = `rgba(${col},0.45)`; x.lineWidth = 0.8; x.beginPath(); x.arc(ox, oy, 10.5, 0, Math.PI * 2); x.stroke();
   }
 
+  // солнце Таро четвертью из верхнего угла (миры III и IV): выходит из-под верхней строки, лицо смотрит в картинку,
+  // лучи прямые и волнистые через один. side: 1 — угол слева (лучи вправо-вниз), −1 — справа. col — rgb линий, disc — заливка
+  function quarterSun(x, ox, oy, r, side, now, col = INK, disc = BG) {
+    const ink2 = (a) => `rgba(${col},${a})`, rot = now * 0.00003, N = 28;
+    x.save(); x.beginPath(); x.rect(side > 0 ? ox : 0, oy, side > 0 ? W : ox, H); x.clip();
+    x.translate(ox, oy); x.scale(side, 1);
+    for (let k = 0; k < N; k++) {
+      const a = (k / N) * Math.PI * 2 + rot, aa = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      if (aa > Math.PI / 2 + 0.1) continue;
+      const cs = Math.cos(a), sn = Math.sin(a), px = -sn, py = cs;
+      if (k % 2) {
+        const l = r * 2.05, w = 5;
+        x.strokeStyle = ink2(0.75); x.lineWidth = 1.1; x.fillStyle = disc;
+        x.beginPath(); x.moveTo(cs * r + px * w, sn * r + py * w); x.lineTo(cs * l, sn * l); x.lineTo(cs * r - px * w, sn * r - py * w); x.fill(); x.stroke();
+      } else {
+        const l = r * 1.65;
+        x.strokeStyle = ink2(0.55); x.lineWidth = 1;
+        x.beginPath();
+        for (let i = 0; i <= 18; i++) { const t = i / 18, rr = r + t * (l - r), wv = Math.sin(t * Math.PI * 3) * 3.5 * (1 - t * 0.5), X = cs * rr + px * wv, Y = sn * rr + py * wv; i ? x.lineTo(X, Y) : x.moveTo(X, Y); }
+        x.stroke();
+      }
+    }
+    x.fillStyle = disc; x.beginPath(); x.arc(0, 0, r, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = ink2(0.9); x.lineWidth = 1.6; x.beginPath(); x.arc(0, 0, r, 0, Math.PI * 2); x.stroke();
+    x.strokeStyle = ink2(0.45); x.lineWidth = 0.9; x.beginPath(); x.arc(0, 0, r - 5, 0, Math.PI * 2); x.stroke();
+    const f0 = r * 0.46, k = r / 46;                    // лицо — в видимой четверти
+    x.lineWidth = 1.1; x.strokeStyle = ink2(0.85); x.beginPath();
+    x.moveTo(f0 - 11 * k, f0 - 2 * k); x.quadraticCurveTo(f0 - 8 * k, f0 + 1 * k, f0 - 5 * k, f0 - 2 * k);
+    x.moveTo(f0 + 5 * k, f0 - 2 * k); x.quadraticCurveTo(f0 + 8 * k, f0 + 1 * k, f0 + 11 * k, f0 - 2 * k);
+    x.moveTo(f0 - 12 * k, f0 - 7 * k); x.quadraticCurveTo(f0 - 8 * k, f0 - 10 * k, f0 - 4 * k, f0 - 7 * k);
+    x.moveTo(f0 + 4 * k, f0 - 7 * k); x.quadraticCurveTo(f0 + 8 * k, f0 - 10 * k, f0 + 12 * k, f0 - 7 * k);
+    x.moveTo(f0, f0 - 4 * k); x.lineTo(f0 - 2 * k * side, f0 + 5 * k); x.lineTo(f0 + 1.5 * k * side, f0 + 5.5 * k);
+    x.moveTo(f0 - 7 * k, f0 + 11 * k); x.quadraticCurveTo(f0, f0 + 15 * k, f0 + 7 * k, f0 + 11 * k);
+    x.stroke();
+    x.strokeStyle = ink2(0.8); x.lineWidth = 1.2; x.beginPath(); x.moveTo(0, 0.5); x.lineTo(r * 2.1, 0.5); x.stroke();   // кромка
+    x.restore();
+  }
+
   // ---------- гравюры миров: у каждого своя палитра ----------
   // Cabbala (II) — ночное небо: индиго, сусальное золото, сфиры в традиционных цветах.
   // Rosarium (III) — раскрашенная алхимическая гравюра: пергамент, сепия, киноварь, охра, лазурь, ярь-медянка, золото.
@@ -3348,7 +3386,7 @@
 
   // общее для миров из других файлов (cymatica.js): регистрация и помощники рисования
   window.T2D = {
-    registerWorld, get BG() { return BG; }, MAP, ink, paper, sunGlyph, ring, dot, text, glowAt, hairBox,
+    registerWorld, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,
     get g() { return g; }, get W() { return W; }, get H() { return H; }, get DPR() { return DPR; },
     get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
     get ctx() { return ctx; }, hall, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,

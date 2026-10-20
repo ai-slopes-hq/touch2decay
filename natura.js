@@ -4,8 +4,7 @@
 // Голоса — цветы у корней (ромашка — синус, тюльпан — меандр, звёздочка — треугольник; крупнее — громче), раскрываются на каждом шаге.
 // Бегунок — туча над кроной: плывёт по такту, вечный дождь падает на ветку, которая звучит. FX = пейзаж: туман на дальних холмах —
 // reverb, тучки-эхо за тучей — delay, рябь на реке — chorus, камыши у берега — cutoff, раскрытие цветов — огибающая.
-// Солнце неподвижно — четверть в левом верхнем углу.
-// В левом нижнем углу (где у Tenebrae солнце) — надгробие: тап — карта. Спека: docs/superpowers/specs/2026-10-20-natura-design.md
+// В левом нижнем углу — надгробие (пока ни к чему не ведёт); солнце — четверть в правом верхнем углу, тап — карта. Спека: docs/superpowers/specs/2026-10-20-natura-design.md
 (() => {
   'use strict';
   const T = window.T2D;
@@ -40,7 +39,7 @@
   function geo() {
     const W = T.W, H = T.H, top = T.topY + 26, bot = H - T.safeBot - 40, h = bot - top;
     const yT = top + 0.28 * h, gap = 0.09 * h, yRoot = yT + 4 * gap, hor = top + 0.6 * h, yG = top + 0.8 * h;
-    const sun = { x: 13, y: T.topY + 2, r: Math.min(70, W * 0.18) };   // неподвижно: четверть в левом верхнем углу
+    const sun = { x: W - 13, y: T.topY + 2, r: Math.min(70, W * 0.18) };   // неподвижно: четверть в правом верхнем углу
     return { W, H, top, bot, h, yT, gap, yRoot, hor, yG, x0: 56, x1: W - 56, sun, cloudY: yT - 1.25 * gap,
       river: [hor + 0.035 * h, hor + 0.085 * h], stone: { x: 0, y: H - T.safeBot } };
   }
@@ -118,41 +117,8 @@
   }
 
   // ---------- живое ----------
-  // солнце Таро: четверть диска из левого верхнего угла, лицо смотрит в картинку, лучи прямые и волнистые через один
-  function drawSun(c, G, now) {
-    const { x, y, r } = G.sun, rot = now * 0.00003, N = 28;
-    c.save(); c.beginPath(); c.rect(x, y, G.W, G.H); c.clip();   // выходит из-под верхней строки, как из угла
-    for (let k = 0; k < N; k++) {
-      const a = (k / N) * TAU + rot, aa = ((a % TAU) + TAU) % TAU;
-      if (aa > Math.PI / 2 + 0.1) continue;
-      const cs = Math.cos(a), sn = Math.sin(a), px = -sn, py = cs;
-      if (k % 2) {
-        const l = r * 2.05, w = 5;
-        c.strokeStyle = ink(0.75); c.lineWidth = 1.1; c.fillStyle = pap(1);
-        c.beginPath(); c.moveTo(x + cs * r + px * w, y + sn * r + py * w); c.lineTo(x + cs * l, y + sn * l); c.lineTo(x + cs * r - px * w, y + sn * r - py * w); c.fill(); c.stroke();
-      } else {
-        const l = r * 1.65;
-        c.strokeStyle = ink(0.55); c.lineWidth = 1;
-        c.beginPath();
-        for (let i = 0; i <= 18; i++) { const t = i / 18, rr = r + t * (l - r), wv = Math.sin(t * Math.PI * 3) * 3.5 * (1 - t * 0.5), X = x + cs * rr + px * wv, Y = y + sn * rr + py * wv; i ? c.lineTo(X, Y) : c.moveTo(X, Y); }
-        c.stroke();
-      }
-    }
-    c.fillStyle = pap(1); c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
-    c.strokeStyle = ink(0.9); c.lineWidth = 1.6; c.beginPath(); c.arc(x, y, r, 0, TAU); c.stroke();
-    c.strokeStyle = ink(0.45); c.lineWidth = 0.9; c.beginPath(); c.arc(x, y, r - 5, 0, TAU); c.stroke();
-    const fx0 = x + r * 0.46, fy0 = y + r * 0.46, k = r / 46;   // лицо — в видимой четверти
-    c.lineWidth = 1.1; c.strokeStyle = ink(0.85); c.beginPath();
-    c.moveTo(fx0 - 11 * k, fy0 - 2 * k); c.quadraticCurveTo(fx0 - 8 * k, fy0 + 1 * k, fx0 - 5 * k, fy0 - 2 * k);
-    c.moveTo(fx0 + 5 * k, fy0 - 2 * k); c.quadraticCurveTo(fx0 + 8 * k, fy0 + 1 * k, fx0 + 11 * k, fy0 - 2 * k);
-    c.moveTo(fx0 - 12 * k, fy0 - 7 * k); c.quadraticCurveTo(fx0 - 8 * k, fy0 - 10 * k, fx0 - 4 * k, fy0 - 7 * k);
-    c.moveTo(fx0 + 4 * k, fy0 - 7 * k); c.quadraticCurveTo(fx0 + 8 * k, fy0 - 10 * k, fx0 + 12 * k, fy0 - 7 * k);
-    c.moveTo(fx0, fy0 - 4 * k); c.lineTo(fx0 - 2 * k, fy0 + 5 * k); c.lineTo(fx0 + 1.5 * k, fy0 + 5.5 * k);
-    c.moveTo(fx0 - 7 * k, fy0 + 11 * k); c.quadraticCurveTo(fx0, fy0 + 15 * k, fx0 + 7 * k, fy0 + 11 * k);
-    c.stroke();
-    c.strokeStyle = ink(0.8); c.lineWidth = 1.2; c.beginPath(); c.moveTo(x, y + 0.5); c.lineTo(x + r * 2.1, y + 0.5); c.stroke();   // кромка
-    c.restore();
-  }
+  // солнце Таро: четверть диска из правого верхнего угла (общая функция хоста)
+  function drawSun(c, G, now) { T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, -1, now, INK, pap(1)); }
   function drawFog(c, G, now) {                      // туман — reverb: дальние холмы тонут
     const r = fx.reverb;
     if (r < 0.03) return;
@@ -322,7 +288,7 @@
     });
   }
 
-  // надгробие в левом нижнем углу — там, где у Tenebrae солнце; выступает из угла поверх рамки
+  // надгробие в левом нижнем углу; выступает из угла поверх рамки
   function drawStone(c, G) {
     const x0 = 6, yb = G.H - T.safeBot - 4, w = 62, h = 86;
     c.fillStyle = pap(1);
@@ -358,7 +324,7 @@
   const natura = {
     n: 'IV', title: 'Natura', sub: 'arbor · pluvia · nondum sonat',
     theme: { ink: INK, bg: `rgb(${PAPER})`, paper: PAPER },
-    corner: { hit: (f) => f.x < 80 && f.y > T.H - T.safeBot - 100, draw: () => {} },
+    corner: { hit: (f) => { const G = geo(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце — карта; надгробие пока просто стоит
     fx: fxw,
     draw(now) {
       const c = T.g, G = geo();

@@ -3,7 +3,7 @@
 // поверхность жидкости — синус с ratio волнами. Алгоритм — как колбы стоят: модулятор выше и льёт по трубке в того, кого модулирует,
 // несущие — нижний ряд, сливают в общий приёмник на атаноре. Цвета смешиваются по трубкам. Обратная связь — «пеликан»,
 // трубка из колбы в саму себя. Играть — семь банок металлов-планет (♄ ♃ ♂ ☉ ♀ ☿ ☽) — семь ступеней лада.
-// Солнце — в круглом окне справа под верхней строкой; в правом нижнем углу череп с костями — тап — карта. Спека: docs/superpowers/specs/2026-10-20-laboratorium-design.md
+// Солнце — четверть в левом верхнем углу, тап — карта; в правом нижнем углу череп с костями (пока просто картинка). Спека: docs/superpowers/specs/2026-10-20-laboratorium-design.md
 (() => {
   'use strict';
   const T = window.T2D;
@@ -55,7 +55,7 @@
         pos[i] = { x: x + (k - (at.length - 1) / 2) * W * 0.3, y: L0 - l * dy };
       });
     }
-    return { W, H, top, bot, h, shelf, egg, furn, r, pos, win: { x: W, y: top + 62, r: 48 } };
+    return { W, H, top, bot, h, shelf, egg, furn, r, pos, sun: { x: 0, y: T.topY + 2, r: Math.min(64, W * 0.16) } };
   }
 
   // ---------- колбы: форма — ratio ----------
@@ -225,25 +225,10 @@
     }
   }
 
-  // круглое окно справа — в нём солнце; луч света падает в лабораторию
-  function drawWindow(c, G, now) {
-    const { x, y, r } = G.win;
-    c.save();
-    c.strokeStyle = T.ink(0.05); c.lineWidth = 1; c.beginPath();
-    for (let k = -5; k <= 5; k++) { c.moveTo(x - r * 0.6, y + k * 6); c.lineTo(x - G.W * 0.75, y + G.h * 0.55 + k * 10); }
-    c.stroke();
-    c.fillStyle = T.BG; c.beginPath(); c.arc(x, y, r + 6, 0, TAU); c.fill();
-    c.beginPath(); c.arc(x, y, r, 0, TAU); c.clip();
-    T.sunGlyph(c, x - 10, y, 0, TAU, 0.95, now);
-    c.restore();
-    T.ring(x, y, r, 0.85, 1.4); T.ring(x, y, r + 5, 0.4, 1);
-    c.strokeStyle = T.ink(0.5); c.lineWidth = 1; c.beginPath();       // переплёт
-    for (const a of [Math.PI * 0.5, Math.PI, Math.PI * 1.5]) { c.moveTo(x, y); c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); }
-    c.stroke();
-    c.strokeStyle = T.ink(0.35); c.beginPath(); c.arc(x, y, r * 0.5, Math.PI / 2, Math.PI * 1.5); c.stroke();
-  }
+  // солнце — четверть из левого верхнего угла, как в Natura (там — справа); белым по чёрному
+  function drawSun(c, G, now) { T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, 1, now); }
 
-  // череп с костями в правом нижнем углу (у Cymatica там резонатор, у Natura напротив — надгробие): тап — карта
+  // череп с костями в правом нижнем углу (у Natura напротив — надгробие); пока ни к чему не ведёт
   const skullAt = () => ({ x: T.W - 38, y: T.H - T.safeBot - 40 });
   function drawSkull(c) {
     const { x, y } = skullAt();
@@ -287,12 +272,12 @@
   };
   const lab = {
     n: 'III', title: 'Laboratorium', sub: 'operatores quattuor · nondum sonat',
-    corner: { hit: (f) => { const p = skullAt(); return Math.hypot(f.x - p.x, f.y - p.y) < 46; }, draw: drawSkull },
+    corner: { hit: (f) => { const G = geo(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце — карта; череп пока просто лежит
     fx: fxw,
     draw(now) {
       const c = T.g, G = geo();
       c.fillStyle = T.BG; c.fillRect(0, 0, T.W, T.H);
-      drawWindow(c, G, now);
+      drawSun(c, G, now);
       drawFurnace(c, G, now);
       drawTubes(c, G, now);
       for (let i = 0; i < OPS.length; i++) drawFlask(c, i, G, now);
