@@ -343,7 +343,8 @@ async def sc_twist(p):                             # два пальца кру�
         a, b = dict(a, x=cx - 30 - 3 * k), dict(b, x=cx + 30 + 3 * k)
         await p.T('touchMove', [a, b]); await p.pg.wait_for_timeout(16)
     await p.T('touchEnd', [a, b]); await p.pg.wait_for_timeout(150)
-    assert await p.js('()=>t2d.cym.f0') < f0 and await p.js('()=>t2d.cym.seq.melody.steps') == m0, 'pinch sizes the plate only'
+    m1 = await p.js('()=>t2d.cym.seq.melody.steps'); d = 12 * math.log2(await p.js('()=>t2d.cym.f0') / f0)
+    assert d < 0 and all(b2 is None if a2 is None else abs(b2 - a2 - d) < 1e-6 for a2, b2 in zip(m0, m1)), 'pinch sizes the plate and carries the melody along'
     a = {'x': cx + 20, 'y': cy, 'id': 95}                                 # держишь — смычок; второй палец и поворот
     await p.T('touchStart', [a]); await p.pg.wait_for_timeout(300)
     assert await p.js('()=>t2d.cym.live') == 1
@@ -398,13 +399,58 @@ async def sc_keys(p):                              # клавиши лада: и
         a1, b1 = dict(a1, x=g['cx'] - 20 - 6 * k), dict(b1, x=g['cx'] + 20 + 6 * k)
         await p.T('touchMove', [a1, b1]); await p.pg.wait_for_timeout(16)
     await p.T('touchEnd', [a1, b1]); await p.pg.wait_for_timeout(150)
-    assert await p.js('()=>t2d.cym.seq.melody.steps') == m0, 'pinch no longer writes the melody'
+    m1 = await p.js('()=>t2d.cym.seq.melody.steps')
+    sh = [b2 - a2 for a2, b2 in zip(m0, m1) if a2 is not None]
+    assert [x is None for x in m0] == [x is None for x in m1] and max(sh) - min(sh) < 1e-6, 'pinch writes no notes, only shifts the melody'
     await p.tap(g['cx'] + 30, g['ty']); await p.tap(g['cx'] - 30, g['ty']); await p.pg.wait_for_timeout(200)   # стоп
     await p.pin(g['cx'] + 35, g['cy'] - 20); await p.pg.wait_for_timeout(500)
     await p.shot('keys')
 
 
-SCENARIOS = {'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_relative(p):                          # щипок транспонирует всю мелодию; кольца крутятся с запасом и видно
+    import math
+    await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
+    await p.js("()=>{const h={x:0.3,y:0,vel:1}; t2d.cym.load({rhythm:{len:16, steps:[h,null,null,null,h]}, melody:{len:7, steps:[12,15]}})}")
+    g = await p.js('()=>t2d.cym.astro'); cx, cy = g['cx'], g['cy']
+    f0 = await p.js('()=>t2d.cym.f0')
+    a, b = {'x': cx - 30, 'y': cy, 'id': 41}, {'x': cx + 30, 'y': cy, 'id': 42}
+    await p.T('touchStart', [a]); await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(30)
+    for k in range(1, 11):
+        a, b = dict(a, x=cx - 30 - 3 * k), dict(b, x=cx + 30 + 3 * k)
+        await p.T('touchMove', [a, b]); await p.pg.wait_for_timeout(16)
+    await p.T('touchEnd', [a, b]); await p.pg.wait_for_timeout(150)
+    f1 = await p.js('()=>t2d.cym.f0'); d = 12 * math.log2(f1 / f0)
+    m = await p.js('()=>t2d.cym.seq.melody.steps')
+    assert d < -0.5 and abs(m[0] - (12 + d)) < 1e-6 and abs(m[1] - (15 + d)) < 1e-6, f'pinch transposes the melody by {d}: {m[:2]}'
+    pt = lambda R, deg, i: {'x': cx + R * math.cos(math.radians(deg)), 'y': cy + R * math.sin(math.radians(deg)), 'id': i}
+    R = g['R2'] + 22                                                       # мимо линии кольца ритма — всё равно ритм
+    a, b = pt(R, -115, 43), pt(R, -65, 44)
+    await p.T('touchStart', [a]); await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(30)
+    for k in range(1, 11):
+        a, b = pt(R, -115 + 3 * k, 43), pt(R, -65 + 3 * k, 44)
+        await p.T('touchMove', [a, b]); await p.pg.wait_for_timeout(16)
+    turn = await p.js('()=>t2d.cym.ringTurn.rhythm')
+    assert abs(turn - 7.5) < 3, f'the ring visibly turns with the fingers: {turn}'
+    for k in range(11, 16):
+        a, b = pt(R, -115 + 3 * k, 43), pt(R, -65 + 3 * k, 44)
+        await p.T('touchMove', [a, b]); await p.pg.wait_for_timeout(16)
+    await p.T('touchEnd', [a, b]); await p.pg.wait_for_timeout(150)
+    st = await p.js('()=>t2d.cym.seq.rhythm.steps.map(Boolean)')
+    assert [i for i, x in enumerate(st) if x] == [2, 6], f'rhythm ring turned by 2: {st}'
+    assert await p.js('()=>t2d.cym.ringTurn.rhythm') == 0, 'snaps to a slot on release'
+    R = (await p.js('()=>t2d.cym.geo'))['rMax'] + 4                       # между столом и кольцом мелодии — мелодия
+    m0 = await p.js('()=>t2d.cym.seq.melody.steps')
+    a, b = pt(R, -115, 45), pt(R, -65, 46)
+    await p.T('touchStart', [a]); await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(30)
+    for k in range(1, 16):
+        a, b = pt(R, -115 + 3 * k, 45), pt(R, -65 + 3 * k, 46)
+        await p.T('touchMove', [a, b]); await p.pg.wait_for_timeout(16)
+    await p.T('touchEnd', [a, b]); await p.pg.wait_for_timeout(150)
+    m1 = await p.js('()=>t2d.cym.seq.melody.steps')
+    assert m1[2] == m0[0] and m1[3] == m0[1], f'melody ring turned by 2: {m1}'
+
+
+SCENARIOS = {'relative': sc_relative, 'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
