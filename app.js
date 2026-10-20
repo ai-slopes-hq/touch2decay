@@ -2915,24 +2915,24 @@
   const WORLDS = [
     null,
     { n: 'I', title: 'Sol Niger', sub: 'orbes · strepitus' },
-    { n: 'II', title: 'Cabbala', sub: 'arbor vitae' },
+    { n: 'II', title: 'Cymatica', sub: 'figurae sonorae' },   // подпись — из мира cymatica.js; Cabbala снята с карты
     { n: 'III', title: 'Rosarium', sub: 'operatores quattuor' },
     { n: 'IV', title: 'Terra', sub: 'echo et reverberatio' },
   ];
-  // Universum выключен, пока звук и идеи не готовы (сначала звук, потом графика); код миров и гравюры остаются
-  const WORLDS_ON = false;
+  const WORLDS_ON = true;
+  const ENTER = new Set([1, 2]);                          // куда можно влететь; III и IV — пока бледные nondum
   const nav = { view: 'play', world: 1, anim: null };
   const worlds = {};                                      // номер четверти → мир
   const cur = () => worlds[nav.world];   // view: play | map | world; anim: { t0, dir: 'out' | 'in', w }
   const NAV_MS = 520;
-  let snapC = null;                                       // снимок мира I для карты
+  const snaps = {};                                       // мир → его снимок для карты (при уходе на карту)
   const arts = {};                                        // гравюры миров II–IV, рисуются один раз на размер экрана
   // настоящие гравюры (art/, обработка — tools/ink.py, источники — art/CREDITS.md); грузятся при первом выходе на карту
-  const ART_SRC = { kircher: 'kircher-tree.png', leo: 'leo-viridis.png', leoWash: 'leo-viridis-wash.png', fons: 'fons-mercurialis.png', terra: 'terra-octobre.jpg' };
+  const ART_SRC = { leo: 'leo-viridis.png', leoWash: 'leo-viridis-wash.png', fons: 'fons-mercurialis.png', terra: 'terra-octobre.jpg' };
   const artImg = {};
   let artReady = 0;
   function loadArt() {
-    if (artImg.kircher) return;
+    if (artImg.leo) return;
     for (const [k, f] of Object.entries(ART_SRC)) {
       const im = new Image();
       im.onload = () => { im.ok = true; artReady++; };
@@ -2953,9 +2953,13 @@
 
   function goMap() {
     loadArt();
-    if (!snapC) snapC = document.createElement('canvas');
-    snapC.width = cv.width; snapC.height = cv.height;
-    if (nav.view === 'play') snapC.getContext('2d').drawImage(cv, 0, 0);
+    const n = nav.world;
+    if (nav.view === 'play') {
+      const c = snaps[n] || (snaps[n] = document.createElement('canvas'));
+      c.width = cv.width; c.height = cv.height;
+      c.getContext('2d').drawImage(cv, 0, 0);
+      if (worlds[n].leave) worlds[n].leave();
+    }
     nav.anim = { t0: performance.now(), dir: 'out', w: nav.world };
     nav.view = 'map';
   }
@@ -2970,15 +2974,13 @@
     if (nav.view === 'map') {
       const dx = f.x - W / 2, dy = f.y - H / 2;
       if (Math.hypot(dx, dy) < 44) { goWorld(nav.world); return; }   // солнце — обратно в свой мир
-      goWorld(dx >= 0 ? (dy < 0 ? 1 : 4) : dy < 0 ? 2 : 3);
-      return;
+      const w = dx >= 0 ? (dy < 0 ? 1 : 4) : dy < 0 ? 2 : 3;
+      if (ENTER.has(w) && worlds[w]) goWorld(w);       // III и IV — nondum: не открываются
     }
-    const c = (nav.world === 3 && leoSun) || sunCorner(nav.world);   // в мирах II–IV: тап по солнцу — карта
-    if (Math.hypot(f.x - c[0], f.y - c[1]) < 90) goMap();
   }
 
   const easeIO = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
-  function worldImage(w) { return w === 1 ? snapC : artFor(w); }
+  function worldImage(w) { return ENTER.has(w) ? snaps[w] : artFor(w); }
 
   function drawNav(now) {
     let k = 1, a = nav.anim;
@@ -2986,16 +2988,12 @@
       k = clamp((now - a.t0) / NAV_MS);
       if (k >= 1) {
         nav.anim = null;
-        if (a.dir === 'in') nav.view = a.w === 1 ? 'play' : 'world';
+        if (a.dir === 'in') { nav.view = 'play'; if (worlds[a.w].enter) worlds[a.w].enter(); }
         if (nav.view === 'play') return false;          // дальше рисует обычный кадр
         a = null; k = 1;
       }
     }
     g.fillStyle = BG; g.fillRect(0, 0, W, H);
-    if (nav.view === 'world' && !a) {                    // мир II–IV во весь экран
-      g.drawImage(artFor(nav.world), 0, 0, W, H);
-      return true;
-    }
     // карта: доля «отъезда» камеры — 0 во весь экран мира, 1 — карта
     const out = a ? (a.dir === 'out' ? easeIO(k) : 1 - easeIO(k)) : 1;
     const focus = a ? a.w : 0;
@@ -3006,7 +3004,8 @@
         const r = [p[0] * out, p[1] * out, W + (p[2] - W) * out, H + (p[3] - H) * out];
         g.drawImage(img, r[0], r[1], r[2], r[3]);
       } else {
-        g.globalAlpha = out; g.drawImage(img, p[0], p[1], p[2], p[3]); g.globalAlpha = 1;
+        g.globalAlpha = out * (ENTER.has(w) ? 1 : 0.35);   // nondum — бледно
+        g.drawImage(img, p[0], p[1], p[2], p[3]); g.globalAlpha = 1;
       }
     }
     if (out > 0.02) drawMapChrome(out, now);
@@ -3027,12 +3026,12 @@
     }
     g.stroke();
     for (let w = 1; w <= 4; w++) {
-      const p = panel(w), info = WORLDS[w];
+      const p = panel(w), info = worlds[w] || WORLDS[w];
       const right = p[0] >= cx, below = p[1] >= cy;
       const tx = right ? p[0] + 16 : p[0] + p[2] - 16, ty = below ? p[1] + p[3] - 34 : p[1] + 64;
       g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(right ? tx - 6 : tx - 150, ty - 20, 156, 46);
       mapText(`${info.n} · ${info.title}`, tx, ty - 4, 19, 0.95, right ? 'left' : 'right');
-      mapText(info.sub, tx, ty + 16, 13, 0.6, right ? 'left' : 'right');
+      mapText(ENTER.has(w) ? info.sub : `${info.sub} · nondum`, tx, ty + 16, 13, 0.6, right ? 'left' : 'right');
     }
     // солнце целиком
     g.fillStyle = BG; g.beginPath(); g.arc(cx, cy, 40, 0, Math.PI * 2); g.fill();

@@ -73,14 +73,37 @@ async def sc_ring(p):
     print('ring:', await p.js("()=>({editor:t2d.editor&&t2d.editor.key, lfo:t2d.voices.filter(v=>v.pinned).map(v=>Object.keys(v.lfo))})"))
 
 
-async def sc_map(p):
-    await p.pin(150, 600)
-    await p.tap(10, H - 8); await p.pg.wait_for_timeout(800)      # тап по солнцу — карта Universum
+async def sc_worlds(p):                            # карта, Cymatica в четверти II, III и IV не открываются
+    await p.pin(150, 600)                                  # Sol Niger: закреплённая планета
+    a, b = {'x': 200, 'y': 450, 'id': 1}, {'x': 10, 'y': H - 8, 'id': 2}
+    await p.T('touchStart', [a]); await p.pg.wait_for_timeout(60)        # палец держит новую планету...
+    await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60)     # ...второй — солнце: карта
+    await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(800)
+    assert await p.js('()=>t2d.view') == 'map', 'sun -> map'
+    await p.T('touchEnd', []); await p.pg.wait_for_timeout(200)          # первый отпущен уже на карте — без ошибок
+    await p.tap(100, 600); await p.pg.wait_for_timeout(800)              # четверть III — не открывается
+    assert await p.js('()=>t2d.view') == 'map', 'III stays closed'
+    await p.tap(100, 200); await p.pg.wait_for_timeout(800)              # четверть II — Cymatica
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 2], 'II -> Cymatica'
+    await p.shot('cymatica')
+    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned&&v.env>0.5)'), 'Sol Niger keeps sounding'
+    assert await p.js('()=>t2d.sounding()'), 'sounding() sees Sol Niger from Cymatica'
+    z = await p.js('()=>t2d.zoom'); await p.pg.mouse.move(200, 400); await p.pg.mouse.wheel(0, -300)
+    await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.zoom') == z, 'wheel in Cymatica keeps Sol Niger zoom'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned)'), 'undo in Cymatica leaves Sol Niger alone'
+    r = await p.js("()=>t2d.btnPos('rev')"); await p.tap(r['x'], r['y'])  # FX без набора — ничего
+    await p.pg.set_viewport_size({'width': 430, 'height': 900}); await p.pg.wait_for_timeout(300)
+    await p.pg.set_viewport_size({'width': W, 'height': H}); await p.pg.wait_for_timeout(300)
+    await p.tap(W - 10, H - 8); await p.pg.wait_for_timeout(800)          # резонатор — карта
+    assert await p.js('()=>t2d.view') == 'map', 'resonator -> map'
+    await p.pg.set_viewport_size({'width': 430, 'height': 900}); await p.pg.wait_for_timeout(300)
+    await p.pg.set_viewport_size({'width': W, 'height': H}); await p.pg.wait_for_timeout(300)
     await p.shot('map')
-    for name, (x, y), back in [('cabbala', (100, 200), (W - 5, H - 5)), ('rosarium', (100, 600), (W - 85, 90)), ('terra', (300, 600), (5, 5))]:
-        await p.tap(x, y); await p.pg.wait_for_timeout(800); await p.shot(name)
-        await p.tap(*back); await p.pg.wait_for_timeout(800)
-    await p.tap(300, 200); await p.pg.wait_for_timeout(800)       # обратно в Systema
+    await p.tap(300, 200); await p.pg.wait_for_timeout(800)              # четверть I
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 1], 'I -> Sol Niger'
+
 
 
 async def sc_sun(p):                               # планету тянут на солнце — солнце бьёт её лучами
@@ -125,7 +148,7 @@ async def sc_solniger(p):                          # Sol Niger через инт
     assert await p.js('()=>t2d.voices.filter(v=>v.active&&v.pinned).length') == 0, 'undo removes the pin'
 
 
-SCENARIOS = {'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'map': sc_map, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

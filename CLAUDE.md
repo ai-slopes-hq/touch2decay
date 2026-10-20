@@ -30,7 +30,7 @@
 - Под кольцом — полоса **amp** (громкость планеты, −26…+5 дБ) и панель **LFO**: полоса формы + XY-пад (вправо rate, вверх depth), кнопка `off`.
 - Мост: держишь планету A, второй палец на B → B модулирует A (fm / tzfm / am / rm). Ромб на середине нити — кольцо связи (тап — сразу закреплённое). На компьютере — Shift + тянуть мышью от A к B (`f.ui = 'thread'`, отпустил на B — `addLink`).
 - Верхняя строка: заголовок + индикатор нагрузки (Сатурн, краснеет после 80 %) слева; справа фейдер громкости (`drawVol`, `setVol`, `vol` в localStorage `t2d-vol`, гейн мастера `masterG`; кружок, как остальные кнопки; на 375–390 px места впритык — кнопки сдвинуты плотнее; заголовок — имя мира `TITLE` = «Sol Niger», не «touch2decay»), лад (тулбокс: список ладов и тоник вниз, карандаш-лассо влево), FX (веер вниз-влево: hall, decay, delay, chaos, drive), кубик, отмена (10 шагов), корзина.
-- Тап по солнцу — карта **Universum** (четыре мира, `nav`, `goMap`, `goWorld`). **Сейчас выключена** (`WORLDS_ON = false`, гравюры убраны из `STATIC` в `sw.js` — массив `ART`): автор решил идти «сначала звук и идеи, потом графика». Не удалять. `tools/shot.py map` при выключенных мирах не работает.
+- Тап по солнцу — карта **Universum** (`nav`, `goMap`, `goWorld`). Открываются I · Sol Niger и II · Cymatica (`ENTER`); III и IV — бледные *nondum*. Автор идёт «сначала звук и идеи, потом графика».
 
 ## Код: где что в `app.js`
 
@@ -45,7 +45,7 @@
 7. **Аудио**: таблицы (`makeWave`, `alignWaves` — у звуковых таблиц фазы гармоник выровнены по saw, морф без провалов), `morphOsc` + `useTables` (считаются только соседние таблицы), `shifter` + `shifterOn` (шифтер отцеплен, пока выключен), зал `hall()`, `build()`, голос `voiceNodes()`, `apply(v)` — перевод параметров в звук.
 8. **Рисование**: `resize` (фон-звёзды в `scan`), `contour` (контур из сигнала), `drawVoice` (планета, кольцо Сатурна, двойная звезда, спутники, хвост кометы), `drawLinks` (нити), кольца `drawRing/drawEditor/drawHeld`, `drawLfoPanel`, `drawAmpStrip`, поле `drawField` (кеш `orbitLayer` + `bgLayer`), `drawSun`, `drawUI`, `frame`.
 9. **Нагрузка**: `measureStrain` (время кадра, отставание звуковых часов, доля графа) → `drawStrain`.
-10. **Миры** (Universum): I · Sol Niger (играет), II · Cabbala (наверху, небо), III · Rosarium (внизу, алхимия), IV · Terra. Навигация и карта (`drawNav`, `drawMapChrome`), миры `artCabbala`, `artRosarium`, `artTerra` с палитрами `PALS` и настоящими гравюрами из `art/`; рисуются один раз на размер экрана (`artFor`). **Солнце в каждом мире — участник сцены, не ярлык.**
+10. **Миры** (Universum): I · Sol Niger, II · Cymatica (`cymatica.js`), III · Rosarium и IV · Terra — бледные гравюры *nondum* (`artRosarium`, `artTerra`, палитры `PALS`, `art/`; `artCabbala` и Кирхер остались в коде, на карте не используются). **Реестр миров:** `worlds`, `registerWorld(n, w)`, `cur()`; интерфейс мира — `title, sub, corner {hit, draw}, fx | null {sectors, get, set, text, arc, save, load}, tick?, draw, down, move, up, wheel?, dice, clear, snapshot, restore, sounding, enter?, leave?`. Sol Niger — объект `solNiger` поверх своих функций (`solTick`, `solDraw`, `solDown/Move/Up`). Касание принадлежит миру, где началось (`f.world`). У каждого мира своя отмена (`hists`, `lasts`). Миры из других файлов получают `window.T2D` (регистрация, `g`, `W/H/DPR`, `topY`, `safeBot`, `level`, `ink`, `ring`, `dot`, `text`, `glowAt`, `hairBox`). Карта: снимок мира при уходе (`snaps`). **Предмет в углу каждого мира — участник сцены, не ярлык** (солнце, резонатор Гельмгольца).
 
 Отладка из консоли: `window.t2d` (голоса, fx, scl, place/unplace, zoom, strain, linkMid…).
 
@@ -67,7 +67,7 @@
 
 `python3 -m http.server 8765` в корне, затем:
 
-- `python3 tools/shot.py [planets|ring|map]` — сценарии касаний (CDP touch, 390×844), скриншоты в `.shots/` — **смотреть их глазами** (Read на png).
+- `python3 tools/shot.py [solniger|vol|planets|ring|worlds|sun|hole]` — сценарии касаний (CDP touch, 390×844) с проверками (провал или ошибка на странице — код выхода 1), скриншоты в `.shots/` — **смотреть их глазами** (Read на png).
 - `python3 tools/render.py ["()=>{…}"]` — офлайн-рендер звука, RMS и время расчёта.
 - Нужен Playwright: `pip install playwright && playwright install chromium`.
 
