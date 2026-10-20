@@ -1607,9 +1607,10 @@
     const vca = gainNode(1);
     const vscope = ctx.createAnalyser(); vscope.fftSize = 1024; vscope.smoothingTimeConstant = 0;   // для контура кружка
     const lvl = gainNode(0.55);
-    lfo(0.09 * k, 0.07, lvl.gain);               // громкость чуть дышит
+    const breath = gainNode(1);                  // громкость чуть дышит — в долях от громкости, тихую планету дыхание не пробивает
+    lfo(0.09 * k, 0.13, breath.gain);
     const out = pan(0);
-    sum.connect(vca).connect(lvl).connect(out);  // к шине подключается, только пока кружок звучит
+    sum.connect(vca).connect(breath).connect(lvl).connect(out);  // к шине подключается, только пока кружок звучит
 
     return { c1, c2, sub, m, morph, tone, shf, sfm, mod, driveIn, lp, bp, nz, hiss, env, dl, comb, vca, lvl, vscope, out, fmTargets, lfo: {}, live: false };
   }
