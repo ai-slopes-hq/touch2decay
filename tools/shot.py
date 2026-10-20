@@ -738,7 +738,41 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     await p.shot('lab')
 
 
-SCENARIOS = {'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_natura(p):                           # Natura: лодочка — пуск/темп, кувшинки — посадить/убрать/нота/цветок, мостик — длина, кубик, корзина, отмена
+    await p.js('()=>t2d.go(4)'); await p.pg.wait_for_timeout(300)
+    b = await p.js('()=>t2d.nat.boat()'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(1600)
+    assert await p.js('()=>t2d.nat.seq.playing'), 'tap the boat — the river flows'
+    lv = await p.js('()=>T2D.level'); assert lv > 0.01, f'notes are heard: {lv}'
+    await p.shot('natura-play')
+    b = await p.js('()=>t2d.nat.boat()'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(200)
+    assert not await p.js('()=>t2d.nat.seq.playing'), 'tap the boat — it stops'
+    q = await p.js('()=>t2d.nat.pad(0)'); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.nat.pads.at[0]') is None, 'tap a lily — gone'
+    q = await p.js('()=>t2d.nat.slot(1, 10)'); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(150)
+    pd = await p.js('()=>t2d.nat.pads.at[1]'); assert pd and abs(pd['note'] - 10) <= 1, f'tap the water — a lily on that note: {pd}'
+    n0 = await p.js('()=>t2d.nat.pads.at[2].note'); q = await p.js('()=>t2d.nat.pad(2)')
+    pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] + 40, q['y'], steps=8)
+    await p.shot('natura-note'); await p.up(); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.nat.pads.at[2] && t2d.nat.pads.at[2].note') > n0, 'drag a lily across — higher note'
+    w0 = await p.js('()=>t2d.nat.pads.at[3].wave'); q = await p.js('()=>t2d.nat.pad(3)')
+    await p.hold(q['x'], q['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.nat.pads.at[3] && t2d.nat.pads.at[3].wave') == (w0 + 1) % 3, 'hold a lily — next flower'
+    l0 = await p.js('()=>t2d.nat.pads.len'); q = await p.js('()=>t2d.nat.bridge()')
+    pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'], q['y'] - 90, steps=8); await p.up()
+    assert await p.js('()=>t2d.nat.pads.len') < l0, 'drag the bridge upstream — shorter loop'
+    b0 = await p.js('()=>t2d.nat.seq.bpm'); b = await p.js('()=>t2d.nat.boat()')
+    pid = await p.hold(b['x'], b['y'], ms=60); await p.drag(pid, b['x'], b['y'], b['x'] + 40, b['y'], steps=6); await p.up()
+    assert await p.js('()=>t2d.nat.seq.bpm') == b0 + 20 and not await p.js('()=>t2d.nat.seq.playing'), 'drag the boat — tempo, no start'
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.nat.pads.at.some(Boolean)'), 'dice plants lilies'
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(150)
+    assert not await p.js('()=>t2d.nat.pads.at.some(Boolean)'), 'trash clears the river'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.nat.pads.at.some(Boolean)'), 'undo brings the lilies back'
+    assert await p.js('()=>t2d.nat.seq.playing'), 'dice set the river flowing'
+
+
+SCENARIOS = {'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

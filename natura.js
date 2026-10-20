@@ -1,9 +1,11 @@
-// Natura — мир IV: река с кувшинками, древо, туча, птицы; карта Таро чёрным по сепии. Эскиз картинки, без звука.
+// Natura — мир IV: река с кувшинками, древо, туча, птицы; карта Таро чёрным по сепии. Звучит: шаговый секвенсер на трёх простых волнах.
 // Секвенсер — река от гор к зрителю: вдоль течения 16 мест (шагов), кувшинка на месте — шаг; поперёк — нота
 // (у левого берега ниже, у правого выше; пунктир по течению — октавы). Цветок на кувшинке — голос (ромашка — синус,
 // тюльпан — меандр, звёздочка — треугольник), раскрывается на шаге — огибающая. Бегунок — лист-лодочка по течению,
 // мостик — длина петли. Древо на правом берегу, туча над ним поливает; дождь гуще — time; круги от задетой кувшинки
 // повторяются — delay; облака вокруг тучи — тоже delay; птиц больше — chorus (хор); камыши — cutoff; туман на горах — reverb.
+// Жесты: тап по реке — посадить кувшинку (тап по ней — убрать), тянешь кувшинку поперёк — нота, вдоль — шаг, держишь — сменить цветок;
+// мостик тянешь — длина петли; причал у истока: тап — пуск/стоп (лодочка отчаливает), вбок — темп.
 // Солнце — четверть в левом верхнем углу (к центру карты), тап — карта; надгробие слева внизу пока ни к чему не ведёт.
 // Спека: docs/superpowers/specs/2026-10-20-natura-design.md
 (() => {
@@ -17,7 +19,8 @@
 
   // ---------- состояние (демо) ----------
   const fx = { reverb: 0.4, delay: 0.45, time: 0.5, chorus: 0.4, cutoff: 0.62, env: 0.5 };
-  const bpm = 96;
+  const seq = { playing: false, bpm: 96, next: 0, step: 0 };
+  let lastWave = 0;
   // кувшинки: место по течению — шаг; note — ступень лада (0–14); wave — какой цветок (голос)
   const pads = { len: 12, at: [
     { note: 2, wave: 0 }, null, { note: 7, wave: 1 }, { note: 5, wave: 0 }, null, { note: 11, wave: 2 }, { note: 9, wave: 0 }, null,
@@ -237,7 +240,7 @@
 
   // мостик — длина петли: каменная арка поперёк реки за последним шагом
   function drawBridge(c, G) {
-    const t = slotT(pads.len - 1) + 0.82 / 16 * 0.75, r = river(G, Math.min(0.99, t)), w = r.w + 22, h = 8 + 14 * t, x0 = r.x - w / 2, y = r.y;
+    const t = bridgeT(), r = river(G, t), w = r.w + 22, h = 8 + 14 * t, x0 = r.x - w / 2, y = r.y;
     c.fillStyle = pap(1); c.strokeStyle = ink(0.9); c.lineWidth = 1.3;
     c.beginPath(); c.moveTo(x0, y); c.lineTo(x0, y - h - 6); c.lineTo(x0 + w, y - h - 6); c.lineTo(x0 + w, y); c.lineTo(x0 + w - 8, y);
     c.quadraticCurveTo(r.x, y - h * 2.1, x0 + 8, y); c.closePath(); c.fill(); c.stroke();
@@ -256,12 +259,12 @@
     flower(c, p.x - rx * 0.15, p.y - ry * 0.4, wave, (4 + 4 * p.s) * (0.75 + 0.45 * open), a);
   }
   function drawPads(c, G, now) {
-    const stepMs = 60000 / bpm / 4, loop = stepMs * pads.len, ph = (now % loop) / stepMs, cur = Math.floor(ph);
-    const echoes = 1 + Math.round(fx.delay * 3), gap = 220 + 300 * fx.time;
-    for (let i = 0; i < pads.len; i++) {              // круги от задетых кувшинок — только что и эхом
+    const stepMs = stepSec() * 1000, ph = phase(), playing = ph != null, pos = playing ? ph : 0, cur = playing ? Math.floor(pos) % pads.len : -1;
+    const echoes = 1 + Math.round(fx.delay * 3), gap = delaySec() * 1000;
+    for (let i = 0; i < pads.len && playing; i++) {   // круги от задетых кувшинок — только что и эхом (через время задержки)
       const pd = pads.at[i];
       if (!pd) continue;
-      const p = padXY(G, i, pd.note), since = ((ph - i + pads.len) % pads.len) * stepMs;
+      const p = padXY(G, i, pd.note), since = ((((pos - i) % pads.len) + pads.len) % pads.len) * stepMs;
       for (let e = 0; e < echoes; e++) {
         const k = (since - e * gap) / 700;
         if (k < 0 || k > 1) continue;
@@ -274,19 +277,37 @@
       const pd = pads.at[i];
       if (!pd) continue;
       const p = padXY(G, i, pd.note), on = i === cur && i < pads.len;
-      const open = on ? Math.exp(-((ph - cur) * stepMs) / (40 + fx.env * 400)) : 0;
-      lily(c, p, pd.wave, open, i < pads.len ? 0.95 : 0.3);   // за мостиком — бледные, не играют
+      const open = on ? Math.exp(-((pos % 1) * stepMs) / (40 + fx.env * 400)) : 0, held = [...touches.values()].some((t) => t.kind === 'pad' && t.i === i);
+      lily(c, p, pd.wave, open, i < pads.len ? (held ? 1 : 0.95) : 0.3);   // за мостиком — бледные, не играют
     }
     if (pads.len >= 16) drawBridge(c, G);
     // лист-лодочка плывёт по течению: между местами — плавно
-    const t = 0.16 + ((ph % pads.len) / 16) * 0.82, r = river(G, t), s = 0.75 + 1.0 * t, bx = r.x + Math.sin(now * 0.0015) * r.w * 0.06, by = r.y - 2;
+    const { x: bx, y: by, s } = boatXY(G, now);
     c.save(); c.translate(bx, by); c.rotate(-0.15);
     c.fillStyle = pap(1); c.strokeStyle = ink(0.95); c.lineWidth = 1.1;
     c.beginPath(); c.moveTo(-11 * s, 0); c.quadraticCurveTo(0, 6 * s, 11 * s, 0); c.quadraticCurveTo(0, -3 * s, -11 * s, 0); c.closePath(); c.fill(); c.stroke();
     c.beginPath(); c.moveTo(-9 * s, 0.5); c.lineTo(9 * s, 0.5); c.stroke();
     c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -9 * s); c.lineTo(6 * s, -2 * s); c.closePath(); c.stroke();   // парус из листа
+    if (!playing) { c.lineWidth = 1; c.strokeRect(-3 * s, -14 * s, 1.6 * s, 4 * s); c.strokeRect(0.6 * s, -14 * s, 1.6 * s, 4 * s); }   // стоит — знак паузы над парусом
     c.restore();
   }
+  function boatXY(G, now) {                         // лист-лодочка: плывёт по течению между местами; стоит — у причала
+    const ph = phase();
+    if (ph == null) { const q = pierXY(G); return { x: q.x + 16, y: q.y + 3, s: 0.8 }; }
+    const t = 0.16 + ((ph % pads.len) / 16) * 0.82, r = river(G, t);
+    return { x: r.x + Math.sin(now * 0.0015) * r.w * 0.06, y: r.y - 2, s: 0.75 + 1.0 * t };
+  }
+  // причал у истока, на левом берегу: тап — пуск/стоп, вбок — темп
+  const pierXY = (G) => { const r = river(G, 0.13); return { x: r.x - r.w / 2 - 6, y: r.y }; };
+  function drawPier(c, G) {
+    const { x, y } = pierXY(G);
+    c.fillStyle = pap(1); c.strokeStyle = ink(0.9); c.lineWidth = 1.1;
+    c.beginPath(); c.rect(x - 14, y - 4, 30, 7); c.fill(); c.stroke();         // настил
+    c.lineWidth = 0.8; c.beginPath(); for (let k = 1; k < 5; k++) { c.moveTo(x - 14 + k * 6, y - 4); c.lineTo(x - 14 + k * 6, y + 3); } c.stroke();
+    c.lineWidth = 1.4; c.beginPath(); c.moveTo(x + 14, y - 12); c.lineTo(x + 14, y + 8); c.moveTo(x - 12, y + 3); c.lineTo(x - 12, y + 9); c.stroke();   // столб и свая
+    if (!seq.playing) { c.lineWidth = 0.8; c.beginPath(); c.moveTo(x + 14, y - 8); c.quadraticCurveTo(x + 20, y, x + 24, y + 2); c.stroke(); }   // верёвка к лодочке
+  }
+  const bridgeT = () => Math.min(0.99, slotT(pads.len - 1) + (0.82 / 16) * 0.75);
   // дождь по воде — кружки (гуще с time)
   function drawRainRings(c, G, now) {
     const n = Math.round(4 + 14 * fx.time);
@@ -381,6 +402,145 @@
   }
 
 
+  // ---------- звук: нота — синус / меандр / треугольник → фильтр с огибающей → хор (птицы) → задержка (облака) и зал (туман) ----------
+  let actx = null, bus = null;
+  const stepSec = () => 60 / seq.bpm / 4;
+  const DIVS = [['1/16', 1 / 4], ['1/8', 1 / 2], ['1/8d', 3 / 4], ['1/4', 1], ['1/4d', 1.5], ['1/2', 2]];
+  const div = () => DIVS[Math.round(fx.time * (DIVS.length - 1))];
+  const delaySec = () => (div()[1] * 60) / seq.bpm;
+  function build(ctx, input) {
+    actx = ctx;
+    const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
+    const vin = g(1), pre = g(1), out = g(1.5), chOut = g(0);
+    vin.connect(pre);
+    const ch = [0, 1].map((k) => {                   // хор: две плавающие задержки
+      const d = ctx.createDelay(0.05), l = ctx.createOscillator(), lg = g(0);
+      d.delayTime.value = 0.012 + k * 0.007; l.frequency.value = 0.31 + k * 0.17;
+      l.connect(lg).connect(d.delayTime); l.start(); vin.connect(d); d.connect(chOut);
+      return { lg };
+    });
+    chOut.connect(pre); pre.connect(out);
+    const dSend = g(0), dl = ctx.createDelay(4), dfb = g(0), dlp = ctx.createBiquadFilter();   // задержка — лента: время плывёт
+    dlp.type = 'lowpass'; dlp.frequency.value = 2800;
+    pre.connect(dSend).connect(dl); dl.connect(dlp).connect(dfb).connect(dl); dlp.connect(out);
+    const rSend = g(0), h = T.hall();                 // зал — туман
+    pre.connect(rSend).connect(h.input); h.out.connect(g(0.9)).connect(out);
+    dlp.connect(rSend);
+    out.connect(input);
+    bus = { vin, chOut, ch, dSend, dl, dfb, rSend, hall: h };
+    applyFx();
+  }
+  function applyFx() {
+    if (!bus) return;
+    const t = actx.currentTime, S = (p, v, tau = 0.05) => p.setTargetAtTime(v, t, tau);
+    S(bus.chOut.gain, fx.chorus * 0.8);
+    for (const c of bus.ch) S(c.lg.gain, 0.0015 + 0.0045 * fx.chorus);
+    S(bus.dSend.gain, fx.delay * 0.7); S(bus.dfb.gain, 0.2 + 0.55 * fx.delay); S(bus.dl.delayTime, delaySec(), 0.15);
+    S(bus.rSend.gain, fx.reverb * fx.reverb * 1.3);
+    const tail = 1.5 + fx.reverb * 6;
+    for (const l of bus.hall.lines) S(l.g.gain, 10 ** ((-3 * l.len) / tail));
+  }
+  // нота кувшинки: ступень лада от тоники (без лада — ля минор), две октавы с лишним
+  function noteHz(n) {
+    const root = T.scaleRoot, pcs = T.scalePCs;
+    const steps = pcs ? pcs.map((pc) => (pc - root + 12) % 12).sort((a, b) => a - b) : [0, 2, 3, 5, 7, 8, 10];
+    const semis = steps[n % steps.length] + 12 * Math.floor(n / steps.length);
+    return 110 * 2 ** ((root + semis) / 12);
+  }
+  const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const noteName = (f) => { const m = Math.round(33 + 12 * Math.log2(f / 55)); return `${NAMES[((m % 12) + 12) % 12]}${Math.floor(m / 12) - 1}`; };
+  function playNote(pd, t) {
+    if (!bus) return;
+    const ctx = actx, o = ctx.createOscillator(), lp = ctx.createBiquadFilter(), a = ctx.createGain();
+    o.type = ['sine', 'square', 'triangle'][pd.wave]; o.frequency.value = noteHz(pd.note);
+    const base = 180 * 2 ** (fx.cutoff * 6.6), peak = Math.min(16000, base * (1 + fx.env * 10)), dec = 0.08 + fx.env * 0.6;
+    lp.type = 'lowpass'; lp.Q.value = 2;
+    lp.frequency.setValueAtTime(peak, t); lp.frequency.setTargetAtTime(base, t + 0.005, 0.04 + fx.env * 0.5);
+    const lvl = [0.32, 0.13, 0.3][pd.wave];
+    a.gain.setValueAtTime(0, t); a.gain.linearRampToValueAtTime(lvl, t + 0.006); a.gain.setTargetAtTime(0, t + 0.01, dec);
+    o.connect(lp).connect(a).connect(bus.vin);
+    o.start(t); o.stop(t + 0.05 + dec * 7);
+    o.onended = () => { o.disconnect(); lp.disconnect(); a.disconnect(); };
+  }
+  // часы — по звуковому времени с запасом вперёд (таймер 25 мс, окно 120 мс)
+  function schedule() {
+    if (!seq.playing || !actx) return;
+    const ahead = actx.currentTime + 0.12;
+    if (!seq.next) seq.next = actx.currentTime + 0.05;
+    while (seq.next < ahead) {
+      const pd = pads.at[seq.step % pads.len];
+      if (pd) playNote(pd, seq.next);
+      seq.step++; seq.next += stepSec();
+    }
+  }
+  setInterval(schedule, 25);
+  function play(on = !seq.playing) { seq.playing = on; seq.step = 0; seq.next = 0; if (on) schedule(); }
+  const phase = () => (seq.playing && actx && seq.next ? Math.max(0, seq.step - (seq.next - actx.currentTime) / stepSec()) : null);
+
+  // ---------- касания: кувшинки, мостик, лодочка ----------
+  const touches = new Map();
+  const slotFromY = (G, y) => clamp(Math.round((((y - G.hor) / (G.y1 - G.hor) - 0.16) / 0.82) * 16 - 0.5), 0, 15);
+  const noteFromX = (G, i, x) => { const r = river(G, slotT(i)); return clamp(Math.round(((x - r.x) / (r.w * 0.78) + 0.5) * 14), 0, 14); };
+  const inRiver = (G, x, y) => { const t = (y - G.hor) / (G.y1 - G.hor); if (t < 0.1 || t > 1) return false; const r = river(G, t); return Math.abs(x - r.x) < r.w / 2 + 6; };
+  function down(f) {
+    const G = geo(), now = performance.now(), pq = pierXY(G);
+    if (Math.hypot(f.x - pq.x - 4, f.y - pq.y) < 26) { touches.set(f.id, { kind: 'boat', bpm0: seq.bpm }); return; }
+    const br = river(G, bridgeT());
+    if (Math.abs(f.y - (br.y - 10)) < 18 && Math.abs(f.x - br.x) < br.w / 2 + 22) { touches.set(f.id, { kind: 'bridge' }); return; }
+    for (let i = 0; i < 16; i++) {                    // кувшинки — раньше лодочки: та плывёт мимо и не должна перехватывать
+      const pd = pads.at[i];
+      if (!pd) continue;
+      const p = padXY(G, i, pd.note);
+      if (Math.hypot(f.x - p.x, (f.y - p.y) * 1.4) < 15 * p.s + 8) { touches.set(f.id, { kind: 'pad', i, t0: now }); return; }
+    }
+
+    if (inRiver(G, f.x, f.y)) { touches.set(f.id, { kind: 'plant' }); return; }
+    touches.set(f.id, { kind: 'none' });
+  }
+  function move(f) {
+    const t = touches.get(f.id);
+    if (!t) return;
+    const G = geo(), dx = f.x - f.x0, dy = f.y - f.y0;
+    if (!t.moved && Math.hypot(dx, dy) > 8) t.moved = true;
+    if (!t.moved) return;
+    if (t.kind === 'boat') { seq.bpm = Math.round(clamp(t.bpm0 + dx / 2, 40, 200)); applyFx(); }
+    else if (t.kind === 'bridge') pads.len = clamp(slotFromY(G, f.y + 6) + 1, 2, 16);
+    else if (t.kind === 'pad') {                      // поперёк — нота, вдоль — на другое место (если свободно)
+      const pd = pads.at[t.i], j = slotFromY(G, f.y), n = noteFromX(G, j, f.x);
+      if (j !== t.i && !pads.at[j]) { pads.at[j] = pd; pads.at[t.i] = null; t.i = j; }
+      if (n !== pd.note) { pd.note = n; if (actx) playNote(pd, actx.currentTime); }
+    }
+  }
+  function up(f) {
+    const t = touches.get(f.id);
+    touches.delete(f.id);
+    if (!t) return;
+    const G = geo();
+    if (t.kind === 'boat' && !t.moved) play();
+    else if (t.kind === 'pad' && !t.moved && !t.cycled) pads.at[t.i] = null;      // тап по кувшинке — убрать
+    else if (t.kind === 'plant' && !t.moved) {                                     // тап по воде — посадить
+      const i = slotFromY(G, f.y);
+      if (!pads.at[i]) { pads.at[i] = { note: noteFromX(G, i, f.x), wave: lastWave }; if (actx) playNote(pads.at[i], actx.currentTime); }
+    }
+  }
+  function tick(now) {                                // держишь кувшинку — сменить цветок (голос)
+    for (const t of touches.values()) {
+      if (t.kind !== 'pad' || t.moved || t.cycled || now - t.t0 < 450) continue;
+      const pd = pads.at[t.i];
+      if (!pd) continue;
+      pd.wave = (pd.wave + 1) % 3; lastWave = pd.wave; t.cycled = true;
+      if (actx) playNote(pd, actx.currentTime);
+    }
+  }
+  function drawTouches(c, G) {                      // подписи — только пока тянешь
+    for (const t of touches.values()) {
+      if (!t.moved) continue;
+      if (t.kind === 'boat') { const q = pierXY(G); T.mapText(`${seq.bpm} BPM`, q.x, q.y - 26, 15, 0.9, 'center'); }
+      else if (t.kind === 'bridge') { const r = river(G, bridgeT()); T.mapText(String(pads.len), r.x + r.w / 2 + 18, r.y - 12, 16, 0.9, 'center'); }
+      else if (t.kind === 'pad' && pads.at[t.i]) { const p = padXY(G, t.i, pads.at[t.i].note); T.mapText(noteName(noteHz(pads.at[t.i].note)), p.x, p.y - 24 - 8 * p.s, 15, 0.95, 'center'); }
+    }
+  }
+
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
@@ -392,13 +552,14 @@
       { key: 'cutoff', label: 'cutoff', ang: deg(108) },
       { key: 'env', label: 'env', ang: deg(90) },
     ],
-    get: (k) => fx[k], set: (k, v) => { fx[k] = v; },
-    text: (k) => `${Math.round(fx[k] * 100)}%`,
+    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); },
+    text: (k) => (k === 'time' ? div()[0] : `${Math.round(fx[k] * 100)}%`),
     arc: () => fx.reverb,
-    save: () => ({ ...fx }), load: (o) => Object.assign(fx, o),
+    save: () => ({ ...fx }),
+    load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   const natura = {
-    n: 'IV', title: 'Natura', sub: 'flumen · nymphaeae · nondum sonat',
+    n: 'IV', title: 'Natura', sub: 'flumen · nymphaeae',
     theme: { ink: INK, bg: `rgb(${PAPER})`, paper: PAPER },
     corner: { hit: (f) => { const G = geo(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце — карта; надгробие пока просто стоит
     fx: fxw,
@@ -413,16 +574,41 @@
       c.drawImage(landC, 0, 0, T.W, T.H);
       drawFog(c, G, now);
       drawRainRings(c, G, now);
+      drawPier(c, G);
       drawPads(c, G, now);
       drawReeds(c, G, now);
       drawTree(c, G);
       drawCloud(c, G, now);
       drawStone(c, G);
+      drawTouches(c, G);
     },
-    down() {}, move() {}, up() {},
-    clear() {}, snapshot: () => JSON.stringify({ fx }), restore(js) { Object.assign(fx, JSON.parse(js).fx); },
-    sounding: () => false,
+    build, tick, down, move, up,
+    dice() {                                        // кувшинки по Евклиду, ноты — блуждание по ступеням, цветы — случайно; лодочка плывёт
+      const R = Math.random, n = 8 + Math.floor(R() * 9), k = 3 + Math.floor(R() * (n - 4));
+      let note = Math.floor(R() * 8);
+      pads.len = n;
+      pads.at = Array.from({ length: 16 }, (_, i) => {
+        if (i >= n || (i * k) % n >= k) return null;
+        note = clamp(note + [-2, -1, 1, 2][Math.floor(R() * 4)], 0, 14);
+        return { note, wave: Math.floor(R() * 3) };
+      });
+      if (!seq.playing) play(true);
+    },
+    clear() { pads.at = Array(16).fill(null); },
+    snapshot: () => JSON.stringify({ fx, len: pads.len, at: pads.at, bpm: seq.bpm }),
+    restore(js) {
+      const st = JSON.parse(js);
+      Object.assign(fx, st.fx); pads.len = st.len; pads.at = st.at.map((p) => (p ? { ...p } : null)); seq.bpm = st.bpm;
+      applyFx();
+    },
+    sounding: () => seq.playing && pads.at.slice(0, pads.len).some(Boolean),
   };
   T.registerWorld(4, natura);
-  window.t2d.nat = { fx, pads, geo, padXY };
+  window.t2d.nat = {
+    fx, pads, geo, seq, play, get phase() { return phase(); },
+    pad: (i) => { const pd = pads.at[i]; const p = padXY(geo(), i, pd ? pd.note : 7); return { x: p.x, y: p.y }; },
+    slot: (i, note) => { const p = padXY(geo(), i, note); return { x: p.x, y: p.y }; },
+    boat: () => { const q = pierXY(geo()); return { x: q.x, y: q.y }; },
+    bridge: () => { const G = geo(), r = river(G, bridgeT()); return { x: r.x, y: r.y - 10 }; },
+  };
 })();
