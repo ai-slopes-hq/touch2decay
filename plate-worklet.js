@@ -114,8 +114,12 @@ function shapeGrid(n) {
   return grid;
 }
 
+// ---------- часы секвенсера ----------
+// шаг часов — шестнадцатая: отсчётов на шаг
+function stepSamples(bpm, fs) { return Math.round((fs * 60) / bpm / 4); }
+
 // ---------- процессор ----------
-var NV = 4, GRID_N = 96, SLEEP = 1e-14, BOW_TILT = 1.5, BOW_GAIN = 6, MAX_STRIKES = 16, OUT_GAIN = 0.2, STRIKE_GAIN = 5;   // удар — громкость одного касания примерно как у смычка
+var F_LO = 55, NV = 4, GRID_N = 96, SLEEP = 1e-14, BOW_TILT = 1.5, BOW_GAIN = 6, MAX_STRIKES = 16, OUT_GAIN = 0.2, STRIKE_GAIN = 5;   // удар — громкость одного касания примерно как у смычка
 // смычок: трение по разности скоростей смычка и пластины в точке (кривая как у bowed-string), нормировано на покой
 function bowTable(d) { return Math.min(1, (Math.abs(d) * 5 + 0.75) ** -4); }
 
@@ -137,6 +141,10 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       this.grid = new Float32Array(NM * GRID_N * GRID_N); this.gridK = 0;   // сетка форм мод — по одной моде за блок
       this.count = 0; this.every = Math.round(this.fs / 30);
       this.enA = 1 - Math.exp(-1 / (0.05 * this.fs));
+      // секвенсер: узор целиком из основного потока; r, m — текущие шаги ритма и мелодии; toNext — отсчётов до тика
+      this.t = 0; this.lastLive = -1e12; this.lastTick = 0;
+      this.seq = { bpm: 96, playing: false, rhythm: { len: 16, steps: [] }, melody: { len: 7, steps: [] } };
+      this.stepN = stepSamples(96, this.fs); this.r = -1; this.m = -1; this.toNext = 0;
       this.retune();
       this.port.onmessage = (e) => this.msg(e.data);
     }
@@ -156,19 +164,46 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         v.b1[k] = c.b1; v.b2[k] = c.b2; v.gs[k] = s; v.wb[k] = Math.sqrt(1 + c.b2) * this.ratios[k] ** -BOW_TILT;
       }
     }
+    strike(g, hz, vel, hard) {
+      const i = pickVoice(this.voices, hz), v = this.voices[i];
+      if (Math.abs(1200 * Math.log2(v.hz / hz)) >= 10) this.tune(v, hz);
+      // длина импульса — твёрдость молоточка, но не дольше 0.4 периода основного тона: иначе удар гасит сам себя
+      const len = Math.max(2, Math.round(Math.min(((5 - 4.5 * clamp01(hard)) * this.fs) / 1000, (0.4 * this.fs) / hz)));
+      v.awake = true;
+      if (this.strikes.length >= MAX_STRIKES) this.strikes.shift();
+      this.strikes.push({ v: i, g, n: 0, len, a: vel });
+    }
+    // новый узор: удары шагов с готовыми весами мод; пуск — с первого шага сразу; смена темпа — от последнего тика
+    setSeq(d) {
+      const was = this.seq.playing, stepN = stepSamples(d.bpm, this.fs);
+      this.seq = {
+        bpm: d.bpm, playing: !!d.playing,
+        rhythm: { len: d.rhythm.len, steps: d.rhythm.steps.map((st) => (st ? { vel: st.vel == null ? 1 : st.vel, g: strikeGains(st.x, st.y) } : null)) },
+        melody: { len: d.melody.len, steps: d.melody.steps.slice() },
+      };
+      if (this.seq.playing && !was) { this.r = -1; this.m = -1; this.toNext = 0; }
+      else if (this.seq.playing && stepN !== this.stepN) this.toNext = Math.max(0, stepN - (this.t - this.lastTick));
+      this.stepN = stepN;
+    }
+    tick() {
+      const sq = this.seq;
+      this.r = (this.r + 1) % sq.rhythm.len;
+      this.m = (this.m + 1) % sq.melody.len;
+      this.lastTick = this.t;
+      this.port.postMessage({ t: 'step', r: this.r, m: this.m, time: this.t / this.fs });
+      const st = sq.rhythm.steps[this.r], semi = sq.melody.steps[this.m];
+      if (!st || this.t - this.lastLive < this.stepN / 2) return;
+      this.strike(st.g, semi == null ? this.f0 : F_LO * 2 ** (semi / 12), st.vel, 0.5);
+    }
     msg(d) {
       if (d.t === 'params') { Object.assign(this.fx, d); this.retune(); return; }
       if (d.t === 'f0') { this.f0 = Math.min(880, Math.max(55, d.hz)); return; }
       if (d.t === 'strike') {
-        const hz = d.hz || this.f0, i = pickVoice(this.voices, hz), v = this.voices[i];
-        if (Math.abs(1200 * Math.log2(v.hz / hz)) >= 10) this.tune(v, hz);
-        // длина импульса — твёрдость молоточка, но не дольше 0.4 периода основного тона: иначе удар гасит сам себя
-        const len = Math.max(2, Math.round(Math.min(((5 - 4.5 * clamp01(d.hard == null ? 0.5 : d.hard)) * this.fs) / 1000, (0.4 * this.fs) / hz)));
-        v.awake = true;
-        if (this.strikes.length >= MAX_STRIKES) this.strikes.shift();
-        this.strikes.push({ v: i, g: strikeGains(d.x, d.y), n: 0, len, a: d.vel == null ? 1 : d.vel });
+        this.lastLive = this.t;                     // живой удар: ближайший тик ритма его не повторит
+        this.strike(strikeGains(d.x, d.y), d.hz || this.f0, d.vel == null ? 1 : d.vel, d.hard == null ? 0.5 : d.hard);
         return;
       }
+      if (d.t === 'seq') { this.setSeq(d); return; }
       if (d.t === 'bow') {
         if (!d.on) { this.bows.delete(d.id); return; }
         const b = this.bows.get(d.id) || { x: 0, y: 0, exciter: 0, pressure: 0.5, amp: 1, g: null };
@@ -191,13 +226,14 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         if (Math.abs(1200 * Math.log2(bv.hz / this.f0)) >= 10) this.tune(bv, this.f0);
         bv.awake = true;
       }
-      if (!this.strikes.length && bi < 0 && this.voices.every((v) => !v.awake)) {   // тишина: не считаем, выход — нули
+      if (!this.seq.playing && !this.strikes.length && bi < 0 && this.voices.every((v) => !v.awake)) {   // тишина: не считаем, выход — нули
         L.fill(0); if (R !== L) R.fill(0);
-        this.count += N;
+        this.count += N; this.t += N;
         if (this.count >= this.every) { this.count = 0; this.report(); }
         return true;
       }
-      for (let n = 0; n < N; n++) {
+      for (let n = 0; n < N; n++, this.t++) {
+        if (this.seq.playing && --this.toNext < 0) { this.tick(); this.toNext += this.stepN; }
         for (const v of this.voices) v.x.fill(0);
         // удары: полукосинус единичной площади, длина — твёрдость молоточка
         for (let s = this.strikes.length - 1; s >= 0; s--) {

@@ -8,11 +8,17 @@ import vm from 'node:vm';
 const SRC = readFileSync(new URL('../plate-worklet.js', import.meta.url), 'utf8');
 const FS = 48000;
 
+// шум смычка — Math.random: в тестах с фиксированным зерном, чтобы проверки не плавали
+function seeded(seed = 12345) {
+  const m = Object.create(Math);
+  m.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  return m;
+}
 function load() {
   const posted = [];
   const reg = {};
   const ctx = {
-    sampleRate: FS, currentTime: 0, Math, Float32Array, Float64Array, Array, Object, Number, JSON,
+    sampleRate: FS, currentTime: 0, Math: seeded(), Float32Array, Float64Array, Array, Object, Number, JSON,
     AudioWorkletProcessor: class { constructor() { this.port = { postMessage: (m) => posted.push(m), onmessage: null }; } },
     registerProcessor: (name, cls) => { reg[name] = cls; },
   };
@@ -178,4 +184,90 @@ test('goes idle in silence', () => {             // в тишине резона
   assert.ok(proc.voices.every((v) => !v.awake), 'all voices asleep');
   const a = run(proc, 0.01);
   assert.ok(a.every((x) => x === 0), 'silent output');
+});
+
+// ---------- часы секвенсера ----------
+const slots = (f) => Array.from({ length: 16 }, (_, i) => f(i));
+const seqMsg = (o = {}) => ({
+  t: 'seq', bpm: 120, playing: true,
+  rhythm: { len: 16, steps: slots(() => null) }, melody: { len: 7, steps: slots(() => null) }, ...o,
+});
+const hit = { x: 0.3, y: 0, vel: 1 };
+const stepsOf = (posted) => posted.filter((m) => m.t === 'step');
+function blocks(proc, n) { for (let i = 0; i < n; i++) proc.process([], [[new Float32Array(128), new Float32Array(128)]], {}); }
+
+test('stepSamples', () => {
+  assert.equal(P.stepSamples(120, 48000), 6000);
+  assert.equal(P.stepSamples(96, 48000), 7500);
+});
+
+test('steps on time', () => {
+  const { proc, send, posted } = plate();
+  send(seqMsg({ rhythm: { len: 16, steps: slots((i) => (i === 0 ? hit : null)) } }));
+  run(proc, 1);
+  const t = stepsOf(posted).map((m) => m.time);
+  assert.equal(t.length, 8);
+  t.forEach((x, i) => close(x, i * 0.125, 1 / FS, `tick ${i}`));
+});
+
+test('polymeter', () => {
+  const { proc, send, posted } = plate();
+  send(seqMsg({ bpm: 200 }));
+  run(proc, 8.5);
+  const pairs = stepsOf(posted).slice(0, 113).map((m) => `${m.r},${m.m}`);
+  assert.equal(new Set(pairs.slice(0, 112)).size, 112);
+  assert.equal(pairs[112], pairs[0]);
+});
+
+test('melody note', () => {
+  const a = plate();
+  a.send({ t: 'f0', hz: 110 });
+  a.send(seqMsg({ rhythm: { len: 16, steps: slots(() => hit) }, melody: { len: 7, steps: slots((i) => (i === 0 ? 24 : null)) } }));
+  run(a.proc, 0.01);
+  assert.ok(a.proc.voices.some((v) => v.awake && Math.abs(v.hz - 220) < 0.5), 'note 24 → 220 Hz');
+  const b = plate();
+  b.send({ t: 'f0', hz: 330 });
+  b.send(seqMsg({ rhythm: { len: 16, steps: slots(() => hit) } }));
+  run(b.proc, 0.01);
+  assert.ok(b.proc.voices.some((v) => v.awake && Math.abs(v.hz - 330) < 0.5), 'empty note → plate pitch');
+});
+
+test('empty pattern', () => {
+  const { proc, send, posted } = plate();
+  send(seqMsg());
+  const a = run(proc, 0.5);
+  assert.ok(a.every((x) => x === 0), 'silent');
+  assert.equal(stepsOf(posted).length, 5);         // run(0.5) — 188 блоков = 24064 отсчёта: тики 0 … 0.5 с
+});
+
+test('tempo change mid-run', () => {
+  const { proc, send, posted } = plate();
+  send(seqMsg());
+  run(proc, 0.3);
+  send(seqMsg({ bpm: 60 }));
+  run(proc, 0.6);
+  const t = stepsOf(posted).map((m) => m.time);
+  close(t[3], 0.5, 1 / FS, 'next tick one new step after the last');
+  const c = plate();
+  c.send(seqMsg({ bpm: 200 }));
+  while (stepsOf(c.posted).length < 11) blocks(c.proc, 1);
+  assert.equal(stepsOf(c.posted).at(-1).r, 10);
+  c.send(seqMsg({ bpm: 200, rhythm: { len: 4, steps: slots(() => null) } }));
+  while (stepsOf(c.posted).length < 12) blocks(c.proc, 1);
+  const r = stepsOf(c.posted).at(-1).r;
+  assert.ok(r >= 0 && r < 4, `r ${r}`);
+});
+
+test('no double hit after a live strike', () => {
+  const pattern = seqMsg({ rhythm: { len: 16, steps: slots((i) => (i < 2 ? hit : null)) } });
+  const a = plate();
+  a.send(pattern);
+  blocks(a.proc, 35);                                // 4480 отсчётов — 0.0317 с до тика шага 1 (6000)
+  a.send({ t: 'strike', x: 0.5, y: 0, vel: 1, hard: 0.5 });
+  blocks(a.proc, 12);                                // до 6016: тик только что прошёл
+  assert.equal(a.proc.strikes.length, 0, 'step 1 skipped after a live strike');
+  const b = plate();
+  b.send(pattern);
+  blocks(b.proc, 47);
+  assert.equal(b.proc.strikes.length, 1, 'step 1 plays without a live strike');
 });
