@@ -198,8 +198,10 @@
   }
   // зум: на экране видна доля zoom координаты высоты, от солнца наружу. По умолчанию — до 880 Гц;
   // щипок по пустому месту — от «только sub и bass» до всех пяти октав. Звук от зума не меняется
-  const ZOOM_DEF = (48 / 60) ** (1 / 1.45), ZOOM_MIN = 0.35;
-  let zoom = ZOOM_DEF, zoomT = ZOOM_DEF, zoomShow = 0;
+  // на экране больше телефона по умолчанию видно больше: на ту же площадь — та же доля высоты (iPad, компьютер — все пять октав)
+  const ZOOM_DEF = (48 / 60) ** (1 / 1.45), ZOOM_MIN = 0.35, PHONE_FIELD = 430 * 860;   // поле самого большого iPhone
+  let zoom = ZOOM_DEF, zoomT = ZOOM_DEF, zoomShow = 0, zoomed = false;   // zoomed — масштаб уже менял сам, по размеру не трогаем
+  const zoomDef = () => clamp(ZOOM_DEF * (W * (geo.bot - geo.top)) / PHONE_FIELD, ZOOM_DEF, 1);
   const rAt = (p) => (p / zoom > 1.0001 ? Infinity : rOfP(p / zoom));   // радиус орбиты высоты p (за горизонтом — ∞)
   function place(p, c) {
     const r = rOfP(Math.min(1, p / zoom)), sp = arcSpan(r) || [Math.PI / 4, Math.PI / 4];
@@ -596,13 +598,24 @@
     if (f.zc && !f.zoom && performance.now() - f.zc.t0 < 700 && Math.abs(fdist(f.zc.a, f.zc.b) - f.zc.d0) > 26) startZoom(f.zc);
     if (f.zoom) {
       const z = f.zoom;
-      zoomT = clamp((z.z1 * z.d1) / Math.max(20, fdist(z.a, z.b)), ZOOM_MIN, 1);   // развёл — ближе к солнцу
-      zoomShow = performance.now() + 1200;      // подписи диапазонов видны во время зума и ещё секунду после
+      setZoom((z.z1 * z.d1) / Math.max(20, fdist(z.a, z.b)));   // развёл — ближе к солнцу
       return;
     }
     if (f.bridge) bridgeMove(f.bridge);
     else if (f.menu) menuMove(f);
     else if (f.voice && !f.parked) follow(f.voice);
+  }
+
+  function setZoom(z) {
+    zoomT = clamp(z, ZOOM_MIN, 1); zoomed = true;
+    zoomShow = performance.now() + 1200;        // подписи диапазонов видны во время зума и ещё секунду после
+  }
+  // на компьютере щипка по экрану нет: колесо, прокрутка и щипок тачпада (браузер шлёт его колесом с ctrl)
+  function wheelZoom(e) {
+    e.preventDefault();
+    if (nav.view !== 'play') return;
+    const k = e.ctrlKey ? 0.01 : 0.0025, d = e.deltaMode ? e.deltaY * 16 : e.deltaY;
+    setZoom(zoomT * Math.exp(clamp(d * k, -0.5, 0.5)));
   }
 
   // щипок зума начался: оба кружка, которые успели зазвучать, гасим почти сразу
@@ -1614,6 +1627,7 @@
     // Поверх — как на старых звёздных картах: меридианы от солнца, рамка со шкалой, созвездия
     x.setTransform(DPR, 0, 0, DPR, 0, 0);
     buildGeo();
+    if (!zoomed) zoom = zoomT = zoomDef();
     const { ox, oy, top: ft, bot: fb } = geo;
     let seed = 7;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -3022,6 +3036,11 @@
   document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
   ['gesturestart', 'gesturechange', 'dblclick', 'contextmenu'].forEach((t) =>
     document.addEventListener(t, (e) => e.preventDefault()));
+  cv.addEventListener('wheel', wheelZoom, { passive: false });
+  // Safari на Mac шлёт щипок тачпада жестом; на iPhone жест идёт вместе с касаниями — там зумит свой щипок
+  let gestZ = 0;
+  document.addEventListener('gesturestart', () => { gestZ = zoomT; });
+  document.addEventListener('gesturechange', (e) => { if (!F.size && nav.view === 'play' && e.scale) setZoom(gestZ / e.scale); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && V.some((v) => v.active)) wake();
   });
