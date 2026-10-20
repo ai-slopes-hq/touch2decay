@@ -763,14 +763,11 @@ async def sc_natura(p):                           # Natura: лодочка — �
     await p.drag(pid, w1['x'], w1['y'], w2['x'], w2['y'], steps=10); await p.pg.wait_for_timeout(150)
     await p.shot('natura-skiff'); await p.up(); await p.pg.wait_for_timeout(1300)
     sk = await p.js('()=>t2d.nat.skiff()'); assert not sk['playing'] and sk['home'], f'released — quiet, back on the bank: {sk}'
-    for kind, key, dx, dy in (('cloud', 'cutoff', 0, -60), ('mill', 'att', 0, -50)):   # туча вверх — ярче; мельница вверх — attack
-        await p.js(f"()=>t2d.nat.setFx('{key}', 0.3)"); q = await p.js(f'()=>t2d.nat.{kind}()')
+    for kind, key, dx, dy in (('cloud()', 'cutoff', 0, -60), ("duck('A')", 'att', 0, -50), ("duck('R')", 'rel', 0, -50)):   # туча вверх — ярче; утки вверх — длиннее attack / release
+        await p.js(f"()=>t2d.nat.setFx('{key}', 0.3)"); q = await p.js(f'()=>t2d.nat.{kind}')
         pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] + dx, q['y'] + dy, steps=8)
-        await p.shot(f'natura-{kind}'); await p.up()
+        await p.shot(f'natura-{key}'); await p.up()
         assert await p.js(f'()=>t2d.nat.fx.{key}') > 0.4, f'{kind} drag moves {key}'
-    r0 = await p.js('()=>t2d.nat.fx.rel'); q = await p.js('()=>t2d.nat.mill()')
-    pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] + 60, q['y'], steps=8); await p.up()
-    assert await p.js('()=>t2d.nat.fx.rel') > r0 + 0.2, 'mill sideways — longer release'
     await p.js("()=>t2d.nat.setFx('res', 0.2)"); g = await p.js('()=>t2d.nat.geo()')
     pid = await p.hold(60, g['hor'] - 20, ms=60); await p.drag(pid, 60, g['hor'] - 20, 60, g['hor'] - 80, steps=8); await p.shot('natura-mountains'); await p.up()
     assert await p.js('()=>t2d.nat.fx.res') > 0.4, 'mountains up — more resonance'
@@ -803,9 +800,18 @@ async def sc_natura(p):                           # Natura: лодочка — �
     pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] + 40, q['y'], steps=8)
     await p.shot('natura-note'); await p.up(); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.nat.pads.at[2] && t2d.nat.pads.at[2].note') > n0, 'drag a lily across — higher note'
-    w0 = await p.js('()=>t2d.nat.pads.at[3].wave'); q = await p.js('()=>t2d.nat.pad(3)')
-    await p.hold(q['x'], q['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.nat.pads.at[3] && t2d.nat.pads.at[3].wave') == (w0 + 1) % 3, 'hold a lily — next flower'
+    q = await p.js('()=>t2d.nat.pad(3)'); pid = await p.hold(q['x'], q['y'], ms=700)   # держишь кувшинку — меню волн, ведёшь на пилу
+    m = await p.js('()=>t2d.nat.menu()'); assert m and m['held'], f'hold a lily — wave menu: {m}'
+    o = m['opts'][3]; await p.drag(pid, q['x'], q['y'], o['x'], o['y'], steps=8); await p.shot('natura-menu'); await p.up(); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.nat.pads.at[3] && t2d.nat.pads.at[3].wave') == 3 and not await p.js('()=>t2d.nat.menu()'), 'release on the saw flower — saw'
+    q = await p.js('()=>t2d.nat.pad(3)'); await p.hold(q['x'], q['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(100)   # отпустил мимо — меню ждёт тапа
+    m = await p.js('()=>t2d.nat.menu()'); assert m and not m['held'], f'menu stays after release: {m}'
+    o = m['opts'][4]; await p.tap(o['x'], o['y']); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.nat.pads.at[3].wave') == 4, 'tap the thistle — sharp'
+    k0 = await p.js('()=>t2d.nat.skiff()'); await p.hold(k0['x'], k0['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(100)   # кораблик на берегу — тоже меню
+    m = await p.js('()=>t2d.nat.menu()'); assert m, 'hold the skiff — wave menu'
+    o = m['opts'][3]; await p.tap(o['x'], o['y']); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.nat.skiff().home'), 'skiff stays on the bank'
     l0 = await p.js('()=>t2d.nat.pads.len'); q = await p.js('()=>t2d.nat.bridge()')
     pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'], q['y'] - 90, steps=8); await p.up()
     assert await p.js('()=>t2d.nat.pads.len') < l0, 'drag the bridge upstream — shorter loop'
