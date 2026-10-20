@@ -52,28 +52,11 @@ test('transposeMelody', () => {
   assert.equal(C.transposeMelody(steps, -99, list)[2], 0);
 });
 
-test('keyNotes', () => {
-  assert.deepEqual(Array.from(C.keyNotes(110, [0, 3, 5, 7, 10], 0)), [12, 15, 17, 19, 22, 24, 27, 29]);
-  assert.deepEqual(Array.from(C.keyNotes(55, [0, 3, 5, 7, 10], 0)), [0, 3, 5, 7, 10, 12, 15, 17]);
-  const minorC = [0, 2, 3, 5, 7, 8, 10].map((s) => (s + 3) % 12);
-  const k = Array.from(C.keyNotes(110, minorC, 3));
-  assert.equal(k[0], 3);
-  assert.equal(k.length, 8);
-  k.forEach((n) => assert.ok(minorC.includes(n % 12), `in the scale: ${n}`));
-});
-
 test('twistOrPinch', () => {
   assert.equal(C.twistOrPinch(0, 0.35, 100, 105), 'twist');
   assert.equal(C.twistOrPinch(0, 0.05, 100, 160), 'pinch');
   assert.equal(C.twistOrPinch(0, 0.05, 100, 105), null);
   assert.equal(C.twistOrPinch(3.1, -3.1, 100, 100), null);   // через ±180°: ≈4.6°, а не 355°
-});
-
-test('keyNotes never below 55 Hz', () => {          // тоника не A, пластина у самого низа
-  const minorC = [0, 2, 3, 5, 7, 8, 10].map((s) => (s + 3) % 12);
-  const k = Array.from(C.keyNotes(58, minorC, 3));
-  assert.ok(k.every((n) => n >= 0), `keys ${k}`);
-  assert.equal(k[0], 3);
 });
 
 test('snapToGrid', () => {
@@ -90,4 +73,47 @@ test('quantizeRhythm', () => {
   const q = Array.from(C.quantizeRhythm(s, 8, 4));
   assert.deepEqual(q.map((x, i) => (x ? i : -1)).filter((i) => i >= 0), [0, 4, 12]);   // 1→0, 2→4, 7→8→0 занято; 12 — за длиной, не трогается
   assert.equal(q[0].x, 1);                                // в занятое гнездо встаёт первый
+});
+
+const list5 = Array.from({ length: 61 }, (_, s) => s).filter((s) => [0, 3, 5, 7, 10].includes(s % 12));
+
+test('noteList and degPerOct without a scale: minor pentatonic up to 60', () => {
+  assert.deepEqual(Array.from(C.noteList()), list5);
+  assert.equal(C.degPerOct(), 5);
+});
+
+test('cellIdx: sectors from the top clockwise, rings by area, centre is the top ring', () => {
+  assert.equal(C.cellIdx(0, -0.95, 2, 5), 2);           // верх, край — кольцо 0, сектор 0
+  assert.equal(C.cellIdx(0.95, 0, 2, 5), 3);            // справа — 90°, сектор 1
+  assert.equal(C.cellIdx(0, 0, 2, 5), 12);              // центр — кольцо 2
+  assert.equal(C.cellIdx(0, 0.7, 2, 5), 2 + 5 + 2);     // низ, середина — кольцо 1, сектор 2
+  assert.equal(C.cellIdx(0, 1.2, 2, 5), null);          // за краем пластины
+});
+
+test('noteAt: note of the cell, null beyond the list', () => {
+  assert.equal(C.noteAt(0, -0.95, 2, 5, list5), list5[2]);
+  assert.equal(C.noteAt(0, 0, list5.length - 3, 5, list5), null);
+  assert.equal(C.noteAt(0, 1.2, 2, 5, list5), null);
+});
+
+test('cellOf and cellCenter round trip', () => {
+  for (const n of [5, 7, 12]) {
+    for (let idx = 2; idx < 2 + 3 * n; idx++) {
+      const c = C.cellOf(idx, 2, n), p = C.cellCenter(c.ring, c.sector, n);
+      assert.equal(C.cellIdx(p.x, p.y, 2, n), idx, `n=${n} idx=${idx}`);
+    }
+  }
+  assert.equal(C.cellOf(1, 2, 5), null);
+  assert.equal(C.cellOf(17, 2, 5), null);
+});
+
+test('transposeHits: k steps up, hit moves to the new cell, clamped to the rings', () => {
+  const t = Array.from(C.transposeHits([{ x: 0, y: -0.95, vel: 0.7 }, null], 2, 2, 5, list5));
+  assert.equal(C.cellIdx(t[0].x, t[0].y, 2, 5), 4);
+  assert.equal(t[0].vel, 0.7);
+  assert.equal(t[1], null);
+  const u = C.transposeHits([{ x: 0, y: -0.95, vel: 1 }], 99, 2, 5, list5)[0];
+  assert.equal(C.cellIdx(u.x, u.y, 2, 5), 16);
+  const v = C.transposeHits([{ x: 0, y: -0.95, vel: 1 }], -99, 2, 5, list5)[0];
+  assert.equal(C.cellIdx(v.x, v.y, 2, 5), 2);
 });

@@ -81,13 +81,53 @@
       return list[Math.min(list.length - 1, Math.max(0, j + k))];
     });
   }
-  // ноты клавиш: от тоники в октаве основного тона пластины — вверх по классам высот лада, 8 штук
+  // ноты клавиш (уходят вместе с клавишами): от тоники в октаве основного тона пластины — вверх по классам высот лада, 8 штук
   function keyNotes(f0, pcs, tonic) {
     const s = 12 * Math.log2(f0 / F_MIN), out = [];
     let n = tonic + 12 * Math.floor((s - tonic) / 12);
-    if (n < 0) n += 12;                          // ниже 55 Гц пластина не звучит — тоника октавой выше
+    if (n < 0) n += 12;
     for (; out.length < 8; n++) if (pcs.includes(((n % 12) + 12) % 12)) out.push(n);
     return out;
+  }
+  // ---------- раскладка ханга: по кругу — ступени лада (n секторов от верха по часовой), от края к центру — 3 октавы ----------
+  // кольца равной площади: край r > √(2/3) — кольцо 0 (ниже), до √(1/3) — 1, центр — 2 (выше); b — индекс ступени пластины в списке
+  const NOTE_TOP = 60;                           // 55–1760 Гц
+  const RING_R = [0.9, 0.7, 0.33];               // середины колец
+  function noteList() {
+    const out = [];
+    for (let s = 0; s <= NOTE_TOP; s++) if (T.scaleOn ? T.snapSemi(s) === s : [0, 3, 5, 7, 10].includes(s % 12)) out.push(s);
+    return out;
+  }
+  const degPerOct = () => (T.scaleOn && T.scalePCs ? T.scalePCs.length : 5);
+  function cellIdx(x, y, b, n) {
+    const r = Math.hypot(x, y);
+    if (r > 1) return null;
+    const ring = r > Math.sqrt(2 / 3) ? 0 : r > Math.sqrt(1 / 3) ? 1 : 2;
+    const a = r < 1e-9 ? 0 : (Math.atan2(x, -y) + Math.PI * 2) % (Math.PI * 2);   // в самом центре угла нет — сектор 0
+    return b + ring * n + (Math.floor((a / (Math.PI * 2)) * n) % n);
+  }
+  function noteAt(x, y, b, n, list) {
+    const i = cellIdx(x, y, b, n);
+    return i == null || i >= list.length ? null : list[i];
+  }
+  function cellOf(idx, b, n) {
+    const k = idx - b;
+    return k < 0 || k >= 3 * n ? null : { ring: Math.floor(k / n), sector: k % n };
+  }
+  function cellCenter(ring, sector, n) {
+    const a = ((sector + 0.5) / n) * Math.PI * 2, r = RING_R[ring];
+    return { x: r * Math.sin(a), y: -r * Math.cos(a) };
+  }
+  // поворот пластины: каждый удар — на k ступеней, в середину клетки новой ноты (в пределах колец)
+  function transposeHits(steps, k, b, n, list) {
+    const top = Math.min(b + 3 * n, list.length) - 1;
+    return steps.map((st) => {
+      if (!st) return st;
+      const i = cellIdx(st.x, st.y, b, n);
+      if (i == null) return st;
+      const c = cellOf(clamp(i + k, b, top), b, n), p = cellCenter(c.ring, c.sector, n);
+      return { ...st, x: p.x, y: p.y };
+    });
   }
   // два пальца: поворот или щипок — что изменилось сильнее (угол через ±180° — в градусах, расстояние — в px)
   function twistOrPinch(a0, a1, d0, d1) {
@@ -935,7 +975,7 @@
       if (o.fx) fxw.load(o.fx);
       sendSeq();
     },
-    core: { euclid, nearestStep, walkMelody, rotateSteps, transposeMelody, keyNotes, twistOrPinch, scaleSemis, snapToGrid, quantizeRhythm },
+    core: { euclid, nearestStep, walkMelody, rotateSteps, transposeMelody, twistOrPinch, noteList, degPerOct, cellIdx, noteAt, cellOf, cellCenter, transposeHits, scaleSemis, snapToGrid, quantizeRhythm },
     get echo() { return { label: echoDiv()[0], sec: echoSec(), fb: echoFb() }; }, get echoMax() { return echoes.length ? echoes[echoes.length - 1].dL.delayTime.maxValue : 0; },
     get echoChains() { return echoes.map((p) => ({ sec: p.sec, real: p.dL.delayTime.value })); },
     get gesture() { return gesture; }, get shownF0() { return shownF0; }, bowsOn: BOWS_ON, get ringTurn() { return { ...ringTurn }; }, get grid() { return grid; }, get waveStep() { return waveStep(); },
