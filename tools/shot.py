@@ -85,6 +85,7 @@ async def sc_worlds(p):                            # карта, Cymatica в ч�
     assert await p.js('()=>t2d.view') == 'map', 'III stays closed'
     await p.tap(100, 200); await p.pg.wait_for_timeout(800)              # четверть II — Cymatica
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 2], 'II -> Cymatica'
+    assert await p.js('()=>t2d.T2D_ok'), 'T2D helpers for worlds'
     await p.shot('cymatica')
     assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned&&v.env>0.5)'), 'Sol Niger keeps sounding'
     assert await p.js('()=>t2d.sounding()'), 'sounding() sees Sol Niger from Cymatica'
@@ -110,7 +111,13 @@ async def sc_sun(p):                               # планету тянут �
     pid = await p.hold(160, 560, ms=60)
     await p.drag(pid, 160, 560, 30, H - 40, steps=14)
     await p.pg.wait_for_timeout(250); await p.shot('sun')
-    await p.up()
+    s0 = await p.js('()=>t2d.strikes')
+    a, b = {'x': 30, 'y': H - 40, 'id': pid}, {'x': 10, 'y': H - 8, 'id': 999}
+    await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60)     # второй палец — солнце: карта, планету не отпускаем
+    await p.T('touchEnd', [b]); await p.pg.wait_for_timeout(1000)
+    assert await p.js('()=>t2d.view') == 'map'
+    assert await p.js('()=>t2d.strikes') > s0, 'sun strikes keep going off-screen'
+    await p.T('touchEnd', [a])
 
 
 async def sc_hole(p):                              # касание в чёрной дыре — планета встаёт снаружи; затащить — съедена
@@ -192,8 +199,8 @@ async def main(names):
             await pg.goto(URL); await pg.wait_for_timeout(600)
             try:
                 await SCENARIOS[n](Phone(pg, await c.new_cdp_session(pg)))
-            except AssertionError as e:             # проверка в сценарии не прошла
-                print(n, 'FAILED:', e or 'assert'); failed = True
+            except Exception as e:                  # проверка не прошла или сценарий упал
+                print(n, 'FAILED:', type(e).__name__, e); failed = True
             print(n, 'errors:', errs)
             if errs: failed = True
             await b.close()

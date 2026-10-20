@@ -146,6 +146,16 @@
     return xOf(best);
   }
   const soundX = (v) => (scl.on ? quantX(v.x) : v.x);
+  // высота в полутонах от 55 Гц → ближайшая нота лада (для других миров); без лада — как есть
+  function snapSemi(s) {
+    if (!scl.on) return s;
+    let best = s, bd = 99;
+    for (let n = Math.floor(s) - 7; n <= Math.ceil(s) + 7; n++) {
+      if (n < 0 || !inScale(n)) continue;
+      if (Math.abs(n - s) < bd) { bd = Math.abs(n - s); best = n; }
+    }
+    return best;
+  }
   const freq = (v) => F_LO * 2 ** (semi(soundX(v)) / 12);
   // сколько FM на кружке: пока она есть, фильтр приоткрывается — иначе он съедает боковые полосы
   const fmOpen = (v) => Math.min(1, v.fm + v.mods.reduce((s, m) => s + (m.type === 'fm' || m.type === 'tzfm' ? m.depth : 0), 0));
@@ -828,7 +838,7 @@
     if (Math.hypot(f.x - vb.x, f.y - vb.y) < CLR_R + 4) return { k: 'vol' };
     for (const k of ['rev', 'scl', 'clr', 'undo', 'dice']) {
       const b = btnPos(k), r = SMALL.has(k) ? CLR_R + 4 : BTN_R + 6;
-      if (Math.hypot(f.x - b.x, f.y - b.y) < r && (k !== 'rev' || cur().fx)) return { k };
+      if (Math.hypot(f.x - b.x, f.y - b.y) < r && (k !== 'rev' || cur().fx) && (k !== 'dice' || cur().dice)) return { k };
     }
     if (nav.world !== 1) return null;
     for (const o of F.values()) {             // булавка на кольце, открытом на весу
@@ -1518,7 +1528,9 @@
     const limitIn = gainNode(0.5);
     const limit = ctx.createWaveShaper(); limit.curve = soft(2.6, true); limit.oversample = '4x';
     an = ctx.createAnalyser(); an.fftSize = 2048; scopeBuf = new Float32Array(an.fftSize);
-    out.connect(hp).connect(comp).connect(master).connect(limitIn).connect(limit);
+    const masterIn = gainNode(1);               // общий вход мастера: сюда — выходы всех миров
+    out.connect(masterIn);
+    masterIn.connect(hp).connect(comp).connect(master).connect(limitIn).connect(limit);
     limit.connect(ctx.destination);
     limit.connect(an);
 
@@ -1529,6 +1541,7 @@
       for (const [key, spec] of Object.entries(v.lfo)) setLfo(v, key, spec);
     }
     for (const v of V) for (const m of v.mods) wire(v, m);
+    for (const w of Object.values(worlds)) if (w.build) w.build(ctx, masterIn);
   }
 
   function voiceNodes(v, noise) {
@@ -2333,6 +2346,22 @@
     g.restore();
   }
 
+  // планету тянут на солнце (палец заходит в его зону) — солнце бьёт её: молния, треск, отдача; глубже — чаще и сильнее.
+  // Это звук — считается в solTick, даже когда на экране карта или другой мир; молнии рисует drawSun
+  let strikes = 0;
+  function sunStrikes(now) {
+    const { ox, oy } = geo;
+    for (const f of F.values()) {
+      const v = f.voice;
+      if (!v || !f.moved || f.ui || f.parked || f.bridge || f.menu) continue;
+      const t = clamp((SUN_R + 24 - Math.hypot(f.x + v.ox - ox, f.y + v.oy - oy)) / 70);
+      if (t <= 0 || now < (v.strikeNext || 0)) continue;
+      v.strike = { t0: now, p: t, a: Math.atan2(vy(v) - oy, vx(v) - ox) };
+      v.strikeNext = now + (440 - 320 * t) * (0.6 + 0.8 * Math.random());
+      strikeSound(t); strikes++;
+    }
+  }
+
   // удар солнца: отдача — планету отбрасывает от солнца и она возвращается
   const STRIKE_MS = 110, NO_KICK = { x: 0, y: 0 };
   function kick(v, now) {
@@ -2370,17 +2399,7 @@
         g.stroke();
       }
     }
-    // планету тянут на солнце (палец заходит в его зону) — солнце бьёт её: молния, треск, отдача; глубже — чаще и сильнее
     const now = performance.now();
-    for (const f of F.values()) {
-      const v = f.voice;
-      if (!v || !f.moved || f.ui || f.parked || f.bridge || f.menu) continue;
-      const t = clamp((SUN_R + 24 - Math.hypot(f.x + v.ox - ox, f.y + v.oy - oy)) / 70);
-      if (t <= 0 || now < (v.strikeNext || 0)) continue;
-      v.strike = { t0: now, p: t, a: Math.atan2(vy(v) - oy, vx(v) - ox) };
-      v.strikeNext = now + (440 - 320 * t) * (0.6 + 0.8 * Math.random());
-      strikeSound(t);
-    }
     for (const v of V) {                        // молния живёт ~0.1 с после удара и мерцает
       const st = v.strike;
       if (!st || !v.active || now - st.t0 > STRIKE_MS || Math.random() < 0.25) continue;
@@ -2619,13 +2638,14 @@
 
     // кубик: кружок с костью; после броска кость крутится
     const dq = btnPos('dice'), diceF = [...F.values()].some((f) => f.ui === 'dice');
+    if (!cur().dice) g.globalAlpha = 0.35;     // у мира нет кубика — тусклый
     ring(dq.x, dq.y, CLR_R, diceF ? 1 : 0.45, 1.2);
     g.save(); g.translate(dq.x, dq.y); g.rotate(0.18 + (performance.now() - diceAt < 400 ? (performance.now() - diceAt) / 60 : 0));
     g.strokeStyle = ink(0.8); g.lineWidth = 1.2;
     g.beginPath(); g.roundRect ? g.roundRect(-7, -7, 14, 14, 2.5) : g.rect(-7, -7, 14, 14); g.stroke();
     g.fillStyle = ink(0.85);
     for (const [px, py] of [[-3.2, -3.2], [3.2, -3.2], [0, 0], [-3.2, 3.2], [3.2, 3.2]]) { g.beginPath(); g.arc(px, py, 1.1, 0, Math.PI * 2); g.fill(); }
-    g.restore();
+    g.restore(); g.globalAlpha = 1;
 
     // отмена: стрелка по дуге; под ней — точки по числу шагов в запасе
     const hist = hists[nav.world], u = btnPos('undo'), can = hist.length > 0, flash = performance.now() - undoAt < 250;
@@ -2659,8 +2679,9 @@
       for (const v of V) if (v.active && loop.length > 2 && pointIn(loop, vx(v), vy(v))) ring(vx(v), vy(v), 48, 0.9, 1.5);
     }
     if (sclF && !sclF.lasso) {
-      // слева от кнопки — карандаш: туда повести палец, чтобы обвести кружки
+      // слева от кнопки — карандаш: туда повести палец, чтобы обвести кружки (обводить есть что только в Sol Niger)
       const px = b.x - 64, py = b.y;
+      if (nav.world === 1) {
       g.save(); g.translate(px, py); g.rotate((-3 * Math.PI) / 4);
       g.strokeStyle = ink(0.8); g.lineWidth = 1.4;
       g.strokeRect(-12, -3.5, 20, 7);
@@ -2668,6 +2689,7 @@
       g.restore();
       g.strokeStyle = ink(0.4); g.lineWidth = 1;
       g.beginPath(); g.moveTo(b.x - BTN_R - 8, py); g.lineTo(px + 18, py); g.stroke();
+      }
 
       // список: off и лады — строки с тонкими разделителями
       const rows = ['off', ...SCALES.map((sc) => sc.label)];
@@ -2795,6 +2817,7 @@
     }
 
     if (now > chaosAt) { chaosAt = now + 400; chaosTick(now); }
+    sunStrikes(performance.now());
     zoom += (zoomT - zoom) * (1 - Math.exp(-dt / 0.06));
     if (Math.abs(zoomT - zoom) < 1e-4) zoom = zoomT;
 
@@ -2921,7 +2944,7 @@
   const WORLDS = [
     null,
     { n: 'I', title: 'Sol Niger', sub: 'orbes · strepitus' },
-    { n: 'II', title: 'Cymatica', sub: 'figurae sonorae' },   // подпись — из мира cymatica.js; Cabbala снята с карты
+    null,                                                   // II — подпись из мира cymatica.js; Cabbala снята с карты
     { n: 'III', title: 'Rosarium', sub: 'operatores quattuor' },
     { n: 'IV', title: 'Regnum', sub: 'echo et reverberatio' },
   ];
@@ -2929,7 +2952,7 @@
   const ENTER = new Set([1, 2]);                          // куда можно влететь; III и IV — пока бледные nondum
   const nav = { view: 'play', world: 1, anim: null };
   const worlds = {};                                      // номер четверти → мир
-  const cur = () => worlds[nav.world];   // view: play | map | world; anim: { t0, dir: 'out' | 'in', w }
+  const cur = () => worlds[nav.world];   // view: play | map; anim: { t0, dir: 'out' | 'in', w }
   const NAV_MS = 520;
   const snaps = {};                                       // мир → его снимок для карты (при уходе на карту)
   const arts = {};                                        // гравюры миров II–IV, рисуются один раз на размер экрана
@@ -3033,6 +3056,7 @@
     g.stroke();
     for (let w = 1; w <= 4; w++) {
       const p = panel(w), info = worlds[w] || WORLDS[w];
+      if (!info) continue;
       const right = p[0] >= cx, below = p[1] >= cy;
       const tx = right ? p[0] + 16 : p[0] + p[2] - 16, ty = below ? p[1] + p[3] - 34 : p[1] + 64;
       g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(right ? tx - 6 : tx - 150, ty - 20, 156, 46);
@@ -3277,7 +3301,7 @@
   document.addEventListener('gesturestart', () => { gestZ = zoomT; });
   document.addEventListener('gesturechange', (e) => { if (!F.size && nav.view === 'play' && nav.world === 1 && e.scale) setZoom(gestZ / e.scale); });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && V.some((v) => v.active)) wake();
+    if (document.visibilityState === 'visible' && window.t2d.sounding()) wake();
   });
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
@@ -3304,10 +3328,13 @@
     registerWorld, BG, MAP, ink, ring, dot, text, glowAt, hairBox,
     get g() { return g; }, get W() { return W; }, get H() { return H; }, get DPR() { return DPR; },
     get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
+    get ctx() { return ctx; }, hall, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,
+    MENU_DEAD, get MENU_SPAN() { return MENU_SPAN; }, HOLD_MS, DTAP_MS, PIN_MAX, get scaleOn() { return scl.on; },
   };
 
   window.t2d = {
-    worlds, get world() { return nav.world; }, get view() { return nav.view; },
+    worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return strikes; },
+    get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
     hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
     get ctx() { return ctx; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; },
