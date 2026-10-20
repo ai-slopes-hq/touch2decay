@@ -49,7 +49,7 @@
 
 Отладка из консоли: `window.t2d` (голоса, fx, scl, place/unplace, zoom, strain, linkMid…, `go(w)` — в мир без касаний), `t2d.cym` (Cymatica: ready, f0, fx, bows, energy, ringOpen, geo, strike, sandSpread).
 
-**Cymatica:** звук — `plate-worklet.js` (AudioWorklet; чистые функции `besselJ`, `MODES`, `modeRatios`, `strikeGains`, `t60s`, `resCoefs`, `pickVoice`, `shapeGrid` на верхнем уровне, процессор `plate` внизу). Сообщения в worklet: `params`, `f0`, `strike`, `bow`; из worklet: `energy` ~30/с и один раз `shapes` (сетка 96×96 форм мод для песка). `cymatica.js`: очередь сообщений до готовности узла, жесты (удар, смычок > 150 мс, двойной тап — закреплённый смычок, кольцо на метке, щипок/колесо — `setF0`), песок (`updateField`, `stepSand`), веер FX, отмена. LFO у смычков пока нет.
+**Cymatica:** звук — `plate-worklet.js` (AudioWorklet; чистые функции `besselJ`, `MODES`, `modeRatios`, `strikeGains`, `t60s`, `resCoefs`, `pickVoice`, `shapeGrid` на верхнем уровне, процессор `plate` внизу). Сообщения в worklet: `params`, `f0`, `strike`, `bow`; из worklet: `energy` ~30/с и один раз `shapes` (сетка 96×96 форм мод для песка). `cymatica.js`: очередь сообщений до готовности узла, жесты (удар, смычок > 150 мс, двойной тап — закреплённый смычок, кольцо на метке, щипок/колесо — `setF0`), песок (`updateField`, `stepSand`), веер FX, отмена. LFO у смычков пока нет. **Секвенсер:** часы — в worklet (`stepSamples`, `setSeq`, `tick`; удар секвенсера пропускается, если живой удар был меньше полшага назад), сообщения `seq` (узор целиком) и `step { r, m, time }`; в `cymatica.js` — модель `seq`, `sendSeq`, запись игрой (`recordHit`, щипок → мелодия), `astro`/`astroHit`/`drawAstro`, помощники `euclid`, `nearestStep`, `walkMelody` (`t2d.cym.core`, тесты — `tools/test-seq.mjs`).
 
 ## Производительность (важно — на iPhone лагало)
 
@@ -70,7 +70,8 @@
 `python3 -m http.server 8765` в корне, затем:
 
 - `python3 tools/shot.py [solniger|vol|planets|ring|worlds|sun|hole]` — сценарии касаний (CDP touch, 390×844) с проверками (провал или ошибка на странице — код выхода 1), скриншоты в `.shots/` — **смотреть их глазами** (Read на png).
-- `python3 tools/render.py ["()=>{…}"] [--world 2]` — офлайн-рендер звука (Tenebrae или удар по пластине Cymatica), RMS и время расчёта.
+- `python3 tools/render.py ["()=>{…}"] [--world 2] [--onsets]` — офлайн-рендер звука (Tenebrae или удар по пластине Cymatica), RMS и время расчёта; `--onsets` — узор из 4 ударов на 120 BPM, интервалы между ударами и разброс (было 0.68 мс).
+- `node --test tools/test-seq.mjs` — тесты помощников секвенсера (через `vm`).
 - `node --test tools/test-plate.mjs` — тесты звука пластины в Node (через `vm`, без зависимостей).
 - Нужен Playwright: `pip install playwright && playwright install chromium`.
 

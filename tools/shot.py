@@ -257,7 +257,45 @@ async def sc_orphan(p):                           # корзина, пока д�
     assert not await p.js('()=>t2d.sounding()'), 'no orphan bow keeps sounding after trash'
 
 
-SCENARIOS = {'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_seq(p):                               # астролябия: пуск, запись игрой, правка на кольцах, темп, кубик, корзина
+    import math
+    await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
+    g = await p.js('()=>t2d.cym.astro'); cx, cy, R1, R2, ty = g['cx'], g['cy'], g['R1'], g['R2'], g['ty']
+    slot = lambda i, R, d=0: (cx + R * math.cos(-math.pi / 2 + (i + d) * math.pi / 8), cy + R * math.sin(-math.pi / 2 + (i + d) * math.pi / 8))
+    await p.tap(cx - 30, ty); await p.pg.wait_for_timeout(500)              # ▶
+    assert await p.js('()=>t2d.cym.seq.playing'), 'play'
+    await p.tap(cx + 30, ty); await p.pg.wait_for_timeout(200)              # ●
+    assert await p.js('()=>t2d.cym.seq.rec'), 'record'
+    for dx, dy in [(-50, 0), (40, -30), (0, 50)]:
+        await p.tap(cx + dx, cy + dy); await p.pg.wait_for_timeout(300)
+    n = await p.js('()=>t2d.cym.seq.rhythm.steps.filter(Boolean).length')
+    assert n >= 2, f'taps recorded: {n}'
+    await p.tap(cx + 30, ty); await p.pg.wait_for_timeout(100)              # запись выкл
+    s8 = await p.js('()=>!!t2d.cym.seq.rhythm.steps[8]')
+    await p.tap(*slot(8, R2)); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>!!t2d.cym.seq.rhythm.steps[8]') != s8, 'tap on a rhythm tick toggles it'
+    hx, hy = slot(15.5, R2 + 12); tx, tyy = slot(7.5, R2 + 12)              # выступ длины ритма: с 16 на 8
+    pid = await p.hold(hx, hy, ms=60)
+    for k in range(1, 13):
+        a = -math.pi / 2 + (15.5 - k * (8 / 12)) * math.pi / 8
+        await p.T('touchMove', [{'x': cx + (R2 + 12) * math.cos(a), 'y': cy + (R2 + 12) * math.sin(a), 'id': pid}]); await p.pg.wait_for_timeout(16)
+    await p.up(); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.cym.seq.rhythm.len') == 8, 'drag the length handle'
+    b0 = await p.js('()=>t2d.cym.seq.bpm')
+    pid = await p.hold(cx - 30, ty, ms=120); await p.drag(pid, cx - 30, ty, cx + 30, ty, steps=8); await p.up()
+    assert await p.js('()=>t2d.cym.seq.bpm') > b0 and await p.js('()=>t2d.cym.seq.playing'), 'drag ▶ sets tempo, keeps playing'
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(600)
+    assert await p.js('()=>t2d.cym.seq.rhythm.steps.some(Boolean) && t2d.cym.seq.playing'), 'dice makes a playing pattern'
+    await p.shot('astrolabe')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>!t2d.cym.seq.rhythm.steps.some(Boolean) && t2d.cym.seq.playing'), 'trash clears, clock goes on'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.cym.seq.rhythm.steps.some(Boolean)'), 'undo brings the pattern back'
+    await p.js('()=>t2d.go(1)'); await p.pg.wait_for_timeout(500)
+    assert await p.js('()=>t2d.sounding()'), 'pattern keeps playing from the other world'
+
+
+SCENARIOS = {'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

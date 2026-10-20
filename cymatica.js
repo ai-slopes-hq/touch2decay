@@ -203,13 +203,75 @@
     return null;
   }
 
+  // ---------- астролябия: кольцо мелодии (внутри) и ритма (снаружи), 16 гнёзд от верха по часовой; внизу ▶ и ● ----------
+  function astro(g) { return { R1: g.rMax + 12, R2: g.rMax + 30, ty: g.cy + g.rMax + 64 }; }
+  const slotAng = (i) => -Math.PI / 2 + (i * Math.PI * 2) / SLOTS;
+  const slotXY = (g, i, R) => ({ x: g.cx + R * Math.cos(slotAng(i)), y: g.cy + R * Math.sin(slotAng(i)) });
+  const slotOf = (f, g) => ((((Math.atan2(f.y - g.cy, f.x - g.cx) + Math.PI / 2) / (Math.PI * 2)) * SLOTS) % SLOTS + SLOTS) % SLOTS;
+  let bpmUntil = 0, noteEdit = null;            // подписи — только пока правишь
+  function astroHit(f, g) {
+    const A = astro(g), d = Math.hypot(f.x - g.cx, f.y - g.cy);
+    if (Math.hypot(f.x - (g.cx - 30), f.y - A.ty) < 22) return { k: 'play' };
+    if (Math.hypot(f.x - (g.cx + 30), f.y - A.ty) < 22) return { k: 'rec' };
+    const hr = slotXY(g, seq.rhythm.len - 0.5, A.R2 + 12), hm = slotXY(g, seq.melody.len - 0.5, A.R1 - 11);
+    if (Math.hypot(f.x - hr.x, f.y - hr.y) < 16) return { k: 'len', ring: 'rhythm' };
+    if (Math.hypot(f.x - hm.x, f.y - hm.y) < 12) return { k: 'len', ring: 'melody' };
+    const i = Math.round(slotOf(f, g)) % SLOTS;
+    if (Math.abs(d - A.R2) < 11 && Math.abs(d - A.R2) <= Math.abs(d - A.R1)) return { k: 'rtick', i };
+    if (Math.abs(d - A.R1) < 8) return { k: 'mtick', i, r0: d, s0: seq.melody.steps[i] ?? Math.round(12 * Math.log2(plate.f0 / F_MIN)) };
+    return null;
+  }
+  function astroMove(f, g) {
+    const h = f.astro;
+    if (h.k === 'play' && f.moved) {             // зажал ▶ и ведёшь — темп
+      const bpm = Math.round(clamp(f.bpm0 + (f.x - f.x0) * 0.5, 40, 200));
+      if (bpm !== seq.bpm) { seq.bpm = bpm; sendSeq(); }
+      bpmUntil = performance.now() + 1000;
+    } else if (h.k === 'len') {
+      const len = Math.round(clamp(slotOf(f, g) + 0.5, 1, SLOTS));
+      if (len !== seq[h.ring].len) { seq[h.ring].len = len; sendSeq(); }
+    } else if (h.k === 'mtick' && f.moved) {      // засечку мелодии — от центра выше, к центру ниже (ступень лада или полутон)
+      const steps = Math.round((Math.hypot(f.x - g.cx, f.y - g.cy) - h.r0) / 6);
+      let s;
+      if (T.scaleOn) {
+        const list = scaleSemis();
+        let j = 0;
+        for (let k = 1; k < list.length; k++) if (Math.abs(list[k] - h.s0) < Math.abs(list[j] - h.s0)) j = k;
+        s = list[clamp(j + steps, 0, list.length - 1)];
+      } else s = clamp(h.s0 + steps, 0, 48);
+      if (s !== seq.melody.steps[h.i]) { seq.melody.steps[h.i] = s; sendSeq(); }
+      noteEdit = { i: h.i, until: performance.now() + 1000 };
+    }
+  }
+  function astroUp(f) {
+    const h = f.astro;
+    if (h.k === 'play' && !f.moved) play();
+    else if (h.k === 'rec') rec();
+    else if (h.k === 'rtick') { seq.rhythm.steps[h.i] = seq.rhythm.steps[h.i] ? null : { ...lastHit, vel: 1 }; sendSeq(); }
+    else if (h.k === 'mtick' && !f.moved) { seq.melody.steps[h.i] = null; sendSeq(); }
+  }
+  // метка записанного удара на пластине
+  function markAt(f, g) {
+    for (let i = 0; i < SLOTS; i++) {
+      const st = seq.rhythm.steps[i];
+      if (!st) continue;
+      const p = fromPlate(st, g);
+      if (Math.hypot(f.x - p.x, f.y - p.y) < 11) return i;
+    }
+    return -1;
+  }
+
   // ---------- касания ----------
   function down(f) {
     const g = plateGeo();
+    const h = astroHit(f, g);
+    if (h) { touches.set(f.id, f); f.astro = h; f.bpm0 = seq.bpm; return; }
     if (Math.hypot(f.x - g.cx, f.y - g.cy) > g.rMax) return;   // мимо стола
     touches.set(f.id, f);
     const b = bowAt(f, g);
     if (b) { f.cb = b; return; }
+    const mk = markAt(f, g);
+    if (mk >= 0) { f.mk = mk; return; }
     for (const o of touches.values()) {      // второй палец почти разом — щипок
       if (o !== f && !o.cb && !o.moved && f.t0 - o.t0 < 250 && !pinch) {
         pinch = { a: o, b: f, d0: Math.max(20, Math.hypot(f.x - o.x, f.y - o.y)), f0: plate.f0 };
@@ -229,6 +291,12 @@
     if (!touches.has(f.id)) return;
     if (f === ringF) { T.menuMove(f); return; }
     const g = plateGeo();
+    if (f.astro) { astroMove(f, g); return; }
+    if (f.mk != null && f.moved) {               // метку удара тащишь — место удара меняется
+      const st = seq.rhythm.steps[f.mk];
+      if (st) { const p = toPlate(f, g); st.x = p.x; st.y = p.y; sendSeq(); }
+      return;
+    }
     if (f.pinch && pinch) {
       const d = Math.max(20, Math.hypot(pinch.a.x - pinch.b.x, pinch.a.y - pinch.b.y));
       setF0(pinch.f0 * (pinch.d0 / d) ** 2, true);   // развёл — пластина больше и ниже
@@ -242,6 +310,13 @@
     touches.delete(f.id);
     const now = performance.now();
     if (f === ringF) { ringF = null; return; }
+    if (f.astro) { astroUp(f); return; }
+    if (f.mk != null) {
+      const st = seq.rhythm.steps[f.mk];
+      if (st && f.moved && Math.hypot(st.x, st.y) > 1.05) { seq.rhythm.steps[f.mk] = null; sendSeq(); }   // за край — удар удалён
+      else if (st && !f.moved) send({ t: 'strike', x: st.x, y: st.y, vel: 1, hard: 0.5 });
+      return;
+    }
     if (f.pinch) { if (pinch && (pinch.a === f || pinch.b === f)) pinch = null; return; }
     if (f.cb) {
       if (Math.hypot(f.cb.x, f.cb.y) > 1.05) {   // утащил за край — смычок убран
@@ -348,6 +423,58 @@
     }
     for (const f of touches.values()) if (f.bowing) T.ring(f.x, f.y, 26, 0.35, 1);   // живой смычок под пальцем
   }
+  // астролябия: двойные кольца с засечками гнёзд, удары ритма — точки, ноты мелодии — засечки внутрь по высоте;
+  // стрелки — пока часы идут; выступы длины; ▶/■ и ● внизу; метки ударов на пластине вспыхивают на своём шаге
+  function drawAstro(g, now) {
+    const c = T.g, A = astro(g), stepMs = 60000 / seq.bpm / 4;
+    for (const R of [A.R1, A.R2]) { T.ring(g.cx, g.cy, R, 0.4, 1); T.ring(g.cx, g.cy, R + 2.5, 0.15, 1); }
+    c.lineWidth = 1;
+    for (let i = 0; i < SLOTS; i++) {
+      const a = slotAng(i), x = Math.cos(a), y = Math.sin(a);
+      const onR = i < seq.rhythm.len, onM = i < seq.melody.len, st = seq.rhythm.steps[i], s = seq.melody.steps[i];
+      c.strokeStyle = T.ink(onR ? 0.55 : 0.12);
+      c.beginPath(); c.moveTo(g.cx + x * (A.R2 - 4), g.cy + y * (A.R2 - 4)); c.lineTo(g.cx + x * (A.R2 + 4), g.cy + y * (A.R2 + 4)); c.stroke();
+      if (st) T.dot(g.cx + x * A.R2, g.cy + y * A.R2, 2.6, onR ? 0.95 : 0.25);
+      const l = s == null ? 3 : 3 + (s % 24) * 0.5;
+      c.strokeStyle = T.ink(onM ? (s == null ? 0.35 : 0.85) : 0.12);
+      c.beginPath(); c.moveTo(g.cx + x * A.R1, g.cy + y * A.R1); c.lineTo(g.cx + x * (A.R1 - l), g.cy + y * (A.R1 - l)); c.stroke();
+    }
+    for (const [ring, R] of [['rhythm', A.R2 + 12], ['melody', A.R1 - 11]]) {   // выступы длины колец — ромбики
+      const p = slotXY(g, seq[ring].len - 0.5, R);
+      c.strokeStyle = T.ink(0.6); c.beginPath();
+      c.moveTo(p.x, p.y - 4); c.lineTo(p.x + 4, p.y); c.lineTo(p.x, p.y + 4); c.lineTo(p.x - 4, p.y); c.closePath(); c.stroke();
+    }
+    if (seq.playing && lastStep) {               // стрелки: от края стола к своему кольцу, плавно между тиками
+      const fr = clamp((now - lastStep.atMs) / stepMs);
+      for (const [i, R, a] of [[lastStep.r, A.R2 + 6, 0.6], [lastStep.m, A.R1 + 4, 0.45]]) {
+        const ang = slotAng(i + fr);
+        c.strokeStyle = T.ink(a); c.lineWidth = 0.8;
+        c.beginPath(); c.moveTo(g.cx + Math.cos(ang) * (g.rMax + 2), g.cy + Math.sin(ang) * (g.rMax + 2)); c.lineTo(g.cx + Math.cos(ang) * R, g.cy + Math.sin(ang) * R); c.stroke();
+      }
+    }
+    for (let i = 0; i < SLOTS; i++) {            // метки ударов на пластине
+      const st = seq.rhythm.steps[i];
+      if (!st) continue;
+      const p = fromPlate(st, g), hot = seq.playing && lastStep && lastStep.r === i && now - lastStep.atMs < 160;
+      if (hot) T.ring(p.x, p.y, 7, 0.9, 1.2);
+      T.dot(p.x, p.y, 2.2, i < seq.rhythm.len ? 0.8 : 0.25);
+    }
+    // ▶/■ и ●
+    for (const [x, k] of [[g.cx - 30, 'play'], [g.cx + 30, 'rec']]) {
+      c.fillStyle = 'rgba(0,0,0,0.88)'; c.beginPath(); c.arc(x, A.ty, 18, 0, Math.PI * 2); c.fill();
+      T.ring(x, A.ty, 17, 0.45, 1.2);
+    }
+    c.strokeStyle = T.ink(0.85); c.lineWidth = 1.2; c.beginPath();
+    if (seq.playing) c.rect(g.cx - 35, A.ty - 5, 10, 10);
+    else { c.moveTo(g.cx - 34, A.ty - 6); c.lineTo(g.cx - 25, A.ty); c.lineTo(g.cx - 34, A.ty + 6); c.closePath(); }
+    c.stroke();
+    if (seq.rec) T.dot(g.cx + 30, A.ty, 5, 0.95); else T.ring(g.cx + 30, A.ty, 5, 0.6, 1.2);
+    if (now < bpmUntil) T.mapText(`${seq.bpm} BPM`, g.cx - 30, A.ty - 30, 14, 0.85, 'center');
+    if (noteEdit && now < noteEdit.until) {
+      const s = seq.melody.steps[noteEdit.i], p = slotXY(g, noteEdit.i, A.R1 - 24);
+      T.mapText(s == null ? '—' : noteName(F_MIN * 2 ** (s / 12)), p.x, p.y, 13, 0.85, 'center');
+    }
+  }
   function drawLabel(g, now) {
     if (now > labelUntil) return;
     const a = Math.min(1, (labelUntil - now) / 400);
@@ -398,6 +525,7 @@
       drawPlate(g);
       stepSand(dt || 1 / 60);
       drawSand(g);
+      drawAstro(g, now);
       drawBows(g);
       drawLabel(g, now);
       drawResonator();
@@ -455,6 +583,14 @@
     get geo() { return plateGeo(); },
     get seq() { return JSON.parse(JSON.stringify(seq)); }, get lastStep() { return lastStep; },
     play, rec,
+    get astro() { const g = plateGeo(); return { ...astro(g), cx: g.cx, cy: g.cy }; },
+    load(o) {                                    // готовый узор (рендер, отладка)
+      const pad = (a) => Array.from({ length: SLOTS }, (_, i) => (a[i] === undefined ? null : a[i]));
+      if (o.bpm) seq.bpm = o.bpm;
+      if (o.rhythm) seq.rhythm = { len: o.rhythm.len, steps: pad(o.rhythm.steps) };
+      if (o.melody) seq.melody = { len: o.melody.len, steps: pad(o.melody.steps) };
+      sendSeq();
+    },
     core: { euclid, nearestStep, walkMelody },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
     bow(x, y, on = true) { send({ t: 'bow', id: 'dbg', x, y, on, exciter: 0, pressure: 0.5, amp: 0.8 }); },
