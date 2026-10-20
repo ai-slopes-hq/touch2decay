@@ -891,7 +891,7 @@
       if (inBox(f, s.close, 4)) return { k: 'void' };
       if (inBox(f, s.pitch, 4)) return { k: 'slfo', key: 'pitch' };
       if (f.y >= s.wave.y - 4 && f.y < s.wave.y + s.wave.h + 4) return { k: 'swave' };
-      for (const r of s.rows) if (f.y >= r.y && f.y < r.y + r.h) return f.x > s.lfoX - 24 && r.k !== 'amp' ? { k: 'slfo', key: r.k } : { k: 'srow', key: r.k };
+      for (const r of s.rows) if (f.y >= r.y && f.y < r.y + r.h) return f.x > s.tx1 + 4 && r.k !== 'amp' ? { k: 'slfo', key: r.k } : { k: 'srow', key: r.k };   // значение и «~» справа — LFO; слева — тянуть
       if (editor.lfo) {
         const tg = modTarget(f);
         if (tg && tg.v.lfo[tg.key] && inBox(f, offChip())) return { k: 'lfooff' };
@@ -3073,12 +3073,14 @@
       g.fillStyle = ink(1); g.beginPath(); g.arc(T(t), cy, rf ? 8 : 6.5, 0, Math.PI * 2); g.fill();
       if (lr) dot(T(lr.now), cy, 2.2, 0.7);
       text(r.k === 'amp' ? ampText(v.amp) : valueText(v, r.k), s.tx1 + 12, cy, 13, 0.9);
-      if (r.k !== 'amp') {                    // «~»: есть LFO — ярко; открыт — в рамке
+      if (r.k !== 'amp') {                    // «~» — кнопка в рамке: есть LFO — ярко и залито, открыта его панель — двойная рамка
         const on = !!v.lfo[r.k], lx = s.lfoX;
-        g.strokeStyle = ink(on ? 1 : 0.3); g.lineWidth = on ? 1.4 : 1; g.beginPath();
-        for (let i = 0; i <= 12; i++) { const X = lx - 10 + (i / 12) * 20, Y = cy + Math.sin((i / 12) * Math.PI * 2) * 4; i ? g.lineTo(X, Y) : g.moveTo(X, Y); }
+        if (on) { g.fillStyle = ink(0.14); g.fillRect(lx - 15, cy - 12, 30, 24); }
+        hairBox(lx - 15, cy - 12, 30, 24, sel ? 0.95 : on ? 0.7 : 0.45);
+        if (sel) hairBox(lx - 18, cy - 15, 36, 30, 0.4);
+        g.strokeStyle = ink(on ? 1 : 0.7); g.lineWidth = on ? 1.4 : 1.1; g.beginPath();
+        for (let i = 0; i <= 12; i++) { const X = lx - 9 + (i / 12) * 18, Y = cy + Math.sin((i / 12) * Math.PI * 2) * 4; i ? g.lineTo(X, Y) : g.moveTo(X, Y); }
         g.stroke();
-        if (sel) hairBox(lx - 15, cy - 12, 30, 24, 0.8);
       }
     }
     if (e.lfo) { const tg = modTarget(null); if (tg) drawLfoPanel(tg, now); }
