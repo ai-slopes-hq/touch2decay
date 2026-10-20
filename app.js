@@ -2681,6 +2681,21 @@
   const NAV_MS = 520;
   let snapC = null;                                       // снимок мира I для карты
   const arts = {};                                        // гравюры миров II–IV, рисуются один раз на размер экрана
+  // настоящие гравюры (art/, обработка — tools/ink.py, источники — art/CREDITS.md); грузятся при первом выходе на карту
+  const ART_SRC = { kircher: 'kircher-tree.png', leo: 'leo-viridis.png', leoWash: 'leo-viridis-wash.png', fons: 'fons-mercurialis.png', terra: 'terra-octobre.jpg' };
+  const artImg = {};
+  let artReady = 0;
+  function loadArt() {
+    if (artImg.kircher) return;
+    for (const [k, f] of Object.entries(ART_SRC)) {
+      const im = new Image();
+      im.onload = () => { im.ok = true; artReady++; };
+      im.src = `art/${f}`;
+      artImg[k] = im;
+    }
+  }
+  const img = (k) => (artImg[k] && artImg[k].ok ? artImg[k] : null);
+  let leoSun = null;                                      // в Rosarium солнце — солнце с гравюры льва
 
   // прямоугольник четверти на карте; солнце — в центре экрана
   function panel(w) {
@@ -2691,6 +2706,7 @@
   const sunCorner = (w) => [null, [0, geo.bot], [W, H], [W, 0], [0, 0]][w];
 
   function goMap() {
+    loadArt();
     if (!snapC) snapC = document.createElement('canvas');
     snapC.width = cv.width; snapC.height = cv.height;
     if (nav.view === 'play') snapC.getContext('2d').drawImage(cv, 0, 0);
@@ -2711,7 +2727,7 @@
       goWorld(dx >= 0 ? (dy < 0 ? 1 : 4) : dy < 0 ? 2 : 3);
       return;
     }
-    const c = sunCorner(nav.world);                       // в мирах II–IV: тап по солнцу — карта
+    const c = (nav.world === 3 && leoSun) || sunCorner(nav.world);   // в мирах II–IV: тап по солнцу — карта
     if (Math.hypot(f.x - c[0], f.y - c[1]) < 90) goMap();
   }
 
@@ -2828,7 +2844,7 @@
   const C = (k, a) => `rgba(${PAL[k]},${a})`;
 
   function artFor(w) {
-    const key = `${w}|${W}x${H}|${DPR}`;
+    const key = `${w}|${W}x${H}|${DPR}|${artReady}`;
     if (arts[w] && arts[w].key === key) return arts[w].c;
     const c = document.createElement('canvas');
     c.width = Math.round(W * DPR); c.height = Math.round(H * DPR);
@@ -2839,13 +2855,12 @@
     const bg = x.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.2, W / 2, H / 2, Math.hypot(W, H) * 0.6);
     bg.addColorStop(0, PAL.paper[0]); bg.addColorStop(1, PAL.paper[1]);
     x.fillStyle = bg; x.fillRect(0, 0, W, H);
-    const after = ({ 2: artCabbala, 3: artRosarium, 4: artTerra })[w](x);   // может вернуть то, что рисуется поверх солнца
+    ({ 2: artCabbala, 3: artRosarium, 4: artTerra })[w](x);
     // рамка: двойная линия; у Terra — золотая кайма, как в рукописи
     if (w === 4) { x.strokeStyle = C('gold', 0.9); x.lineWidth = 3; x.strokeRect(6, 6, W - 12, H - 12); x.lineWidth = 1; x.strokeStyle = C('red', 0.7); x.strokeRect(11.5, 11.5, W - 23, H - 23); }
     else { x.strokeStyle = P(0.45); x.lineWidth = 1; x.strokeRect(4.5, 4.5, W - 9, H - 9); x.strokeStyle = P(0.2); x.strokeRect(9.5, 9.5, W - 19, H - 19); }
     const sc = sunCorner(w), q = { 2: [Math.PI, Math.PI * 1.5], 3: [Math.PI / 2, Math.PI], 4: [0, Math.PI / 2] }[w];
-    sunGlyph(x, sc[0], sc[1], q[0], q[1], { 2: 1.3, 3: 1.5, 4: 1.9 }[w], 0, PAL.gold, PAL.disc);
-    if (after) after();
+    if (!(w === 3 && leoSun)) sunGlyph(x, sc[0], sc[1], q[0], q[1], { 2: 1.3, 3: 1.5, 4: 1.9 }[w], 0, PAL.gold, PAL.disc);
     x.font = `italic 15px ${MAP}`; x.fillStyle = w === 4 || w === 2 ? C('white', 0.7) : P(0.65); x.textAlign = 'center'; x.textBaseline = 'middle';
     x.fillText('terra incognita · nondum', W / 2, H - 32);
     PAL = null;
@@ -2872,9 +2887,24 @@
   const itext = (x, s, X, Y, size, fill, align = 'center') => {
     x.font = `italic ${size}px ${MAP}`; x.fillStyle = fill; x.textAlign = align; x.textBaseline = 'middle'; x.fillText(s, X, Y);
   };
+  // слой чернил (альфа = линия) → покрасить в цвет мира
+  function inked(im, col) {
+    const c = document.createElement('canvas');
+    c.width = im.naturalWidth; c.height = im.naturalHeight;
+    const x = c.getContext('2d');
+    x.drawImage(im, 0, 0);
+    x.globalCompositeOperation = 'source-in'; x.fillStyle = `rgb(${col})`; x.fillRect(0, 0, c.width, c.height);
+    return c;
+  }
 
-  // II — Cabbala: ночное небо и Древо Жизни — десять сфирот в традиционных цветах, 22 пути с буквами иврита.
-  // Солнце участвует: золотой луч из угла входит в Тиферет — сфиру Солнца
+  // II — Cabbala: ночное небо и Древо сфирот Афанасия Кирхера (1652), гравюра сусальным золотом;
+  // десять сфирот подложены традиционными цветами. Солнце участвует: золотой луч из угла входит в Тиферет — сфиру Солнца
+  const KIRCHER = {                                       // центры колец на гравюре, в долях картинки; радиус — доля ширины
+    r: 0.084,
+    Kether: [0.505, 0.165, '250,248,240'], Chokmah: [0.745, 0.290, '150,150,160'], Binah: [0.263, 0.284, '24,24,30'],
+    Chesed: [0.744, 0.476, '50,90,190'], Geburah: [0.257, 0.473, '190,40,40'], Tiphareth: [0.506, 0.606, '226,184,74'],
+    Netzach: [0.744, 0.690, '40,160,90'], Hod: [0.256, 0.690, '226,128,40'], Yesod: [0.515, 0.779, '120,60,170'], Malkuth: [0.518, 0.923, null],
+  };
   function artCabbala(x) {
     let seed = 5;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -2882,132 +2912,59 @@
       const X = rnd() * W, Y = rnd() * H, r = rnd() < 0.12 ? 1.6 : 0.8;
       x.fillStyle = C('gold', 0.25 + 0.55 * rnd()); x.beginPath(); x.arc(X, Y, r, 0, Math.PI * 2); x.fill();
     }
-    const cx = W * 0.47, top = H * 0.17, u = (H * 0.6) / 4.8, hx = Math.min(W * 0.27, u * 1.15);
-    const S = {
-      Kether: [0, 0, '250,248,240'], Chokmah: [1, 0.6, '150,150,160'], Binah: [-1, 0.6, '24,24,30'],
-      Chesed: [1, 1.8, '50,90,190'], Geburah: [-1, 1.8, '190,40,40'], Tiphareth: [0, 2.4, '226,184,74'],
-      Netzach: [1, 3.0, '40,160,90'], Hod: [-1, 3.0, '226,128,40'], Yesod: [0, 3.6, '120,60,170'], Malkuth: [0, 4.8, null],
-    };
-    const pt = (k) => [cx + S[k][0] * hx, top + S[k][1] * u];
-    // ось и круг небесного свода
-    x.strokeStyle = C('gold', 0.12); x.lineWidth = 1;
-    x.beginPath(); x.arc(cx, top + 2.4 * u, 3.1 * u, 0, Math.PI * 2); x.stroke();
-    x.beginPath();
-    for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; const R = 3.1 * u; x.moveTo(cx + Math.cos(a) * R, top + 2.4 * u + Math.sin(a) * R); x.lineTo(cx + Math.cos(a) * (R + 8), top + 2.4 * u + Math.sin(a) * (R + 8)); }
-    x.stroke();
-    // луч солнца из угла в Тиферет
+    caps(x, 'CABBALA', W / 2, H * 0.06 + 16, 18, C('gold', 1), 6);
+    itext(x, 'arbor vitae · decem sephiroth', W / 2, H * 0.06 + 38, 13, C('white', 0.8));
+    const tree = img('kircher');
+    if (!tree) return;
+    const top = H * 0.06 + 58, bot = H - 52;
+    const tw = Math.min(W - 24, (bot - top) * tree.naturalWidth / tree.naturalHeight), th = tw * tree.naturalHeight / tree.naturalWidth;
+    const tx = (W - tw) / 2, ty = top + (bot - top - th) * 0.35;
+    const pt = (k) => [tx + KIRCHER[k][0] * tw, ty + KIRCHER[k][1] * th], R = KIRCHER.r * tw;
+    // луч солнца из угла в Тиферет — под гравюрой
     const sc = sunCorner(2), tp = pt('Tiphareth');
     for (let k = -3; k <= 3; k++) {
       x.strokeStyle = C('gold', 0.22 - Math.abs(k) * 0.05); x.lineWidth = 1;
       x.beginPath(); x.moveTo(sc[0], sc[1]); x.lineTo(tp[0] + k * 6, tp[1] + k * 3); x.stroke();
     }
-    // 22 пути
-    const paths = [['Kether', 'Chokmah', 'א'], ['Kether', 'Binah', 'ב'], ['Kether', 'Tiphareth', 'ג'], ['Chokmah', 'Binah', 'ד'], ['Chokmah', 'Tiphareth', 'ה'], ['Chokmah', 'Chesed', 'ו'],
-      ['Binah', 'Tiphareth', 'ז'], ['Binah', 'Geburah', 'ח'], ['Chesed', 'Geburah', 'ט'], ['Chesed', 'Tiphareth', 'י'], ['Chesed', 'Netzach', 'כ'], ['Geburah', 'Tiphareth', 'ל'],
-      ['Geburah', 'Hod', 'מ'], ['Tiphareth', 'Netzach', 'נ'], ['Tiphareth', 'Yesod', 'ס'], ['Tiphareth', 'Hod', 'ע'], ['Netzach', 'Hod', 'פ'], ['Netzach', 'Yesod', 'צ'],
-      ['Netzach', 'Malkuth', 'ק'], ['Hod', 'Yesod', 'ר'], ['Hod', 'Malkuth', 'ש'], ['Yesod', 'Malkuth', 'ת']];
-    for (const [a, b] of paths) {
-      const [x1, y1] = pt(a), [x2, y2] = pt(b);
-      x.strokeStyle = C('gold', 0.75); x.lineWidth = 3.2; x.beginPath(); x.moveTo(x1, y1); x.lineTo(x2, y2); x.stroke();
-      x.strokeStyle = PALS[2].disc2; x.lineWidth = 1.6; x.beginPath(); x.moveTo(x1, y1); x.lineTo(x2, y2); x.stroke();
-    }
-    x.font = `13px "Times New Roman", serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
-    for (const [a, b, l] of paths) {
-      const [x1, y1] = pt(a), [x2, y2] = pt(b), mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-      x.fillStyle = PALS[2].disc2; x.beginPath(); x.arc(mx, my, 7, 0, Math.PI * 2); x.fill();
-      x.fillStyle = C('gold', 0.95); x.fillText(l, mx, my + 1);
-    }
-    // десять сфирот
-    const R = Math.min(17, u * 0.3);
-    for (const [k, [, , col]] of Object.entries(S)) {
-      const [X, Y] = pt(k);
-      if (col) { x.fillStyle = `rgb(${col})`; x.beginPath(); x.arc(X, Y, R, 0, Math.PI * 2); x.fill(); }
+    // сфиры — пятна цвета под кольцами
+    for (const k of Object.keys(KIRCHER)) {
+      if (k === 'r') continue;
+      const [X, Y] = pt(k), col = KIRCHER[k][2];
+      if (col) { x.fillStyle = `rgba(${col},0.6)`; x.beginPath(); x.arc(X, Y, R, 0, Math.PI * 2); x.fill(); }
       else {                                              // Малкут — четыре цвета стихий
         ['200,180,60', '110,120,50', '140,60,40', '20,20,20'].forEach((c, i) => {
-          x.fillStyle = `rgb(${c})`; x.beginPath(); x.moveTo(X, Y); x.arc(X, Y, R, -Math.PI / 4 + (i * Math.PI) / 2, Math.PI / 4 + (i * Math.PI) / 2); x.closePath(); x.fill();
+          x.fillStyle = `rgba(${c},0.6)`; x.beginPath(); x.moveTo(X, Y); x.arc(X, Y, R, -Math.PI / 4 + (i * Math.PI) / 2, Math.PI / 4 + (i * Math.PI) / 2); x.closePath(); x.fill();
         });
       }
-      x.strokeStyle = C('gold', 1); x.lineWidth = 1.4; x.beginPath(); x.arc(X, Y, R, 0, Math.PI * 2); x.stroke();
-      x.strokeStyle = C('gold', 0.35); x.lineWidth = 1; x.beginPath(); x.arc(X, Y, R + 4, 0, Math.PI * 2); x.stroke();
-      const side = S[k][0];
-      itext(x, k, X + (side ? side * (R + 8) : 0), Y + (side ? 0 : R + 13), 12, C('gold', 0.85), side > 0 ? 'left' : side < 0 ? 'right' : 'center');
     }
-    caps(x, 'CABBALA', W / 2, H * 0.06 + 16, 18, C('gold', 1), 6);
-    itext(x, 'arbor vitae · decem sephiroth', W / 2, H * 0.06 + 38, 13, C('white', 0.8));
+    x.drawImage(inked(tree, PAL.gold), tx, ty, tw, th);
   }
 
-  // III — Rosarium: алхимический пейзаж — философское дерево с плодами-солнцами и лунами, ртутный фонтан,
-  // розовый сад, холмы; зелёный лев вверху справа кусает солнце, красный лев сидит у фонтана
-  function lion(x, X, Y, s, rot, body, flip = 1) {
-    x.save(); x.translate(X, Y); x.rotate(rot); x.scale(s * flip, s);
-    x.lineJoin = 'round'; x.lineWidth = 1.2 / s;
-    const ink = P(0.9);
-    // хвост
-    x.strokeStyle = ink; x.beginPath(); x.moveTo(-28, -4); x.bezierCurveTo(-42, -6, -36, -26, -46, -30); x.stroke();
-    x.fillStyle = body; x.beginPath(); x.ellipse(-47, -31, 4, 3, -0.6, 0, Math.PI * 2); x.fill(); x.stroke();
-    // лапы — в прыжке: задние отброшены назад, передние вытянуты вперёд
-    for (const [lx, sl] of [[-22, -9], [-14, -5], [14, 7], [22, 11]]) {
-      x.fillStyle = body; x.beginPath();
-      x.moveTo(lx - 3, 3); x.lineTo(lx - 3 + sl, 20); x.lineTo(lx + 3 + sl, 22); x.lineTo(lx + 3, 3); x.closePath(); x.fill(); x.stroke();
-      x.beginPath(); x.ellipse(lx + sl + 1, 22, 4, 2, 0, 0, Math.PI * 2); x.fill(); x.stroke();
-    }
-    // туловище — поджарое, с полосой штриховки по брюху
-    x.fillStyle = body; x.beginPath(); x.ellipse(0, 0, 30, 11, 0, 0, Math.PI * 2); x.fill(); x.stroke();
-    x.strokeStyle = P(0.35); x.lineWidth = 0.8 / s;
-    for (let i = -18; i <= 18; i += 5) { x.beginPath(); x.moveTo(i, 4); x.lineTo(i + 2, 9); x.stroke(); }
-    x.strokeStyle = ink; x.lineWidth = 1.2 / s;
-    // грива — зубчатый венец вокруг головы
-    const hx = 36, hy = -14;
-    x.beginPath();
-    for (let i = 0; i <= 28; i++) { const a = (i / 28) * Math.PI * 2, r = i % 2 ? 13 : 19; i ? x.lineTo(hx + Math.cos(a) * r, hy + Math.sin(a) * r) : x.moveTo(hx + r, hy); }
-    x.closePath(); x.fill(); x.stroke();
-    // голова и раскрытая пасть
-    x.beginPath(); x.arc(hx, hy, 10, 0, Math.PI * 2); x.fill(); x.stroke();
-    x.beginPath(); x.moveTo(hx + 6, hy - 6); x.lineTo(hx + 24, hy - 12); x.lineTo(hx + 9, hy - 1); x.closePath(); x.fill(); x.stroke();
-    x.beginPath(); x.moveTo(hx + 7, hy + 3); x.lineTo(hx + 22, hy + 8); x.lineTo(hx + 6, hy + 8); x.closePath(); x.fill(); x.stroke();
-    x.fillStyle = ink; x.beginPath(); x.arc(hx + 3, hy - 4, 1.4, 0, Math.PI * 2); x.fill();
-    x.restore();
-  }
-
+  // III — Rosarium: «Розарий философов» (Франкфурт, 1550). Вверху справа зелёный лев пожирает солнце
+  // (ксилография, раскраска отмывкой: зелёный лев, золотое солнце, кровь) — солнце гравюры и есть солнце мира;
+  // ниже — ртутный фонтан, первая гравюра «Розария»; внизу розовый сад
+  const LEO_SUN = [0.716, 0.21];                          // солнце на гравюре льва, в долях (как SUN в tools/ink.py)
   function artRosarium(x) {
     hatch(x, Math.PI / 4, 9, P(0.035));
-    const hz = H * 0.6;
-    // холмы и земля
-    const hills = [[0, hz + 10], [W * 0.2, hz - 26], [W * 0.42, hz + 4], [W * 0.66, hz - 34], [W * 0.88, hz - 4], [W, hz - 14], [W, H], [0, H]];
-    x.fillStyle = 'rgba(150,140,80,0.25)'; x.beginPath(); hills.forEach((p, i) => (i ? x.lineTo(...p) : x.moveTo(...p))); x.closePath(); x.fill();
-    x.save(); x.beginPath(); hills.forEach((p, i) => (i ? x.lineTo(...p) : x.moveTo(...p))); x.closePath(); x.clip(); hatch(x, -0.3, 6, C('green', 0.25)); x.restore();
-    x.strokeStyle = P(0.8); x.lineWidth = 1.1; x.beginPath(); hills.slice(0, 6).forEach((p, i) => (i ? x.lineTo(...p) : x.moveTo(...p))); x.stroke();
-    // философское дерево: ствол, ветви, плоды — солнца и луны
-    const tx = W * 0.27, ty = hz - 6;
-    x.strokeStyle = P(0.9); x.lineWidth = 3; x.beginPath(); x.moveTo(tx, ty); x.lineTo(tx, ty - 120); x.stroke();
-    const br = [[-50, -150], [-36, -186], [0, -205], [36, -186], [52, -150], [-24, -130], [26, -128]];
-    x.lineWidth = 1.6;
-    for (const [bx, by] of br) { x.beginPath(); x.moveTo(tx, ty - 100); x.quadraticCurveTo(tx + bx * 0.3, ty + by * 0.75, tx + bx, ty + by); x.stroke(); }
-    x.fillStyle = C('green', 0.4); x.strokeStyle = C('green', 0.8); x.lineWidth = 0.9;
-    for (const [bx, by] of br) for (let k = 0; k < 4; k++) { x.beginPath(); x.ellipse(tx + bx + (k - 1.5) * 7, ty + by - 4 + (k % 2) * 6, 5, 2.6, k, 0, Math.PI * 2); x.fill(); x.stroke(); }
-    br.forEach(([bx, by], i) => {
-      const X = tx + bx, Y = ty + by - 10;
-      if (i % 2) { x.fillStyle = 'rgba(210,218,232,0.95)'; x.beginPath(); x.arc(X, Y, 6, Math.PI * 0.3, Math.PI * 1.7); x.arc(X - 3, Y, 5, Math.PI * 1.6, Math.PI * 0.4, true); x.closePath(); x.fill(); x.strokeStyle = P(0.8); x.stroke(); }
-      else { x.fillStyle = C('gold', 0.95); x.beginPath(); x.arc(X, Y, 6, 0, Math.PI * 2); x.fill(); x.strokeStyle = P(0.8); x.stroke(); }
-    });
-    itext(x, 'arbor philosophica', tx, ty + 16, 12, P(0.7));
-    // ртутный фонтан: чаша на колонне, три струи, красная вода
-    const fx0 = W * 0.64, fy = hz + H * 0.13;
-    x.fillStyle = 'rgba(255,250,235,0.5)'; x.strokeStyle = P(0.9); x.lineWidth = 1.2;
-    x.beginPath(); x.ellipse(fx0, fy, 46, 12, 0, 0, Math.PI * 2); x.fill(); x.stroke();
-    x.beginPath(); x.moveTo(fx0 - 46, fy); x.quadraticCurveTo(fx0, fy + 46, fx0 + 46, fy); x.stroke();
-    x.fillStyle = C('red', 0.45); x.beginPath(); x.ellipse(fx0, fy, 40, 9, 0, 0, Math.PI * 2); x.fill();
-    x.beginPath(); x.moveTo(fx0 - 5, fy + 22); x.lineTo(fx0 - 5, fy + 62); x.lineTo(fx0 + 5, fy + 62); x.lineTo(fx0 + 5, fy + 22); x.stroke();
-    x.beginPath(); x.moveTo(fx0, fy - 4); x.lineTo(fx0, fy - 54); x.stroke();
-    for (const s of [-1, 0, 1]) {
-      x.strokeStyle = C('red', 0.8); x.beginPath(); x.moveTo(fx0 + s * 4, fy - 50); x.quadraticCurveTo(fx0 + s * 30, fy - 62, fx0 + s * 26, fy - 6); x.stroke();
+    leoSun = null;
+    const leo = img('leo'), wash = img('leoWash'), fons = img('fons');
+    let y = 12;
+    if (leo) {
+      const lw = Math.min(W * 0.86, H * 0.42), lh = lw * leo.naturalHeight / leo.naturalWidth, lx = W - lw + 6;
+      if (wash) { x.imageSmoothingQuality = 'high'; x.drawImage(wash, lx, y, lw, lh); }
+      x.drawImage(inked(leo, PAL.ink), lx, y, lw, lh);
+      leoSun = [lx + LEO_SUN[0] * lw, y + LEO_SUN[1] * lh];
+      y += lh;
+      itext(x, 'leo viridis solem devorat', W - 22, y + 2, 12, P(0.75), 'right');
+      y += 14;
     }
-    x.fillStyle = C('gold', 0.95); x.beginPath(); x.arc(fx0, fy - 56, 6, 0, Math.PI * 2); x.fill(); x.strokeStyle = P(0.9); x.stroke();
-    itext(x, 'fons mercurialis', fx0, fy + 76, 12, P(0.7));
-    // красный лев у фонтана
-    lion(x, fx0 - 96, fy + 30, 0.7, 0, C('red', 0.7));
+    if (fons) {
+      const fw = Math.min(W * 0.8, (H * 0.84 - y) * fons.naturalWidth / fons.naturalHeight), fh = fw * fons.naturalHeight / fons.naturalWidth;
+      x.drawImage(inked(fons, PAL.ink), (W - fw) / 2, y, fw, fh);
+      itext(x, 'fons mercurialis', W / 2, y + fh + 12, 12, P(0.7));
+    }
     // розовый сад внизу: живая изгородь и розы
-    const gy = H * 0.86;
+    const gy = H * 0.9;
     x.strokeStyle = C('green', 0.85); x.lineWidth = 1;
     for (let gx = 20; gx < W - 20; gx += 22) { x.beginPath(); x.arc(gx + 11, gy, 11, Math.PI, 0); x.stroke(); }
     for (let gx = 30; gx < W - 20; gx += 44) {
@@ -3015,86 +2972,38 @@
       x.fillStyle = C('gold', 0.9); x.beginPath(); x.arc(gx, gy - 10, 1.6, 0, Math.PI * 2); x.fill();
     }
     // лента с названием и четыре стихии — четыре оператора
-    const by = H * 0.11;
+    const by = H * 0.06 + 14, bx0 = 16, bx1 = W * 0.46, bm = (bx0 + bx1) / 2;
     x.strokeStyle = P(0.8); x.lineWidth = 1; x.fillStyle = '#f6edd6';
     x.beginPath();
-    x.moveTo(W * 0.06, by - 14); x.quadraticCurveTo(W * 0.36, by - 24, W * 0.66, by - 14);
-    x.lineTo(W * 0.66, by + 14); x.quadraticCurveTo(W * 0.36, by + 4, W * 0.06, by + 14); x.closePath(); x.fill(); x.stroke();
-    caps(x, 'ROSARIUM', W * 0.36, by - 5, 15, C('red', 0.95), 4);
-    caps(x, 'PHILOSOPHORUM', W * 0.36, by + 9, 10, P(0.85), 2.5);
+    x.moveTo(bx0, by - 14); x.quadraticCurveTo(bm, by - 24, bx1, by - 14);
+    x.lineTo(bx1, by + 14); x.quadraticCurveTo(bm, by + 4, bx0, by + 14); x.closePath(); x.fill(); x.stroke();
+    caps(x, 'ROSARIUM', bm, by - 5, 15, C('red', 0.95), 4);
+    caps(x, 'PHILOSOPHORUM', bm, by + 9, 10, P(0.85), 2.5);
     const el = [['up', false, 'red'], ['up', true, 'gold'], ['down', false, 'blue'], ['down', true, 'green']];
     el.forEach(([dir, bar, col], i) => {
-      const X = W * 0.12 + i * 30, Y = by + 42, s = 9, u2 = dir === 'up' ? -1 : 1;
+      const X = bx0 + 20 + i * 26, Y = by + 40, s = 8, u2 = dir === 'up' ? -1 : 1;
       x.beginPath(); x.moveTo(X, Y + u2 * s); x.lineTo(X - s * 0.9, Y - u2 * s * 0.6); x.lineTo(X + s * 0.9, Y - u2 * s * 0.6); x.closePath();
       x.fillStyle = C(col, 0.75); x.fill(); x.strokeStyle = P(0.9); x.lineWidth = 1; x.stroke();
       if (bar) { x.beginPath(); x.moveTo(X - s * 0.7, Y); x.lineTo(X + s * 0.7, Y); x.stroke(); }
     });
-    itext(x, 'operatores quattuor', W * 0.12 + 45, by + 64, 12, P(0.7));
-    // после солнца: зелёный лев кусает солнце, с солнца капает кровь
-    return () => {
-      lion(x, W - 52, 70, 1.1, -0.75, C('green', 0.85));   // пасть — на солнечном диске в углу
-      x.fillStyle = C('red', 0.9);
-      for (const [dx, dy, r] of [[-12, 36, 2.6], [-6, 52, 2.2], [-16, 64, 1.8], [-4, 78, 1.5], [-10, 92, 1.2]]) {
-        x.beginPath(); x.arc(W + dx, dy, r, 0, Math.PI * 2); x.moveTo(W + dx - r, dy); x.lineTo(W + dx, dy - r * 2.4); x.lineTo(W + dx + r, dy); x.fill();
-      }
-      itext(x, 'leo viridis solem devorat', W - 96, 150, 12, P(0.75));
-    };
+    itext(x, 'operatores quattuor', bx0 + 8, by + 60, 12, P(0.7), 'left');
   }
 
-  // IV — Terra: средневековая живопись — ультрамариновое небо, золотые волны, малахитовые холмы, озеро, охряная земля
+  // IV — Terra: «Октябрь» из «Великолепного часослова герцога Беррийского» (братья Лимбург, ок. 1415):
+  // ультрамарин, сусальное золото, Лувр над Сеной, пахарь и сеятель. Солнце в углу светит на всё небо
   function artTerra(x) {
-    const hz = H * 0.55;
-    // небо: ультрамарин сверху светлеет к горизонту; золотые звёзды
-    const sky = x.createLinearGradient(0, 0, 0, hz);
-    sky.addColorStop(0, '#152a6e'); sky.addColorStop(1, '#4a6cc0');
-    x.fillStyle = sky; x.fillRect(0, 0, W, hz);
-    let seed = 9;
-    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    for (let i = 0; i < 40; i++) {
-      const X = 20 + rnd() * (W - 40), Y = 20 + rnd() * (hz * 0.5);
-      x.fillStyle = C('gold', 0.7 + 0.3 * rnd());
-      x.beginPath(); for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2, r = k % 2 ? 1 : 2.6; k ? x.lineTo(X + Math.cos(a) * r, Y + Math.sin(a) * r) : x.moveTo(X + r, Y); } x.closePath(); x.fill();
+    const pic = img('terra');
+    if (pic) {                                            // во весь экран, по высоте (обрезаются края)
+      const k = Math.max(W / pic.naturalWidth, H / pic.naturalHeight), pw = pic.naturalWidth * k, ph = pic.naturalHeight * k;
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(pic, (W - pw) / 2, (H - ph) / 2, pw, ph);
     }
-    for (let k = 0; k < 14; k++) {                       // солнце в углу светит на всё небо
-      const a = 0.08 + (k / 13) * (Math.PI / 2 - 0.16);
-      x.strokeStyle = C('gold', k % 2 ? 0.12 : 0.22); x.lineWidth = k % 2 ? 1 : 1.6;
-      x.beginPath(); x.moveTo(Math.cos(a) * 70, Math.sin(a) * 70); x.lineTo(Math.cos(a) * hz * 1.4, Math.sin(a) * hz * 1.4); x.stroke();
-    }
-    caps(x, 'TERRA', W / 2, H * 0.1 + 40, 20, C('gold', 1), 6);
-    itext(x, 'tres undae · echo et reverberatio', W / 2, H * 0.1 + 62, 13, C('white', 0.85));
-    // три волны — сусальным золотом с тёмным контуром
-    const waves = [['sinus', (t) => Math.sin(t * Math.PI * 2)], ['quadratum', (t) => (t % 1 < 0.5 ? 1 : -1)], ['triangulum', (t) => 1 - 4 * Math.abs((t % 1) - 0.5)]];
-    waves.forEach(([name, fn], i) => {
-      const y0 = H * 0.24 + i * H * 0.075, A = 11;
-      const path = () => { x.beginPath(); for (let px = 24; px <= W - 24; px += 1) { const py = y0 - fn((px - 24) / 70) * A; px > 24 ? x.lineTo(px, py) : x.moveTo(px, py); } };
-      path(); x.strokeStyle = P(0.6); x.lineWidth = 3.2; x.stroke();
-      path(); x.strokeStyle = C('gold', 1); x.lineWidth = 1.6; x.stroke();
-      itext(x, name, W - 26, y0 - A - 9, 12, C('white', 0.75), 'right');
-    });
-    // озеро и земля
-    const lake = x.createLinearGradient(0, hz, 0, H * 0.82);
-    lake.addColorStop(0, '#2d58a8'); lake.addColorStop(1, '#16316e');
-    x.fillStyle = lake; x.fillRect(0, hz, W, H * 0.82 - hz);
-    x.fillStyle = C('ochre', 1); x.fillRect(0, H * 0.82, W, H * 0.18);
-    x.save(); x.beginPath(); x.rect(0, H * 0.82, W, H * 0.18); x.clip(); hatch(x, 0, 6, P(0.25)); x.restore();
-    x.strokeStyle = P(0.7); x.beginPath(); x.moveTo(0, H * 0.82 + 0.5); x.lineTo(W, H * 0.82 + 0.5); x.stroke();
-    // холмы: малахит с охряными гребнями и штриховкой
-    const ridge = [[0, hz], [W * 0.08, hz - 40], [W * 0.18, hz - 22], [W * 0.32, hz - 92], [W * 0.43, hz - 48], [W * 0.55, hz - 118], [W * 0.68, hz - 60], [W * 0.78, hz - 84], [W * 0.9, hz - 30], [W, hz - 46], [W, hz]];
-    const hill = () => { x.beginPath(); ridge.forEach((p, i) => (i ? x.lineTo(...p) : x.moveTo(...p))); x.closePath(); };
-    const hg = x.createLinearGradient(0, hz - 120, 0, hz);
-    hg.addColorStop(0, `rgb(${PAL.ochre})`); hg.addColorStop(0.35, `rgb(${PAL.green})`); hg.addColorStop(1, '#2c5a36');
-    hill(); x.fillStyle = hg; x.fill();
-    x.save(); hill(); x.clip(); hatch(x, -Math.PI / 3, 5, P(0.28)); x.restore();
-    x.strokeStyle = P(0.9); x.lineWidth = 1.2; x.beginPath(); ridge.forEach((p, i) => (i ? x.lineTo(...p) : x.moveTo(...p))); x.stroke();
-    // отражение — бледным малахитом, и горизонт
-    x.setLineDash([2, 4]); x.strokeStyle = C('green', 0.7); x.beginPath(); ridge.forEach(([X, Y], i) => (i ? x.lineTo(X, 2 * hz - Y) : x.moveTo(X, 2 * hz - Y))); x.stroke(); x.setLineDash([]);
-    x.strokeStyle = C('white', 0.6); x.beginPath(); x.moveTo(0, hz + 0.5); x.lineTo(W, hz + 0.5); x.stroke();
-    // круги эха — свинцовыми белилами
-    const ex = W * 0.56, ey = hz + H * 0.13;
-    for (let i = 0; i < 9; i++) {
-      x.strokeStyle = C('white', 0.75 * 0.74 ** i); x.lineWidth = 1;
-      x.beginPath(); x.ellipse(ex, ey, 10 + i * 19, (10 + i * 19) * 0.28, 0, 0, Math.PI * 2); x.stroke();
-    }
+    // название — на тёмной полосе внизу, чтобы не спорить с миниатюрой
+    const fade = x.createLinearGradient(0, H * 0.8, 0, H);
+    fade.addColorStop(0, 'rgba(10,14,34,0)'); fade.addColorStop(0.45, 'rgba(10,14,34,0.75)'); fade.addColorStop(1, 'rgba(10,14,34,0.9)');
+    x.fillStyle = fade; x.fillRect(0, H * 0.8, W, H * 0.2);
+    caps(x, 'TERRA', W / 2, H - 92, 20, C('gold', 1), 6);
+    itext(x, 'tres undae · echo et reverberatio', W / 2, H - 66, 13, C('white', 0.85));
   }
 
   // ---------- события ----------
