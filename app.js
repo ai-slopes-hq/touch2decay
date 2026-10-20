@@ -2668,11 +2668,11 @@
   }
 
   // ---------- смежные миры: солнце — начало координат, вокруг него четыре четверти ----------
-  // I (x>0, y>0) — touch2decay, играет. II, III, IV — пока только гравюры (идеи — в ROADMAP.md).
+  // I (x>0, y>0) — Caelum, небо: планеты и орбиты, играет. II, III, IV — пока только гравюры (идеи — в ROADMAP.md).
   // Тап по солнцу — карта миров; тап по четверти — влететь в мир; в мире тап по солнцу — снова карта
   const WORLDS = [
     null,
-    { n: 'I', title: 'touch2decay', sub: 'mundus sonorum' },
+    { n: 'I', title: 'Caelum', sub: 'orbes · strepitus' },
     { n: 'II', title: 'Rosarium', sub: 'operatores quattuor' },
     { n: 'III', title: 'Hermetica', sub: 'modi resonantes' },
     { n: 'IV', title: 'Terra', sub: 'echo et reverberatio' },
