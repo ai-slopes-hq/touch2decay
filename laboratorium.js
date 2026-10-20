@@ -67,8 +67,8 @@
     const perTier = Math.max(...Array.from({ length: nT }, (_, l) => lv.filter((v) => v === l).length));
     const L0 = egg.y - 0.17 * h, yMin = scroll.y1 + 34;
     let r = Math.min(42, W / (perTier * 3.2));
-    if (nT > 1) r = Math.min(r, (L0 - yMin) / (3.6 * (nT - 1) + 2.4));
-    r = Math.max(18, r);
+    if (nT > 1) r = Math.min(r, (L0 - yMin) / (2.7 * (nT - 1) + 2.4));   // ярусы вразбежку — колбы могут стоять теснее по высоте
+    r = Math.max(20, r);
     const dy = nT > 1 ? (L0 - yMin - 2.4 * r) / (nT - 1) : 0;
     const pos = [], car = carriers();
     car.forEach((i, k) => { pos[i] = { x: W * (car.length === 1 ? 0.5 : 0.22 + (0.56 * k) / (car.length - 1)), y: L0 }; });
@@ -77,10 +77,11 @@
       at.forEach((i, k) => {
         const outs = mods.filter((m) => m[0] === i).map((m) => pos[m[1]]).filter(Boolean);
         const x = outs.length ? outs.reduce((s, p) => s + p.x, 0) / outs.length : W / 2;
-        pos[i] = { x: clamp(x + (k - (at.length - 1) / 2) * W * 0.3, W * 0.16, W * 0.84), y: L0 - l * dy };
+        const zig = at.length === 1 ? (l % 2 ? 1 : -1) * W * 0.21 : (k - (at.length - 1) / 2) * W * 0.32;   // один на ярусе — вразбежку от того, в кого льёт: трубки читаются, колонки нет
+        pos[i] = { x: clamp(x + zig, W * 0.17, W * 0.83), y: L0 - l * dy };
       });
     }
-    return { W, H, top, bot, h, shelf, egg, furn, r, pos, scroll, sun: { x: W, y: T.topY + 2, r: Math.min(64, W * 0.16) } };   // солнце — в правом верхнем углу, к центру карты
+    return { W, H, top, bot, h, shelf, egg, furn, r, pos, scroll, tiers: Array.from({ length: nT }, (_, l) => L0 - l * dy), sun: { x: W, y: T.topY + 2, r: Math.min(64, W * 0.16) } };   // солнце — в правом верхнем углу, к центру карты
   }
   const shown = [];                          // где колбы нарисованы сейчас (едут к своим ярусам)
   function ease(G, dt) {
@@ -190,6 +191,17 @@
     }
   }
 
+  // стеллаж: под каждым ярусом колб — полка двойной линией на кронштейнах (несущие — на нижней, над яйцом)
+  function drawRack(c, G) {
+    c.strokeStyle = T.ink(0.5); c.lineWidth = 1;
+    for (const y0 of G.tiers) {                    // полка — только под колбами своего яруса, шея нижних её не пересекает
+      const xs = OPS.map((_, i) => P(i)).filter((p) => Math.abs(p.y - y0) < 2).map((p) => p.x);
+      if (!xs.length) continue;
+      const y = y0 + G.r * 0.95 + 4, x0 = Math.max(10, Math.min(...xs) - G.r * 1.6), x1 = Math.min(G.W - 10, Math.max(...xs) + G.r * 1.6);
+      c.beginPath(); c.moveTo(x0, y + 0.5); c.lineTo(x1, y + 0.5); c.moveTo(x0, y + 4.5); c.lineTo(x1, y + 4.5); c.stroke();
+      c.beginPath(); for (const bx of [x0 + 10, x1 - 10]) { c.moveTo(bx, y + 5); c.lineTo(bx, y + 16); c.lineTo(bx + (bx < G.W / 2 ? 10 : -10), y + 5); } c.stroke();
+    }
+  }
   const tubes = [];                          // для попадания пальцем: [{ s, d, pts }] и пеликаны [{ i, pts }]
   function drawFlask(c, i, G, now, held) {
     const o = OPS[i], { p, yTop, yBot, hw } = flaskGeo(G, i), r = G.r, col = mixed(i);
@@ -299,7 +311,7 @@
     c.strokeStyle = T.ink(0.35); c.beginPath(); c.arc(e.x - 4, e.y - 2, rx * 0.65, Math.PI * 1.05, Math.PI * 1.4); c.stroke();
   }
   // атанор — печь-башня из кирпича; горит огонь — дрон звучит (тап по печи), выше пламя — сильнее жар (FX athanor)
-  const furnBox = (G) => ({ x0: G.W / 2 - 46, x1: G.W / 2 + 46, y0: G.furn.y0, y1: G.furn.y1 });
+  const furnBox = (G) => ({ x0: G.W / 2 - 74, x1: G.W / 2 + 74, y0: G.furn.y0, y1: G.furn.y1 });   // атанор шире: на его лице — уроборосы solve и coagula
   function drawFurnace(c, G, now) {
     const { x0, x1, y0, y1 } = furnBox(G);
     c.fillStyle = T.BG; c.fillRect(x0, y0, x1 - x0, y1 - y0);
@@ -308,13 +320,13 @@
     c.strokeStyle = T.ink(0.22); c.lineWidth = 0.8; c.beginPath();
     for (let y = y0 + 9, row = 0; y < y1; y += 9, row++) { c.moveTo(x0, y); c.lineTo(x1, y); for (let x = x0 + (row % 2 ? 9 : 0); x < x1; x += 18) { c.moveTo(x, y - 9); c.lineTo(x, y); } }
     c.stroke();
-    const ax = G.W / 2, ay = y1, aw = 24, ah = Math.min(44, (y1 - y0) * 0.75);
+    const ax = G.W / 2, ay = y1, aw = 28, ah = Math.min(52, (y1 - y0) * 0.78);
     c.fillStyle = T.BG; c.beginPath(); c.moveTo(ax - aw, ay); c.lineTo(ax - aw, ay - ah + aw); c.arc(ax, ay - ah + aw, aw, Math.PI, 0); c.lineTo(ax + aw, ay); c.closePath(); c.fill();
     c.strokeStyle = T.ink(0.85); c.lineWidth = 1.2; c.stroke();
     drawLamp(c, ax, ay, Math.min(aw * 0.75, ah * 0.32), now);
   }
   // лампа Гермеса в арке атанора: стеклянный резервуар со спиртом, фитиль; тап — загорается. Пламя — жар (athanor)
-  const lampBox = (G) => { const b = furnBox(G); return { x: G.W / 2, y: b.y1, w: 30, h: Math.min(44, (b.y1 - b.y0) * 0.75) }; };
+  const lampBox = (G) => { const b = furnBox(G); return { x: G.W / 2, y: b.y1, w: 34, h: Math.min(52, (b.y1 - b.y0) * 0.78) }; };
   function drawLamp(c, x, y, r, now) {
     const by = y - r - 2;
     c.fillStyle = T.BG; c.strokeStyle = T.ink(0.9); c.lineWidth = 1.1;
@@ -494,7 +506,7 @@
   // ---------- две крутилки-уробороса у печи: слева solve, справа coagula ----------
   // тело змеи растёт по кругу со значением; на максимуме голова кусает хвост
   const KNOBS = ['solve', 'coagula'];
-  const knobAt = (G, k) => ({ x: k === 'solve' ? G.W * 0.15 : G.W * 0.85, y: G.furn.y0 + 30, R: Math.min(26, G.W * 0.07) });
+  const knobAt = (G, k) => { const b = furnBox(G); return { x: G.W / 2 + (k === 'solve' ? -48 : 48), y: b.y0 + Math.min(30, (b.y1 - b.y0) * 0.36), R: 15 }; };   // на лице атанора, по бокам арки
   function drawKnob(c, G, k, now, held) {
     const { x, y, R } = knobAt(G, k), v = fx[k], a0 = -Math.PI / 2 + 0.32, sweep = 0.5 + v * (TAU - 0.5 - 0.42), a1 = a0 + sweep;
     const bite = v > 0.985, al = held ? 1 : 0.55 + 0.35 * v;
@@ -856,6 +868,7 @@
       const d = segDist(x, y, ...t.pts[k - 1], ...t.pts[k]);
       if (d < bd) { bd = d; best = t; }
     }
+    if (best) best.dist = bd;
     return best;
   }
   function down(f) {
@@ -1007,6 +1020,7 @@
       drawCat(c, G, now, dt);
       const heldK = new Set([...touches.values()].filter((t) => t.kind === 'knob').map((t) => t.k));
       for (const k of KNOBS) drawKnob(c, G, k, now, heldK.has(k));
+      drawRack(c, G);
       drawTubes(c, G, now);
       const held = new Set([...touches.values()].filter((t) => t.kind === 'flask').map((t) => t.i));
       for (let i = 0; i < OPS.length; i++) drawFlask(c, i, G, now, held.has(i));
@@ -1044,6 +1058,6 @@
     knob: (k) => { const q = knobAt(geo(), k); return { x: q.x, y: q.y }; },
     jug: () => { const b = jugBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
     furnace: () => { const b = lampBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
-    tubeAt: (s, d) => { const t = tubes.find((q) => q.s === s && q.d === d); return t && { x: t.pts[8][0], y: t.pts[8][1] }; },
+    tubeAt: (s, d) => { const t = tubes.find((q) => q.s === s && q.d === d), G = geo(); if (!t) return null; const p = t.pts.find((q, k) => k > 3 && !hitFlask(G, q[0], q[1])) || t.pts[8]; return { x: p[0], y: p[1] }; },   // точка трубки не над колбой
   };
 })();
