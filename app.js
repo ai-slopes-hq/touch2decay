@@ -717,7 +717,21 @@
     return clamp(Math.floor((x - L.rx) / L.cw), 0, 1) * 6 + clamp(Math.floor((y - L.top) / L.ch), 0, 5);
   };
 
-  function linkMid(dst, m) { return { x: (vx(dst) + vx(m.src)) / 2, y: (vy(dst) + vy(m.src)) / 2 }; }
+  // связь — гравитационная нить: квадратичная кривая от источника к приёмнику, прогнутая к солнцу;
+  // чем глубже связь, тем сильнее прогиб
+  function linkCurve(dst, m) {
+    const x1 = vx(m.src), y1 = vy(m.src), x2 = vx(dst), y2 = vy(dst);
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, L = Math.hypot(x2 - x1, y2 - y1) || 1;
+    let nx = -(y2 - y1) / L, ny = (x2 - x1) / L;            // поперёк нити — в сторону солнца
+    if (nx * (geo.ox - mx) + ny * (geo.oy - my) < 0) { nx = -nx; ny = -ny; }
+    const bend = Math.min(0.3 * L, 64) * (0.5 + 0.5 * m.depth);
+    return { x1, y1, cx: mx + nx * bend, cy: my + ny * bend, x2, y2 };
+  }
+  const bez = (c, t) => {
+    const u = 1 - t;
+    return { x: u * u * c.x1 + 2 * u * t * c.cx + t * t * c.x2, y: u * u * c.y1 + 2 * u * t * c.cy + t * t * c.y2 };
+  };
+  function linkMid(dst, m) { return bez(linkCurve(dst, m), 0.5); }
   const ringR = () => MENU_DEAD + MENU_SPAN + 34;
 
   // полоса громкости над панелью LFO — в опциях планеты, без лишнего луча
@@ -1809,7 +1823,8 @@
     text(br.m.type, (p.x + q.x) / 2, (p.y + q.y) / 2 - 18, 11, 0.6, 400, 'center');
   }
 
-  // связи: линия от источника к приёмнику, рисунок линии — характер; на середине — ручка
+  // связи — гравитационные нити: кривая к солнцу, штрих — характер (fm, tzfm, am, rm), по нити от источника
+  // к приёмнику летят частицы: их число — глубина, скорость — частота источника. На середине — ручка
   const LINK_DASH = { fm: [3, 6], tzfm: [1, 3], am: [10, 6], rm: [2, 2, 8, 2] };
   function drawLinks(now, skip) {
     g.save();
@@ -1821,17 +1836,22 @@
         const k = m.auto ? 0.45 : 1;
         const editing = editor && editor.m === m;
         const a = (0.15 + 0.55 * Math.min(1, s.env * 1.2)) * (0.4 + 0.6 * m.depth) * k;
-        const x1 = vx(s), y1 = vy(s), x2 = vx(v), y2 = vy(v);
+        const c = linkCurve(v, m);
         g.setLineDash(LINK_DASH[m.type]); g.lineDashOffset = -now * 0.02;
         g.strokeStyle = ink(editing && editor.cutting ? 0.12 : editing ? 0.9 : a); g.lineWidth = editing ? 1.5 : 1;
-        g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+        g.beginPath(); g.moveTo(c.x1, c.y1); g.quadraticCurveTo(c.cx, c.cy, c.x2, c.y2); g.stroke();
         g.setLineDash([]);
-        const t = ((now / 1000) * (0.3 + freq(s) / 1600)) % 1;
-        dot(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, 2.2, a);
+        // поток частиц: глубже — гуще, выше источник — быстрее; у концов тают
+        const n = 2 + Math.round(4 * m.depth), sp = 0.18 + 0.12 * Math.log2(freq(s) / F_LO);
+        const ph = (now / 1000) * sp;
+        for (let i = 0; i < n; i++) {
+          const t = (ph + i / n) % 1, pt = bez(c, t), fade = Math.sin(Math.PI * t);
+          dot(pt.x, pt.y, 1.2 + 1.6 * m.depth * fade, Math.min(1, a * 1.6) * fade);
+        }
         if (!m.auto) {
-          const c = linkMid(v, m);
-          diamond(c.x, c.y, 5, editing ? 1 : 0.7, editing);
-          text(m.type, c.x + 10, c.y - 9, 10, 0.5);
+          const mid = bez(c, 0.5);
+          diamond(mid.x, mid.y, 5, editing ? 1 : 0.7, editing);
+          text(m.type, mid.x + 10, mid.y - 9, 10, 0.5);
         }
       }
     }
@@ -2589,7 +2609,7 @@
 
   window.t2d = {
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
-    get ctx() { return ctx; }, get zoom() { return zoomT; }, strain, get editor() { return editor; },
+    get ctx() { return ctx; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; },
   };   // для отладки из консоли
 
   resize();
