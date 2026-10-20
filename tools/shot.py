@@ -239,7 +239,25 @@ async def sc_plate(p):                             # Cymatica: удар, смы�
     assert not await p.js('()=>t2d.sounding()'), 'bow stops when its finger is lifted on the map'
 
 
-SCENARIOS = {'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_orphan(p):                           # корзина, пока держишь метку смычка, — смычок не остаётся звучать невидимкой
+    await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
+    g = await p.js('()=>t2d.cym.geo'); bx, by = g['cx'] - 40, g['cy'] + 20
+    await p.pin(bx, by); await p.pg.wait_for_timeout(600)
+    assert await p.js('()=>t2d.cym.bows.length') == 1
+    c = await p.js("()=>t2d.btnPos('clr')")
+    a, b = {'x': bx, 'y': by, 'id': 71}, {'x': c['x'], 'y': c['y'], 'id': 72}
+    await p.T('touchStart', [a]); await p.pg.wait_for_timeout(60)
+    for k in range(1, 5): await p.T('touchMove', [dict(a, x=bx + 6 * k)]); await p.pg.wait_for_timeout(16)
+    a = dict(a, x=bx + 24)
+    await p.T('touchStart', [a, b]); await p.pg.wait_for_timeout(60)     # второй палец — корзина
+    await p.T('touchEnd', [b])
+    for k in range(1, 5): await p.T('touchMove', [dict(a, x=bx + 24 + 6 * k)]); await p.pg.wait_for_timeout(16)
+    await p.T('touchEnd', [dict(a, x=bx + 48)]); await p.pg.wait_for_timeout(4000)
+    assert await p.js('()=>t2d.cym.bows.length') == 0
+    assert not await p.js('()=>t2d.sounding()'), 'no orphan bow keeps sounding after trash'
+
+
+SCENARIOS = {'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

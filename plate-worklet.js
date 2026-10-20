@@ -95,17 +95,27 @@ function pickVoice(voices, hz) {
   for (let i = 1; i < voices.length; i++) if (voices[i].level < voices[best].level) best = i;
   return best;
 }
+// форма одной моды на сетке n×n: J_m(j·r) — из радиальной таблицы (1024 точки), дальше только cos(mθ) — дёшево
+function modeGrid(k, n) {
+  const d = MODES[k], RN = 1024, rad = new Float64Array(RN + 2), out = new Float32Array(n * n);
+  for (let i = 0; i <= RN + 1; i++) rad[i] = besselJ(d.m, (d.j * i) / RN) / NORM[k];
+  for (let iy = 0; iy < n; iy++) for (let ix = 0; ix < n; ix++) {
+    const x = ((ix + 0.5) / n) * 2 - 1, y = ((iy + 0.5) / n) * 2 - 1, r = Math.hypot(x, y);
+    if (r > 1) continue;
+    const u = r * RN, i = Math.floor(u), f = u - i;
+    out[iy * n + ix] = (rad[i] + (rad[i + 1] - rad[i]) * f) * Math.cos(d.m * Math.atan2(y, x));
+  }
+  return out;
+}
 // формы всех мод на сетке n×n (для песка в основном потоке)
 function shapeGrid(n) {
   const grid = new Float32Array(NM * n * n);
-  for (let k = 0; k < NM; k++) for (let iy = 0; iy < n; iy++) for (let ix = 0; ix < n; ix++) {
-    grid[k * n * n + iy * n + ix] = modeShape(k, ((ix + 0.5) / n) * 2 - 1, ((iy + 0.5) / n) * 2 - 1);
-  }
+  for (let k = 0; k < NM; k++) grid.set(modeGrid(k, n), k * n * n);
   return grid;
 }
 
 // ---------- процессор ----------
-var NV = 4, MAX_STRIKES = 16, OUT_GAIN = 0.2, STRIKE_GAIN = 5;   // удар — громкость одного касания примерно как у смычка
+var NV = 4, GRID_N = 96, SLEEP = 1e-14, MAX_STRIKES = 16, OUT_GAIN = 0.2, STRIKE_GAIN = 5;   // удар — громкость одного касания примерно как у смычка
 // смычок: трение по разности скоростей смычка и пластины в точке (кривая как у bowed-string), нормировано на покой
 function bowTable(d) { return Math.min(1, (Math.abs(d) * 5 + 0.75) ** -4); }
 
@@ -117,14 +127,14 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       this.fx = { structure: 0.66, damping: 0.5, brightness: 0.5 };
       this.f0 = 110;
       this.voices = Array.from({ length: NV }, () => ({
-        hz: 110, level: 0,
+        hz: 110, level: 0, awake: false,
         y1: new Float64Array(NM), y2: new Float64Array(NM), b1: new Float64Array(NM), b2: new Float64Array(NM),
         gs: new Float64Array(NM), gb: new Float64Array(NM), en: new Float64Array(NM), x: new Float64Array(NM),
       }));
       this.strikes = [];
       this.bows = new Map();
       this.lp = 0;                                   // шум для возбудителя «дыхание»
-      this.shapesSent = false;
+      this.grid = new Float32Array(NM * GRID_N * GRID_N); this.gridK = 0;   // сетка форм мод — по одной моде за блок
       this.count = 0; this.every = Math.round(this.fs / 30);
       this.enA = 1 - Math.exp(-1 / (0.05 * this.fs));
       this.retune();
@@ -151,7 +161,9 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       if (d.t === 'strike') {
         const hz = d.hz || this.f0, i = pickVoice(this.voices, hz), v = this.voices[i];
         if (Math.abs(1200 * Math.log2(v.hz / hz)) >= 10) this.tune(v, hz);
-        const len = Math.max(2, Math.round(((5 - 4.5 * clamp01(d.hard == null ? 0.5 : d.hard)) * this.fs) / 1000));
+        // длина импульса — твёрдость молоточка, но не дольше 0.4 периода основного тона: иначе удар гасит сам себя
+        const len = Math.max(2, Math.round(Math.min(((5 - 4.5 * clamp01(d.hard == null ? 0.5 : d.hard)) * this.fs) / 1000, (0.4 * this.fs) / hz)));
+        v.awake = true;
         if (this.strikes.length >= MAX_STRIKES) this.strikes.shift();
         this.strikes.push({ v: i, g: strikeGains(d.x, d.y), n: 0, len, a: d.vel == null ? 1 : d.vel });
         return;
@@ -166,13 +178,23 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
     }
     process(inputs, outputs) {
       const out = outputs[0], L = out[0], R = out[1] || out[0], N = L.length, fs = this.fs;
-      if (!this.shapesSent) { this.shapesSent = true; this.port.postMessage({ t: 'shapes', n: 96, grid: shapeGrid(96) }); }
+      if (this.gridK < NM) {
+        this.grid.set(modeGrid(this.gridK, GRID_N), this.gridK * GRID_N * GRID_N);
+        if (++this.gridK === NM) this.port.postMessage({ t: 'shapes', n: GRID_N, grid: this.grid });
+      }
       // смычки звучат на текущей высоте: голос этой ноты (или самый тихий, перестроенный)
       let bi = -1;
       if (this.bows.size) {
         bi = pickVoice(this.voices, this.f0);
         const bv = this.voices[bi];
         if (Math.abs(1200 * Math.log2(bv.hz / this.f0)) >= 10) this.tune(bv, this.f0);
+        bv.awake = true;
+      }
+      if (!this.strikes.length && bi < 0 && this.voices.every((v) => !v.awake)) {   // тишина: не считаем, выход — нули
+        L.fill(0); if (R !== L) R.fill(0);
+        this.count += N;
+        if (this.count >= this.every) { this.count = 0; this.report(); }
+        return true;
       }
       for (let n = 0; n < N; n++) {
         for (const v of this.voices) v.x.fill(0);
@@ -196,6 +218,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         }
         let l = 0, r = 0;
         for (const v of this.voices) {
+          if (!v.awake) continue;
           for (let k = 0; k < NM; k++) {
             const y = v.b1[k] * v.y1[k] + v.b2[k] * v.y2[k] + v.gs[k] * v.x[k];
             v.y2[k] = v.y1[k]; v.y1[k] = y;
@@ -206,6 +229,14 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         L[n] = 0.98 * Math.tanh(l * OUT_GAIN);
         if (R !== L) R[n] = 0.98 * Math.tanh(r * OUT_GAIN);
         if (++this.count >= this.every) { this.count = 0; this.report(); }
+      }
+      // голос без ударов и смычков, отзвеневший до тишины, засыпает: состояние в ноль, дальше не считается
+      for (let i = 0; i < NV; i++) {
+        const v = this.voices[i];
+        if (!v.awake || i === bi || this.strikes.some((st) => st.v === i)) continue;
+        let e = 0;
+        for (let k = 0; k < NM; k++) e += v.en[k];
+        if (e < SLEEP) { v.awake = false; v.y1.fill(0); v.y2.fill(0); v.en.fill(0); }
       }
       return true;
     }

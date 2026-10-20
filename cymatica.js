@@ -20,7 +20,7 @@
   let energy = new Float32Array(24), level = 0;
 
   // ---------- звук: worklet, зал и эхо; пока узел грузится, сообщения ждут в очереди ----------
-  let node = null, ready = false, nodes = null;
+  let node = null, ready = false, nodes = null, actx = null, entered = false, started = false;
   const queue = [];
   function send(msg) { if (ready) node.port.postMessage(msg); else queue.push(msg); }
   function sendParams() {
@@ -50,17 +50,25 @@
     lp(dR).connect(g(0.4)).connect(dL);
     dL.connect(merge, 0, 0); dR.connect(merge, 0, 1); merge.connect(out);
     nodes = { out, hallSend, echoSend };
+    actx = ctx;
     applyFx();
+    if (entered) start();
+    send({ t: 'f0', hz: plate.f0 });
+    sendParams();
+    for (const b of plate.bows) sendBow(b, true);
+  }
+  // модуль пластины — только когда в Cymatica впервые зашли и звук уже есть: тем, кто играет лишь в Sol Niger, он ничего не стоит
+  function start() {
+    if (started || !actx) return;
+    started = true;
+    const ctx = actx;
     ctx.audioWorklet.addModule(`plate-worklet.js?v=${VER}`).then(() => {
       node = new AudioWorkletNode(ctx, 'plate', { numberOfInputs: 0, outputChannelCount: [2] });
-      node.connect(out); node.connect(hallSend); node.connect(echoSend);
+      node.connect(nodes.out); node.connect(nodes.hallSend); node.connect(nodes.echoSend);
       node.port.onmessage = (e) => onMsg(e.data);
       ready = true;
       for (const m of queue.splice(0)) node.port.postMessage(m);
     });
-    send({ t: 'f0', hz: plate.f0 });
-    sendParams();
-    for (const b of plate.bows) sendBow(b, true);
   }
   function onMsg(d) {
     if (d.t === 'energy') { energy = d.e; level = d.voices.reduce((s, v) => s + v.level, 0); updateField(); }
@@ -205,6 +213,11 @@
     }
     lastTap = { t: now, x: f.x, y: f.y };
   }
+  // корзина или отмена, пока палец держит метку или кольцо открыто: палец отпускает старый смычок,
+  // иначе он снова включил бы в worklet смычок, которого больше нет в plate.bows
+  function detach() {
+    for (const f of touches.values()) { f.cb = null; if (f === ringF) { f.menu = null; ringF = null; } }
+  }
   // кольцо закреплённого смычка — на весу, как веер FX: центр — откат, отпустил — значения остаются
   const BOW_SECTORS = [
     { key: 'exciter', label: 'bow ↔ breath', ang: -Math.PI / 2 },
@@ -326,6 +339,7 @@
     corner: { hit: (f) => Math.hypot(f.x - T.W, f.y - (T.H - T.safeBot)) < 46, draw: drawResonator },
     fx: fxw,
     build, tick,
+    enter() { entered = true; start(); },
     draw(now, dt) {
       const c = T.g, g = plateGeo();
       c.fillStyle = T.BG; c.fillRect(0, 0, T.W, T.H);
@@ -348,7 +362,7 @@
       sendParams();
       setF0(F_MIN * 2 ** ((R() * 36) / 12));
     },
-    clear() { for (const b of plate.bows) sendBow(b, false); plate.bows = []; },
+    clear() { detach(); for (const b of plate.bows) sendBow(b, false); plate.bows = []; },
     snapshot: () => JSON.stringify({
       f0: r4(plate.f0),
       fx: Object.fromEntries(Object.entries(plate.fx).map(([k, v]) => [k, r4(v)])),
@@ -356,7 +370,7 @@
     }),
     restore(js) {
       const st = JSON.parse(js);
-      if (!st.fx) return;                        // пустой снимок — до первого жеста
+      detach();
       for (const b of plate.bows) sendBow(b, false);
       plate.f0 = st.f0; Object.assign(plate.fx, st.fx);
       plate.bows = st.bows.map((b) => ({ ...b, id: `b${bowId++}` }));
