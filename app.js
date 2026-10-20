@@ -692,10 +692,10 @@
     if (k === 'undo') return { x: W - 66, y };
     if (k === 'dice') return { x: W - 105, y };
     if (k === 'rev') return { x: W - 150, y };
-    if (k === 'vol') return { x: W - 230, y };
+    if (k === 'vol') return { x: W - 238, y };
     return { x: W - 196, y };
   };
-  // громкость — общая на всё приложение, узкий фейдер перед ладом; зажал — вниз выдвигается длинная шкала,
+  // громкость — общая на всё приложение, кружок с фейдером перед ладом; зажал — вниз выдвигается длинная шкала,
   // палец ведёт её без скачка. Снизу off, выше нуля — до +6 дБ (сильнее в мягкий лимитер). Запоминается на устройстве
   const VOL_TRAVEL = 220, VOL_LO = -48, VOL_HI = 6, VOL_DEF = -VOL_LO / (VOL_HI - VOL_LO);
   let vol = VOL_DEF, masterG = null;
@@ -811,7 +811,7 @@
       if (performance.now() < gh.until && Math.hypot(f.x - p.x, f.y - p.y) < PIN_R + 14) return { k: 'pin', ghost: gh.menu };
     }
     const vb = btnPos('vol');
-    if (Math.abs(f.x - vb.x) < 15 && Math.abs(f.y - vb.y) < 26) return { k: 'vol' };
+    if (Math.hypot(f.x - vb.x, f.y - vb.y) < CLR_R + 4) return { k: 'vol' };
     for (const k of ['rev', 'scl', 'clr', 'undo', 'dice']) {
       const b = btnPos(k), r = SMALL.has(k) ? CLR_R + 4 : BTN_R + 6;
       if (Math.hypot(f.x - b.x, f.y - b.y) < r) return { k };
@@ -2537,16 +2537,17 @@
     }
   }
 
-  // громкость: узкая шкала-гравюра — двойная линия, засечка нуля, риска уровня; зажата — длинная шкала вниз с подписью
+  // громкость: кружок, в нём фейдер-гравюра — двойная линия, засечка нуля, риска уровня; зажат — длинная шкала вниз с подписью
   function drawVol(held, dim) {
-    const b = btnPos('vol'), h = 30, y0 = b.y - h / 2, ly = (t) => y0 + (1 - t) * h, z = ly(VOL_DEF);
-    g.fillStyle = 'rgba(0,0,0,0.88)'; g.fillRect(b.x - 9, y0 - 6, 18, h + 12);
+    const b = btnPos('vol'), h = 18, y0 = b.y - h / 2, ly = (t) => y0 + (1 - t) * h, z = ly(VOL_DEF);
+    g.fillStyle = 'rgba(0,0,0,0.88)'; g.beginPath(); g.arc(b.x, b.y, CLR_R + 1, 0, Math.PI * 2); g.fill();
     const a = dim ? 0.15 : 1;
+    ring(b.x, b.y, CLR_R, (held ? 1 : 0.45) * a, 1.2);
     g.strokeStyle = ink(0.35 * a); g.lineWidth = 1;
     g.beginPath(); g.moveTo(b.x - 1.5, y0); g.lineTo(b.x - 1.5, y0 + h); g.moveTo(b.x + 1.5, y0); g.lineTo(b.x + 1.5, y0 + h); g.stroke();
     g.beginPath(); g.moveTo(b.x - 5, z); g.lineTo(b.x - 2.5, z); g.moveTo(b.x + 2.5, z); g.lineTo(b.x + 5, z); g.stroke();
     g.strokeStyle = ink((held ? 1 : 0.8) * a); g.lineWidth = 1.6;
-    g.beginPath(); g.moveTo(b.x - 6, ly(vol)); g.lineTo(b.x + 6, ly(vol)); g.stroke();
+    g.beginPath(); g.moveTo(b.x - 5.5, ly(vol)); g.lineTo(b.x + 5.5, ly(vol)); g.stroke();
     if (!held) return;
     const top = b.y + 34, L = VOL_TRAVEL, sy = (t) => top + (1 - t) * L;
     g.fillStyle = 'rgba(0,0,0,0.9)'; g.fillRect(b.x - 22, top - 14, 92, L + 28);
@@ -2564,6 +2565,7 @@
     text(volText(vol), b.x + 14, sy(vol), 14, 0.95);
   }
 
+  const TITLE = 'Sol Niger';                  // заголовок — имя мира: чёрное солнце
   function drawUI() {
     let revF = null, sclF = null, volF = null;
     for (const f of F.values()) { if (f.ui === 'rev') revF = f; if (f.ui === 'scl') sclF = f; if (f.ui === 'vol') volF = f; }
@@ -2573,8 +2575,8 @@
     const tb = g.createLinearGradient(0, 0, 0, scopeY + 64);
     tb.addColorStop(0, 'rgba(0,0,0,0.85)'); tb.addColorStop(0.6, 'rgba(0,0,0,0.55)'); tb.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = tb; g.fillRect(0, 0, W, scopeY + 64);
-    mapText('touch2decay', 16, scopeY + 20, 19, sclF || revF ? 0.12 : 0.85);   // при открытом тулбоксе или веере FX заголовок уходит в тень
-    g.font = `italic 19px ${MAP}`; titleW = g.measureText('touch2decay').width;
+    mapText(TITLE, 16, scopeY + 20, 21, sclF || revF ? 0.12 : 0.85);   // при открытом тулбоксе или веере FX заголовок уходит в тень
+    g.font = `italic 21px ${MAP}`; titleW = g.measureText(TITLE).width;
     drawVol(!!volF, !!(sclF || revF));
     // кнопки лежат поверх карты — у каждой тёмная подложка
     const pad = (p, rr) => { g.fillStyle = 'rgba(0,0,0,0.88)'; g.beginPath(); g.arc(p.x, p.y, rr, 0, Math.PI * 2); g.fill(); };
