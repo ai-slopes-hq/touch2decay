@@ -190,6 +190,10 @@ async def sc_plate(p):                             # Cymatica: удар, смы�
     await p.tap(cx, cy); await p.pg.wait_for_timeout(700)                # звук строится — удар ждёт в очереди
     assert await p.js('()=>t2d.cym.ready'), 'worklet ready'
     assert await p.js('()=>Math.max(...t2d.cym.energy)') > 0, 'first strike is heard'
+    await p.js('()=>t2d.cym.strike(0, 0)'); await p.pg.wait_for_timeout(150)   # песок уходит в узлы
+    s1 = await p.js('()=>t2d.cym.sandSpread()'); await p.pg.wait_for_timeout(1500)
+    s2 = await p.js('()=>t2d.cym.sandSpread()'); await p.shot('plate')
+    assert s2 < s1, f'sand settles on the nodal lines: {s1} -> {s2}'
     pid = await p.hold(cx + 30, cy, ms=600)                              # держишь — смычок
     assert await p.js('()=>t2d.cym.live') == 1 and await p.js('()=>t2d.sounding()'), 'bow while held'
     await p.up(); await p.pg.wait_for_timeout(200)

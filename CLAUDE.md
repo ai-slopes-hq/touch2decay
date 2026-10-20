@@ -47,7 +47,9 @@
 9. **Нагрузка**: `measureStrain` (время кадра, отставание звуковых часов, доля графа) → `drawStrain`.
 10. **Миры** (Universum): I · Sol Niger, II · Cymatica (`cymatica.js`), III · Rosarium и IV · Regnum — бледные гравюры *nondum* (`artRosarium`, `artRegnum`, палитры `PALS`, `art/`; `artCabbala` и Кирхер остались в коде, на карте не используются). **Реестр миров:** `worlds`, `registerWorld(n, w)`, `cur()`; интерфейс мира — `title, sub, corner {hit, draw}, fx | null {sectors, get, set, text, arc, save, load}, tick?, draw, down, move, up, wheel?, dice, clear, snapshot, restore, sounding, enter?, leave?`. Sol Niger — объект `solNiger` поверх своих функций (`solTick`, `solDraw`, `solDown/Move/Up`). Касание принадлежит миру, где началось (`f.world`). У каждого мира своя отмена (`hists`, `lasts`). Миры из других файлов получают `window.T2D` (регистрация, `g`, `W/H/DPR`, `topY`, `safeBot`, `level`, `ink`, `ring`, `dot`, `text`, `glowAt`, `hairBox`). Карта: снимок мира при уходе (`snaps`). **Предмет в углу каждого мира — участник сцены, не ярлык** (солнце, резонатор Гельмгольца).
 
-Отладка из консоли: `window.t2d` (голоса, fx, scl, place/unplace, zoom, strain, linkMid…).
+Отладка из консоли: `window.t2d` (голоса, fx, scl, place/unplace, zoom, strain, linkMid…, `go(w)` — в мир без касаний), `t2d.cym` (Cymatica: ready, f0, fx, bows, energy, ringOpen, geo, strike, sandSpread).
+
+**Cymatica:** звук — `plate-worklet.js` (AudioWorklet; чистые функции `besselJ`, `MODES`, `modeRatios`, `strikeGains`, `t60s`, `resCoefs`, `pickVoice`, `shapeGrid` на верхнем уровне, процессор `plate` внизу). Сообщения в worklet: `params`, `f0`, `strike`, `bow`; из worklet: `energy` ~30/с и один раз `shapes` (сетка 96×96 форм мод для песка). `cymatica.js`: очередь сообщений до готовности узла, жесты (удар, смычок > 150 мс, двойной тап — закреплённый смычок, кольцо на метке, щипок/колесо — `setF0`), песок (`updateField`, `stepSand`), веер FX, отмена. LFO у смычков пока нет.
 
 ## Производительность (важно — на iPhone лагало)
 
@@ -68,7 +70,8 @@
 `python3 -m http.server 8765` в корне, затем:
 
 - `python3 tools/shot.py [solniger|vol|planets|ring|worlds|sun|hole]` — сценарии касаний (CDP touch, 390×844) с проверками (провал или ошибка на странице — код выхода 1), скриншоты в `.shots/` — **смотреть их глазами** (Read на png).
-- `python3 tools/render.py ["()=>{…}"]` — офлайн-рендер звука, RMS и время расчёта.
+- `python3 tools/render.py ["()=>{…}"] [--world 2]` — офлайн-рендер звука (Sol Niger или удар по пластине Cymatica), RMS и время расчёта.
+- `node --test tools/test-plate.mjs` — тесты звука пластины в Node (через `vm`, без зависимостей).
 - Нужен Playwright: `pip install playwright && playwright install chromium`.
 
 ## Уже решено и отвергнуто (не возвращать без запроса)

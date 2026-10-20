@@ -63,10 +63,59 @@
     for (const b of plate.bows) sendBow(b, true);
   }
   function onMsg(d) {
-    if (d.t === 'energy') { energy = d.e; level = d.voices.reduce((s, v) => s + v.level, 0); }
+    if (d.t === 'energy') { energy = d.e; level = d.voices.reduce((s, v) => s + v.level, 0); updateField(); }
     else if (d.t === 'shapes') shapes = d;
   }
   let shapes = null;                         // формы мод на сетке — для песка
+
+  // ---------- песок Хладни: где пластина колеблется — крупинки скачут, в узлах — оседают ----------
+  const SAND = 2500, GN = 96, SAND_STEP = 0.06;
+  const sand = { x: new Float32Array(SAND), y: new Float32Array(SAND) };
+  for (let i = 0; i < SAND; i++) {           // поначалу ровным слоем по кругу
+    const r = Math.sqrt(Math.random()), a = Math.random() * Math.PI * 2;
+    sand.x[i] = r * Math.cos(a); sand.y[i] = r * Math.sin(a);
+  }
+  let field = null, quiet = true;
+  // поле колебаний A = √(Σ w_k·φ_k²) на сетке, нормировано по максимуму; в тишине не пересчитывается.
+  // Вес моды — квадрат её энергии: фигуру, как на настоящей пластине, рисуют главные моды, слабые её не размывают
+  function updateField() {
+    if (!shapes) return;
+    let tot = 0;
+    for (let k = 0; k < 24; k++) tot += energy[k];
+    quiet = tot < 1e-6;
+    if (quiet) return;
+    const n2 = GN * GN, grid = shapes.grid;
+    if (!field) field = new Float32Array(n2);
+    field.fill(0);
+    let top = 0;
+    for (let k = 0; k < 24; k++) top = Math.max(top, energy[k]);
+    for (let k = 0; k < 24; k++) {
+      const ek = (energy[k] / top) ** 2;
+      if (ek < 1e-4) continue;
+      for (let i = 0, o = k * n2; i < n2; i++) { const s = grid[o + i]; field[i] += ek * s * s; }
+    }
+    let mx = 0;
+    for (let i = 0; i < n2; i++) { field[i] = Math.sqrt(field[i]); if (field[i] > mx) mx = field[i]; }
+    if (mx > 0) for (let i = 0; i < n2; i++) field[i] /= mx;
+  }
+  function fieldAt(x, y) {
+    const ix = Math.floor(((x + 1) / 2) * GN), iy = Math.floor(((y + 1) / 2) * GN);
+    return ix < 0 || iy < 0 || ix >= GN || iy >= GN ? 0 : field[iy * GN + ix];
+  }
+  function stepSand(dt) {
+    if (quiet || !field) return;
+    const k = SAND_STEP * Math.min(3, dt * 60);
+    for (let i = 0; i < SAND; i++) {
+      const s = fieldAt(sand.x[i], sand.y[i]) * k, a = Math.random() * Math.PI * 2;
+      const x = sand.x[i] + Math.cos(a) * s, y = sand.y[i] + Math.sin(a) * s;
+      if (x * x + y * y < 1) { sand.x[i] = x; sand.y[i] = y; }   // за край не уходит
+    }
+  }
+  function drawSand(g) {
+    const c = T.g;
+    c.fillStyle = T.ink(0.75);
+    for (let i = 0; i < SAND; i++) c.fillRect(g.cx + sand.x[i] * g.r - 0.65, g.cy + sand.y[i] * g.r - 0.65, 1.3, 1.3);
+  }
   function sendBow(b, on) { send({ t: 'bow', id: b.id, x: b.x, y: b.y, on, exciter: b.exciter, pressure: b.pressure, amp: b.amp }); }
 
   // ---------- высота = размер пластины ----------
@@ -249,9 +298,9 @@
   }
 
   // резонатор Гельмгольца: латунный шар с горлышком, выступает из правого нижнего угла на четверть;
-  // дышит общей громкостью: линии ярче, у горлышка дрожит воздух
+  // настроен на основной тон пластины: звучит мода (0,1) — линии ярче, у горлышка дрожит воздух
   function drawResonator() {
-    const g = T.g, x = T.W, y = T.H - T.safeBot, L = T.level, a = 0.45 + 0.4 * L;
+    const g = T.g, x = T.W, y = T.H - T.safeBot, L = Math.min(1, Math.sqrt(energy[0]) * 2), a = 0.45 + 0.4 * L;
     g.fillStyle = T.BG; g.beginPath(); g.arc(x, y, 36, 0, Math.PI * 2); g.fill();
     T.ring(x, y, 34, a, 1);
     T.ring(x, y, 30, a * 0.5, 0.8);
@@ -277,10 +326,12 @@
     corner: { hit: (f) => Math.hypot(f.x - T.W, f.y - (T.H - T.safeBot)) < 46, draw: drawResonator },
     fx: fxw,
     build, tick,
-    draw(now) {
+    draw(now, dt) {
       const c = T.g, g = plateGeo();
       c.fillStyle = T.BG; c.fillRect(0, 0, T.W, T.H);
       drawPlate(g);
+      stepSand(dt || 1 / 60);
+      drawSand(g);
       drawBows(g);
       drawLabel(g, now);
       drawResonator();
@@ -323,5 +374,11 @@
     get ringOpen() { return !!ringF; }, get live() { return [...touches.values()].filter((f) => f.bowing).length; },
     get geo() { return plateGeo(); },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
+    sandSpread() {                               // среднее поле под крупинками: песок в узлах — меньше
+      if (!field) return 1;
+      let s = 0;
+      for (let i = 0; i < SAND; i++) s += fieldAt(sand.x[i], sand.y[i]);
+      return s / SAND;
+    },
   };
 })();
