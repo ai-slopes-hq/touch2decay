@@ -161,12 +161,12 @@
   // как прежде делили ширину: нижним октавам — больше всего места (sub и bass — около двух третей)
   const EDGE = 26;            // отступ кружков от краёв поля
   const EDGE_B = EDGE;        // снизу кнопок нет
-  const SUN_R = 54;
+  const SUN_R = 100;          // зона солнца: лучи (до ~70) + планета (до 34) — планеты на солнце не наезжают; 55 Гц — на её краю
   const EDGE_T = 64;          // сверху — ниже строки с заголовком и кнопками
   const geo = { ox: 0, oy: 0, top: 0, bot: 0, step: 2, r: [0], a: [0] };
   function arcSpan(r) {
     const w = W - EDGE, h = geo.oy - geo.top - EDGE_T;
-    if (r <= SUN_R) return null;             // у самого солнца планет нет — там кнопка карты миров
+    if (r <= SUN_R) return null;             // у самого солнца планет нет
     const lo = Math.max(Math.asin(Math.min(1, EDGE_B / r)), Math.acos(Math.min(1, w / r)));
     const hi = Math.min(Math.acos(Math.min(1, EDGE / r)), Math.asin(Math.min(1, h / r)));
     return hi > lo ? [lo, hi] : null;
