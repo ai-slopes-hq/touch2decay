@@ -722,7 +722,14 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     jg = await p.js('()=>t2d.lab.jug()'); await p.tap(jg['x'], jg['y']); await p.pg.wait_for_timeout(700)
     await p.shot('lab-jug'); await p.pg.wait_for_timeout(300)
     assert not await p.js('()=>t2d.lab.fire') and not any(v['latched'] for v in await p.js('()=>t2d.lab.voices')), 'jug — fire out, kept jars quiet'
-    await p.js("()=>{t2d.lab.setFx('solve', 0.8); t2d.lab.setFx('coagula', 0.7)}"); await p.pg.wait_for_timeout(300)
+    await p.js("()=>{t2d.lab.setFx('solve', 0.2); t2d.lab.setFx('coagula', 0)}")
+    for k, d in (('solve', 96), ('coagula', 112)):                        # уроборосы у печи: вверх — больше
+        q = await p.js(f"()=>t2d.lab.knob('{k}')"); pid = await p.hold(q['x'], q['y'], ms=60)
+        await p.drag(pid, q['x'], q['y'], q['x'], q['y'] - d, steps=8)
+        if k == 'coagula': await p.shot('lab-knob')
+        await p.up(); await p.pg.wait_for_timeout(100)
+    v = await p.js('()=>t2d.lab.fx')
+    assert abs(v['solve'] - 0.8) < 0.02 and abs(v['coagula'] - 0.7) < 0.02, f'ouroboros knobs set solve and coagula: {v}'
     assert await p.js('()=>t2d.lab.solveOn'), 'coagula up — solve·coagula on'
     await p.shot('lab-solve')
     await p.js("()=>t2d.lab.setFx('coagula', 0)"); await p.pg.wait_for_timeout(100)

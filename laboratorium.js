@@ -210,7 +210,8 @@
     c.strokeStyle = T.ink(0.35); c.lineWidth = 1;
     c.beginPath(); c.arc(p.x - hw * 0.15, (yTop + yBot) / 2, hw * 0.62, Math.PI * 1.08, Math.PI * 1.4); c.stroke();
     if (o.fb > 0.02) {                           // пеликан — наружу, толще — сильнее
-      const sd = p.x <= G.W / 2 ? -1 : 1;
+      let sd = p.x <= G.W / 2 ? -1 : 1;
+      if (p.x + sd * (hw + r * 1.6) < 8 || p.x + sd * (hw + r * 1.6) > G.W - 8) sd = -sd;   // у края — петля внутрь, не за экран
       const sx = p.x + sd * nk.nw, s0 = nk.neckTop + r * 0.35, ex = p.x + sd * hw * 0.92, ey = (yTop + yBot) / 2 + r * 0.15;
       const cp = [[sx, s0], [sx + sd * r * 1.5, s0 - r * 0.9], [ex + sd * r * 1.4, ey - r * 0.3], [ex, ey]];
       tube(c, () => { c.beginPath(); c.moveTo(...cp[0]); c.bezierCurveTo(...cp[1], ...cp[2], ...cp[3]); }, 2 + 3 * o.fb, rgba(col, 0.85), now, o.fb * heat);
@@ -360,6 +361,35 @@
     }, 450);
   }
 
+  // ---------- две крутилки-уробороса у печи: слева solve, справа coagula ----------
+  // тело змеи растёт по кругу со значением; на максимуме голова кусает хвост
+  const KNOBS = ['solve', 'coagula'];
+  const knobAt = (G, k) => ({ x: k === 'solve' ? G.W * 0.15 : G.W * 0.85, y: G.furn.y0 + 30, R: Math.min(26, G.W * 0.07) });
+  function drawKnob(c, G, k, now, held) {
+    const { x, y, R } = knobAt(G, k), v = fx[k], a0 = -Math.PI / 2 + 0.32, sweep = 0.5 + v * (TAU - 0.5 - 0.42), a1 = a0 + sweep;
+    const bite = v > 0.985, al = held ? 1 : 0.55 + 0.35 * v;
+    c.strokeStyle = T.ink(0.12); c.lineWidth = 1; c.setLineDash([1.5, 4]);   // куда ещё может дорасти
+    c.beginPath(); c.arc(x, y, R, 0, TAU); c.stroke(); c.setLineDash([]);
+    c.strokeStyle = T.ink(al); c.lineWidth = 1.1;
+    c.beginPath(); c.arc(x, y, R + 4, a0 + 0.12, a1); c.stroke();
+    c.beginPath(); c.arc(x, y, R - 4, a0 + 0.12, a1); c.stroke();
+    c.beginPath(); c.moveTo(x + Math.cos(a0) * R, y + Math.sin(a0) * R);          // хвост — остриём
+    c.lineTo(x + Math.cos(a0 + 0.12) * (R + 4), y + Math.sin(a0 + 0.12) * (R + 4)); c.moveTo(x + Math.cos(a0) * R, y + Math.sin(a0) * R);
+    c.lineTo(x + Math.cos(a0 + 0.12) * (R - 4), y + Math.sin(a0 + 0.12) * (R - 4)); c.stroke();
+    c.strokeStyle = T.ink(al * 0.6); c.lineWidth = 0.8; c.beginPath();           // чешуя
+    for (let a = a0 + 0.22; a < a1 - 0.05; a += 0.17) { c.moveTo(x + Math.cos(a) * (R - 3), y + Math.sin(a) * (R - 3)); c.lineTo(x + Math.cos(a + 0.08) * (R + 3), y + Math.sin(a + 0.08) * (R + 3)); }
+    c.stroke();
+    const hx = x + Math.cos(a1 + 0.12) * R, hy = y + Math.sin(a1 + 0.12) * R, dir = a1 + Math.PI / 2;   // голова по касательной
+    c.save(); c.translate(hx, hy); c.rotate(dir);
+    c.fillStyle = T.BG; c.strokeStyle = T.ink(al); c.lineWidth = 1.1;
+    c.beginPath(); c.ellipse(2, 0, 8, 5.5, 0, 0, TAU); c.fill(); c.stroke();
+    const jaw = bite ? 0.05 : 0.45;                                               // пасть: открыта — тянется к хвосту, закрыта — кусает
+    c.beginPath(); c.moveTo(9, 0); c.lineTo(14, -6 * jaw); c.moveTo(9, 0); c.lineTo(14, 6 * jaw); c.stroke();
+    c.beginPath(); c.arc(3, -2.2, 1.1, 0, TAU); c.fillStyle = T.ink(al); c.fill();
+    c.restore();
+    if (held) T.mapText(`${k} · ${fxw.text(k)}`, x, y - R - 20, 13, 0.9, 'center');
+  }
+
   // ---------- семь банок металлов — клавиши, как сенсоры Lyra (♄ ♃ ♂ ☉ ♀ ☿ ☽ — снизу вверх) ----------
   const METALS = ['saturnus', 'iupiter', 'mars', 'sol', 'venus', 'mercurius', 'luna'];
   function planet(c, k, x, y, s, a) {
@@ -434,16 +464,6 @@
       const a = (d * Math.PI) / 180, l = d % 30 ? 3 : 6;
       x.beginPath(); x.moveTo(cx + Math.cos(a) * (R + 4), cy + Math.sin(a) * (R + 4)); x.lineTo(cx + Math.cos(a) * (R + 4 + l), cy + Math.sin(a) * (R + 4 + l)); x.stroke();
     }
-    // уроборос слева от печи: змей кусает свой хвост; чешуя — засечки
-    const ox = G.W * 0.15, oy = G.furn.y0 + 26, orr = Math.min(28, G.W * 0.07);
-    x.strokeStyle = ink(0.14); x.lineWidth = 1;
-    x.beginPath(); x.arc(ox, oy, orr + 4, -Math.PI / 2 + 0.25, -Math.PI / 2 + TAU - 0.05); x.stroke();
-    x.beginPath(); x.arc(ox, oy, orr - 4, -Math.PI / 2 + 0.25, -Math.PI / 2 + TAU - 0.05); x.stroke();
-    for (let k = 0; k < 36; k++) { const a = -Math.PI / 2 + 0.35 + k * 0.165; x.beginPath(); x.moveTo(ox + Math.cos(a) * (orr - 3), oy + Math.sin(a) * (orr - 3)); x.lineTo(ox + Math.cos(a + 0.08) * (orr + 3), oy + Math.sin(a + 0.08) * (orr + 3)); x.stroke(); }
-    const hx = ox + 3, hy = oy - orr;                 // голова у хвоста
-    x.beginPath(); x.ellipse(hx, hy, 8, 5.5, 0, 0, TAU); x.stroke();
-    x.beginPath(); x.arc(hx + 2, hy - 1.5, 1, 0, TAU); x.stroke();
-    x.beginPath(); x.moveTo(hx - 8, hy); x.lineTo(hx - 13, hy + 1); x.stroke();
     // знаки веществ по стене: сера, соль, ртуть, сурьма, купорос, огонь философов
     const glyphs = [[0.1, 0.12], [0.88, 0.5], [0.12, 0.47], [0.9, 0.7], [0.5, 0.06], [0.42, 0.62]];
     x.strokeStyle = ink(0.13); x.lineWidth = 1;
@@ -694,7 +714,9 @@
     return best;
   }
   function down(f) {
-    const G = geo(), j = hitJar(G, f.x, f.y);
+    const G = geo();
+    for (const k of KNOBS) { const q = knobAt(G, k); if (Math.hypot(f.x - q.x, f.y - q.y) < q.R + 14) { touches.set(f.id, { kind: 'knob', k, v0: fx[k] }); return; } }
+    const j = hitJar(G, f.x, f.y);
     if (j >= 0) {
       const now = performance.now(), dbl = lastJarTap && lastJarTap.j === j && now - lastJarTap.t < T.DTAP_MS;
       const v = voices.get(j);
@@ -719,6 +741,7 @@
     if (!t) return;
     t.x = f.x; t.y = f.y;
     const dx = f.x - f.x0, dy = f.y - f.y0;
+    if (t.kind === 'knob') { fxw.set(t.k, clamp(t.v0 + (dx - dy) / 160)); return; }   // вверх или вправо — больше
     if (t.kind === 'jar') {                          // банку вверх-вниз — её нота (6 px на полутон, с ладом — по ступеням)
       if (!t.drag && Math.abs(dy) > 10) t.drag = true;
       if (!t.drag) return;
@@ -787,10 +810,8 @@
   const fxw = {
     sectors: [
       { key: 'athanor', label: 'athanor', ang: deg(180) },
-      { key: 'vitrum', label: 'vitrum', ang: deg(162) },
-      { key: 'circulatio', label: 'circulatio', ang: deg(144) },
-      { key: 'solve', label: 'solve', ang: deg(126) },
-      { key: 'coagula', label: 'coagula', ang: deg(108) },
+      { key: 'vitrum', label: 'vitrum', ang: deg(150) },
+      { key: 'circulatio', label: 'circulatio', ang: deg(120) },   // solve и coagula — уроборосы у печи, не в веере
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => { if (k === 'solve') { const ms = 2 * 600 ** fx.solve; return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} s`; } return `${Math.round(fx[k] * 100)}%`; },
     arc: () => fx.vitrum, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
@@ -827,6 +848,8 @@
       drawScroll(c, G, now);
       drawFurnace(c, G, now);
       drawJug(c, G, now);
+      const heldK = new Set([...touches.values()].filter((t) => t.kind === 'knob').map((t) => t.k));
+      for (const k of KNOBS) drawKnob(c, G, k, now, heldK.has(k));
       drawTubes(c, G, now);
       const held = new Set([...touches.values()].filter((t) => t.kind === 'flask').map((t) => t.i));
       for (let i = 0; i < OPS.length; i++) drawFlask(c, i, G, now, held.has(i));
@@ -858,6 +881,7 @@
     get voices() { return [...voices].map(([k, v]) => ({ k, on: v.on, latched: v.latched })); },
     jar: (i) => { const b = jarBox(geo(), i); return { x: b.X, y: b.y - b.h / 2 }; },
     at: (i) => { const q = flaskGeo(geo(), i); return { x: q.p.x, y: (q.yTop + q.yBot) / 2, neckY: q.neckTop + 4 }; },
+    knob: (k) => { const q = knobAt(geo(), k); return { x: q.x, y: q.y }; },
     jug: () => { const b = jugBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
     furnace: () => { const b = furnBox(geo()); return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }; },
     tubeAt: (s, d) => { const t = tubes.find((q) => q.s === s && q.d === d); return t && { x: t.pts[8][0], y: t.pts[8][1] }; },
