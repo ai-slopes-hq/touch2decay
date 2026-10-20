@@ -258,11 +258,11 @@
   }
 
   // ---------- геометрия: пластина посередине; радиус по высоте: f ∝ 1/r² ----------
-  // по высоте — пластина, кольца астролябии над ней (+58), ▶/● и клавиши лада под ней (+148): блок по центру между строкой и низом
+  // по высоте — пластина, кольца астролябии над ней (+64), ▶/● и клавиши лада под ней (+152): блок по центру между строкой и низом
   function plateGeo() {
     const top = T.topY, bot = T.H - T.safeBot;
-    const rMax = Math.max(40, Math.min(T.W / 2 - 60, (bot - top - 214) / 2));
-    const cy = top + (bot - top - (2 * rMax + 206)) / 2 + rMax + 58;
+    const rMax = Math.max(40, Math.min(T.W / 2 - 64, (bot - top - 224) / 2));
+    const cy = top + (bot - top - (2 * rMax + 216)) / 2 + rMax + 64;
     return { cx: T.W / 2, cy, rMax, r: rMax * Math.sqrt(F_MIN / plate.f0) };
   }
   const toPlate = (f, g) => ({ x: (f.x - g.cx) / g.r, y: (f.y - g.cy) / g.r });
@@ -273,8 +273,8 @@
   }
 
   // ---------- астролябия: кольцо мелодии (внутри) и ритма (снаружи), 16 гнёзд от верха по часовой; внизу ▶ и ● ----------
-  // кольцо мелодии R1, ноты подписаны снаружи него (R1 + 16), кольцо ритма R2 = R1 + 32; граница зон — RM = R1 + 24
-  function astro(g) { return { R1: g.rMax + 12, R2: g.rMax + 44, RM: g.rMax + 36, ty: g.cy + g.rMax + 78, playX: g.cx - 60, recX: g.cx, gridX: g.cx + 60 }; }
+  // кольцо мелодии R1 — ноты сидят на нём, как бусины; кольцо ритма R2 — удары на нём; граница зон между ними — RM
+  function astro(g) { return { R1: g.rMax + 22, R2: g.rMax + 48, RM: g.rMax + 35, ty: g.cy + g.rMax + 82, playX: g.cx - 60, recX: g.cx, gridX: g.cx + 60 }; }
   const slotAng = (i) => -Math.PI / 2 + (i * Math.PI * 2) / SLOTS;
   const slotXY = (g, i, R) => ({ x: g.cx + R * Math.cos(slotAng(i)), y: g.cy + R * Math.sin(slotAng(i)) });
   const slotOf = (f, g) => ((((Math.atan2(f.y - g.cy, f.x - g.cx) + Math.PI / 2) / (Math.PI * 2)) * SLOTS) % SLOTS + SLOTS) % SLOTS;
@@ -284,12 +284,14 @@
     if (Math.hypot(f.x - A.playX, f.y - A.ty) < 22) return { k: 'play' };
     if (Math.hypot(f.x - A.recX, f.y - A.ty) < 22) return { k: 'rec' };
     if (Math.hypot(f.x - A.gridX, f.y - A.ty) < 22) return { k: 'grid' };
-    const hr = slotXY(g, seq.rhythm.len - 0.5, A.R2 + 12), hm = slotXY(g, seq.melody.len - 0.5, A.R1 - 11);
-    if (Math.hypot(f.x - hr.x, f.y - hr.y) < 16) return { k: 'len', ring: 'rhythm' };
-    if (Math.hypot(f.x - hm.x, f.y - hm.y) < 12) return { k: 'len', ring: 'melody' };
-    const i = Math.round(slotOf(f, g)) % SLOTS;
-    if (d >= A.RM && d < A.R2 + 11) return { k: 'rtick', i };
-    if (d >= A.R1 - 8 && d < A.RM) return { k: 'mtick', i, r0: d, s0: Math.round(absM(seq.melody.steps[i]) ?? fs()) };
+    const s = slotOf(f, g), ring = d >= A.RM && d < A.R2 + 14 ? 'rhythm' : d >= A.R1 - 14 && d < A.RM ? 'melody' : null;
+    if (ring) {                                  // край заливки длины кольца (между гнёздами) — тянуть по кругу
+      const e = Math.abs(((s - (seq[ring].len - 0.5)) % SLOTS + SLOTS + SLOTS / 2) % SLOTS - SLOTS / 2);
+      if (e < 0.3) return { k: 'len', ring };
+    }
+    const i = Math.round(s) % SLOTS;
+    if (ring === 'rhythm') return { k: 'rtick', i };
+    if (ring === 'melody') return { k: 'mtick', i, r0: d, s0: Math.round(absM(seq.melody.steps[i]) ?? fs()) };
     return null;
   }
   function astroMove(f, g) {
@@ -367,7 +369,7 @@
       else T.mapText(noteName(F_MIN * 2 ** (k.n / 12)), k.x, k.y, 11, off ? 0.15 : 0.45, 'center');
     });
     if (!seq.playing) {                          // курсор пошагового ввода — дужка у гнезда мелодии
-      const A = astro(g), p = slotXY(g, cursor % seq.melody.len, A.R1 + 16);
+      const A = astro(g), p = slotXY(g, cursor % seq.melody.len, A.R1);
       T.ring(p.x, p.y, 15, 0.9, 1.6);
       T.mapText(`step ${(cursor % seq.melody.len) + 1} / ${seq.melody.len}`, A.playX - 62, A.ty, 13, 0.7, 'center');   // куда пишет клавиша
     }
@@ -641,7 +643,7 @@
     c.lineWidth = 1;
     const tr = (ringTurn.rhythm * Math.PI) / 180, tm = (ringTurn.melody * Math.PI) / 180;
     // узор колец — шкала, как у лимба астролябии: мелкие деления и звезда-указатель; крутится вместе с кольцом
-    for (const [R, o, side] of [[A.R2, ringOrn.rhythm + ringTurn.rhythm, 1], [A.R1, ringOrn.melody + ringTurn.melody, -1]]) {
+    for (const [R, o, side] of [[A.R2, ringOrn.rhythm + ringTurn.rhythm, 1], [A.R1 - 11, ringOrn.melody + ringTurn.melody, -1]]) {
       const base = (o * Math.PI) / 180;
       c.strokeStyle = T.ink(0.22); c.lineWidth = 0.8; c.beginPath();
       for (let j = 0; j < 64; j++) {
@@ -656,6 +658,16 @@
         c.strokeStyle = T.ink(0.45); c.beginPath();
         c.moveTo(px - ux, py - uy); c.lineTo(px + vx, py + vy); c.lineTo(px + ux, py + uy); c.lineTo(px - vx, py - vy); c.closePath(); c.stroke();
       }
+    }
+    for (const [ring, R, w] of [['rhythm', A.R2, 16], ['melody', A.R1, 26]]) {   // длина кольца — заливка от начала до края; край тянется
+      const rot = ring === 'rhythm' ? tr : tm, a0 = slotAng(-0.5) + rot, a1 = slotAng(seq[ring].len - 0.5) + rot;
+      const held = [...touches.values()].some((f) => f.astro && f.astro.k === 'len' && f.astro.ring === ring);
+      c.strokeStyle = T.ink(held ? 0.2 : 0.09); c.lineWidth = w;   // рисуется до бусин и точек — под ними
+      c.beginPath(); c.arc(g.cx, g.cy, R, a0, a1 - (seq[ring].len === SLOTS ? 1e-4 : 0)); c.stroke();
+      c.strokeStyle = T.ink(held ? 1 : 0.7); c.lineWidth = held ? 2 : 1.4;   // край заливки — за него тянуть
+      c.beginPath(); c.moveTo(g.cx + Math.cos(a1) * (R - w / 2), g.cy + Math.sin(a1) * (R - w / 2)); c.lineTo(g.cx + Math.cos(a1) * (R + w / 2), g.cy + Math.sin(a1) * (R + w / 2)); c.stroke();
+      const q = { x: g.cx + Math.cos(a1 + 0.09) * R, y: g.cy + Math.sin(a1 + 0.09) * R };
+      T.mapText(String(seq[ring].len), q.x, q.y, 12, held ? 1 : 0.6, 'center');
     }
     // ритм: удар — крупная точка, пустое гнездо — колечко; мелодия — название ноты у гнезда, пусто — «·»;
     // играющий шаг мигает (точка и нота вспыхивают), новое в гнезде — расходящийся круг
@@ -672,7 +684,7 @@
       else T.dot(rx, ry, 1, 0.12);                 // за длиной кольца — гаснет
       flash(born.r[i], rx, ry, now);
       a = slotAng(i) + tm; x = Math.cos(a); y = Math.sin(a);
-      const mx = g.cx + x * (A.R1 + 16), my = g.cy + y * (A.R1 + 16), bm = blink(pulse.m[i]);
+      const mx = g.cx + x * A.R1, my = g.cy + y * A.R1, bm = blink(pulse.m[i]);
       if (!onM) T.dot(mx, my, 1, 0.12);            // за длиной кольца — гаснет, подписи нет
       else {
         c.fillStyle = 'rgba(0,0,0,0.85)'; c.beginPath(); c.arc(mx, my, 11, 0, Math.PI * 2); c.fill();   // тёмная подложка — читается поверх волн
@@ -682,16 +694,9 @@
       }
       flash(born.m[i], mx, my, now);
     }
-    for (const [ring, R] of [['rhythm', A.R2 + 12], ['melody', A.R1 - 11]]) {   // выступы длины колец — ромбики
-      const p = slotXY(g, seq[ring].len - 0.5, R);
-      c.strokeStyle = T.ink(0.6); c.beginPath();
-      c.moveTo(p.x, p.y - 4); c.lineTo(p.x + 4, p.y); c.lineTo(p.x, p.y + 4); c.lineTo(p.x - 4, p.y); c.closePath(); c.stroke();
-      const q = slotXY(g, seq[ring].len - 0.5, ring === 'rhythm' ? A.R2 - 9 : A.R1 + 16);   // длина кольца — цифрой у ромбика
-      T.mapText(String(seq[ring].len), q.x, q.y, 11, 0.6, 'center');
-    }
     if (seq.playing && lastStep) {               // стрелки: от края стола к своему кольцу, плавно между тиками
       const fr = clamp((now - lastStep.atMs) / stepMs);
-      for (const [i, R, a] of [[lastStep.r, A.R2 + 6, 0.6], [lastStep.m, A.R1 + 4, 0.45]]) {
+      for (const [i, R, a] of [[lastStep.r, A.R2 + 6, 0.6], [lastStep.m, A.R1 - 12, 0.45]]) {
         const ang = slotAng(i + fr);
         c.strokeStyle = T.ink(a); c.lineWidth = 0.8;
         c.beginPath(); c.moveTo(g.cx + Math.cos(ang) * (g.rMax + 2), g.cy + Math.sin(ang) * (g.rMax + 2)); c.lineTo(g.cx + Math.cos(ang) * R, g.cy + Math.sin(ang) * R); c.stroke();
@@ -717,7 +722,7 @@
     T.mapText(String(16 / grid), A.gridX, A.ty, 15, 0.8, 'center');   // сетка записи: 16, 8, 4
     if (now < bpmUntil) T.mapText(`${seq.bpm} BPM`, A.playX, A.ty - 30, 14, 0.85, 'center');
     if (noteEdit && now < noteEdit.until) {      // тянешь засечку мелодии — гнездо обведено, нота у гнезда меняется
-      const p = slotXY(g, noteEdit.i, A.R1 + 16);
+      const p = slotXY(g, noteEdit.i, A.R1);
       T.ring(p.x, p.y, 13, 0.9, 1.4);
     }
   }

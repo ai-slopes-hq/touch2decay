@@ -278,13 +278,17 @@ async def sc_seq(p):                               # астролябия: пу�
     s8 = await p.js('()=>!!t2d.cym.seq.rhythm.steps[8]')
     await p.tap(*slot(8, R2)); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>!!t2d.cym.seq.rhythm.steps[8]') != s8, 'tap on a rhythm tick toggles it'
-    hx, hy = slot(15.5, R2 + 12); tx, tyy = slot(7.5, R2 + 12)              # выступ длины ритма: с 16 на 8
-    pid = await p.hold(hx, hy, ms=60)
-    for k in range(1, 13):
-        a = -math.pi / 2 + (15.5 - k * (8 / 12)) * math.pi / 8
-        await p.T('touchMove', [{'x': cx + (R2 + 12) * math.cos(a), 'y': cy + (R2 + 12) * math.sin(a), 'id': pid}]); await p.pg.wait_for_timeout(16)
-    await p.up(); await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.cym.seq.rhythm.len') == 8, 'drag the length handle'
+    async def drag_len(R, frm, to):                                        # край заливки кольца тянешь по кругу
+        hx, hy = slot(frm, R); pid = await p.hold(hx, hy, ms=60)
+        for k in range(1, 13):
+            a = -math.pi / 2 + (frm + (to - frm) * k / 12) * math.pi / 8
+            await p.T('touchMove', [{'x': cx + R * math.cos(a), 'y': cy + R * math.sin(a), 'id': pid}]); await p.pg.wait_for_timeout(16)
+        await p.up(); await p.pg.wait_for_timeout(100)
+    await drag_len(R2, 15.5, 7.5)
+    assert await p.js('()=>t2d.cym.seq.rhythm.len') == 8, 'drag the end of the rhythm fill'
+    ml = await p.js('()=>t2d.cym.seq.melody.len')
+    await drag_len(R1, ml - 0.5, 3.5)
+    assert await p.js('()=>t2d.cym.seq.melody.len') == 4, 'drag the end of the melody fill'
     b0 = await p.js('()=>t2d.cym.seq.bpm')
     pid = await p.hold(g['playX'], ty, ms=120); await p.drag(pid, g['playX'], ty, g['playX'] + 60, ty, steps=8); await p.up()
     assert await p.js('()=>t2d.cym.seq.bpm') > b0 and await p.js('()=>t2d.cym.seq.playing'), 'drag ▶ sets tempo, keeps playing'
