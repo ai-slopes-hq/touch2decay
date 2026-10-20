@@ -1,7 +1,7 @@
 // Офлайн без залипания старой версии.
 // Код и страница — сначала из сети (мимо HTTP-кеша), кеш — только запасной вариант без сети.
 // Шрифты, иконки и гравюры не меняются — сразу из кеша.
-const CACHE = 't2d-v49';   // при выкладке менять вместе с app.js?v= в index.html
+const CACHE = 't2d-v50';   // при выкладке менять вместе с app.js?v= в index.html
 const SHELL = ['./', './index.html', './app.js', './cymatica.js', './plate-worklet.js', './manifest.webmanifest'];
 const STATIC = ['./icon-180.png', './icon-192.png', './icon-512.png',
   './fonts/im-fell-english-latin-400-italic.woff2', './fonts/im-fell-english-latin-400-normal.woff2',
@@ -26,6 +26,7 @@ const isStatic = (url) => /\.(png|jpg|woff2)$/.test(url.pathname);
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/_vercel/')) return;   // аналитика Vercel — мимо кеша, прямо в сеть
   e.respondWith(caches.open(CACHE).then(async (c) => {
     if (isStatic(url)) {
       const hit = await c.match(e.request, { ignoreSearch: true });

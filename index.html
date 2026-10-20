@@ -29,13 +29,16 @@
   #safe-top { position: absolute; left: 0; top: 0; width: 1px; height: env(safe-area-inset-top, 0px); pointer-events: none; }
   #safe-bot { position: absolute; left: 0; bottom: 0; width: 1px; height: env(safe-area-inset-bottom, 0px); pointer-events: none; }
 </style>
+<!-- Vercel Web Analytics: без cookies; для страницы без сборки — скрипт, а не npm-пакет -->
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+<script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
 <canvas id="field" aria-label="Synth field: touch to sound, drag to shape"></canvas>
 <div id="safe-top"></div>
 <div id="safe-bot"></div>
-<script src="app.js?v=49"></script>
-<script src="cymatica.js?v=49"></script>
+<script src="app.js?v=50"></script>
+<script src="cymatica.js?v=50"></script>
 <script>
   // офлайн-кэш: только на настоящем сайте (https), не в превью и не с диска
   // новая версия: проверка при каждом возврате в приложение (иконка на «Домой» не перезапускается, а разворачивается);
