@@ -75,14 +75,6 @@
     for (let i = 0; i < len; i++) out[(((i + k) % len) + len) % len] = steps[i];
     return out;
   }
-  // ноты клавиш (уходят вместе с клавишами): от тоники в октаве основного тона пластины — вверх по классам высот лада, 8 штук
-  function keyNotes(f0, pcs, tonic) {
-    const s = 12 * Math.log2(f0 / F_MIN), out = [];
-    let n = tonic + 12 * Math.floor((s - tonic) / 12);
-    if (n < 0) n += 12;
-    for (; out.length < 8; n++) if (pcs.includes(((n % 12) + 12) % 12)) out.push(n);
-    return out;
-  }
   // ---------- раскладка ханга: по кругу — ступени лада (n секторов от верха по часовой), от края к центру — 3 октавы ----------
   // кольца равной площади: край r > √(2/3) — кольцо 0 (ниже), до √(1/3) — 1, центр — 2 (выше); b — индекс ступени пластины в списке
   const NOTE_TOP = 60;                           // 55–1760 Гц
@@ -341,11 +333,11 @@
   }
 
   // ---------- геометрия: пластина посередине; радиус по высоте: f ∝ 1/r² ----------
-  // по высоте — пластина, кольца астролябии над ней (+64), ▶/● и клавиши лада под ней (+152): блок по центру между строкой и низом
+  // по высоте — пластина, кольца астролябии над ней (+64), ▶/● под ней (+104): блок по центру между строкой и низом
   function plateGeo() {
     const top = T.topY, bot = T.H - T.safeBot;
-    const rMax = Math.max(40, Math.min(T.W / 2 - 64, (bot - top - 224) / 2));
-    const cy = top + (bot - top - (2 * rMax + 216)) / 2 + rMax + 64;
+    const rMax = Math.max(40, Math.min(T.W / 2 - 64, (bot - top - 176) / 2));
+    const cy = top + (bot - top - (2 * rMax + 168)) / 2 + rMax + 64;
     return { cx: T.W / 2, cy, rMax, r: rMax * Math.sqrt(F_MIN / shownF0) };   // размер едет плавно к высоте
   }
   const toPlate = (f, g) => ({ x: (f.x - g.cx) / g.r, y: (f.y - g.cy) / g.r });
@@ -402,48 +394,20 @@
   function astroUp(f) {
     const h = f.astro;
     if (h.k === 'grid' && !f.combed) grid = grid === 1 ? 2 : grid === 2 ? 4 : 1;   // тап — сетка 1/16 → 1/8 → 1/4
-    if (h.k === 'play' && !f.moved) play();
-    else if (h.k === 'rec') rec();
+    if (h.k === 'play' && !f.moved) { cursor = null; play(); }
+    else if (h.k === 'rec') { cursor = null; rec(); }
     else if (h.k === 'rtick') { seq.rhythm.steps[h.i] = seq.rhythm.steps[h.i] ? null : { ...lastHit, vel: 1 }; sendSeq(); }
-    else if (h.k === 'mtick' && !f.moved) cursor = h.i % seq.rhythm.len;   // тап по гнезду мелодии — курсор пошагового ввода туда
+    else if (h.k === 'mtick' && !f.moved && !seq.playing) cursor = h.i % seq.rhythm.len;   // часы стоят — курсор пошагового ввода туда   // тап по гнезду мелодии — курсор пошагового ввода туда
   }
-  // ---------- клавиши лада: 8 ступеней от тоники в октаве пластины и «·» (пауза); ряд под ▶/● ----------
-  let cursor = 0, lastStrike = null;
-  const keyFlash = new Float64Array(9);
-  function keys(g) {
-    const A = astro(g), w = Math.min(40, (T.W - 32) / 9), gap = 3, x0 = g.cx - (9 * w + 8 * gap) / 2 + w / 2;
-    const notes = keyNotes(plate.f0, T.scalePCs || [0, 3, 5, 7, 10], T.scaleOn ? T.scaleRoot : 0);
-    return Array.from({ length: 9 }, (_, i) => ({ x: x0 + i * (w + gap), y: A.ty + 50, w, h: 34, n: i < 8 ? notes[i] : null }));
+  // пошаговый ввод: курсор появляется тапом по гнезду кольца мелодии (часы стоят); тап по пластине пишет удар в гнездо
+  // курсора и двигает его дальше; ▶, ● или тап мимо пластины и колец — курсор убран
+  let cursor = null, lastStrike = null;
+  function drawCursor(g) {
+    if (cursor == null || seq.playing) return;
+    const A = astro(g), i = cursor % seq.rhythm.len, p = slotXY(g, i, A.R1);
+    T.ring(p.x, p.y, 15, 0.9, 1.6);
+    T.mapText(`step ${i + 1} / ${seq.rhythm.len}`, A.playX - 62, A.ty, 13, 0.7, 'center');
   }
-  function keyAt(f, g) {
-    const k = keys(g);
-    for (let i = 0; i < 9; i++) if (Math.abs(f.x - k[i].x) <= k[i].w / 2 + 1 && Math.abs(f.y - k[i].y) <= k[i].h / 2 + 4) return i;
-    return -1;
-  }
-  // клавиша: удар этой нотой в место последнего удара; при записи — нота и удар в ближайшие шаги; часы стоят — в курсор
-  function pressKey(i, g) {
-    const k = keys(g)[i];
-    if (k.n == null || k.n > 48) return;
-    keyFlash[i] = performance.now() + 150;
-    send({ t: 'strike', x: lastHit.x, y: lastHit.y, vel: 1, hard: 0.5, hz: F_MIN * 2 ** (k.n / 12) });
-  }
-  function drawKeys(g, now) {
-    const c = T.g;
-    keys(g).forEach((k, i) => {
-      const off = k.n != null && k.n > 48, hot = now < keyFlash[i], a = off ? 0.15 : hot ? 1 : 0.5;
-      c.fillStyle = 'rgba(0,0,0,0.88)'; c.fillRect(k.x - k.w / 2, k.y - k.h / 2, k.w, k.h);
-      c.strokeStyle = T.ink(a); c.lineWidth = 1; c.strokeRect(k.x - k.w / 2 + 0.5, k.y - k.h / 2 + 0.5, k.w - 1, k.h - 1);
-      c.strokeStyle = T.ink(a * 0.4); c.strokeRect(k.x - k.w / 2 + 3.5, k.y - k.h / 2 + 3.5, k.w - 7, k.h - 7);
-      if (k.n == null) T.dot(k.x, k.y, 2, a);
-      else T.mapText(noteName(F_MIN * 2 ** (k.n / 12)), k.x, k.y, 11, off ? 0.15 : 0.45, 'center');
-    });
-    if (!seq.playing) {                          // курсор пошагового ввода — дужка у гнезда мелодии
-      const A = astro(g), p = slotXY(g, cursor % seq.rhythm.len, A.R1);
-      T.ring(p.x, p.y, 15, 0.9, 1.6);
-      T.mapText(`step ${(cursor % seq.rhythm.len) + 1} / ${seq.rhythm.len}`, A.playX - 62, A.ty, 13, 0.7, 'center');   // куда пишет клавиша
-    }
-  }
-
   // метка записанного удара на пластине
   function markAt(f, g) {
     for (let i = 0; i < SLOTS; i++) {
@@ -519,16 +483,14 @@
     }
     const h0 = astroHit(f, g);                   // ▶ и ● работают и вторым пальцем — в пару не идут
     if (h0 && (h0.k === 'play' || h0.k === 'rec' || h0.k === 'grid')) { touches.set(f.id, f); f.astro = h0; f.bpm0 = seq.bpm; return; }
-    const ki = keyAt(f, g);
-    if (ki >= 0) { touches.set(f.id, f); f.key = ki; pressKey(ki, g); return; }
     for (const o of touches.values()) {          // второй палец — поворот или щипок (решится по первым ~10° / ~20 px)
-      if (o === f || o === ringF || two || o.twist1 || o.key != null || (o.astro && (o.astro.k === 'play' || o.astro.k === 'rec' || o.astro.k === 'grid'))) continue;   // ▶, ● и клавиши — не в пару
+      if (o === f || o === ringF || two || o.twist1 || (o.astro && (o.astro.k === 'play' || o.astro.k === 'rec' || o.astro.k === 'grid'))) continue;   // ▶ и ● — не в пару
       startTwo(o, f, g);
       return;
     }
     const h = astroHit(f, g);
     if (h) { touches.set(f.id, f); f.astro = h; f.bpm0 = seq.bpm; return; }
-    if (Math.hypot(f.x - g.cx, f.y - g.cy) > g.rMax) { touches.set(f.id, f); return; }   // мимо стола: само по себе ничего, но второй палец — вращение
+    if (Math.hypot(f.x - g.cx, f.y - g.cy) > g.rMax) { touches.set(f.id, f); f.away = true; return; }   // мимо стола: убирает курсор, второй палец — вращение
     touches.set(f.id, f);
     const b = BOWS_ON ? bowAt(f, g) : null;
     if (b) { f.cb = b; return; }
@@ -540,18 +502,23 @@
       return;
     }
     const p = toPlate(f, g);
-    if (Math.hypot(p.x, p.y) > 1) return;    // вне пластины (но на столе) — только для щипка
+    if (Math.hypot(p.x, p.y) > 1) { f.away = true; return; }   // вне пластины (но на столе) — только для щипка
     const note = notesOf([p])[0];
     if (note == null) return;                    // клетка за 1760 Гц — молчит
     f.live = true; f.bid = `t${f.id}`;
     lastStrike = { t: 'strike', x: p.x, y: p.y, vel: 1, hard: 0.5, hz: F_MIN * 2 ** (note / 12), rec: seq.rec && seq.playing };
     send(lastStrike);
     recordHit(p.x, p.y);
+    if (cursor != null && !seq.playing) {        // пошаговый ввод: удар — в гнездо курсора, курсор дальше
+      const len = seq.rhythm.len;
+      seq.rhythm.steps[cursor % len] = { x: p.x, y: p.y, vel: 1 };
+      cursor = (cursor % len + 1) % len;
+      sendSeq();
+    }
   }
   function move(f) {
     if (!touches.has(f.id)) return;
     if (f === ringF) { T.menuMove(f); return; }
-    if (f.key != null) return;
     const g = plateGeo();
     if (f.astro) { astroMove(f, g); return; }
     if (f.mk != null && f.moved) {               // метку удара тащишь — место удара меняется
@@ -581,7 +548,6 @@
       return;
     }
     if (f.twist1) { endTurn(f.twist1); return; }
-    if (f.key != null) return;
     if (f.two) { if (two && (two.a === f || two.b === f)) { endTurn(two); two = null; } return; }
     if (f.cb) {
       if (Math.hypot(f.cb.x, f.cb.y) > 1.05) {   // утащил за край — смычок убран
@@ -590,6 +556,7 @@
       }
       return;
     }
+    if (f.away) { cursor = null; return; }
     if (!f.live) return;
     if (f.bowing) send({ t: 'bow', id: f.bid, on: false });
     const tap = now - f.t0 < TAP_MS && Math.hypot(f.x - f.x0, f.y - f.y0) < TAP_MOVE;
@@ -886,7 +853,7 @@
       stepSand(dt || 1 / 60);
       drawSand(g);
       drawAstro(g, now);
-      drawKeys(g, now);
+      drawCursor(g);
       drawBows(g);
       drawLabel(g, now);
       drawTwist(now);
@@ -963,7 +930,7 @@
     get echo() { return { label: echoDiv()[0], sec: echoSec(), fb: echoFb() }; }, get echoMax() { return echoes.length ? echoes[echoes.length - 1].dL.delayTime.maxValue : 0; },
     get echoChains() { return echoes.map((p) => ({ sec: p.sec, real: p.dL.delayTime.value })); },
     get gesture() { return gesture; }, get shownF0() { return shownF0; }, bowsOn: BOWS_ON, get ringTurn() { return { ...ringTurn }; }, get grid() { return grid; }, get waveStep() { return waveStep(); },
-    get keys() { return keys(plateGeo()); }, get cursor() { return cursor; }, get lastStrike() { return lastStrike; },
+    get cursor() { return cursor; }, get lastStrike() { return lastStrike; },
     strike(x, y) { send({ t: 'strike', x, y, vel: 1, hard: 0.5 }); },
     bow(x, y, on = true) { send({ t: 'bow', id: 'dbg', x, y, on, exciter: 0, pressure: 0.5, amp: 0.8 }); },
     sandSpread() {                               // среднее поле под крупинками: песок в узлах — меньше

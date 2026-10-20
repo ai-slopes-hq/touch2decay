@@ -396,43 +396,40 @@ async def sc_twist(p):                             # два пальца кру�
     assert r1 == r0[-4:] + r0[:-4], f'Shift-drag turns the rhythm ring by 4: {r0} -> {r1}'
 
 
-async def sc_keys(p):                              # клавиши лада: игра, пошаговый ввод с курсором, запись; щипок не пишет; смычок
+async def sc_entry(p):                             # клавиш нет: курсор — тапом по гнезду, тап по пластине пишет в него; запись игрой
     import math
     await p.js('()=>t2d.go(2)'); await p.pg.wait_for_timeout(300)
-    for vw, vh in [(844, 390), (W, H)]:                                    # клавиши на экране в альбоме и портрете
+    for vw, vh in [(844, 390), (W, H)]:                                    # пуск и запись на экране в альбоме и портрете
         await p.pg.set_viewport_size({'width': vw, 'height': vh}); await p.pg.wait_for_timeout(300)
-        k = await p.js('()=>t2d.cym.keys')
-        assert len(k) == 9 and max(q['y'] + q['h'] / 2 for q in k) < vh, f'keys on screen at {vw}x{vh}'
-    keys = await p.js('()=>t2d.cym.keys'); f0 = await p.js('()=>t2d.cym.f0')
-    await p.tap(keys[0]['x'], keys[0]['y']); await p.pg.wait_for_timeout(500)
-    assert await p.js('()=>Math.max(...t2d.cym.energy)') > 0 and await p.js('()=>t2d.cym.f0') == f0, 'key plays, plate size stays'
-    g = await p.js('()=>t2d.cym.astro'); a = math.radians(-90 + 3 * 22.5)
-    await p.tap(g['cx'] + g['R1'] * math.cos(a), g['cy'] + g['R1'] * math.sin(a)); await p.pg.wait_for_timeout(100)
+        a = await p.js('()=>t2d.cym.astro')
+        assert a['ty'] + 18 < vh, f'transport on screen at {vw}x{vh}'
+    assert await p.js('()=>t2d.cym.keys') is None, 'no scale keys'
+    g = await p.js('()=>t2d.cym.astro'); geo = await p.js('()=>t2d.cym.geo')
+    assert await p.js('()=>t2d.cym.cursor') is None, 'no cursor until a slot is tapped'
+    await p.tap(geo['cx'], geo['cy'] - 0.9 * geo['r']); await p.pg.wait_for_timeout(700)
+    assert not await p.js('()=>t2d.cym.seq.rhythm.steps.some(Boolean)'), 'without a cursor a tap only plays'
+    s3 = lambda: (g['cx'] + g['R1'] * math.cos(math.radians(-90 + 3 * 22.5)), g['cy'] + g['R1'] * math.sin(math.radians(-90 + 3 * 22.5)))
+    await p.tap(*s3()); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.cym.cursor') == 3, 'tap a melody slot — cursor there'
-    await p.tap(keys[1]['x'], keys[1]['y']); await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.cym.seq.melody.steps[3]') == keys[1]['n'] and await p.js('()=>t2d.cym.cursor') == 4, 'step entry'
-    await p.tap(keys[8]['x'], keys[8]['y']); await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.cym.seq.melody.steps[4]') is None and await p.js('()=>t2d.cym.cursor') == 5, 'rest key'
-    await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(500)    # ▶
+    q = await p.js('()=>{const c=t2d.cym.core.cellCenter(1,2,t2d.cym.core.degPerOct()), g=t2d.cym.geo; return {x:g.cx+c.x*g.r, y:g.cy+c.y*g.r}}')
+    await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(100)
+    hz = await p.js('()=>t2d.cym.lastStrike.hz'); m = await p.js('()=>t2d.cym.seq.melody.steps')
+    assert m[3] is not None and abs(55 * 2 ** (m[3] / 12) - hz) < 0.01, f'plate tap writes its note into the cursor slot: {m[3]} vs {hz}'
+    assert await p.js('()=>t2d.cym.cursor') == 4, 'cursor moves on'
+    await p.shot('entry')
+    await p.tap(15, g['ty']); await p.pg.wait_for_timeout(100)             # мимо пластины и колец — курсор убран
+    assert await p.js('()=>t2d.cym.cursor') is None, 'tap away clears the cursor'
+    await p.tap(*s3()); await p.pg.wait_for_timeout(100)
+    await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(500)    # ▶ — курсор убран
+    assert await p.js('()=>t2d.cym.cursor') is None and await p.js('()=>t2d.cym.seq.playing'), '▶ clears the cursor'
+    await p.tap(*s3()); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.cym.cursor') is None, 'no cursor while the clock runs'
     await p.tap(g['recX'], g['ty']); await p.pg.wait_for_timeout(200)    # ●
     n0 = await p.js('()=>t2d.cym.seq.rhythm.steps.filter(Boolean).length')
-    await p.tap(keys[2]['x'], keys[2]['y']); await p.pg.wait_for_timeout(200)
-    assert keys[2]['n'] in await p.js('()=>t2d.cym.seq.melody.steps'), 'recorded note'
+    await p.tap(geo['cx'] + 30, geo['cy'] + 40); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.cym.seq.rhythm.steps.filter(Boolean).length') > n0, 'recorded hit'
-    assert await p.js('()=>t2d.cym.lastStrike.rec') is True, 'key strike while recording carries rec'
-    m0 = await p.js('()=>t2d.cym.seq.melody.steps')
-    a1, b1 = {'x': g['cx'] - 20, 'y': g['cy'], 'id': 71}, {'x': g['cx'] + 20, 'y': g['cy'], 'id': 72}
-    await p.T('touchStart', [a1]); await p.T('touchStart', [a1, b1]); await p.pg.wait_for_timeout(30)
-    for k in range(1, 9):
-        a1, b1 = dict(a1, x=g['cx'] - 20 - 6 * k), dict(b1, x=g['cx'] + 20 + 6 * k)
-        await p.T('touchMove', [a1, b1]); await p.pg.wait_for_timeout(16)
-    await p.T('touchEnd', [a1, b1]); await p.pg.wait_for_timeout(150)
-    m1 = await p.js('()=>t2d.cym.seq.melody.steps')
-    sh = [b2 - a2 for a2, b2 in zip(m0, m1) if a2 is not None]
-    assert [x is None for x in m0] == [x is None for x in m1] and max(sh) - min(sh) < 1e-6, 'pinch writes no notes, only shifts the melody'
-    await p.tap(g['recX'], g['ty']); await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(200)   # стоп
-    await p.pin(g['cx'] + 35, g['cy'] - 20); await p.pg.wait_for_timeout(500)
-    await p.shot('keys')
+    assert await p.js('()=>t2d.cym.lastStrike.rec') is True, 'strike while recording carries rec'
+    await p.tap(g['recX'], g['ty']); await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(200)
 
 
 async def sc_relative(p):                          # щипок транспонирует все ноты; кольца крутятся с запасом и видно
@@ -605,7 +602,7 @@ async def sc_handpan(p):                           # нота — от клет�
     for _ in range(20): await p.pg.mouse.wheel(0, -3000)
 
 
-SCENARIOS = {'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'keys': sc_keys, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
