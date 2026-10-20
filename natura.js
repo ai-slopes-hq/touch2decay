@@ -1,9 +1,10 @@
-// Natura — мир IV: древо жизни, туча, цветы; карта Таро чёрным по сепии. Эскиз картинки, без звука.
-// Шаги — ветви кроны веером слева направо (2–16). Нота — длина ветви: длиннее — выше, силуэт кроны — контур мелодии;
-// листья на её конце; голый сучок — пауза. Голоса — цветы у корней (ромашка — синус, тюльпан — меандр, звёздочка — треугольник;
-// крупнее — громче), раскрываются на каждом шаге. Одна туча поливает древо и цветы. FX = пейзаж: туман на горах — reverb,
-// облака вокруг тучи появляются с delay, дождь гуще — time, рябь на реке — chorus, камыши у берега — cutoff, раскрытие цветов — огибающая.
-// Солнце — четверть в левом верхнем углу (угол к центру карты), тап — карта; в левом нижнем углу надгробие (пока ни к чему не ведёт).
+// Natura — мир IV: река с кувшинками, древо, туча, птицы; карта Таро чёрным по сепии. Эскиз картинки, без звука.
+// Секвенсер — река от гор к зрителю: вдоль течения 16 мест (шагов), кувшинка на месте — шаг; поперёк — нота
+// (у левого берега ниже, у правого выше; пунктир по течению — октавы). Цветок на кувшинке — голос (ромашка — синус,
+// тюльпан — меандр, звёздочка — треугольник), раскрывается на шаге — огибающая. Бегунок — лист-лодочка по течению,
+// мостик — длина петли. Древо на правом берегу, туча над ним поливает; дождь гуще — time; круги от задетой кувшинки
+// повторяются — delay; облака вокруг тучи — тоже delay; птиц больше — chorus (хор); камыши — cutoff; туман на горах — reverb.
+// Солнце — четверть в левом верхнем углу (к центру карты), тап — карта; надгробие слева внизу пока ни к чему не ведёт.
 // Спека: docs/superpowers/specs/2026-10-20-natura-design.md
 (() => {
   'use strict';
@@ -15,27 +16,29 @@
   const pap = (a) => `rgba(${PAPER},${a})`;
 
   // ---------- состояние (демо) ----------
-  const fx = { reverb: 0.4, delay: 0.45, time: 0.5, chorus: 0.35, cutoff: 0.62, env: 0.5 };
+  const fx = { reverb: 0.4, delay: 0.45, time: 0.5, chorus: 0.4, cutoff: 0.62, env: 0.5 };
   const bpm = 96;
-  // узор: шаги снизу вверх; нота — ступень лада (0–14), null — пауза
-  const steps = { len: 16, notes: [0, 4, null, 7, 5, null, 9, 4, 2, null, 7, 11, 9, null, 5, 3] };
-  const voices = [{ wave: 0, level: 0.8 }, { wave: 1, level: 0.5 }, { wave: 2, level: 0.65 }];
+  // кувшинки: место по течению — шаг; note — ступень лада (0–14); wave — какой цветок (голос)
+  const pads = { len: 12, at: [
+    { note: 2, wave: 0 }, null, { note: 7, wave: 1 }, { note: 5, wave: 0 }, null, { note: 11, wave: 2 }, { note: 9, wave: 0 }, null,
+    { note: 4, wave: 1 }, { note: 7, wave: 2 }, null, { note: 0, wave: 0 }, null, { note: 12, wave: 1 }, null, null] };
 
-  // ---------- геометрия ----------
+  // ---------- геометрия: река от горизонта к зрителю, мягкой змейкой, шире к нам ----------
   function geo() {
     const W = T.W, H = T.H, top = T.topY + 26, bot = H - T.safeBot - 40, h = bot - top;
-    const hor = top + 0.6 * h, yG = top + 0.8 * h, yC = top + 0.47 * h, R0 = Math.min(W * 0.12, 0.07 * h), R1 = Math.min(W * 0.44, 0.32 * h);
+    const hor = top + 0.3 * h, y1 = bot - 6;
     const sun = { x: 13, y: T.topY + 2, r: Math.min(70, W * 0.18) };   // неподвижно: четверть в левом верхнем углу (к центру карты)
-    return { W, H, top, bot, h, hor, yG, yC, R0, R1, cx: W / 2, sun, cloudY: top + 0.06 * h,
-      river: [hor + 0.035 * h, hor + 0.085 * h] };
+    const tree = { x: W * 0.8, y: top + 0.5 * h };
+    return { W, H, top, bot, h, hor, y1, sun, tree, cloudY: top + 0.06 * h };
   }
-  // ветвь шага i: из макушки ствола веером слева направо; длина — нота
-  const ANG0 = Math.PI - 0.1, ANG1 = TAU + 0.1;
-  function branchOf(G, i) {
-    const a = ANG0 + ((i + 0.5) / 16) * (ANG1 - ANG0), nt = steps.notes[i];
-    const r = nt == null ? G.R0 * 0.55 : G.R0 + (nt / 14) * (G.R1 - G.R0);
-    const sx = G.cx + Math.cos(a) * 4, sy = G.yC + Math.sin(a) * 4;
-    return { a, nt, r, sx, sy, ex: G.cx + Math.cos(a) * r, ey: G.yC + Math.sin(a) * r };
+  const river = (G, t) => {                         // t: 0 — у гор, 1 — у зрителя
+    const y = G.hor + t * (G.y1 - G.hor), x = G.W * 0.46 + Math.sin(t * Math.PI * 1.3 + 0.2) * G.W * 0.08, w = G.W * (0.12 + 0.52 * t ** 0.9);
+    return { x, y, w };
+  };
+  const slotT = (i) => 0.16 + ((i + 0.5) / 16) * 0.82;
+  function padXY(G, i, note) {
+    const t = slotT(i), r = river(G, t), q = note / 14;
+    return { x: r.x + (q - 0.5) * r.w * 0.78, y: r.y, t, s: 0.6 + 0.8 * t };
   }
 
   // ---------- кеш: бумага (под небом); земля и рамка (поверх неба) ----------
@@ -70,6 +73,7 @@
     x.stroke(); x.restore();
   }
 
+
   // горы, как на картах Таро: дальний хребет бледнее, ближний — со штриховкой теней и снежными шапками;
   // заливка бумагой закрывает небо ниже гор. Луг с травой, рамка с украшениями
   function ridge(x, G, base, peaks, hMin, hMax, a, seed) {
@@ -92,26 +96,34 @@
       x.beginPath(); x.moveTo(ax - ph * 0.2, ay + ph * 0.22); x.lineTo(ax - ph * 0.08, ay + ph * 0.16); x.lineTo(ax, ay + ph * 0.25); x.lineTo(ax + ph * 0.1, ay + ph * 0.17); x.lineTo(ax + ph * 0.2, ay + ph * 0.24); x.stroke();
     }
   }
+
+  // горы, луг, берега, мостик-заготовка; рамка с украшениями
   function drawLand(x, G, rnd) {
     const { W } = G;
     x.save(); x.beginPath(); x.rect(13, 13, W - 26, G.H - T.safeBot - 26); x.clip();
-    ridge(x, G, G.hor, 4, 0.07 * G.h, 0.12 * G.h, 0.45, 5);
-    ridge(x, G, G.river[0] - 2, 6, 0.03 * G.h, 0.055 * G.h, 0.8, 9);
-    // птицы над горами
-    line(x, 0.6, 1);
-    for (const [bx, by, s] of [[0.84, 0.47, 1], [0.9, 0.44, 0.8], [0.14, 0.5, 0.7]]) {
-      const X = W * bx, Y = G.top + G.h * by;
-      x.beginPath(); x.moveTo(X - 6 * s, Y); x.quadraticCurveTo(X - 3 * s, Y - 4 * s, X, Y); x.quadraticCurveTo(X + 3 * s, Y - 4 * s, X + 6 * s, Y); x.stroke();
-    }
-    // луг: пучки травы, земля под древом
+    ridge(x, G, G.hor, 4, 0.08 * G.h, 0.14 * G.h, 0.45, 5);
+    ridge(x, G, G.hor + 0.02 * G.h, 6, 0.03 * G.h, 0.06 * G.h, 0.8, 9);
+    // река: заливка бумагой, берега, пунктир по течению — октавы (ступени 0, 7, 14)
+    const N = 60, edge = (s) => { for (let k = 0; k <= N; k++) { const r = river(G, k / N); const X = r.x + s * r.w / 2; k ? x.lineTo(X, r.y) : x.moveTo(X, r.y); } };
+    x.fillStyle = `rgb(${PAPER})`; x.beginPath(); edge(-1); for (let k = N; k >= 0; k--) { const r = river(G, k / N); x.lineTo(r.x + r.w / 2, r.y); } x.closePath(); x.fill();
+    line(x, 0.85, 1.4); x.beginPath(); edge(-1); x.stroke(); x.beginPath(); edge(1); x.stroke();
+    x.setLineDash([2, 5]); line(x, 0.22, 0.8);
+    for (const q of [0, 0.5, 1]) { x.beginPath(); for (let k = 3; k <= N; k++) { const r = river(G, k / N), X = r.x + (q - 0.5) * r.w * 0.78; k > 3 ? x.lineTo(X, r.y) : x.moveTo(X, r.y); } x.stroke(); }
+    x.setLineDash([]);
+    line(x, 0.35, 0.8); x.beginPath();               // волны по воде — короткие штрихи, к нам крупнее
+    for (let k = 0; k < 70; k++) { const t = rnd() ** 0.8, r = river(G, t), X = r.x + (rnd() - 0.5) * r.w * 0.9, l = 3 + 8 * t; x.moveTo(X - l, r.y + 2); x.quadraticCurveTo(X, r.y, X + l, r.y + 2); }
+    x.stroke();
+    // засечки мест по левому берегу — куда можно посадить кувшинку
+    line(x, 0.45, 1); x.beginPath();
+    for (let i = 0; i < 16; i++) { const r = river(G, slotT(i)), X = r.x - r.w / 2; x.moveTo(X - 4 - 4 * slotT(i), r.y); x.lineTo(X - 1, r.y); }
+    x.stroke();
+    // луг: пучки травы по берегам
     line(x, 0.55, 0.9);
-    for (let i = 0; i < 14; i++) {
-      const X = 20 + rnd() * (W - 40), Y = G.river[1] + 12 + rnd() * (G.bot - G.river[1] - 24);
-      if (X < 90 && Y > G.bot - 90) continue;      // у надгробия — пусто
-      tuft(x, X, Y, 0.8 + 0.4 * ((Y - G.hor) / G.h));
+    for (let i = 0; i < 22; i++) {
+      const t = 0.15 + rnd() * 0.85, r = river(G, t), sd = rnd() < 0.5 ? -1 : 1, X = r.x + sd * (r.w / 2 + 10 + rnd() * 60);
+      if (X < 18 || X > W - 18 || (X < 90 && r.y > G.bot - 90)) continue;
+      tuft(x, X, r.y, 0.6 + 0.6 * t);
     }
-    line(x, 0.85, 1.4);
-    x.beginPath(); x.moveTo(W * 0.24, G.yG + 6); x.quadraticCurveTo(W * 0.5, G.yG - 8, W * 0.76, G.yG + 6); x.stroke();
     x.restore();
     drawCard(x, G);
   }
@@ -150,7 +162,7 @@
   function drawFog(c, G, now) {                      // туман — reverb: дальние холмы тонут
     const r = fx.reverb;
     if (r < 0.03) return;
-    c.fillStyle = pap(0.8 * r); c.fillRect(13, G.hor - 0.13 * G.h, G.W - 26, G.river[0] - G.hor + 0.13 * G.h - 2);
+    c.fillStyle = pap(0.8 * r); c.fillRect(13, G.hor - 0.15 * G.h, G.W - 26, 0.15 * G.h + 0.02 * G.h);
     c.strokeStyle = ink(0.3 * r); c.lineWidth = 0.9;
     const n = Math.round(2 + r * 5);
     c.setLineDash([10 + 8 * r, 6]);
@@ -162,42 +174,6 @@
     }
     c.setLineDash([]);
   }
-  function drawRiver(c, G, now) {                    // река — волнистые линии; рябь сильнее с chorus
-    const [y0, y1] = G.river, ch = fx.chorus;
-    c.fillStyle = pap(1); c.fillRect(13, y0 - 3, G.W - 26, y1 - y0 + 6);
-    c.strokeStyle = ink(0.85); c.lineWidth = 1.3;
-    for (const y of [y0, y1]) { c.beginPath(); c.moveTo(13, y); for (let X = 13; X < G.W - 13; X += 8) c.quadraticCurveTo(X + 4, y + (y === y0 ? -2 : 2), X + 8, y); c.stroke(); }
-    const rows = 2 + Math.round(ch * 3), amp = 0.6 + ch * 2.6, ph = now * (0.0008 + ch * 0.003);
-    c.strokeStyle = ink(0.5); c.lineWidth = 0.9;
-    for (let k = 0; k < rows; k++) {
-      const y = y0 + ((k + 1) * (y1 - y0)) / (rows + 1), off = (k * 37) % 23;
-      c.beginPath();
-      for (let X = 18 + off; X < G.W - 30; X += 30 + (k % 3) * 6) {
-        c.moveTo(X, y);
-        for (let q = 1; q <= 6; q++) c.lineTo(X + q * 3, y + Math.sin(q * 1.2 + ph + X * 0.05) * amp);
-      }
-      c.stroke();
-    }
-  }
-
-  // камыши у ближнего берега — cutoff: открыт фильтр — камыш густой и высокий, закрыт — пара низких стеблей
-  const REEDS = [0.08, 0.83, 0.3, 0.62, 0.17, 0.92, 0.4, 0.71, 0.24, 0.56, 0.12, 0.87, 0.35, 0.66, 0.77, 0.2];
-  function drawReeds(c, G, now) {
-    const k = fx.cutoff, n = 3 + Math.round(k * 13), hgt = 12 + k * 46, base = G.river[1] + 3;
-    for (let i = 0; i < n; i++) {
-      const X = 20 + REEDS[i] * (G.W - 40);
-      if (Math.abs(X - G.W / 2) < 16) continue;    // у ствола — пусто
-      const hh = hgt * (0.75 + 0.25 * Math.sin(i * 2.7)), sw = Math.sin(now * 0.0012 + i) * 2.5 * (hh / 50), tx = X + sw, ty = base - hh;
-      c.strokeStyle = ink(0.85); c.lineWidth = 1;
-      c.beginPath(); c.moveTo(X, base); c.quadraticCurveTo(X, base - hh * 0.5, tx, ty); c.stroke();
-      c.beginPath(); c.moveTo(tx, ty); c.lineTo(tx + sw * 0.2, ty - 5); c.stroke();           // острый кончик
-      c.fillStyle = ink(0.85); c.beginPath(); c.ellipse(tx - sw * 0.05, ty + 5, 1.8, 4.5, sw * 0.02, 0, TAU); c.fill();   // початок
-      c.strokeStyle = ink(0.7); c.lineWidth = 0.9; c.beginPath();                            // листья-ленты
-      for (const d of [-1, 1]) { c.moveTo(X, base); c.quadraticCurveTo(X + d * 3, base - hh * 0.45, X + d * 9 + sw * 0.6, base - hh * 0.7); }
-      c.stroke();
-    }
-  }
-
   function leaf(c, X, Y, ang, s, a, fill = true) { // миндалевидный лист с жилкой
     c.save(); c.translate(X, Y); c.rotate(ang);
     c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(4.5 * s, -6 * s, 0, -13 * s); c.quadraticCurveTo(-4.5 * s, -6 * s, 0, 0);
@@ -207,39 +183,6 @@
     c.restore();
   }
 
-  // древо жизни: ствол с корой и корнями, крона веером; бледные дуги — октавы (где ступени 0, 7, 14)
-  function drawTree(c, G, now) {
-    const stepMs = 60000 / bpm / 4, cur = Math.floor(now / stepMs) % steps.len, k = Math.exp(-(now % stepMs) / 200);
-    const x = G.cx, yb = G.yG, yt = G.yC;
-    c.strokeStyle = ink(0.16); c.lineWidth = 0.8; c.setLineDash([2, 4]);
-    for (const d of [0, 7, 14]) { c.beginPath(); c.arc(x, yt, G.R0 + (d / 14) * (G.R1 - G.R0), ANG0, ANG1); c.stroke(); }
-    c.setLineDash([]);
-    c.fillStyle = ink(0.9);
-    c.beginPath(); c.moveTo(x - 8, yb); c.quadraticCurveTo(x - 4, (yb + yt) / 2, x - 3, yt + 4); c.lineTo(x + 3, yt + 4); c.quadraticCurveTo(x + 4, (yb + yt) / 2, x + 8, yb); c.closePath(); c.fill();
-    c.strokeStyle = pap(0.7); c.lineWidth = 0.8; c.beginPath();
-    for (let y = yt + 12; y < yb - 4; y += 9) { const w = 2 + 4 * ((y - yt) / (yb - yt)); c.moveTo(x - w * 0.6, y); c.lineTo(x + w * 0.4, y + 4); }
-    c.stroke();
-    c.strokeStyle = ink(0.9); c.lineWidth = 1.3; c.beginPath();      // корни
-    for (const d of [-1, 1]) for (const q of [0.6, 1]) { c.moveTo(x + d * 4, yb - 2); c.quadraticCurveTo(x + d * 12 * q, yb + 2, x + d * 30 * q, yb + 8 * q); }
-    c.stroke();
-    c.lineCap = 'round';
-    for (let i = 0; i < 16; i++) {
-      const b = branchOf(G, i);
-      if (i >= steps.len) { T.dot(x + Math.cos(b.a) * G.R0 * 0.4, yt + Math.sin(b.a) * G.R0 * 0.4, 1.1, 0.25); continue; }   // за длиной — почка
-      const on = i === cur, kk = on ? k : 0;
-      const mx = (b.sx + b.ex) / 2, my = (b.sy + b.ey) / 2 - 0.12 * b.r * Math.abs(Math.cos(b.a));   // ветвь чуть выгнута кверху
-      c.strokeStyle = ink(0.9); c.lineWidth = b.nt == null ? 2 : 2.6 - 0.8 * (b.r / G.R1);
-      c.beginPath(); c.moveTo(b.sx, b.sy); c.quadraticCurveTo(mx, my, b.ex, b.ey); c.stroke();
-      if (b.nt == null) { if (on) T.ring(b.ex, b.ey, 4 + 6 * (1 - kk), 0.6 * kk + 0.2, 1); continue; }   // пауза — голый сучок
-      const dir = b.a + Math.PI / 2, s = 0.95 + 0.35 * kk, al = 0.8 + 0.2 * kk;
-      for (const q of [-0.6, 0, 0.6]) leaf(c, b.ex, b.ey, dir + q, s * (q ? 0.8 : 1), al);   // листья на конце
-      if (on) T.ring(b.ex + Math.cos(b.a) * 8, b.ey + Math.sin(b.a) * 8, 8 + 10 * (1 - kk), 0.7 * kk + 0.15, 1.1);   // капля упала — круг
-    }
-    c.lineCap = 'butt';
-    return { cur, k };
-  }
-
-  // одна туча над древом поливает его и цветы; дождь гуще с time; облака вокруг появляются с delay
   function cloud(c, X, Y, s, a) {
     const w = 64 * s, h = 16 * s;
     c.save(); c.translate(X, Y);
@@ -262,19 +205,6 @@
     }
     c.stroke();
   }
-  const EXTRA = [[-0.33, 0.55, 0.55], [0.34, 0.25, 0.6], [-0.2, -0.45, 0.45], [0.22, -0.55, 0.5], [0.4, 0.75, 0.4]];
-  function drawCloud(c, G, now) {
-    const s = (G.W * 0.5) / 64, cy = G.cloudY;
-    const n = fx.delay < 0.15 ? 0 : Math.ceil(((fx.delay - 0.15) / 0.85) * EXTRA.length);   // delay — облака вокруг
-    for (let i = 0; i < n; i++) {
-      const [dx, dy, k] = EXTRA[i], bob = Math.sin(now * 0.0006 + i * 1.7) * 2;
-      cloud(c, G.cx + dx * G.W, cy + dy * 40 + bob, s * k, 0.55 + 0.1 * (i % 2));
-    }
-    rain(c, G.cx, cy + 2, G.W * 0.48, G.yG + 50, 0.42, now, 0.4 + 1.6 * fx.time);   // дождь — на древо и цветы
-    cloud(c, G.cx, cy, s, 0.95);
-  }
-
-  // цветы-голоса у корней: вид — волна, крупнее — громче; на каждом шаге раскрываются и закрываются (огибающая)
   function flower(c, X, Y, w, s, a) {
     c.save(); c.translate(X, Y);
     c.strokeStyle = ink(a); c.lineWidth = 1.1; c.fillStyle = pap(1);
@@ -294,17 +224,133 @@
     }
     c.restore();
   }
-  function drawFlowers(c, G, st) {
-    const stepMs = 60000 / bpm / 4, hit = steps.notes[st.cur] != null;
-    const open = hit ? Math.exp(-(performance.now() % stepMs) / (40 + fx.env * 400)) : 0;
-    const at = [[0.3, 40], [0.64, 30], [0.76, 52]];
-    voices.forEach((v, k) => {
-      const X = G.W * at[k][0], base = G.yG + at[k][1] + 24, top = base - 26 - 26 * v.level;
-      c.strokeStyle = ink(0.85); c.lineWidth = 1.1;
-      c.beginPath(); c.moveTo(X, base); c.quadraticCurveTo(X - 4, (base + top) / 2, X, top); c.stroke();
-      leaf(c, X - 1, base - 10, -1.0, 0.8, 0.8);
-      flower(c, X, top, v.wave, (6 + 9 * v.level) * (0.7 + 0.45 * open), 0.95);
-    });
+
+  // мостик — длина петли: каменная арка поперёк реки за последним шагом
+  function drawBridge(c, G) {
+    const t = slotT(pads.len - 1) + 0.82 / 16 * 0.75, r = river(G, Math.min(0.99, t)), w = r.w + 22, h = 8 + 14 * t, x0 = r.x - w / 2, y = r.y;
+    c.fillStyle = pap(1); c.strokeStyle = ink(0.9); c.lineWidth = 1.3;
+    c.beginPath(); c.moveTo(x0, y); c.lineTo(x0, y - h - 6); c.lineTo(x0 + w, y - h - 6); c.lineTo(x0 + w, y); c.lineTo(x0 + w - 8, y);
+    c.quadraticCurveTo(r.x, y - h * 2.1, x0 + 8, y); c.closePath(); c.fill(); c.stroke();
+    c.lineWidth = 0.8; c.strokeStyle = ink(0.45); c.beginPath();
+    for (let X = x0 + 6; X < x0 + w - 4; X += 7) { c.moveTo(X, y - h - 6); c.lineTo(X, y - h - 1); }
+    c.moveTo(x0, y - h - 1); c.lineTo(x0 + w, y - h - 1); c.stroke();
+  }
+  // кувшинка: лист с вырезом, сверху цветок-голос; на шаге раскрывается, от неё круги (с delay — повторяются)
+  function lily(c, p, wave, open, a) {
+    const rx = 15 * p.s, ry = rx * 0.48;
+    c.fillStyle = pap(1); c.strokeStyle = ink(a); c.lineWidth = 1.1;
+    c.beginPath(); c.ellipse(p.x, p.y, rx, ry, 0, 0.35, TAU - 0.05); c.lineTo(p.x, p.y); c.closePath(); c.fill(); c.stroke();
+    c.lineWidth = 0.6; c.strokeStyle = ink(a * 0.5); c.beginPath();
+    for (const q of [1.2, 2.1, 3.0, 3.9, 4.8]) { c.moveTo(p.x, p.y); c.lineTo(p.x + Math.cos(q) * rx * 0.8, p.y + Math.sin(q) * ry * 0.8); }
+    c.stroke();
+    flower(c, p.x - rx * 0.15, p.y - ry * 0.4, wave, (4 + 4 * p.s) * (0.75 + 0.45 * open), a);
+  }
+  function drawPads(c, G, now) {
+    const stepMs = 60000 / bpm / 4, loop = stepMs * pads.len, ph = (now % loop) / stepMs, cur = Math.floor(ph);
+    const echoes = 1 + Math.round(fx.delay * 3), gap = 220 + 300 * fx.time;
+    for (let i = 0; i < pads.len; i++) {              // круги от задетых кувшинок — только что и эхом
+      const pd = pads.at[i];
+      if (!pd) continue;
+      const p = padXY(G, i, pd.note), since = ((ph - i + pads.len) % pads.len) * stepMs;
+      for (let e = 0; e < echoes; e++) {
+        const k = (since - e * gap) / 700;
+        if (k < 0 || k > 1) continue;
+        c.strokeStyle = ink(0.6 * (1 - k) * 0.7 ** e); c.lineWidth = 1;
+        c.beginPath(); c.ellipse(p.x, p.y, 12 * p.s + 26 * p.s * k, (12 * p.s + 26 * p.s * k) * 0.45, 0, 0, TAU); c.stroke();
+      }
+    }
+    for (let i = 0; i < 16; i++) {
+      if (i === pads.len) drawBridge(c, G);           // мостик — между последним шагом и бледными за ним
+      const pd = pads.at[i];
+      if (!pd) continue;
+      const p = padXY(G, i, pd.note), on = i === cur && i < pads.len;
+      const open = on ? Math.exp(-((ph - cur) * stepMs) / (40 + fx.env * 400)) : 0;
+      lily(c, p, pd.wave, open, i < pads.len ? 0.95 : 0.3);   // за мостиком — бледные, не играют
+    }
+    if (pads.len >= 16) drawBridge(c, G);
+    // лист-лодочка плывёт по течению: между местами — плавно
+    const t = 0.16 + ((ph % pads.len) / 16) * 0.82, r = river(G, t), s = 0.75 + 1.0 * t, bx = r.x + Math.sin(now * 0.0015) * r.w * 0.06, by = r.y - 2;
+    c.save(); c.translate(bx, by); c.rotate(-0.15);
+    c.fillStyle = pap(1); c.strokeStyle = ink(0.95); c.lineWidth = 1.1;
+    c.beginPath(); c.moveTo(-11 * s, 0); c.quadraticCurveTo(0, 6 * s, 11 * s, 0); c.quadraticCurveTo(0, -3 * s, -11 * s, 0); c.closePath(); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(-9 * s, 0.5); c.lineTo(9 * s, 0.5); c.stroke();
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -9 * s); c.lineTo(6 * s, -2 * s); c.closePath(); c.stroke();   // парус из листа
+    c.restore();
+  }
+  // дождь по воде — кружки (гуще с time)
+  function drawRainRings(c, G, now) {
+    const n = Math.round(4 + 14 * fx.time);
+    c.lineWidth = 0.8;
+    for (let i = 0; i < n; i++) {
+      const per = 1300 + (i % 5) * 170, k = ((now + i * 397) % per) / per, cyc = Math.floor((now + i * 397) / per);
+      const h1 = ((i * 7919 + cyc * 104729) % 1000) / 1000, h2 = ((i * 3301 + cyc * 7727) % 1000) / 1000;
+      const t = 0.15 + h1 * 0.8, r = river(G, t), X = r.x + (h2 - 0.5) * r.w * 0.85, R = (2 + 8 * k) * (0.5 + t);
+      c.strokeStyle = ink(0.35 * (1 - k)); c.beginPath(); c.ellipse(X, r.y, R, R * 0.4, 0, 0, TAU); c.stroke();
+    }
+  }
+  // камыши по обоим берегам ближней части — cutoff
+  const REEDS = [0.55, 0.92, 0.7, 0.62, 0.84, 0.97, 0.75, 0.66, 0.88, 0.58, 0.8, 0.94, 0.72, 0.6, 0.86, 0.78];
+  function drawReeds(c, G, now) {
+    const k = fx.cutoff, n = 3 + Math.round(k * 13);
+    for (let i = 0; i < n; i++) {
+      const t = REEDS[i], r = river(G, t), sd = i % 2 ? 1 : -1, X = r.x + sd * (r.w / 2 + 2 + (i % 3) * 5), base = r.y + 2;
+      const hh = (12 + k * 42) * (0.6 + 0.6 * t) * (0.8 + 0.2 * Math.sin(i * 2.7)), sw = Math.sin(now * 0.0012 + i) * 2.5 * (hh / 50), tx = X + sw, ty = base - hh;
+      c.strokeStyle = ink(0.85); c.lineWidth = 1;
+      c.beginPath(); c.moveTo(X, base); c.quadraticCurveTo(X, base - hh * 0.5, tx, ty); c.stroke();
+      c.beginPath(); c.moveTo(tx, ty); c.lineTo(tx + sw * 0.2, ty - 5); c.stroke();
+      c.fillStyle = ink(0.85); c.beginPath(); c.ellipse(tx, ty + 5, 1.8, 4.5, 0, 0, TAU); c.fill();
+      c.strokeStyle = ink(0.7); c.lineWidth = 0.9; c.beginPath();
+      for (const d of [-1, 1]) { c.moveTo(X, base); c.quadraticCurveTo(X + d * 3, base - hh * 0.45, X + d * 9 + sw * 0.6, base - hh * 0.7); }
+      c.stroke();
+    }
+  }
+  // древо жизни на правом берегу: ствол с корнями, круглая крона-фестон с листьями и плодами — просто древо, без нот
+  function drawTree(c, G) {
+    const { x, y } = G.tree, R = Math.min(G.W * 0.16, G.h * 0.09), cy = y - G.h * 0.13 - R * 0.6;
+    c.fillStyle = ink(0.9);
+    c.beginPath(); c.moveTo(x - 6, y); c.quadraticCurveTo(x - 3, (y + cy) / 2, x - 2.5, cy); c.lineTo(x + 2.5, cy); c.quadraticCurveTo(x + 3, (y + cy) / 2, x + 6, y); c.closePath(); c.fill();
+    c.strokeStyle = ink(0.9); c.lineWidth = 1.2; c.beginPath();
+    for (const d of [-1, 1]) { c.moveTo(x + d * 3, y - 2); c.quadraticCurveTo(x + d * 9, y + 1, x + d * 22, y + 5); }
+    c.stroke();
+    const lobes = 9;                                    // крона: фестоны по кругу
+    c.fillStyle = pap(1); c.strokeStyle = ink(0.9); c.lineWidth = 1.3;
+    c.beginPath();
+    for (let k = 0; k < lobes; k++) {
+      const a0 = (k / lobes) * TAU, a1 = ((k + 1) / lobes) * TAU, am = (a0 + a1) / 2;
+      const p0x = x + Math.cos(a0) * R, p0y = cy + Math.sin(a0) * R * 0.92;
+      if (!k) c.moveTo(p0x, p0y);
+      c.quadraticCurveTo(x + Math.cos(am) * R * 1.32, cy + Math.sin(am) * R * 1.22, x + Math.cos(a1) * R, cy + Math.sin(a1) * R * 0.92);
+    }
+    c.closePath(); c.fill(); c.stroke();
+    hatchIn(c, () => c.arc(x + R * 0.2, cy + R * 0.15, R * 0.95, -0.4, 1.9), 0.8, 3, 0.35);   // тень справа-снизу
+    for (let k = 0; k < 7; k++) {                       // листья и плоды внутри
+      const a = k * 2.4, rr = R * (0.25 + 0.55 * ((k * 37) % 10) / 10), lx = x + Math.cos(a) * rr, ly = cy + Math.sin(a) * rr * 0.9;
+      if (k % 2) { c.fillStyle = pap(1); c.strokeStyle = ink(0.85); c.lineWidth = 1; c.beginPath(); c.arc(lx, ly, 3.2, 0, TAU); c.fill(); c.stroke(); c.beginPath(); c.moveTo(lx, ly - 3.2); c.lineTo(lx + 1.5, ly - 6); c.stroke(); }
+      else leaf(c, lx, ly + 5, a, 0.75, 0.75);
+    }
+  }
+  // туча над древом, поливает его и берег; облака вокруг — delay
+  const EXTRA = [[-0.3, 0.6, 0.55], [0.12, -0.5, 0.6], [-0.55, -0.3, 0.45], [-0.15, 0.9, 0.5], [0.05, 0.4, 0.4]];
+  function drawCloud(c, G, now) {
+    const s = (G.W * 0.34) / 64, cx = Math.min(G.tree.x, G.W - 34 * s), cy = G.cloudY + G.h * 0.08;
+    const n = fx.delay < 0.15 ? 0 : Math.ceil(((fx.delay - 0.15) / 0.85) * EXTRA.length);
+    for (let i = 0; i < n; i++) {
+      const [dx, dy, k] = EXTRA[i], bob = Math.sin(now * 0.0006 + i * 1.7) * 2;
+      cloud(c, cx + dx * G.W, cy + dy * 40 + bob, s * k, 0.55 + 0.1 * (i % 2));
+    }
+    rain(c, cx, cy + 2, G.W * 0.3, G.tree.y + 20, 0.42, now, 0.4 + 1.6 * fx.time);
+    cloud(c, cx, cy, s, 0.95);
+  }
+  // птицы — хор: больше chorus — больше птиц; машут крыльями, медленно кружат над горами
+  function drawBirds(c, G, now) {
+    const n = Math.round(fx.chorus * 16);
+    c.strokeStyle = ink(0.8); c.lineWidth = 1.2;
+    for (let i = 0; i < n; i++) {
+      const h1 = ((i * 7919) % 1000) / 1000, h2 = ((i * 3301) % 1000) / 1000;
+      const X = G.W * (0.3 + 0.55 * h1) + Math.sin(now * 0.0002 + i) * 18, Y = G.top + G.h * (0.12 + 0.13 * h2) + Math.cos(now * 0.00027 + i * 1.3) * 6;
+      const s = 1 + 0.8 * h2, f = Math.sin(now * 0.006 + i * 2.1) * 3 * s;
+      c.beginPath(); c.moveTo(X - 6 * s, Y - f * 0.4); c.quadraticCurveTo(X - 3 * s, Y - 3 * s - f, X, Y); c.quadraticCurveTo(X + 3 * s, Y - 3 * s - f, X + 6 * s, Y - f * 0.4); c.stroke();
+    }
   }
 
   // надгробие в левом нижнем углу; выступает из угла поверх рамки
@@ -324,6 +370,7 @@
     line(c, 0.6, 0.9); tuft(c, x0 + w + 6, yb - 2, 0.9); tuft(c, x0 + 10, yb - 1, 0.7);
   }
 
+
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
@@ -341,7 +388,7 @@
     save: () => ({ ...fx }), load: (o) => Object.assign(fx, o),
   };
   const natura = {
-    n: 'IV', title: 'Natura', sub: 'arbor · pluvia · nondum sonat',
+    n: 'IV', title: 'Natura', sub: 'flumen · nymphaeae · nondum sonat',
     theme: { ink: INK, bg: `rgb(${PAPER})`, paper: PAPER },
     corner: { hit: (f) => { const G = geo(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце — карта; надгробие пока просто стоит
     fx: fxw,
@@ -351,13 +398,14 @@
       c.drawImage(skyC, 0, 0, T.W, T.H);
       c.save(); c.beginPath(); c.rect(13, 13, T.W - 26, T.H - T.safeBot - 26); c.clip();
       drawSun(c, G, now);
+      drawBirds(c, G, now);
       c.restore();
       c.drawImage(landC, 0, 0, T.W, T.H);
       drawFog(c, G, now);
-      drawRiver(c, G, now);
+      drawRainRings(c, G, now);
+      drawPads(c, G, now);
       drawReeds(c, G, now);
-      const st = drawTree(c, G, now);
-      drawFlowers(c, G, st);
+      drawTree(c, G);
       drawCloud(c, G, now);
       drawStone(c, G);
     },
@@ -366,5 +414,5 @@
     sounding: () => false,
   };
   T.registerWorld(4, natura);
-  window.t2d.nat = { fx, steps, geo, branchOf };
+  window.t2d.nat = { fx, pads, geo, padXY };
 })();
