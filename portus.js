@@ -1,12 +1,12 @@
 // Portus — мир XIII: ночная бухта в псевдоперспективе, как в Natura. Звук — dub techno: аккорды-стабы сквозь фильтр, эхо и туман.
-// Делей, ревер и фильтр здесь — не веер FX, а сама сцена (часть патча):
-//   · острова в бухте — аккорды: поперёк — тоника, дальше в море — глубже аккорд (квинта → sus → m7 → m9 → m11); по очереди, как прогрессия;
-//   · фонари на набережной внизу — 16 шестнадцатых: горящий — удар аккорда; маяк на правом мысу — пуск/стоп, вбок — темп;
-//   · луна — фильтр: выше — открыт, вбок — резонанс; лунная дорожка на воде — его след;
+// Одна дорожка, как река Natura: от каждого из 16 фонарей набережной в море уходит луч — шестнадцатая; остров на луче — удар
+// аккорда; дальше в море — выше тоника (полтора октавы ниже обычного: глубокий даб). Аккорд (квинта, sus, m7, m9, m11) — общий
+// у маяка, у острова может быть свой. Делей, ревер и фильтр — не веер FX, а сама сцена:
+//   · луна — фильтр (и вместо солнца — тап по ней — карта): выше — открыт, садится к горизонту — закрыт, вбок — резонанс;
 //   · колокол-буй — эхо: поперёк — время (1/8 … 1/2), дальше в море — дольше повторы (до бесконечных); круги на воде — повторы;
-//   · туман на горизонте — ревер: выше туман — больше зала, он прячет дальние острова и луну.
-// Держишь любой предмет — его плашка. Веер FX: wow (лента плывёт), mare (шум моря), drive (тёплый перегруз), spread.
-// Солнце — четвертью в левом верхнем углу: тап — карта.
+//     тап по небу — падает звезда и гасит накопившееся эхо;
+//   · туман на горизонте — ревер: выше туман — больше зала, он прячет дальние острова и садящуюся луну.
+// Маяк на краю набережной — пуск/стоп, вбок — темп. Держишь предмет — плашка. Веер FX: wow (лента), mare (шум моря), drive, spread.
 (() => {
   'use strict';
   const T = window.T2D;
@@ -15,33 +15,35 @@
   const INK = '196,208,216', BGC = '#06090d', PAPER = '6,9,13', LIGHT = [238, 198, 126];
   const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
   const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
-  const ROMAN = ['I', 'II', 'III', 'IV'];
-  const CHORDS = [                                         // дальше в море — глубже аккорд; голоса — как у стабов Basic Channel
+  const CHORDS = [                                         // голоса — как у стабов Basic Channel
     { name: '5', iv: [0, 7, 12, 19] }, { name: 'sus', iv: [0, 5, 10, 14] }, { name: 'm7', iv: [0, 7, 10, 15] },
     { name: 'm9', iv: [0, 7, 10, 14, 15] }, { name: 'm11', iv: [0, 7, 10, 14, 15, 17] },
   ];
   const DT = [2, 3, 4, 6, 8], DT_NAME = ['1/8', '3/16', '1/4', '3/8', '1/2'];   // время эха в шестнадцатых
-  const BARS = [1, 2, 4, 8], IMAX = 4;
+  const NSTEP = 16, PSPAN = 12;                           // 16 лучей-шестнадцатых; по глубине — октава
 
   // ---------- состояние ----------
-  const isles = [];                                       // {u, d, oct, lvl, sd, born}: u — поперёк (−1…1), d — вдаль (0 у набережной … 1 горизонт)
-  const steps = new Set([2, 6, 10, 14]);                  // удары: на «и» каждой доли
+  const isles = [];                                       // {step (луч 0…15), p (0…12 полутонов от нижней тоники), oct, lvl, type (−1 — как у маяка), sd, hit}
   const luna = { cut: 0.42, res: 0.35, env: 0.45 };       // фильтр
-  const echo = { time: 1, fb: 0.62, tone: 0.45, mix: 0.6 };   // эхо: время (индекс DT), повторы, темнота, сколько посылать
+  const echo = { time: 1, tone: 0.45, mix: 0.6 };         // эхо: время (индекс DT), темнота, сколько посылать; повторы — по месту буя
   const buoy = { u: 0.35, d: 0.45 };
   const fog = { amt: 0.45, size: 0.7 };                   // ревер
-  const pharos = { bars: 1, len: 0.25, lvl: 0.8, swing: 0 };
+  const pharos = { chord: 2, len: 0.25, lvl: 0.8, swing: 0 };
   const fx = { wow: 0.25, mare: 0, drive: 0.25, spread: 0.6 };
   const seq = { playing: false, bpm: 120, next: 0, step: 0 };
   const stepSec = () => 60 / seq.bpm / 4;
   const root = () => (T.scaleOn ? T.scaleRoot : 0);
-  const typeOf = (is) => clamp(Math.floor(is.d * 5), 0, 4);
-  function semiOf(is) { let s = Math.round(((is.u + 1) / 2) * 12) + root(); if (T.scaleOn) s = T.snapSemi(s + 12) - 12; return s; }
-  const hzOf = (is) => 110 * 2 ** (semiOf(is) / 12 + (is.oct || 0));
-  const nameOf = (is) => { const m = semiOf(is) + 12 * (is.oct || 0); return `${NOTES[((m % 12) + 12) % 12]}${CHORDS[typeOf(is)].name}`; };
+  const isleOn = (j) => isles.find((i) => i.step === j);
+  const typeOf = (is) => (is.type >= 0 ? is.type : pharos.chord);
+  function semiOf(is) {                                   // нижняя тоника — между D1 и C#2 (37…69 Гц); выше по лучу — полутоны, с ладом — ступени
+    const r = root(); let a = (r < 5 ? r : r - 12) + is.p;
+    if (T.scaleOn) a = T.snapSemi(a + 24) - 24;
+    return a + 12 * (is.oct || 0);
+  }
+  const hzOf = (is) => 55 * 2 ** (semiOf(is) / 12);
+  const nameOf = (is) => { const m = semiOf(is); return `${NOTES[((m % 12) + 12) % 12]}${CHORDS[typeOf(is)].name}`; };
   const fcOf = () => 90 * 2 ** (7.2 * luna.cut);           // срез: 90 Гц … 13 кГц
   const fbOf = () => clamp(0.15 + buoy.d * 0.84, 0, 0.985);   // дальше буй — дольше эхо
-  function curIsle(step) { if (!isles.length) return null; const bar = Math.floor(step / 16); return isles[Math.floor(bar / pharos.bars) % isles.length]; }
 
   // ---------- геометрия: небо, горизонт, бухта между мысами, набережная внизу ----------
   const K = 2.6, Q1 = 1 / (1 + K);
@@ -49,16 +51,26 @@
     const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, Ws = Math.min(W, (H - T.safeBot) * 0.62), cx = W / 2;
     const fx0 = cx - Ws / 2, fx1 = cx + Ws / 2, hor = top + (bot - top) * 0.3, qy = bot - 66, Wh = Ws / 2 - 4;
     const mr = Math.min(46, W * 0.12), moon = { x: Math.max(0, fx0), y: hor - mr * 0.35 - luna.cut * (hor - top - mr * 0.9), r: mr };   // луна вместо солнца: в левом углу, выше — фильтр открыт; к горизонту — садится
-    const ph = { x: fx1 - 40, y: qy - 52 };                                                   // маяк на правом мысу, у нас под рукой
+    const ph = { x: fx1 - 26, y: qy };                                                         // маяк на краю набережной, у нас под рукой
     return { W, H, top, bot, cx, Ws, fx0, fx1, hor, qy, Wh, moon, ph, fogTop: hor - 6 - fog.amt * (hor - top - 40) * 0.7 };
   }
   function P(G, u, d) { const q = 1 / (1 + K * d), k = (q - Q1) / (1 - Q1), wb = G.Wh * (0.8 + 0.2 * k); return { x: G.cx + u * wb, y: G.hor + (G.qy - G.hor) * k, s: q, wb }; }
   function unP(G, x, y) { const k = clamp((y - G.hor) / (G.qy - G.hor)), q = Q1 + k * (1 - Q1), wb = G.Wh * (0.8 + 0.2 * k); return { u: (x - G.cx) / wb, d: (1 / q - 1) / K }; }
-  // берега бухты: мысы выступают в воду — слева большой у нас под рукой и дальний, справа — мыс с маяком и дальний
-  const gs = (d, c, w) => Math.exp(-(((d - c) / w) ** 2));
-  const edge = (side, d) => side * (1 - (side < 0 ? 0.62 * gs(d, 0.2, 0.13) + 0.3 * gs(d, 0.58, 0.08) + 0.12 * gs(d, 0.86, 0.05) : 0.42 * gs(d, 0.05, 0.12) + 0.4 * gs(d, 0.7, 0.07)) - 0.022 * Math.sin(d * 17 + side) * (0.3 + d) - 0.012 * Math.sin(d * 43 + 2 * side) * d);   // мелкие бухточки — дальше чаще (на экране они сжаты)
-  const cliffH = (side, d) => 8 + 46 * (1 - Math.abs(edge(side, d))) + 6 * Math.sin(d * 29 + side * 3);   // где мыс дальше в воду — там выше скала
-  const lanternX = (G, i) => G.fx0 + 22 + ((G.Ws - 44) * (i + 0.5)) / 16;
+  const kOf = (d) => (1 / (1 + K * d) - Q1) / (1 - Q1);   // 1 у набережной … 0 на горизонте
+  const lanternX = (G, i) => G.fx0 + 18 + ((G.Ws - 72) * (i + 0.5)) / NSTEP;
+  const colU = (G, i) => (lanternX(G, i) - G.cx) / G.Wh;
+  const colC = (k) => 0.38 + 0.62 * k;                    // лучи сходятся к устью бухты
+  const dOfP = (p) => { const f = 0.15 + (0.77 * p) / PSPAN, q = Q1 + (1 - f) * (1 - Q1); return (1 / q - 1) / K; };   // глубина ровно по экрану
+  const pOfY = (G, y) => clamp(Math.round(((((G.qy - y) / (G.qy - G.hor)) - 0.15) / 0.77) * PSPAN), 0, PSPAN);
+  function colPt(G, i, p) { const d = dOfP(p); return P(G, colU(G, i) * colC(kOf(d)), d); }
+  function colAt(G, x, y) {                               // ближайший луч на этой высоте
+    const k = clamp((y - G.hor) / (G.qy - G.hor)), wb = G.Wh * (0.8 + 0.2 * k);
+    let best = 0, bd = 1e9; for (let i = 0; i < NSTEP; i++) { const d = Math.abs(x - (G.cx + colU(G, i) * colC(k) * wb)); if (d < bd) { bd = d; best = i; } }
+    return best;
+  }
+  // берега: бухта — воронка вокруг лучей, к устью уже; мелкие бухточки
+  const edge = (G, side, d) => (side < 0 ? colU(G, 0) : colU(G, NSTEP - 1)) * colC(kOf(d)) + side * (0.1 + 0.035 * (1 + Math.sin(d * 17 + side)) + 0.02 * Math.sin(d * 43) * d);
+  const cliffH = (side, d) => 12 + 26 * (0.5 + 0.5 * Math.sin(d * 7 + side * 1.3)) + 6 * Math.sin(d * 29 + side * 3);
 
   // ---------- звук ----------
   let actx = null, bus = null, lastSound = 0, last = null, noiseBuf = null;
@@ -84,7 +96,7 @@
     const mareBp = bq('bandpass', 380, 0.5), mareLp = bq('lowpass', 1600), mareAm = g(0.55), mareG = g(0), swell = ctx.createOscillator(), swellG = g(0.45);
     swell.frequency.value = 0.09; swell.connect(swellG).connect(mareAm.gain); swell.start();
     nz.connect(mareBp).connect(mareLp).connect(mareAm).connect(mareG);
-    bus = { stabs, drive, post, out, dSend, dL, dR, fbL, fbR, lpL, lpR, wowG, rSend, hall: h, mareG, input, live: false, mareOn: false };
+    bus = { stabs, drive, post, out, dSend, dL, dR, fbL, fbR, lpL, lpR, wowG, dWet, rSend, hall: h, mareG, input, live: false, mareOn: false };
     applyAll();
   }
   function setLive(on) {
@@ -117,8 +129,7 @@
     if (mo !== bus.mareOn) { bus.mareOn = mo; if (mo) { bus.mareG.connect(bus.out); setLive(true); } else bus.mareG.disconnect(); }
   }
   // удар аккорда: пары пил на каждую ноту → фильтр (24 дБ, с огибающей) → громкость; до следующего удара — потом гаснет быстро
-  function stab(t, step, vel = 1, gap = 0.5) {
-    const is = curIsle(step);
+  function stab(t, is, vel = 1, gap = 0.5) {
     if (!is || !bus) return;
     const ctx = actx, ch = CHORDS[typeOf(is)], f0 = hzOf(is), tau = 0.035 + pharos.len ** 2 * 1.8, A = 0.004;
     const fc = fcOf(), peak = Math.min(16000, fc * 2 ** (luna.env * 4.2 * vel)), Q = 0.7 + 13 * luna.res ** 2;
@@ -129,7 +140,7 @@
     const end = t + A + Math.min(tau * 5, gap + 0.06);                                       // не дольше, чем до следующего удара: голоса не копятся
     vca.gain.setValueAtTime(0, t); vca.gain.linearRampToValueAtTime(amp, t + A); vca.gain.setTargetAtTime(0, t + A, tau);
     if (end < t + A + tau * 5) vca.gain.setTargetAtTime(0, end - 0.05, 0.012);
-    if (pan.pan) pan.pan.value = is.u * 0.3 * fx.spread;
+    if (pan.pan) pan.pan.value = ((is.step / (NSTEP - 1)) * 2 - 1) * 0.3 * fx.spread;
     const osc = [];
     ch.iv.forEach((iv, k) => {
       for (const dc of [-1, 1]) {
@@ -140,18 +151,27 @@
     lp1.connect(lp2).connect(vca).connect(pan).connect(bus.stabs);
     osc[0].onended = () => { for (const n of [...osc, lp1, lp2, vca, pan]) n.disconnect(); };
     const wait = Math.max(0, (t - ctx.currentTime) * 1000);
-    setTimeout(() => { is.hit = performance.now(); hits.push({ t: performance.now(), dt: DT[echo.time] * stepSec() * 1000, fb: fbOf() }); if (hits.length > 6) hits.shift(); }, wait);
+    setTimeout(() => { is.hit = performance.now(); lastHit = is; hits.push({ t: performance.now(), dt: DT[echo.time] * stepSec() * 1000, fb: fbOf() }); if (hits.length > 6) hits.shift(); }, wait);
     lastSound = performance.now(); setLive(true);
   }
   const hits = [];                                          // удары для кругов эха на воде
-  function nextGap(step) { for (let k = 1; k <= 16; k++) if (steps.has((step + k) % 16)) return k * stepSec(); return 16 * stepSec(); }
+  let lastHit = null;
+  function nextGap(step) { for (let k = 1; k <= NSTEP; k++) if (isleOn((step + k) % NSTEP)) return k * stepSec(); return NSTEP * stepSec(); }
+  let killAt = -1e9, killXY = null;
+  function killEcho(x, y) {                               // падающая звезда: эхо гаснет за долю секунды, потом снова слушает
+    killAt = performance.now(); killXY = { x, y }; hits.length = 0;
+    if (!bus) return;
+    const t = actx.currentTime;
+    for (const g of [bus.fbL.gain, bus.fbR.gain, bus.dWet.gain, bus.dSend.gain]) { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.setTargetAtTime(0, t, 0.02); }
+    setTimeout(() => { if (!bus) return; bus.dWet.gain.setTargetAtTime(0.9, actx.currentTime, 0.05); applyAll(); }, 350);
+  }
   function schedule() {
     if (!seq.playing || !actx) return;
     const now = actx.currentTime, ahead = now + 0.2;
     if (!seq.next) seq.next = now + 0.05;
     while (seq.next < ahead) {
-      const j = seq.step % 16, sw = j % 2 ? pharos.swing * stepSec() * 0.5 : 0;
-      if (seq.next + sw > now + 0.003 && steps.has(j)) stab(seq.next + sw, seq.step, j % 4 === 2 ? 1 : 0.85, nextGap(j));
+      const j = seq.step % NSTEP, sw = j % 2 ? pharos.swing * stepSec() * 0.5 : 0, is = isleOn(j);
+      if (seq.next + sw > now + 0.003 && is) stab(seq.next + sw, is, j % 4 === 2 ? 1 : 0.85, nextGap(j));
       lastSteps.push([seq.next, seq.step]); if (lastSteps.length > 24) lastSteps.shift();
       seq.step++; seq.next += stepSec();
     }
@@ -164,34 +184,40 @@
     for (const [tt, s] of lastSteps) if (tt <= t) cur = s;
     return cur;
   }
-  const sounding = () => seq.playing && isles.length > 0 && steps.size > 0;
-  function audition(is) {                                 // часы стоят — услышать новый аккорд
-    if (seq.playing || !actx) return;
-    const keep = isles.slice(); isles.length = 0; isles.push(is);
-    stab(actx.currentTime + 0.02, 0, 1, 0.6);
-    isles.length = 0; isles.push(...keep);
+  const sounding = () => seq.playing && isles.length > 0;
+  let audAt = 0;
+  function audition(is) {                                 // часы стоят — услышать аккорд, пока ставишь
+    if (seq.playing || !actx || performance.now() - audAt < 140) return;
+    audAt = performance.now(); stab(actx.currentTime + 0.02, is, 1, 0.6);
   }
 
   // ---------- касания ----------
   const touches = new Map();
-  const isleXY = (G, is) => P(G, is.u, is.d);
-  function isleAt(G, x, y) { let best = null, bd = 1e9; for (const is of isles) { const p = isleXY(G, is), r = 16 + 40 * p.s, d = Math.hypot(x - p.x, (y - p.y + 10 * p.s) * 1.4); if (d < r && d < bd) { bd = d; best = is; } } return best; }
-  function lanternAt(G, x, y) { if (y < G.qy - 34 || y > G.qy + 30) return -1; const i = Math.floor(((x - G.fx0 - 22) / (G.Ws - 44)) * 16); return i >= 0 && i < 16 ? i : -1; }
-  const inSea = (G, x, y) => { if (y < G.hor + 3 || y > G.qy - 8) return false; const q = unP(G, x, y); return q.u > edge(-1, q.d) + 0.04 && q.u < edge(1, q.d) - 0.04; };
+  const isleXY = (G, is) => colPt(G, is.step, is.p);
+  function isleAt(G, x, y) { let best = null, bd = 1e9; for (const is of isles) { const p = isleXY(G, is), r = 12 + 26 * p.s, d = Math.hypot(x - p.x, (y - p.y + 8 * p.s) * 1.4); if (d < r && d < bd) { bd = d; best = is; } } return best; }
+  function lanternAt(G, x, y) { if (y < G.qy - 34 || y > G.qy + 30 || x > G.ph.x - 16) return -1; const i = Math.floor(((x - G.fx0 - 18) / (G.Ws - 72)) * NSTEP); return i >= 0 && i < NSTEP ? i : -1; }
+  const inSea = (G, x, y) => { if (y < G.hor + 3 || y > G.qy - 6) return false; const q = unP(G, x, y); return q.u > edge(G, -1, q.d) && q.u < edge(G, 1, q.d); };
+  let lastP = 0;
+  function place(i, p) {                                  // остров на луч i, глубина p: на луче уже есть — переезжает
+    let is = isleOn(i);
+    if (is) { is.p = p; return is; }
+    is = { step: i, p, oct: 0, lvl: 1, type: -1, sd: Math.random() * 1000, hit: 0 };
+    isles.push(is); return is;
+  }
   function down(f) {
     const G = geo(), now = performance.now(), M = G.moon, B = P(G, buoy.u, buoy.d);
     const base = { x0: f.x, y0: f.y, t0: now, moved: false };
-    if (Math.hypot(f.x - G.ph.x, f.y - (G.ph.y - 30)) < 34 || (Math.abs(f.x - G.ph.x) < 18 && f.y > G.ph.y - 75 && f.y < G.ph.y + 30)) { touches.set(f.id, { kind: 'ph', bpm0: seq.bpm, ...base }); return; }
+    if (Math.abs(f.x - G.ph.x) < 22 && f.y > G.ph.y - 100 && f.y < G.ph.y + 24) { touches.set(f.id, { kind: 'ph', bpm0: seq.bpm, ...base }); return; }
     if (f.x >= M.x - 4 && Math.hypot(f.x - M.x, f.y - M.y) < M.r + 14) { touches.set(f.id, { kind: 'moon', c0: luna.cut, r0: luna.res, ...base }); return; }   // луна: тап — карта, тянешь — фильтр, держишь — плашка
     const li = lanternAt(G, f.x, f.y);
-    if (li >= 0) { if (steps.has(li)) steps.delete(li); else steps.add(li); touches.set(f.id, { kind: 'none' }); return; }
+    if (li >= 0) { const is = isleOn(li); if (is) isles.splice(isles.indexOf(is), 1); else audition(place(li, lastP)); touches.set(f.id, { kind: 'none' }); return; }
     if (Math.hypot(f.x - B.x, f.y - B.y + 8) < 22) { touches.set(f.id, { kind: 'buoy', ...base }); return; }
     const is = isleAt(G, f.x, f.y);
     if (is) { touches.set(f.id, { kind: 'isle', is, ...base }); return; }
     if (Math.abs(f.y - G.fogTop) < 16 && f.y < G.hor + 10) { touches.set(f.id, { kind: 'fog', a0: fog.amt, ...base }); return; }
-    if (inSea(G, f.x, f.y) && isles.length < IMAX) {
-      const q = unP(G, f.x, f.y), n = { u: clamp(q.u, -1, 1), d: clamp(q.d, 0.02, 0.97), oct: 0, lvl: 1, sd: Math.random() * 1000, born: now, hit: 0 };
-      isles.push(n); audition(n);
+    if (f.y < G.fogTop - 16 && f.y > G.top) { killEcho(f.x, f.y); touches.set(f.id, { kind: 'none' }); return; }   // небо: падает звезда — эхо гаснет
+    if (inSea(G, f.x, f.y)) {
+      const n = place(colAt(G, f.x, f.y), pOfY(G, f.y)); lastP = n.p; audition(n);
       touches.set(f.id, { kind: 'isle', is: n, fresh: true, ...base });
       return;
     }
@@ -206,8 +232,15 @@
     if (t.kind === 'ph') { const b = Math.round(clamp(t.bpm0 + (f.x - t.x0) / 2, 60, 180)); if (b !== seq.bpm) { seq.bpm = b; applyAll(); T.tempoFrom(13, b); } return; }
     if (t.kind === 'moon') { luna.cut = clamp(t.c0 + (t.y0 - f.y) / (G.hor - G.top - G.moon.r * 0.9)); luna.res = clamp(t.r0 + (f.x - t.x0) / (G.Ws * 0.5)); return; }
     if (t.kind === 'fog') { fog.amt = clamp(t.a0 + (t.y0 - f.y) / ((G.hor - G.top - 40) * 0.7)); applyAll(); return; }
-    if (t.kind === 'buoy') { const q = unP(G, f.x, clamp(f.y, G.hor + 6, G.qy - 10)); buoy.u = clamp(q.u, -0.95, 0.95); buoy.d = clamp(q.d, 0.03, 0.95); echo.time = clamp(Math.round(((buoy.u + 0.95) / 1.9) * 4), 0, 4); applyAll(); return; }
-    if (t.kind === 'isle') { const q = unP(G, f.x, clamp(f.y, G.hor + 4, G.qy - 8)); t.is.u = clamp(q.u, -1, 1); t.is.d = clamp(q.d, 0.02, 0.97); }
+    if (t.kind === 'buoy') {
+      const q = unP(G, f.x, clamp(f.y, G.hor + 6, G.qy - 10)); buoy.d = clamp(q.d, 0.03, 0.95);
+      const a = edge(G, -1, buoy.d), b = edge(G, 1, buoy.d); buoy.u = clamp(q.u, a + 0.03, b - 0.03); echo.time = clamp(Math.round(((buoy.u - a) / (b - a)) * 4), 0, 4); applyAll(); return;
+    }
+    if (t.kind === 'isle') {                               // тянешь остров: вбок — другой луч (если свободен), вдаль — выше
+      const y = clamp(f.y, G.hor + 4, G.qy - 6), i = colAt(G, f.x, y), p = pOfY(G, y), is = t.is;
+      if (i !== is.step && !isleOn(i)) is.step = i;
+      if (p !== is.p) { is.p = p; lastP = p; audition(is); }
+    }
   }
   function up(f) {
     const t = touches.get(f.id);
@@ -216,7 +249,7 @@
     const quick = !t.moved && performance.now() - t.t0 < 300;
     if (t.kind === 'ph' && quick) { play(); T.tempoFrom(13, seq.bpm); }
     if (t.kind === 'moon' && quick) window.t2d.goMap();
-    if (t.kind === 'isle') { if (quick && !t.fresh) isles.splice(isles.indexOf(t.is), 1); else if (t.moved) audition(t.is); }   // тап по острову — уходит под воду
+    if (t.kind === 'isle' && quick && !t.fresh && isles.includes(t.is)) isles.splice(isles.indexOf(t.is), 1);   // тап по острову — уходит под воду
   }
   // ---------- плашки ----------
   function sheets(kind, is) {
@@ -231,7 +264,7 @@
       rows: [{ key: 'time', label: 'time' }, { key: 'fb', label: 'feedback' }, { key: 'tone', label: 'dark' }, { key: 'mix', label: 'send' }],
       lfo: { id: 'portus-echo', keys: ['fb', 'tone', 'mix'], shapes: 'random' },
       get: (k) => (k === 'time' ? echo.time / 4 : k === 'fb' ? (buoy.d - 0.03) / 0.92 : echo[k]),
-      set: (k, v) => { if (k === 'time') { echo.time = Math.round(v * 4); buoy.u = -0.95 + (echo.time / 4) * 1.9; } else if (k === 'fb') buoy.d = 0.03 + v * 0.92; else echo[k] = v; applyAll(); },
+      set: (k, v) => { const G = geo(); if (k === 'time') echo.time = Math.round(v * 4); else if (k === 'fb') buoy.d = 0.03 + v * 0.92; else echo[k] = v; const a = edge(G, -1, buoy.d), b = edge(G, 1, buoy.d); buoy.u = a + 0.03 + (echo.time / 4) * (b - a - 0.06); applyAll(); },
       text: (k) => (k === 'time' ? DT_NAME[echo.time] : k === 'fb' ? (fbOf() > 0.95 ? 'endless' : `${Math.round(fbOf() * 100)}%`) : `${Math.round(echo[k] * 100)}%`),
     });
     else if (kind === 'fog') T.openSheet({
@@ -242,17 +275,17 @@
     });
     else if (kind === 'ph') T.openSheet({
       title: 'pharos', hint: 'the lighthouse — tap outside to close',
-      rows: [{ key: 'bars', label: 'bars per chord' }, { key: 'len', label: 'length' }, { key: 'swing', label: 'swing' }, { key: 'lvl', label: 'level' }],
-      get: (k) => (k === 'bars' ? BARS.indexOf(pharos.bars) / 3 : pharos[k]),
-      set: (k, v) => { if (k === 'bars') pharos.bars = BARS[Math.round(v * 3)]; else pharos[k] = v; },
-      text: (k) => (k === 'bars' ? `${pharos.bars}` : k === 'len' ? (pharos.len > 0.9 ? 'endless' : `${Math.round((0.035 + pharos.len ** 2 * 1.8) * 1000)} ms`) : `${Math.round(pharos[k] * 100)}%`),
+      rows: [{ key: 'chord', label: 'chord' }, { key: 'len', label: 'length' }, { key: 'swing', label: 'swing' }, { key: 'lvl', label: 'level' }],
+      get: (k) => (k === 'chord' ? pharos.chord / 4 : pharos[k]),
+      set: (k, v) => { if (k === 'chord') pharos.chord = Math.round(v * 4); else pharos[k] = v; },
+      text: (k) => (k === 'chord' ? CHORDS[pharos.chord].name : k === 'len' ? (pharos.len > 0.9 ? 'endless' : `${Math.round((0.035 + pharos.len ** 2 * 1.8) * 1000)} ms`) : `${Math.round(pharos[k] * 100)}%`),
     });
     else if (kind === 'isle') T.openSheet({
-      title: `insula ${ROMAN[isles.indexOf(is)] || ''}`, hint: 'island · chord — tap outside to close',
+      title: 'navicula', hint: 'paper boat · chord — tap outside to close',
       rows: [{ key: 'type', label: 'chord' }, { key: 'oct', label: 'octave' }, { key: 'lvl', label: 'level' }],
-      get: (k) => (k === 'type' ? typeOf(is) / 4 : k === 'oct' ? (is.oct + 1) / 2 : is.lvl),
-      set: (k, v) => { if (!isles.includes(is)) return; if (k === 'type') is.d = (Math.round(v * 4) + 0.5) / 5; else if (k === 'oct') is.oct = Math.round(v * 2) - 1; else is.lvl = v; },
-      text: (k) => (k === 'type' ? nameOf(is) : k === 'oct' ? ['octave −1', 'octave 0', 'octave +1'][is.oct + 1] : `${Math.round(is.lvl * 100)}%`),
+      get: (k) => (k === 'type' ? (is.type + 1) / 5 : k === 'oct' ? (is.oct + 1) / 2 : is.lvl),
+      set: (k, v) => { if (!isles.includes(is)) return; if (k === 'type') is.type = Math.round(v * 5) - 1; else if (k === 'oct') is.oct = Math.round(v * 2) - 1; else is.lvl = v; },
+      text: (k) => (k === 'type' ? (is.type < 0 ? `as lighthouse · ${nameOf(is)}` : nameOf(is)) : k === 'oct' ? ['octave −1', 'octave 0', 'octave +1'][is.oct + 1] : `${Math.round(is.lvl * 100)}%`),
     });
   }
   let rnd0 = 0;
@@ -267,7 +300,7 @@
   const ink = (a) => `rgba(${INK},${a})`;
   let wallC = null, wallKey = '';
   function wall(G) {                                      // неподвижное: звёзды, дальние мысы, вода волнами, скалы со штриховкой, набережная
-    const key = `${G.W}x${G.H}x${T.DPR}|${G.hor}|${G.qy}|${G.Ws}`;
+    const pcs = T.scalePCs, key = `${G.W}x${G.H}x${T.DPR}|${G.hor}|${G.qy}|${G.Ws}|${pcs ? pcs.join(',') : '-'}|${root()}`;
     if (wallC && key === wallKey) return wallC;
     wallKey = key;
     wallC = document.createElement('canvas');
@@ -277,8 +310,8 @@
     x.fillStyle = BGC; x.fillRect(0, 0, G.W, G.H);
     let sd = 13; const rnd = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
     for (let k = 0; k < 110; k++) { const sx = G.fx0 + rnd() * G.Ws, sy = G.top + rnd() ** 1.3 * (G.hor - G.top - 6); x.fillStyle = ink(0.15 + 0.5 * rnd() ** 2); x.fillRect(sx, sy, rnd() < 0.12 ? 1.6 : 1, rnd() < 0.12 ? 1.6 : 1); }   // звёзды
-    const N = 120, shore = (side, d) => P(G, edge(side, d), d);
-    const inWater = (u, d) => u > edge(-1, d) + 0.01 && u < edge(1, d) - 0.01;
+    const N = 120, shore = (side, d) => P(G, edge(G, side, d), d);
+    const inWater = (u, d) => u > edge(G, -1, d) + 0.01 && u < edge(G, 1, d) - 0.01;
     x.strokeStyle = ink(0.14); x.lineWidth = 0.7; x.beginPath();                           // вода: короткие гравированные волны, к нам крупнее и реже
     for (let k = 0; k < 700; k++) {
       const d = 1 - rnd() ** 1.5, u = rnd() * 2 - 1;
@@ -287,9 +320,14 @@
       x.moveTo(p.x - l, p.y + 1); x.quadraticCurveTo(p.x, p.y - 1.4 * p.s, p.x + l, p.y + 1);
     }
     x.stroke();
-    x.strokeStyle = ink(0.12); x.setLineDash([1.5, 4]); x.beginPath();                    // изобаты: глубины, где меняется аккорд
-    for (let k = 1; k < 5; k++) { let on = false; for (let i = 0; i <= 60; i++) { const u = -1 + i / 30; if (!inWater(u, k / 5)) { on = false; continue; } const p = P(G, u, k / 5); on ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y); on = true; } }
-    x.stroke(); x.setLineDash([]);
+    x.strokeStyle = ink(0.06); x.lineWidth = 0.8; x.beginPath();                          // лучи от фонарей в море — шестнадцатые
+    for (let i = 0; i < NSTEP; i++) { const a = colPt(G, i, 0), b = colPt(G, i, PSPAN); x.moveTo(lanternX(G, i), G.qy); x.lineTo(a.x, a.y); x.lineTo(b.x, b.y); }
+    x.stroke();
+    for (let k = 0; k <= PSPAN; k++) {                                                      // глубина — полутоны: засечки у левого берега, ступени лада длиннее; тоника и октава — пунктир поперёк
+      const pc = (((root() + k) % 12) + 12) % 12, on = !pcs || pcs.includes(pc), d = dOfP(k), a = P(G, edge(G, -1, d), d), l = (on ? 9 : 4) * (0.5 + 0.5 * a.s);
+      x.strokeStyle = ink(on ? 0.45 : 0.18); x.lineWidth = 0.8; x.beginPath(); x.moveTo(a.x + 2, a.y); x.lineTo(a.x + 2 + l, a.y); x.stroke();
+      if (k % 12 === 0) { const b = P(G, edge(G, 1, d), d); x.strokeStyle = ink(0.1); x.setLineDash([1.5, 4]); x.beginPath(); x.moveTo(a.x + 2, a.y); x.lineTo(b.x - 2, b.y); x.stroke(); x.setLineDash([]); }
+    }
     for (const side of [-1, 1]) {                                                           // мысы: скала над водой — штрихи, сверху трава и кипарисы
       const outer = side < 0 ? G.fx0 - 2 : G.fx1 + 2, top = (d) => { const p = shore(side, d); return { x: p.x, y: p.y - cliffH(side, d) * p.s, s: p.s, w: p.y }; };
       x.fillStyle = BGC; x.beginPath(); x.moveTo(outer, G.qy + 2);
@@ -308,7 +346,6 @@
       for (let i = 0; i < 14; i++) {                                                       // кипарисы на мысах — тёмные свечи
         const d = 0.04 + rnd() * 0.9, t = top(d), xx = t.x + side * (6 + rnd() * 40) * t.s, h = (14 + rnd() * 16) * t.s, w = h * 0.2;
         if (side < 0 ? xx < G.fx0 + 6 : xx > G.fx1 - 6) continue;
-        if (side > 0 && d < 0.2) continue;                                                  // у маяка — пусто
         x.fillStyle = BGC; x.strokeStyle = ink(0.7); x.lineWidth = 0.8; x.beginPath(); x.moveTo(xx, t.y + 2 - h); x.quadraticCurveTo(xx + w, t.y + 2 - h * 0.5, xx + w * 0.5, t.y + 2); x.lineTo(xx - w * 0.5, t.y + 2); x.quadraticCurveTo(xx - w, t.y + 2 - h * 0.5, xx, t.y + 2 - h); x.fill(); x.stroke();
         x.strokeStyle = ink(0.35); x.beginPath(); x.moveTo(xx + w * 0.3, t.y - h * 0.7); x.lineTo(xx + w * 0.15, t.y); x.stroke();
       }
@@ -324,7 +361,7 @@
   }
   function drawMoon(c, G, now) {                           // луна в углу, как солнце Natura: выше — фильтр открыт, садится — закрыт; ореол — резонанс
     const M = G.moon, a = 0.25 + 0.75 * luna.cut, R = M.r;
-    const w0 = 3 + 22 * luna.res, rows = 36, x0 = Math.max(M.x + R * 0.8, P(G, edge(-1, 1), 1).x + 12);   // лунная дорожка: от горизонта под луной к нам
+    const w0 = 3 + 22 * luna.res, rows = 36, x0 = Math.max(M.x + R * 0.8, P(G, edge(G, -1, 1), 1).x + 12);   // лунная дорожка: от горизонта под луной к нам
     c.lineWidth = 1;
     for (let k = 0; k < rows; k++) {
       const d = 1 - (k / rows) ** 1.3, p = P(G, 0, d), f = 1 - d, xm = x0 + (G.cx - G.Wh * 0.15 - x0) * f ** 0.8;
@@ -349,27 +386,25 @@
     c.stroke();
     c.restore();
   }
-  function drawIsle(c, G, is, now, cur) {                  // остров: скала с обрывом, на ней кипарисы; тень штрихами, отражение; номер в прогрессии
-    const p = isleXY(G, is), s = p.s, w = (46 + 26 * ((is.sd % 7) / 7)) * s * 1.5, h = w * (0.26 + 0.08 * ((is.sd % 3) / 3)), hit = clamp(1 - (now - (is.hit || 0)) / 500), lit = cur && seq.playing;
-    if (lit) T.glowAt(p.x, p.y - h * 0.6, w * 0.9, 0.1 + 0.3 * hit);
-    let sd = Math.floor(is.sd) + 7; const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
-    const n = 7, top = [];
-    for (let k = 0; k <= n; k++) { const f = k / n, e = Math.sin(Math.PI * f) ** 0.6; top.push([p.x - w / 2 + w * f, p.y - h * e * (k === 0 || k === n ? 0 : 0.75 + 0.35 * r())]); }
-    c.fillStyle = BGC; c.strokeStyle = lit ? rgba(LIGHT, 0.65 + 0.35 * hit) : ink(0.85); c.lineWidth = 1;
-    c.beginPath(); top.forEach(([X, Y], k) => (k ? c.lineTo(X, Y) : c.moveTo(X, Y))); c.closePath(); c.fill(); c.stroke();
-    c.strokeStyle = ink(0.32); c.lineWidth = 0.6; c.beginPath();                            // обрыв: штрихи вниз, справа гуще
-    for (let k = 1; k < n; k++) { const [X, Y] = top[k]; for (let j = 0; j < (k > n / 2 ? 3 : 1); j++) { const xx = X + j * 2.2 * s; c.moveTo(xx, Y + 2); c.lineTo(xx - 0.6 * s, p.y - 1); } }
+  function drawIsle(c, G, is, now, cur) {                  // бумажный кораблик: корпус-трапеция, посередине парус-треугольник, сгибы; качается; звучащий — золотом
+    const p = isleXY(G, is), s = p.s, sp = Math.abs(colPt(G, 1, is.p).x - colPt(G, 0, is.p).x), w = Math.min(22 * s * 1.25 + 4, sp * 0.95 + 3), hit = clamp(1 - (now - (is.hit || 0)) / 500), lit = cur && seq.playing;
+    const rock = Math.sin(now * 0.0017 + is.sd) * 0.07 + hit * 0.12 * Math.sin(now * 0.03), bob = Math.sin(now * 0.0021 + is.sd * 1.3) * 1.2 * s;
+    if (lit) T.glowAt(p.x, p.y - w * 0.5, w * 1.6, 0.12 + 0.35 * hit);
+    c.strokeStyle = lit ? rgba(LIGHT, 0.3 + 0.3 * hit) : ink(0.22); c.lineWidth = 0.7; c.beginPath();   // отражение: штрихи под корабликом
+    for (let k = 0; k < 3; k++) { const yy = p.y + 3 + k * 2.6 * s, ww = w * (0.8 - k * 0.2), ox = Math.sin(now * 0.002 + k + is.sd) * 1.5 * s; c.moveTo(p.x - ww + ox, yy); c.lineTo(p.x + ww + ox, yy); }
     c.stroke();
-    const trees = 2 + Math.floor((is.sd % 5) / 2);                                            // кипарисы на острове — как на «Острове мёртвых»
-    for (let k = 0; k < trees; k++) {
-      const f = 0.32 + (0.36 * (k + 0.5)) / trees + (r() - 0.5) * 0.06, i = Math.min(n - 1, Math.floor(f * n)), X = p.x - w / 2 + w * f, Y = top[i][1] + (top[i + 1][1] - top[i][1]) * (f * n - i) + 2, th = h * (1.1 + 0.9 * r()), tw = th * 0.17;
-      c.fillStyle = BGC; c.strokeStyle = lit ? rgba(LIGHT, 0.55 + 0.4 * hit) : ink(0.75); c.lineWidth = 0.8;
-      c.beginPath(); c.moveTo(X, Y - th); c.quadraticCurveTo(X + tw, Y - th * 0.5, X + tw * 0.5, Y); c.lineTo(X - tw * 0.5, Y); c.quadraticCurveTo(X - tw, Y - th * 0.5, X, Y - th); c.fill(); c.stroke();
-    }
-    c.strokeStyle = lit ? rgba(LIGHT, 0.25 + 0.3 * hit) : ink(0.22); c.lineWidth = 0.7; c.beginPath();   // отражение: штрихи под островом
-    for (let k = 0; k < 4; k++) { const yy = p.y + 3 + k * 3.2 * s, ww = w * (0.42 - k * 0.08), ox = Math.sin(now * 0.002 + k) * 1.5 * s; c.moveTo(p.x - ww + ox, yy); c.lineTo(p.x + ww + ox, yy); }
+    c.save(); c.translate(p.x, p.y - 1 + bob); c.rotate(rock); c.scale(w, w);
+    const line = lit ? rgba(LIGHT, 0.7 + 0.3 * hit) : ink(0.9);
+    c.fillStyle = lit ? `rgba(${LIGHT[0]},${LIGHT[1]},${LIGHT[2]},${0.18 + 0.2 * hit})` : `rgba(${INK},0.13)`;
+    c.beginPath(); c.moveTo(-1, -0.32); c.lineTo(-0.48, -0.32); c.lineTo(0, -1.2); c.lineTo(0.48, -0.32); c.lineTo(1, -0.32); c.lineTo(0.72, 0.16); c.lineTo(-0.72, 0.16); c.closePath();
+    c.fill(); c.strokeStyle = line; c.lineWidth = 1 / w; c.stroke();
+    c.lineWidth = 0.7 / w; c.strokeStyle = lit ? rgba(LIGHT, 0.5) : ink(0.45); c.beginPath();   // сгибы бумаги
+    c.moveTo(0, -1.2); c.lineTo(0, -0.32); c.moveTo(-0.48, -0.32); c.lineTo(-0.2, 0.16); c.moveTo(0.48, -0.32); c.lineTo(0.2, 0.16); c.moveTo(-1, -0.32); c.lineTo(1, -0.32);
     c.stroke();
-    T.mapText(ROMAN[isles.indexOf(is)], p.x, p.y + 10 + 12 * s, 9 + 4 * s, lit ? 0.95 : 0.45, 'center');
+    c.strokeStyle = lit ? rgba(LIGHT, 0.35) : ink(0.28); c.beginPath();                        // тень на правой половине паруса
+    for (let k = 1; k <= 4; k++) { const f = k / 5; c.moveTo(0.05, -1.2 + 0.88 * f); c.lineTo(0.48 * f + 0.02, -0.34); }
+    c.stroke();
+    c.restore();
   }
   function drawBuoy(c, G, now) {                           // колокол-буй: качается; от него круги — повторы эха
     const B = P(G, buoy.u, buoy.d), s = 0.6 + 0.6 * B.s, rock = Math.sin(now * 0.0021) * (0.12 + 0.25 * fx.wow);
@@ -415,8 +450,8 @@
     c.stroke(); c.setLineDash([]);
   }
   function drawPharos(c, G, now, cs) {                     // маяк: башня со штриховкой, фонарь; в такт — вспышка, луч к нынешнему острову
-    const { x, y } = G.ph, hgt = 70, cur = curIsle(Math.max(0, cs)), hit = cur ? clamp(1 - (now - (cur.hit || 0)) / 260) : 0;
-    if (seq.playing && cur) {
+    const { x, y } = G.ph, hgt = 74, cur = lastHit && now - lastHit.hit < 600 ? lastHit : null, hit = cur ? clamp(1 - (now - (cur.hit || 0)) / 260) : 0;
+    if (seq.playing && cur && isles.includes(cur)) {
       const p = isleXY(G, cur);
       c.fillStyle = rgba(LIGHT, 0.05 + 0.12 * hit); c.beginPath(); c.moveTo(x, y - hgt - 6); c.lineTo(p.x - 26 * p.s, p.y - 8 * p.s); c.lineTo(p.x + 26 * p.s, p.y - 2); c.closePath(); c.fill();
     }
@@ -428,11 +463,15 @@
     c.fillStyle = seq.playing ? rgba(LIGHT, 0.5 + 0.5 * hit) : BGC; c.strokeStyle = ink(0.9);
     c.beginPath(); c.rect(x - 6, y - hgt - 15, 12, 13); c.fill(); c.stroke();
     c.beginPath(); c.moveTo(x - 8, y - hgt - 15); c.lineTo(x, y - hgt - 23); c.lineTo(x + 8, y - hgt - 15); c.closePath(); c.fillStyle = BGC; c.fill(); c.stroke();
-    if (!seq.playing) { c.fillStyle = ink(0.85); c.beginPath(); c.moveTo(x - 3, y - 36); c.lineTo(x + 5, y - 31); c.lineTo(x - 3, y - 26); c.closePath(); c.fill(); }   // стоит — знак пуска
+    if (!seq.playing) { c.fillStyle = ink(0.85); c.beginPath(); c.moveTo(x - 3, y - 40); c.lineTo(x + 5, y - 35); c.lineTo(x - 3, y - 30); c.closePath(); c.fill(); }   // стоит — знак пуска
   }
   function drawQuay(c, G, now, cs) {                       // фонари на набережной: горит — удар; бегущий огонёк — шаг
-    for (let i = 0; i < 16; i++) {
-      const X = lanternX(G, i), y = G.qy, on = steps.has(i), here = cs >= 0 && cs % 16 === i, tall = i % 4 === 0 ? 4 : 0;
+    if (cs >= 0) {                                                                           // луч нынешнего шага — светится
+      const i = cs % NSTEP, a = colPt(G, i, 0), b = colPt(G, i, PSPAN);
+      c.strokeStyle = rgba(LIGHT, isleOn(i) ? 0.3 : 0.12); c.lineWidth = 1; c.beginPath(); c.moveTo(lanternX(G, i), G.qy); c.lineTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+    }
+    for (let i = 0; i < NSTEP; i++) {
+      const X = lanternX(G, i), y = G.qy, on = !!isleOn(i), here = cs >= 0 && cs % NSTEP === i, tall = i % 4 === 0 ? 4 : 0;
       c.strokeStyle = ink(0.75); c.lineWidth = 1; c.beginPath(); c.moveTo(X, y); c.lineTo(X, y - 18 - tall); c.stroke();
       if (on) T.glowAt(X, y - 23 - tall, here ? 20 : 12, here ? 0.6 : 0.2);
       c.fillStyle = on ? rgba(LIGHT, here ? 1 : 0.75) : BGC; c.strokeStyle = on ? rgba(LIGHT, 0.9) : ink(here ? 0.95 : 0.6);
@@ -445,18 +484,23 @@
     const c = T.g, G = geo(), cs = curStep();
     c.drawImage(wall(G), 0, 0, T.W, T.H);
     drawMoon(c, G, now);
-    const cur = curIsle(Math.max(0, cs));
-    for (const is of [...isles].sort((a, b) => b.d - a.d)) drawIsle(c, G, is, now, is === cur);
+    const cur = cs >= 0 ? isleOn(cs % NSTEP) : null;
+    if (now - killAt < 900 && killXY) {                                                      // падающая звезда
+      const k = (now - killAt) / 900, x0 = killXY.x, y0 = killXY.y, x1 = x0 - 90 * k, y1 = y0 + 60 * k;
+      c.strokeStyle = rgba(LIGHT, 0.8 * (1 - k)); c.lineWidth = 1.2; c.beginPath(); c.moveTo(x1 + 50 * (1 - k * 0.5), y1 - 33 * (1 - k * 0.5)); c.lineTo(x1, y1); c.stroke();
+      T.glowAt(x1, y1, 10, 0.5 * (1 - k));
+    }
+    for (const is of [...isles].sort((a, b) => b.p - a.p)) drawIsle(c, G, is, now, is === cur);
     drawBuoy(c, G, now);
     drawFog(c, G, now);
     drawPharos(c, G, now, cs);
     drawQuay(c, G, now, cs);
     for (const t of touches.values()) {                   // подписи — пока трогаешь
-      if (t.kind === 'isle') { const p = isleXY(G, t.is); T.mapText(`${nameOf(t.is)} · ${Math.round(hzOf(t.is))} Hz`, p.x, p.y - 34 - 20 * p.s, 14, 0.95, 'center'); T.mapText(`chord ${ROMAN[isles.indexOf(t.is)] || ''}`, p.x, p.y - 20 - 20 * p.s, 11, 0.6, 'center'); }
+      if (t.kind === 'isle' && isles.includes(t.is)) { const p = isleXY(G, t.is); T.mapText(`${nameOf(t.is)} · ${Math.round(hzOf(t.is))} Hz`, p.x, p.y - 30 - 22 * p.s, 14, 0.95, 'center'); T.mapText(`step ${t.is.step + 1}`, p.x, p.y - 16 - 22 * p.s, 11, 0.6, 'center'); }
       else if (t.kind === 'moon' && t.moved) T.mapText(`${Math.round(fcOf())} Hz · res ${Math.round(luna.res * 100)}%`, G.moon.x + G.moon.r + 14, G.moon.y + G.moon.r * 0.5 + 18, 13, 0.9, 'left');
       else if (t.kind === 'buoy') { const B = P(G, buoy.u, buoy.d); T.mapText(`echo ${DT_NAME[echo.time]} · ${fbOf() > 0.95 ? 'endless' : Math.round(fbOf() * 100) + '%'}`, B.x, B.y - 36, 13, 0.9, 'center'); }
       else if (t.kind === 'fog') T.mapText(`reverb ${Math.round(fog.amt * 100)}%`, G.cx, G.fogTop - 14, 13, 0.9, 'center');
-      else if (t.kind === 'ph') T.mapText(`${seq.bpm} bpm`, G.ph.x - 30, G.ph.y - 100, 13, 0.9, 'center');
+      else if (t.kind === 'ph') T.mapText(`${seq.bpm} bpm`, G.ph.x - 34, G.ph.y - 112, 13, 0.9, 'center');
     }
   }
 
@@ -468,17 +512,16 @@
     lfo: { keys: ['wow', 'mare', 'drive', 'spread'], shapes: 'random' },
     arc: () => fx.drive, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyAll(); },
   };
-  function dice() {                                       // 2–4 острова на ступенях лада, узор ударов вразброс (но на «и»), эхо, туман, луна; маяк горит
-    const R = Math.random;
+  function dice() {                                       // дорожка: 3–7 ударов, больше на «и»; две-три тоники ступенями лада, сменяются по половинам такта; эхо, туман, луна
+    const R = Math.random, pick = (a) => a[Math.floor(R() * a.length)];
     isles.length = 0;
-    const n = 2 + Math.floor(R() * 3);
-    for (let k = 0; k < n; k++) { const d = 0.15 + R() * 0.75, a = edge(-1, d) + 0.15, b = edge(1, d) - 0.15; isles.push({ u: a + R() * (b - a), d, oct: R() < 0.2 ? 1 : 0, lvl: 1, sd: R() * 1000, born: performance.now() + k, hit: 0 }); }
-    steps.clear();
-    for (const j of [2, 6, 10, 14]) if (R() < 0.8) steps.add(j);
-    for (let k = 0; k < 2; k++) if (R() < 0.45) steps.add([3, 7, 11, 13, 15, 0, 9][Math.floor(R() * 7)]);
-    if (!steps.size) steps.add(2);
-    echo.time = Math.floor(R() * 5); buoy.u = -0.95 + (echo.time / 4) * 1.9; buoy.d = 0.25 + R() * 0.55;
-    luna.cut = 0.25 + R() * 0.45; luna.res = R() * 0.6; fog.amt = 0.25 + R() * 0.55; pharos.bars = BARS[Math.floor(R() * 3)];
+    const roots = [0, pick([3, 5, 7, 10]), pick([0, 5, 7, 12])], chord = pick([2, 2, 3, 3, 1, 4]);
+    const order = [2, 6, 10, 14, 3, 11, 7, 15, 0, 9, 13, 5].filter(() => R() < 0.62).slice(0, 7);
+    if (order.length < 3) order.push(2, 10);
+    for (const j of new Set(order)) isles.push({ step: j, p: roots[j < 8 ? 0 : R() < 0.7 ? 1 : 2], oct: 0, lvl: 1, type: -1, sd: R() * 1000, hit: 0 });
+    pharos.chord = chord;
+    echo.time = Math.floor(R() * 5); buoy.d = 0.25 + R() * 0.55; { const G = geo(), a = edge(G, -1, buoy.d), b = edge(G, 1, buoy.d); buoy.u = a + 0.03 + (echo.time / 4) * (b - a - 0.06); }
+    luna.cut = 0.25 + R() * 0.45; luna.res = R() * 0.6; fog.amt = 0.25 + R() * 0.55;
     applyAll();
     if (!seq.playing) play(true);
   }
@@ -486,17 +529,16 @@
     n: 'XIII', title: 'Portus', sub: 'pharos · echo · nebula', theme: { ink: INK, bg: BGC, paper: PAPER },
     corner: { hit: () => false, draw: () => {} },   // ночью солнца нет: луна в углу — и карта (тап), и фильтр (тянешь)
     fx: fxw,
-    legend: [['tap', 'tap the sea', 'an island — a chord: across — root, further out — deeper'], ['drag', 'drag an island', 'another chord · tap — it sinks'],
-      ['tap', 'tap a lantern on the quay', 'a stab on that sixteenth'], ['tap', 'the lighthouse · drag sideways', 'play · stop · tempo'],
+    legend: [['tap', 'tap the sea on a lantern\'s ray', 'a paper boat — a chord on that sixteenth; further out — higher'], ['drag', 'drag a boat', 'sideways — another step, out — another note · tap — it sinks'],
+      ['tap', 'tap a lantern on the quay', 'a boat on its ray, or away'], ['tap', 'the lighthouse · drag sideways', 'play · stop · tempo · hold — the chord'],
       ['drag', 'drag the moon', 'filter: up — open, down — it sets · sideways — resonance'], ['drag', 'drag the bell buoy', 'echo: across — time, out to sea — longer'],
-      ['up', 'drag the fog up', 'more reverb'], ['hold', 'hold the moon, buoy, fog, lighthouse, island', 'its sheet'], ['tap', 'tap the moon', 'map of worlds']],
+      ['up', 'drag the fog up', 'more reverb'], ['tap', 'tap the night sky', 'a falling star — the echoes die'], ['hold', 'hold the moon, buoy, fog, lighthouse, a boat', 'its sheet'], ['tap', 'tap the moon', 'map of worlds']],
     build, tick, draw, down, move, up, dice,
     clear() { isles.length = 0; },
-    snapshot: () => JSON.stringify({ isles: isles.map(({ u, d, oct, lvl, sd }) => ({ u, d, oct, lvl, sd })), steps: [...steps], luna, echo, buoy, fog, pharos, fx, bpm: seq.bpm }),
+    snapshot: () => JSON.stringify({ isles: isles.map(({ step, p, oct, lvl, type, sd }) => ({ step, p, oct, lvl, type, sd })), luna, echo, buoy, fog, pharos, fx, bpm: seq.bpm }),
     restore(js) {
       const st = JSON.parse(js);
-      isles.length = 0; for (const q of st.isles) isles.push({ ...q, born: performance.now(), hit: 0 });
-      steps.clear(); for (const j of st.steps) steps.add(j);
+      isles.length = 0; for (const q of st.isles) if (q.step != null) isles.push({ ...q, hit: 0 });
       Object.assign(luna, st.luna); Object.assign(echo, st.echo); Object.assign(buoy, st.buoy); Object.assign(fog, st.fog); Object.assign(pharos, st.pharos); Object.assign(fx, st.fx); seq.bpm = st.bpm;
       applyAll();
     },
@@ -504,8 +546,8 @@
   };
   T.registerWorld(13, portus);
   window.t2d.portus = {
-    isles, steps, luna, echo, buoy, fog, pharos, fx, seq, geo, play, setFx: (k, v) => fxw.set(k, v), get live() { return !!(bus && bus.live); }, hz: hzOf, name: nameOf, fc: fcOf, fb: fbOf,
-    sea: (u, d) => P(geo(), u, d), lantern: (i) => ({ x: lanternX(geo(), i), y: geo().qy - 20 }), buoyAt: () => { const G = geo(), B = P(G, buoy.u, buoy.d); return { x: B.x, y: B.y - 8 }; },
+    isles, get steps() { return isles.map((i) => i.step); }, luna, echo, buoy, fog, pharos, fx, seq, geo, play, setFx: (k, v) => fxw.set(k, v), get live() { return !!(bus && bus.live); }, hz: hzOf, name: nameOf, fc: fcOf, fb: fbOf,
+    sea: (u, d) => P(geo(), u, d), col: (i, p) => colPt(geo(), i, p), lantern: (i) => ({ x: lanternX(geo(), i), y: geo().qy - 20 }), sky: () => { const G = geo(); return { x: G.cx + G.Ws * 0.2, y: (G.top + G.fogTop) / 2 }; }, kill: () => killEcho(0, 0), get killed() { return killAt; }, buoyAt: () => { const G = geo(), B = P(G, buoy.u, buoy.d); return { x: B.x, y: B.y - 8 }; },
     get stepNow() { return curStep(); }, apply: applyAll,
   };
 })();

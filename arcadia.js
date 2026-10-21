@@ -142,7 +142,7 @@
 
   // ---------- странники ----------
   const travellers = [];                                   // {slot, u, v (дом), oct, r (орбита), fig, mode (путь), sp (размах), lvl, born, route}
-  const fx = { relief: 0.3, pace: 0.35, wind: 0, spread: 0.6, hall: 0.4 };
+  const fx = { relief: 0.3, pace: 0.35, wind: 0, chorus: 0.35, phaser: 0, spread: 0.6, hall: 0.4 };
   const root = () => (T.scaleOn ? T.scaleRoot : 0);
   const depthOf = (v) => { const q = 1 / (1 + K * (v + 1) / 2); return 1 - (q - Q1) / (1 - Q1); };   // 0 у нижней рамки … 1 на горизонте — ровно по экрану
   function semiOf(t) {                                     // вглубь — выше: две октавы от нижней рамки до горизонта, полутоны ровно по высоте экрана; с ладом — ступени
@@ -181,9 +181,21 @@
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const pre = g(1), out = g(1.5), hallSend = g(0), h = T.hall();
-    pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-    bus = { pre, out, hallSend, hall: h, input, live: false };
+    const pre = g(1), mix = g(1), out = g(1.5), hallSend = g(0), h = T.hall();
+    const lfo = (f, depth, ...params) => { const o = ctx.createOscillator(), gg = g(depth); o.frequency.value = f; o.connect(gg); for (const p of params) gg.connect(p); o.start(); return gg; };
+    pre.connect(mix);                                                                           // фейзер: шесть всепропускающих фильтров плывут, сумма с сухим — бегущие провалы
+    const aps = [0, 1, 2, 3, 4, 5].map((i) => { const b = ctx.createBiquadFilter(); b.type = 'allpass'; b.frequency.value = 320 * 1.7 ** i; b.Q.value = 0.6; return b; });
+    for (let i = 0; i < 5; i++) aps[i].connect(aps[i + 1]);
+    const phWet = g(0); aps[5].connect(phWet).connect(mix);
+    const phLfo = lfo(0.11, 0, ...aps.map((b) => b.frequency));
+    const chDry = g(1), chWet = g(0), d1 = ctx.createDelay(0.05), d2 = ctx.createDelay(0.05);   // хорус: две плавающие задержки, разведённые по сторонам
+    d1.delayTime.value = 0.013; d2.delayTime.value = 0.019;
+    lfo(0.27, 0.0035, d1.delayTime); lfo(0.19, 0.0045, d2.delayTime);
+    const pL = ctx.createStereoPanner ? ctx.createStereoPanner() : g(1), pR = ctx.createStereoPanner ? ctx.createStereoPanner() : g(1);
+    if (pL.pan) { pL.pan.value = -0.8; pR.pan.value = 0.8; }
+    d1.connect(pL).connect(chWet); d2.connect(pR).connect(chWet); chWet.connect(out);
+    mix.connect(chDry).connect(out); mix.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
+    bus = { pre, mix, out, hallSend, hall: h, input, live: false, aps, phWet, phLfo, chWet, chDry, d1, d2, phOn: false, chOn: false };
     ready = false; node = null; started = false;
     applyFx();
   }
@@ -217,6 +229,11 @@
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.4, t, 0.05);
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4.5)), t, 0.05);
     send({ t: 'params', relief: fx.relief, speed: 0.01 * 40 ** fx.pace, wind: fx.wind, spread: fx.spread });
+    const ph = fx.phaser > 0.01, ch = fx.chorus > 0.01;                                       // выключенные — отцеплены, не считаются
+    if (ph !== bus.phOn) { bus.phOn = ph; if (ph) bus.pre.connect(bus.aps[0]); else bus.pre.disconnect(bus.aps[0]); }
+    if (ch !== bus.chOn) { bus.chOn = ch; if (ch) { bus.mix.connect(bus.d1); bus.mix.connect(bus.d2); } else { bus.mix.disconnect(bus.d1); bus.mix.disconnect(bus.d2); } }
+    bus.phWet.gain.setTargetAtTime(fx.phaser * 0.95, t, 0.05); bus.phLfo.gain.setTargetAtTime(150 + 650 * fx.phaser, t, 0.05);
+    bus.chWet.gain.setTargetAtTime(fx.chorus * 0.75, t, 0.05); bus.chDry.gain.setTargetAtTime(1 - fx.chorus * 0.3, t, 0.05);
   }
   function sendT(t, on = true, withRoute = true) {
     const m = { t: 'voice', i: t.slot, on, f: hzOf(t), hx: t.u, hy: t.v, r: t.r, fig: t.fig, lvl: t.lvl * 0.7, mode: t.mode, sp: t.sp, pan: t.u * 0.8 };
@@ -489,10 +506,10 @@
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
-    sectors: [{ key: 'relief', label: 'relief', ang: deg(190) }, { key: 'pace', label: 'pace', ang: deg(160) }, { key: 'wind', label: 'wind', ang: deg(130) }, { key: 'spread', label: 'spread', ang: deg(105) }, { key: 'hall', label: 'hall', ang: deg(80) }],
+    sectors: [{ key: 'relief', label: 'relief', ang: deg(190) }, { key: 'pace', label: 'pace', ang: deg(160) }, { key: 'wind', label: 'wind', ang: deg(140) }, { key: 'chorus', label: 'chorus', ang: deg(120) }, { key: 'phaser', label: 'phaser', ang: deg(100) }, { key: 'hall', label: 'hall', ang: deg(80) }],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); },
-    text: (k) => (k === 'pace' ? `${(1 / (0.01 * 40 ** fx.pace)).toFixed(0)} s` : k === 'wind' && fx.wind < 0.01 ? 'calm' : `${Math.round(fx[k] * 100)}%`),
-    lfo: { keys: ['relief', 'pace', 'wind', 'spread', 'hall'], shapes: 'random' },
+    text: (k) => (k === 'pace' ? `${(1 / (0.01 * 40 ** fx.pace)).toFixed(0)} s` : k === 'wind' && fx.wind < 0.01 ? 'calm' : (k === 'phaser' || k === 'chorus') && fx[k] < 0.01 ? 'off' : `${Math.round(fx[k] * 100)}%`),
+    lfo: { keys: ['relief', 'pace', 'wind', 'chorus', 'phaser', 'hall'], shapes: 'random' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // новая страна; два-три странника на ступенях лада, пути и петли — вразброс
