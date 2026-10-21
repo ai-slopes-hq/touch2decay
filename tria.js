@@ -14,7 +14,7 @@
   const TINT = [[240, 234, 222], [236, 192, 84], [196, 210, 224]];   // соль — белая, сера — жёлтая, ртуть — серебро
   const NAMES = ['Sal', 'Sulphur', 'Mercurius'];
   const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
-  const EPS = 0.06, KC = 0.35;
+  const EPS = 0.1, KC = 0.35;
 
   // ---------- состояние ----------
   const rest = () => [0, 1, 2].map((i) => { const a = -Math.PI / 2 + (i * TAU) / 3; return { x: Math.cos(a) * 0.5, y: Math.sin(a) * 0.5 }; });
@@ -56,7 +56,8 @@
   // энергия сохраняется: край упругий, скорость не срезается; leapfrog копит ошибку на близких пролётах — поэтому подшагов больше,
   // когда тела близко и быстры, и после кадра скорости чуть подправляются к энергии броска E0 (новая E0 — после любого вмешательства).
   // decay — единственный сток: трение, система медленно садится в клубок.
-  let E0 = null, eKey = '', eDirty = true;
+  let E0 = null, eKey = '', eDirty = true, fresh = true;   // fresh — новый бросок: энергия не ниже EMIN (иначе два тела почти всегда сцепляются в тесную пару)
+  const EMIN = 0.6;                                     // на единицу массы, при gravitas 50 %
   function energy() {
     const eps2 = lux ? 1e-6 : EPS * EPS, g = Gc();
     let K = 0, U = 0;
@@ -72,9 +73,13 @@
     const key = `${Gc()}|${lux}|${bodies.map((b) => `${b.m},${b.fixed},${!!b.held}`).join(';')}`, any = bodies.some((b) => b.held);
     if (fx.decay > 0.005 && !any) { const f = Math.exp(-0.3 * fx.decay * fx.decay * dt); for (const b of bodies) { b.vx *= f; b.vy *= f; } eDirty = true; }   // decay: трение
     const { K, U } = energy();
-    if (eDirty || any || key !== eKey || E0 == null) { E0 = K + U; eKey = key; eDirty = false; return; }
+    if (eDirty || any || key !== eKey || E0 == null) {
+      E0 = K + U; eKey = key; eDirty = false;
+      if (fresh && !any && !lux) { fresh = false; E0 = Math.max(E0, (EMIN * Gc() / 0.625) * bodies.reduce((a, b) => a + b.m, 0)); }
+      if (Math.abs(E0 - K - U) < 1e-9) return;
+    }
     const Kt = E0 - U;
-    if (K > 1e-6) { const k = Math.min(1.03, Math.max(0.97, Math.sqrt(Math.max(0, Kt) / K))); for (const b of bodies) if (!b.fixed) { b.vx *= k; b.vy *= k; } }
+    if (K > 1e-6) { const k = Math.min(1.04, Math.max(0.97, Math.sqrt(Math.max(0, Kt) / K))); for (const b of bodies) if (!b.fixed) { b.vx *= k; b.vy *= k; } }
   }
   function physics(dt) {                                  // перешагивание (leapfrog), 8…64 подшага за кадр; блюдо держит тела
     if (still) return;
@@ -231,7 +236,7 @@
     touches.delete(f.id);
     if (!t || t.kind !== 'body') return;
     const b = bodies[t.i], G = geo();
-    b.held = false; eDirty = true;
+    b.held = false; eDirty = true; fresh = true;
     if (t.moved && !b.fixed) {                            // бросок: скорость пальца за последние кадры
       const h = t.hist, a = h[0], z = h[h.length - 1], dtm = Math.max(16, z[0] - a[0]);
       b.vx = clamp(((z[1] - a[1]) / G.R / dtm) * 1000 * 0.5, -3, 3); b.vy = clamp(((z[2] - a[2]) / G.R / dtm) * 1000 * 0.5, -3, 3);
@@ -343,7 +348,7 @@
   function dice() {                                       // тела разбросаны и брошены, массы и ноты — аккорд
     const R = Math.random, chords = [[0, 7, 12], [0, 3, 7], [0, 5, 10], [-5, 0, 7], [0, 4, 11]], ch = chords[Math.floor(R() * chords.length)];
     bodies.forEach((b, i) => { const a = R() * TAU, r = 0.25 + R() * 0.55; b.x = Math.cos(a) * r; b.y = Math.sin(a) * r; b.vx = (R() - 0.5) * 1.6; b.vy = (R() - 0.5) * 1.6; b.m = 0.6 + R() * 1.2; b.semi = ch[i]; b.fixed = false; b.trail = []; });
-    lux = false; cadit = false; still = false; eDirty = true; start();
+    lux = false; cadit = false; still = false; eDirty = true; fresh = true; start();
   }
   const tria = {
     n: 'XI', title: 'Tria corpora', sub: 'sal · sulphur · mercurius', theme: { ink: INK, bg: BGC, paper: PAPER },
@@ -366,7 +371,7 @@
   };
   T.registerWorld(11, tria);
   window.t2d.tria = {
-    bodies, fx, geo, setFx: (k, v) => fxw.set(k, v), get still() { return still; }, get lux() { return lux; }, get cadit() { return cadit; }, get encounters() { return encounters; }, fiatLux, energy: () => { const e = energy(); return e.K + e.U; }, spread: () => { const B = bodies, d = (i, j) => Math.hypot(B[i].x - B[j].x, B[i].y - B[j].y); return (d(0, 1) + d(1, 2) + d(0, 2)) / 3; },
+    bodies, fx, geo, setFx: (k, v) => fxw.set(k, v), get still() { return still; }, get lux() { return lux; }, get cadit() { return cadit; }, get encounters() { return encounters; }, fiatLux, energy: () => { const e = energy(); return e.K + e.U; }, spread: () => { const B = bodies, d = (i, j) => Math.hypot(B[i].x - B[j].x, B[i].y - B[j].y); return (d(0, 1) + d(1, 2) + d(0, 2)) / 3; }, dmin: () => { const B = bodies, d = (i, j) => Math.hypot(B[i].x - B[j].x, B[i].y - B[j].y); return Math.min(d(0, 1), d(1, 2), d(0, 2)); },
     at: (i) => px(geo(), bodies[i]),
   };
 })();

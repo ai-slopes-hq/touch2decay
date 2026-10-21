@@ -1292,15 +1292,15 @@ async def sc_firmamentum(p):                       # Firmamentum: прокол �
 async def sc_triaenergy(p):                        # Tria: энергия броска сохраняется — тела не слипаются; decay — садятся в клубок
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(11)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
-    for k in range(3):
-        d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(300)
-        e0 = await p.js('()=>t2d.tria.energy()'); sp = []
-        for _ in range(20):
-            await p.pg.wait_for_timeout(1000); sp.append(await p.js('()=>t2d.tria.spread()'))
-        e1 = await p.js('()=>t2d.tria.energy()')
-        print(f'  dice {k}: energy {e0:.2f} -> {e1:.2f}, spread over 20 s', ' '.join(f'{x:.2f}' for x in sp[::2]))
+    for k in range(4):
+        d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(2500)
+        e0 = await p.js('()=>t2d.tria.energy()'); dm = []
+        for _ in range(40):
+            await p.pg.wait_for_timeout(500); dm.append(await p.js('()=>t2d.tria.dmin()'))
+        e1 = await p.js('()=>t2d.tria.energy()'); close = sum(1 for x in dm if x < 0.12) / len(dm)
+        print(f'  dice {k}: energy {e0:.2f} -> {e1:.2f}, closest pair over 20 s', ' '.join(f'{x:.2f}' for x in dm[::4]), f'· in a tight pair {close:.0%}')
         assert abs(e1 - e0) < 0.05 * abs(e0) + 0.05, f'energy is kept: {e0} -> {e1}'
-        assert max(sp[10:]) > 0.25, f'the three do not stick in one ball: {sp}'
+        assert close < 0.5, f'no pair stays stuck: {dm}'
     await p.js("()=>t2d.tria.setFx('decay', 1)"); await p.pg.wait_for_timeout(25000)
     sp = await p.js('()=>t2d.tria.spread()'); print('  decay 100 %, after 25 s spread', round(sp, 3)); assert sp < 0.2, f'decay — they settle: {sp}'
     await p.js("()=>t2d.tria.setFx('decay', 0)")
