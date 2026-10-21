@@ -11,7 +11,7 @@ class Ocean extends AudioWorkletProcessor {
     this.a = new Float32Array(N); this.b = new Float32Array(N);   // таблица до и после шага физики
     this.kt = 0.03; this.damp = 0.002; this.kc = 0.004; this.wind = 0; this.tide = 0.5; this.moon = 0; this.moonRate = 0.04;
     this.push = new Map();                                         // палец в воде: id → {a, d, k}
-    this.vo = Array.from({ length: VMAX }, () => ({ on: false, f: 110, ph: Math.random(), g: 0, lvl: 0.8, lp: 0, lpR: 0 }));
+    this.vo = Array.from({ length: VMAX }, () => ({ on: false, f: 110, ph: Math.random(), g: 0, lvl: 0.8, lp: 0, lpR: 0, path: 0 }));
     this.k = 0; this.count = 0; this.every = Math.round(sampleRate / 30);
     for (let i = 0; i < N; i++) { const th = (i / N) * 2 * Math.PI; this.x[i] = this.b[i] = this.a[i] = 0.5 * Math.cos(th); }
     this.port.onmessage = (e) => this.msg(e.data);
@@ -23,7 +23,7 @@ class Ocean extends AudioWorkletProcessor {
       for (let i = 0; i < N; i++) { let u = i / N - d.a; u -= Math.round(u); this.v[i] += d.amt * Math.exp(-(u * u) / (2 * 0.025 * 0.025)); }
       return;
     }
-    if (d.t === 'voice') { const o = this.vo[d.i]; o.on = d.on; if (d.f) o.f = d.f; if (d.lvl != null) o.lvl = d.lvl; return; }
+    if (d.t === 'voice') { const o = this.vo[d.i]; o.on = d.on; if (d.f) o.f = d.f; if (d.lvl != null) o.lvl = d.lvl; if (d.path != null) o.path = d.path; return; }
   }
   step() {                                                         // шаг физики: соседи тянут, луна держит горб, трение, ветер, пальцы
     const x = this.x, v = this.v, kt = this.kt, kc = this.kc, dm = 1 - this.damp, th0 = this.moon * 2 * Math.PI, tide = this.tide;
@@ -55,7 +55,8 @@ class Ocean extends AudioWorkletProcessor {
         o.g += ((o.on ? o.lvl : 0) - o.g) * (o.on ? 0.0015 : 0.0006);    // мягкая атака и отпускание
         if (o.g < 1e-5 && !o.on) continue;
         o.ph += o.f / sr; if (o.ph >= 1) o.ph -= 1;
-        const p = o.ph * N, i0 = p | 0, u = p - i0, i1 = (i0 + 1) % N;
+        const q = o.path === 1 ? 1 - o.ph : o.path === 2 ? (o.ph < 0.5 ? 2 * o.ph : 2 - 2 * o.ph) : o.ph;   // путь скана: по кругу, назад, туда-обратно
+        const p = Math.min(N - 1e-6, q * N), i0 = p | 0, u = p - i0, i1 = (i0 + 1) % N;
         const y0 = a[i0] + (b[i0] - a[i0]) * fr, y1 = a[i1] + (b[i1] - a[i1]) * fr;
         let y = (y0 + (y1 - y0) * u) * o.g;
         const c = Math.min(0.9, (2 * Math.PI * 6000) / sr);         // мягкий срез верха: острые углы кольца не звенят наложением

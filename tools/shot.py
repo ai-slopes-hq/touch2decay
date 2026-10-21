@@ -1156,6 +1156,11 @@ async def sc_oceanus(p):                           # Oceanus: город поё�
     await p.pg.wait_for_timeout(300); a = await p.js('()=>t2d.ocean.at(1.2, 0.5)'); await p.hold(a['x'], a['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold a staying city — its sheet'
     await p.shot('oceanus-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    w = await p.js('()=>t2d.ocean.water(4.0, 0.9)'); await p.tap(w['x'], w['y']); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.ocean.ripples') > 0, 'quick tap on the water — rings spread'
+    await p.js("()=>{const v=t2d.ocean.voices.find(v=>v.pinned); v.path=2; t2d.ocean.send(v)}"); await p.pg.wait_for_timeout(600)
+    assert await p.js('()=>t2d.ocean.gains.some(g=>g>0.3)'), 'a city scanning there-and-back still sings'
+    await p.shot('oceanus-currents')
     await p.js("()=>{t2d.ocean.setFx('wind', 0.8); t2d.ocean.setFx('tension', 0.8)}"); await p.pg.wait_for_timeout(1500)
     print('  oceanus level, wind:', round(await p.js('()=>T2D.level'), 3)); await p.shot('oceanus-wind')
     await p.js("()=>{t2d.ocean.setFx('wind', 0)}")

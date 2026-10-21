@@ -27,6 +27,7 @@
     return s;
   }
   const hzOf = (v) => 55 * 2 ** (semiOf(v) / 12) * 2 ** (v.oct || 0);
+  const f0 = hzOf;
   const noteName = (f) => { const m = Math.round(12 * Math.log2(f / 55)); return `${NOTES[((m % 12) + 12) % 12]}${Math.floor((m + 9) / 12) + 1}`; };
 
   // ---------- геометрия: портрет по центру; земля — круг Rd, океан до Ro, рамка ветров Rf ----------
@@ -86,12 +87,13 @@
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4)), t, 0.05);
     sendParams();
   }
-  function sendVoice(v, on = true) { send({ t: 'voice', i: v.slot, on, f: hzOf(v), lvl: v.lvl * 0.8 }); if (on) { setLive(true); lastSound = performance.now(); } }
+  const PATHS = ['orbis', 'retro', 'pendulum'];             // путь скана: по кругу, против, туда-обратно
+  function sendVoice(v, on = true) { send({ t: 'voice', i: v.slot, on, f: hzOf(v), lvl: v.lvl * 0.8, path: v.path || 0 }); if (on) { setLive(true); lastSound = performance.now(); } }
   function addVoice(ang, rn, pinned) {
     const used = new Set(voices.map((v) => v.slot)), slot = [...Array(VMAX).keys()].find((k) => !used.has(k));
     if (slot == null) return null;
     start();
-    const v = { slot, ang, rn, pinned, lvl: 0.8, oct: 0 };
+    const v = { slot, ang, rn, pinned, lvl: 0.8, oct: 0, path: 0 };
     voices.push(v); sendVoice(v);
     return v;
   }
@@ -151,17 +153,18 @@
     if (!t) return;
     if (t.kind === 'water') {
       send({ t: 'push', id: f.id, off: true });
-      if (!t.moved && performance.now() - t.t0 < 220) { const G = geo(), P = polar(G, t.x0, t.y0); send({ t: 'splash', a: P.a / TAU, amt: P.d > G.Rr ? 0.35 : -0.35 }); }
+      if (!t.moved && performance.now() - t.t0 < 220) { const G = geo(), P = polar(G, t.x0, t.y0); send({ t: 'splash', a: P.a / TAU, amt: P.d > G.Rr ? 0.35 : -0.35 }); ripple(t.x0, t.y0, 1); }
+      else if (t.moved) ripple(f.x, f.y, 0.5);
     }
     if (t.kind === 'voice' && t.temp && voices.includes(t.v)) dropVoice(t.v);
   }
   function voiceSheet(v) {
     T.openSheet({
       title: 'civitas', hint: 'city — tap outside to close',
-      rows: [{ key: 'lvl', label: 'level' }, { key: 'oct', label: 'octave' }],
-      get: (k) => (k === 'oct' ? (v.oct + 1) / 2 : v.lvl),
-      set: (k, x) => { if (k === 'oct') v.oct = Math.round(x * 2) - 1; else v.lvl = x; sendVoice(v); },
-      text: (k) => (k === 'oct' ? ['octave −1', 'octave 0', 'octave +1'][v.oct + 1] : `${Math.round(v.lvl * 100)}%`),
+      rows: [{ key: 'lvl', label: 'level' }, { key: 'oct', label: 'octave' }, { key: 'path', label: 'path' }],
+      get: (k) => (k === 'oct' ? (v.oct + 1) / 2 : k === 'path' ? v.path / 2 : v.lvl),
+      set: (k, x) => { if (k === 'oct') v.oct = Math.round(x * 2) - 1; else if (k === 'path') v.path = Math.round(x * 2); else v.lvl = x; sendVoice(v); },
+      text: (k) => (k === 'oct' ? ['octave −1', 'octave 0', 'octave +1'][v.oct + 1] : k === 'path' ? PATHS[v.path] : `${Math.round(v.lvl * 100)}%`),
     });
   }
   function tick(now) {
@@ -218,7 +221,37 @@
     }
     return wallC;
   }
+  const ripples = [], foam = Array.from({ length: 44 }, (_, i) => ({ a: Math.random() * TAU, lane: 0.2 + 0.7 * Math.random(), dir: i % 2 ? 1 : -1, len: 0.03 + Math.random() * 0.05 }));
+  let foamT = 0;
+  function ripple(x, y, k) { ripples.push({ x, y, t: performance.now(), k }); if (ripples.length > 12) ripples.shift(); }
+  function drawCurrents(c, G, now) {                      // течения: пена бежит по кругу двумя потоками — быстрее с натяжением; круги от всплесков
+    const dt = foamT ? Math.min(0.1, (now - foamT) / 1000) : 0, w = 0.05 + 0.35 * fx.tension;
+    foamT = now;
+    c.lineWidth = 0.8;
+    for (const f of foam) {
+      f.a = (f.a + f.dir * w * dt * (0.6 + f.lane) + TAU) % TAU;
+      const r = G.Rd + (surf(G, f.a) - G.Rd) * f.lane, al = 0.1 + 0.25 * f.lane + 0.25 * fx.wind;
+      c.strokeStyle = ink(al); c.beginPath(); c.arc(G.cx, G.cy, r, f.a - Math.PI / 2, f.a - Math.PI / 2 + f.len * f.dir, f.dir < 0); c.stroke();
+    }
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const q = ripples[i], k = (now - q.t) / 1300;
+      if (k >= 1) { ripples.splice(i, 1); continue; }
+      c.strokeStyle = ink(0.5 * (1 - k) * q.k); c.lineWidth = 1;
+      for (const m of [1, 0.6]) { c.beginPath(); c.arc(q.x, q.y, 4 + 30 * k * m, 0, TAU); c.stroke(); }
+    }
+  }
+  function drawReflection(c, G, now) {                    // луна отражается в воде: дрожащие штрихи под поверхностью, по форме кольца
+    if (fx.tide < 0.03) return;
+    const ma = moon * TAU, r0 = surf(G, ma);
+    c.lineWidth = 1;
+    for (let j = 0; j < 5; j++) {
+      const r = r0 - 6 - j * 5, wob = Math.sin(now * 0.004 + j * 1.7) * 0.02 + (shape[Math.floor((ma / TAU) * N + j) % N] || 0) * 0.03, half = (0.07 - j * 0.011) * (0.6 + 0.4 * fx.tide);
+      if (r < G.Rd + 3) break;
+      c.strokeStyle = ink((0.4 - j * 0.06) * Math.min(1, fx.tide * 1.5)); c.beginPath(); c.arc(G.cx, G.cy, r, ma + wob - half - Math.PI / 2, ma + wob + half - Math.PI / 2); c.stroke();
+    }
+  }
   function drawOcean(c, G, now) {                         // вода: поверхность — форма кольца, две линии штриховки следуют за ней
+    drawCurrents(c, G, now); drawReflection(c, G, now);
     const M = 96;
     for (const [k, al] of [[1, 0.85], [0.66, 0.3], [0.33, 0.18]]) {
       c.strokeStyle = ink(al); c.lineWidth = k === 1 ? 1.2 : 0.8; c.beginPath();
@@ -246,7 +279,8 @@
   }
   function drawVoices(c, G, now) {
     for (const v of voices) {
-      const p = at(G, v.ang, v.rn * G.Rd), g = gains[v.slot] || 0, f = hzOf(v), sa = (now * 0.00025 * Math.sqrt(f / 55)) % 1 * TAU, q = at(G, sa, surf(G, sa));
+      const ph = (now * 0.00025 * Math.sqrt(f0(v) / 55)) % 1, qq = v.path === 1 ? 1 - ph : v.path === 2 ? (ph < 0.5 ? 2 * ph : 2 - 2 * ph) : ph;   // луч скана идёт по своему пути
+      const p = at(G, v.ang, v.rn * G.Rd), g = gains[v.slot] || 0, f = hzOf(v), sa = qq * TAU, q = at(G, sa, surf(G, sa));
       c.strokeStyle = ink(0.12 + 0.35 * g); c.lineWidth = 0.8; c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(q.x, q.y); c.stroke();   // луч скана: голос читает кольцо по кругу
       if (g > 0.05) T.glowAt(p.x, p.y, 18, g * 0.35);
       c.fillStyle = BGC; c.strokeStyle = ink(0.9); c.lineWidth = 1;
@@ -287,6 +321,7 @@
     for (let k = 0; k < n; k++) addVoice(Math.floor(R() * 12) / 12 * TAU + 0.01, [0.84, 0.5, 0.18][Math.floor(R() * 3)], true);
     fx.tension = 0.2 + 0.6 * R(); fx.damping = 0.15 + 0.6 * R(); applyFx();
     send({ t: 'splash', a: R(), amt: 0.4 });
+    for (const v of voices) { v.path = Math.floor(R() * 3); sendVoice(v); }
   }
   const ocean = {
     n: 'VIII', title: 'Oceanus', sub: 'orbis terrarum', theme: { ink: INK, bg: BGC, paper: PAPER },
@@ -298,11 +333,11 @@
       ['tap', 'tap the sun', 'map of worlds']],
     build, tick, draw, down, move, up, dice, enter: () => { inWorld = true; start(); }, leave: () => { inWorld = false; },
     clear() { while (voices.length) dropVoice(voices[0]); },
-    snapshot: () => JSON.stringify({ v: voices.filter((v) => v.pinned).map(({ ang, rn, lvl, oct }) => ({ ang, rn, lvl, oct })), fx }),
+    snapshot: () => JSON.stringify({ v: voices.filter((v) => v.pinned).map(({ ang, rn, lvl, oct, path }) => ({ ang, rn, lvl, oct, path })), fx }),
     restore(js) {
       const st = JSON.parse(js);
       while (voices.length) dropVoice(voices[0]);
-      for (const q of st.v) { const v = addVoice(q.ang, q.rn, true); if (v) { v.lvl = q.lvl; v.oct = q.oct; sendVoice(v); } }
+      for (const q of st.v) { const v = addVoice(q.ang, q.rn, true); if (v) { v.lvl = q.lvl; v.oct = q.oct; v.path = q.path || 0; sendVoice(v); } }
       Object.assign(fx, st.fx); applyFx();
     },
     sounding, mapShot(on) { noSun = on; },
@@ -310,7 +345,7 @@
   T.registerWorld(8, ocean);
   window.t2d.ocean = {
     voices, fx, geo, setFx: (k, v) => fxw.set(k, v), get ready() { return ready; }, get live() { return !!(bus && bus.live); },
-    get shape() { return shape; }, get gains() { return gains; }, hz: hzOf,
+    get shape() { return shape; }, get ripples() { return ripples.length; }, send: (v) => sendVoice(v), get gains() { return gains; }, hz: hzOf,
     at: (a, rn) => at(geo(), a, rn * geo().Rd), water: (a, k) => { const G = geo(); return at(G, a, G.Rd + (G.Ro - G.Rd) * k); },
   };
 })();
