@@ -27,7 +27,10 @@ async def main(js, world=1, onsets=False):
         await pg.goto(URL); await pg.wait_for_timeout(300)
         cdp = await c.new_cdp_session(pg)
         T = lambda typ, pts: cdp.send('Input.dispatchTouchEvent', {'type': typ, 'touchPoints': pts})
-        if world == 2:                                       # Cymatica: первое касание — удар по пластине, ждём worklet
+        if world >= 3:                                       # другой мир: касание мимо всего (звук включается), дальше — js
+            await pg.evaluate(f'()=>t2d.go({world})'); await pg.wait_for_timeout(300)
+            await T('touchStart', [{'x': 3, 'y': 140, 'id': 1}]); await pg.wait_for_timeout(60); await T('touchEnd', [])
+        elif world == 2:                                       # Cymatica: первое касание — удар по пластине, ждём worklet
             await pg.evaluate('()=>t2d.go(2)')
             g = await pg.evaluate('()=>t2d.cym.geo')
             await T('touchStart', [{'x': g['cx'], 'y': g['cy'], 'id': 1}]); await pg.wait_for_timeout(60); await T('touchEnd', [])

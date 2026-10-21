@@ -24,6 +24,9 @@
   };
   const HALO = { a: [6.5, 2.2], e: [5, 2.6], i: [2.4, 4.2], o: [3.6, 3.6], u: [2.2, 2.2] };   // нимб — форма гласной
   const PIN_MAX = 4;
+  // голос: форманты шире, чем у сухой таблицы (иначе хор свистит отдельными синусами), под ними — тело (сам источник сквозь мягкий срез),
+  // уровни — с запасом до потолка мастера
+  const BWK = 2.2, FGK = 1.4, BODYK = 0.3, VCAK = 0.32, OUTK = 1.1, DBK = 0.55;   // DBK — верхние форманты не так глубоко: больше присутствия и воздуха
   const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
 
   // ---------- состояние ----------
@@ -43,10 +46,10 @@
 
   // ---------- геометрия: девять эллипсов-сфер вокруг розы, выше по экрану — шире ----------
   function geo() {
-    const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, h = bot - top, cx = W / 2, cy = top + h * 0.48;
-    const RX = W / 2 - 14, RY = Math.min(cy - top - 10, bot - cy - 10), rx0 = W * 0.13, ry0 = rx0 * 1.6;
+    const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, h = bot - top, cx = W / 2, cy = top + h * 0.48, Ws = Math.min(W, (H - T.safeBot) * 0.62);   // сферы — высокие: на широком экране сцена по центру
+    const RX = Ws / 2 - 14, RY = Math.min(cy - top - 10, bot - cy - 10), rx0 = Ws * 0.13, ry0 = rx0 * 1.6, L0 = cx - Ws / 2;
     const sph = NAMES.map((_, k) => ({ rx: rx0 + ((RX - rx0) * k) / 8, ry: ry0 + ((RY - ry0) * k) / 8 }));
-    return { W, H, top, bot, cx, cy, sph, rose: rx0 * 0.72, light: { x: W, y: H - T.safeBot, r: Math.min(100, W * 0.26) }, ladder: { x0: W * 0.05, y0: bot + 2, x1: W * 0.16, y1: bot - Math.min(130, h * 0.17) } };   // лестница Иакова — в левом нижнем углу, мимо сфер
+    return { W, H, top, bot, cx, cy, sph, rose: rx0 * 0.72, light: { x: W, y: H - T.safeBot, r: Math.min(100, Ws * 0.26) }, ladder: { x0: L0 + Ws * 0.05, y0: bot + 2, x1: L0 + Ws * 0.16, y1: bot - Math.min(130, h * 0.17) } };   // лестница Иакова — в левом нижнем углу, мимо сфер
   }
   const angleAt = (G, k, x, y) => { const s = G.sph[k]; return (Math.atan2((x - G.cx) / s.rx, -(y - G.cy) / s.ry) + TAU) % TAU; };
   const vOf = (ang) => (ang / TAU) * 5;
@@ -75,7 +78,7 @@
         const v = y * Math.exp((-6.9 * t) / t60) * Math.min(1, (i - pre) / fade);
         d[i] = v; e += v * v;
       }
-      const k = 1 / Math.sqrt(e || 1);                    // энергия отзвука — единица: шум проходит с прежней громкостью
+      const k = Math.sqrt(2500 / (sr / 2)) / Math.sqrt(e || 1);   // энергия отзвука сидит ниже ~2.5 кГц: нормируем по полосе, иначе собор на +9 дБ громче сухого и перегружает
       for (let i = 0; i < len; i++) d[i] *= k;
     }
     return buf;
@@ -108,9 +111,10 @@
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const inp = g(1), out = g(2.2), send = g(0), revIn = g(1), conv = ctx.createConvolver(), wet = g(1), fb = g(0), hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), oct = g(1);
+    const inp = g(1), out = g(OUTK), send = g(0), revIn = g(1), conv = ctx.createConvolver(), wet = g(1), fb = g(0), hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), oct = g(1);
     conv.normalize = false; hp.type = 'highpass'; hp.frequency.value = 160; lp.type = 'lowpass'; lp.frequency.value = 7000;
-    inp.connect(out); inp.connect(send).connect(hp).connect(revIn).connect(conv).connect(wet).connect(out);
+    inp.connect(g(0.6)).connect(out);                     // сухого меньше — хор звучит из собора
+    inp.connect(send).connect(hp).connect(revIn).connect(conv).connect(wet).connect(out);
     conv.connect(lp); octaver(ctx, lp, oct); oct.connect(fb).connect(revIn);   // шиммер: хвост собора на октаву вверх — снова в собор
     const n = ctx.sampleRate * 2; noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
@@ -143,14 +147,18 @@
     });
     const ns = ctx.createBufferSource(), ng = g(a.breath * 0.25); ns.buffer = noiseBuf; ns.loop = true; ns.connect(ng); ns.start(t, Math.random() * 1.5);
     const fs = formants(a.v).map(([fr, db, bw]) => {
-      const bp = ctx.createBiquadFilter(), fg = g(10 ** (db / 20) * 2.2); bp.type = 'bandpass'; bp.frequency.value = fr; bp.Q.value = fr / bw;
+      const bp = ctx.createBiquadFilter(), fg = g(10 ** ((db * DBK) / 20) * FGK); bp.type = 'bandpass'; bp.frequency.value = fr; bp.Q.value = fr / (bw * BWK);
       src.connect(bp); ng.connect(bp); bp.connect(fg).connect(vca); return { bp, fg };
     });
+    const body = ctx.createBiquadFilter(), bodyG = g(BODYK); body.type = 'lowpass'; body.frequency.value = Math.min(2400, f * 5); body.Q.value = 0.5;
+    src.connect(body).connect(bodyG).connect(vca);        // тело голоса: сам источник сквозь мягкий срез — хор, а не свист
+    const air = ctx.createBiquadFilter(), airG = g(0.5); air.type = 'highpass'; air.frequency.value = 3500; ng.connect(air).connect(airG).connect(vca);   // воздух — дыхание сверху
+    const sw = ctx.createOscillator(), swg = g(0.12); sw.frequency.value = 0.07 + Math.random() * 0.08; sw.connect(swg).connect(vca.gain); sw.start(t);   // дыхание хора: громкость медленно плывёт
     const sh = [];
     vib.start(t);
     vca.connect(bus.inp);
-    vca.gain.setTargetAtTime(0.5, t, 0.25);              // хор вступает мягко
-    a.n = { oscs, src, vca, vib, vg, ns, ng, fs, sh };
+    vca.gain.setTargetAtTime(VCAK, t, 0.35);             // хор вступает мягко
+    a.n = { oscs, src, vca, vib, vg, ns, ng, fs, sh, body, bodyG, sw, swg, air, airG };
   }
   function voiceOff(a, tau = 0.5) {
     const n = a.n;
@@ -158,17 +166,18 @@
     a.n = null;
     const t = actx.currentTime, end = t + tau * 6;
     n.vca.gain.setTargetAtTime(0, t, tau);
-    for (const o of [...n.oscs, n.vib, n.ns, ...n.sh.map((s) => s.o)]) o.stop(end);
-    n.vib.onended = () => { for (const x of [...n.oscs, n.src, n.vca, n.vib, n.vg, n.ns, n.ng, ...n.fs.map((q) => q.bp), ...n.fs.map((q) => q.fg), ...n.sh.flatMap((s) => [s.o, s.og])]) x.disconnect(); };
+    for (const o of [...n.oscs, n.vib, n.ns, n.sw, ...n.sh.map((s) => s.o)]) o.stop(end);
+    n.vib.onended = () => { for (const x of [...n.oscs, n.src, n.vca, n.vib, n.vg, n.ns, n.ng, ...n.fs.map((q) => q.bp), ...n.fs.map((q) => q.fg), n.body, n.bodyG, n.sw, n.swg, n.air, n.airG, ...n.sh.flatMap((s) => [s.o, s.og])]) x.disconnect(); };
   }
   function retune(a) {                                    // высота (сфера, регистр) и гласная — плавно
     const n = a.n;
     if (!n) return;
     const t = actx.currentTime, f = hzOf(a);
     for (const o of n.oscs) o.frequency.setTargetAtTime(f, t, 0.04);
+    n.body.frequency.setTargetAtTime(Math.min(2400, f * 5), t, 0.05);
     for (const s of n.sh) s.o.frequency.setTargetAtTime(f * s.m, t, 0.04);
     formants(a.v).forEach(([fr, db, bw], q) => {
-      n.fs[q].bp.frequency.setTargetAtTime(fr, t, 0.05); n.fs[q].bp.Q.setTargetAtTime(fr / bw, t, 0.05); n.fs[q].fg.gain.setTargetAtTime(10 ** (db / 20) * 2.2, t, 0.05);
+      n.fs[q].bp.frequency.setTargetAtTime(fr, t, 0.05); n.fs[q].bp.Q.setTargetAtTime(fr / (bw * BWK), t, 0.05); n.fs[q].fg.gain.setTargetAtTime(10 ** ((db * DBK) / 20) * FGK, t, 0.05);
     });
     n.vg.gain.setTargetAtTime(vibCents(a), t, 0.1);
     n.ng.gain.setTargetAtTime(a.breath * 0.25, t, 0.1);
@@ -231,7 +240,7 @@
     for (const a of angels) if (a.pinned) { const p = anglePos(G, a.k, a.v), d = Math.hypot(x - p.x, y - p.y); if (d < bd) { bd = d; best = a; } }
     return best;
   }
-  function newAngel(k, v) { return { k, v, pinned: false, singers: 3, detune: 0.4, vib: 0.5, breath: 0.25, reg: 1, n: null, lvl: 0 }; }
+  function newAngel(k, v) { return { k, v, pinned: false, singers: 4, detune: 0.5, vib: 0.5, breath: 0.25, reg: 1, n: null, lvl: 0 }; }
   function down(f) {
     const G = geo(), now = performance.now();
     if (ladderHit(G, f.x, f.y)) { touches.set(f.id, { kind: 'ladder', a0: asc.amt, y0: f.y, moved: false }); return; }   // лестница — подъём

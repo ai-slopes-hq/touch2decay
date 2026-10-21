@@ -40,11 +40,11 @@
 
   // ---------- геометрия: воронка — девять эллипсов один под другим, сужаются вниз; на дне Коцит ----------
   function geo() {
-    const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, cx = W / 2;
+    const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, cx = W / 2, Ws = Math.min(W, (H - T.safeBot) * 0.62);   // воронка портретная: на широком экране — по центру
     const y0 = top + 96, yC = bot - 54, dy = (yC - y0) / 9.3;
-    const rx0 = W * 0.46, rx8 = W * 0.13;
+    const rx0 = Ws * 0.46, rx8 = Ws * 0.13;
     const rings = NAMES.map((_, k) => { const rx = rx0 - ((rx0 - rx8) * k) / 8; return { cy: y0 + k * dy, rx, ry: rx * 0.13 + 3 }; });
-    return { W, H, top, bot, cx, y0, yC, dy, rings, coc: { cy: yC, rx: W * 0.11, ry: 9 }, dark: { x: 0, y: H - T.safeBot, r: Math.min(110, W * 0.28) } };
+    return { W, Ws, H, top, bot, cx, y0, yC, dy, rings, coc: { cy: yC, rx: Ws * 0.11, ry: 9 }, dark: { x: 0, y: H - T.safeBot, r: Math.min(110, Ws * 0.28) } };
   }
   function circleAt(G, x, y, loose = false) {
     const k = Math.round((y - G.y0) / G.dy);
@@ -321,7 +321,7 @@
   }
   const lvlAll = () => Math.min(1, circ.reduce((s, c) => s + c.lvl, 0) / 2.5);
   function drawInscription(c, G, now) {                   // LASCIATE OGNE SPERANZA над входом — разгорается с общим уровнем
-    const txt = 'LASCIATE OGNE SPERANZA', L = lvlAll(), R = G.W * 1.1, ox = G.cx, oy = G.top + 40 + R, span = (G.W * 0.62) / R;
+    const txt = 'LASCIATE OGNE SPERANZA', L = lvlAll(), R = G.Ws * 1.1, ox = G.cx, oy = G.top + 40 + R, span = (G.Ws * 0.62) / R;
     c.strokeStyle = T.ink(0.3); c.lineWidth = 1;
     c.beginPath(); c.arc(ox, oy, R - 14, -Math.PI / 2 - span * 0.6, -Math.PI / 2 + span * 0.6); c.stroke();
     c.strokeStyle = T.ink(0.12); c.beginPath(); c.arc(ox, oy, R - 20, -Math.PI / 2 - span * 0.62, -Math.PI / 2 + span * 0.62); c.stroke();
@@ -338,7 +338,8 @@
     for (let i = 0; i < 3; i++) {
       const y = G.y0 - 40 + i * 8, ph = now * 0.0004 * (i % 2 ? 1 : -1);
       c.strokeStyle = T.ink(a * (1 - i * 0.3)); c.beginPath();
-      for (let x = 30; x <= G.W - 30; x += 6) { const yy = y + Math.sin(x * 0.045 + ph * 6 + i) * 4; x === 30 ? c.moveTo(x, yy) : c.lineTo(x, yy); }
+      const xa = G.cx - G.Ws / 2 + 30, xb = G.cx + G.Ws / 2 - 30;
+      for (let x = xa; x <= xb; x += 6) { const yy = y + Math.sin(x * 0.045 + ph * 6 + i) * 4; x === xa ? c.moveTo(x, yy) : c.lineTo(x, yy); }
       c.stroke();
     }
   }

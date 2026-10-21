@@ -43,8 +43,12 @@
     { note: 4, wave: 1 }, { note: 7, wave: 2 }, null, { note: 0, wave: 0 }, null, { note: 12, wave: 1 }, null, null] };
 
   // ---------- геометрия: река от гор к зрителю и вправо, надгробие слева — на ближнем берегу, шире к нам; «поперёк» — по нормали к течению ----------
+  // сцена — карта Таро, портретная: на широком экране (iPad, компьютер) рисуется по центру шириной не больше 0.62 высоты,
+  // по бокам — та же бумага; касания сдвигаются на её левый край (stage)
+  const stage = () => { const w = Math.min(T.W, Math.round((T.H - T.safeBot) * 0.62)); return { w, ox: Math.round((T.W - w) / 2) }; };
+  const sh = (f) => { const o = stage().ox; return o ? { ...f, x: f.x - o, x0: f.x0 - o } : f; };
   function geo() {
-    const W = T.W, H = T.H, top = T.topY + 26, bot = H - T.safeBot - 40, h = bot - top;
+    const W = stage().w, H = T.H, top = T.topY + 26, bot = H - T.safeBot - 40, h = bot - top;
     const hor = top + 0.3 * h, y1 = bot - 6;
     const sun = { x: 13, y: T.topY + 2, r: Math.min(70, W * 0.18) };   // неподвижно: четверть в левом верхнем углу (к центру карты)
     const tree = { x: W * 0.85, y: top + 0.47 * h };
@@ -1264,13 +1268,15 @@
   const natura = {
     n: 'IV', title: 'Natura', sub: 'flumen · nymphaeae',
     theme: { ink: INK, bg: `rgb(${PAPER})`, paper: PAPER },
-    corner: { hit: (f) => { const S = sunAt(geo()); return f.y > S.y && Math.hypot(f.x - S.x, f.y - S.y) < S.r + 6; }, draw: () => {} },   // солнце — карта; надгробие пока просто стоит
+    corner: { hit: (f0) => { const f = sh(f0), S = sunAt(geo()); return f.y > S.y && Math.hypot(f.x - S.x, f.y - S.y) < S.r + 6; }, draw: () => {} },   // солнце — карта; надгробие пока просто стоит
     fx: fxw,
     draw(now) {
-      const c = T.g, G = geo();
+      const c = T.g, G = geo(), { ox } = stage();
       layers(G);
+      if (ox) { c.fillStyle = `rgb(${PAPER})`; c.fillRect(0, 0, T.W, T.H); }
+      c.save(); c.translate(ox, 0);
       c.drawImage(skyC, 0, 0, T.W, T.H);
-      c.save(); c.beginPath(); c.rect(13, 13, T.W - 26, T.H - T.safeBot - 26); c.clip();
+      c.save(); c.beginPath(); c.rect(13, 13, G.W - 26, T.H - T.safeBot - 26); c.clip();
       drawSun(c, G, now);
       drawBirds(c, G, now);
       c.restore();
@@ -1292,8 +1298,9 @@
       drawTouches(c, G);
       drawMenu(c, G);
       drawLilyRing(c, G);
+      c.restore();
     },
-    build, tick, down, move, up,
+    build, tick, down: (f) => down(sh(f)), move: (f) => move(sh(f)), up: (f) => up(sh(f)),
     tempo: { set: (bpm) => { seq.bpm = bpm; applyFx(); }, play: (on) => { if (on !== seq.playing) play(on); } },   // общие часы (карта → concordia)
     mapShot(on) { noSun = on; },
     dice() {                                        // кувшинки по Евклиду, ноты — блуждание по ступеням, цветы — случайно; лодочка плывёт
