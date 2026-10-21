@@ -1658,9 +1658,30 @@
   }
 
   let noiseBuf = null;
+  const audioPref = { stable: false };
+  try { Object.assign(audioPref, JSON.parse(localStorage.getItem('t2d-audio') || '{}')); } catch (_) { /* приватный режим */ }
+  let restartAt = 0;
+  // перезапуск звука без потери патчей: Safari после смены выхода (USB-интерфейс, другая частота) хрипит, пока контекст не пересоздан.
+  // Снимки миров → новый контекст (build пересобирает и голоса Tenebrae) → миры восстанавливаются из снимков
+  function restartAudio() {
+    if (!ctx) return;
+    const keep = {};
+    for (const [n, w] of Object.entries(worlds)) if (+n !== 1 && w.snapshot) { try { keep[n] = w.snapshot(); } catch (_) { /* мир без снимка */ } }
+    const old = ctx;
+    build();
+    try { old.close(); } catch (_) { /* уже закрыт */ }
+    for (const [n, js] of Object.entries(keep)) { try { worlds[n].restore(js); } catch (_) { /* ok */ } }
+    for (const [n, w] of Object.entries(worlds)) if (w.enter && (+n === nav.world || w.sounding())) { try { w.enter(); } catch (_) { /* ok */ } }
+    if (ctx.state !== 'running') ctx.resume().catch(() => {});
+    restartAt = performance.now();
+  }
+  let devT = 0;
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {   // подключили наушники или интерфейс — пересобрать звук
+    navigator.mediaDevices.addEventListener('devicechange', () => { clearTimeout(devT); devT = setTimeout(() => { if (ctx) restartAudio(); }, 800); });
+  }
   function build() {
     const AC = window.AudioContext || window.webkitAudioContext;
-    ctx = new AC({ latencyHint: 'interactive' });
+    ctx = new AC({ latencyHint: audioPref.stable ? 'playback' : 'interactive' });   // stable — буфер больше: для USB-интерфейсов, где мелкий буфер хрипит
     for (const w of WAVES) makeWave(w);
     alignWaves();
     noiseBuf = noiseBuffer(4);
@@ -3060,7 +3081,7 @@
       const live = V.reduce((s, v) => s + (v.active ? v.env : 0), 0);
       bus.gain.setTargetAtTime(1 / Math.sqrt(Math.max(1, live)), ctx.currentTime, 0.3);
     }
-    if (!anyActive && lock) { lock.release().catch(() => {}); lock = null; }
+    // экран держит общий сторож ниже — по всем мирам, не только по Tenebrae
 
   }
 
@@ -3433,7 +3454,12 @@
       const F = field(), dx = f.x - F.sx, dy = f.y - F.sy;
       if (nav.settings) {                                 // открыты общие настройки: строки — переключить, мимо — закрыть
         const S = settingsBox(), row = S.rows.findIndex((r) => f.x > S.x && f.x < S.x + S.w && Math.abs(f.y - r.y) < 20);
-        if (row >= 0) { const k = S.rows[row].key; link[k] = !link[k]; saveLink(); return; }
+        if (row >= 0) {
+          const k = S.rows[row].key;
+          if (k === 'restart') { if (ctx) restartAudio(); return; }
+          if (k === 'stable') { audioPref.stable = !audioPref.stable; try { localStorage.setItem('t2d-audio', JSON.stringify(audioPref)); } catch (_) { /* приватный режим */ } if (ctx) restartAudio(); return; }
+          link[k] = !link[k]; saveLink(); return;
+        }
         nav.settings = false; return;
       }
       if (Math.hypot(dx, dy) < 34 || (dx > 26 && dx < 120 && Math.abs(dy) < ECL / 2)) { nav.settings = true; return; }   // солнце или подпись concordia — общие настройки
@@ -3607,8 +3633,9 @@
     return backC;
   }
   function settingsBox() {
-    const w = Math.min(260, W - 40), h = 120, x = W / 2 - w / 2, y = Math.min(H - safeBot - h - 10, mapSunY() + 30);
-    return { x, y, w, h, rows: [{ key: 'clock', label: 'shared tempo', sub: 'one bpm in every sequencer', y: y + 46 }, { key: 'scale', label: 'shared scale', sub: 'one scale in every world', y: y + 90 }] };
+    const w = Math.min(260, W - 40), h = 208, x = W / 2 - w / 2, y = Math.min(H - safeBot - h - 10, mapSunY() + 30);
+    return { x, y, w, h, rows: [{ key: 'clock', label: 'shared tempo', sub: 'one bpm in every sequencer', y: y + 46 }, { key: 'scale', label: 'shared scale', sub: 'one scale in every world', y: y + 90 },
+      { key: 'stable', label: 'stable audio', sub: 'larger buffer — for USB interfaces', y: y + 134 }, { key: 'restart', label: 'restart audio', sub: 'after plugging an interface', y: y + 178 }] };
   }
   function drawSettings() {
     const S = settingsBox();
@@ -3616,7 +3643,15 @@
     hairBox(S.x, S.y, S.w, S.h, 0.6); hairBox(S.x + 3, S.y + 3, S.w - 6, S.h - 6, 0.25);
     mapText('concordia', S.x + S.w / 2, S.y + 18, 15, 0.85, 'center');
     for (const r of S.rows) {
-      const on = link[r.key], bx = S.x + S.w - 28;
+      const bx = S.x + S.w - 28;
+      if (r.key === 'restart') {                          // действие, не переключатель: круговая стрелка; только что перезапущено — ярко
+        const k = clamp(1 - (performance.now() - restartAt) / 900);
+        mapText(k > 0 ? 'audio restarted' : r.label, S.x + 16, r.y - 6, 15, 0.6 + 0.35 * k, 'left'); mapText(r.sub, S.x + 16, r.y + 10, 11, 0.45, 'left');
+        g.strokeStyle = ink(0.5 + 0.5 * k); g.lineWidth = 1.1; g.beginPath(); g.arc(bx, r.y, 8, -0.3, Math.PI * 1.6); g.stroke();
+        g.beginPath(); g.moveTo(bx + 8 * Math.cos(-0.3) - 4, r.y + 8 * Math.sin(-0.3) - 1); g.lineTo(bx + 8 * Math.cos(-0.3), r.y + 8 * Math.sin(-0.3)); g.lineTo(bx + 8 * Math.cos(-0.3) + 1, r.y + 8 * Math.sin(-0.3) - 4.5); g.stroke();
+        continue;
+      }
+      const on = r.key === 'stable' ? audioPref.stable : link[r.key];
       mapText(r.label, S.x + 16, r.y - 6, 15, on ? 0.95 : 0.6, 'left');
       mapText(r.sub, S.x + 16, r.y + 10, 11, 0.45, 'left');
       ring(bx, r.y, 9, on ? 0.9 : 0.45, 1.1);
@@ -3954,6 +3989,19 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && window.t2d.sounding()) wake();
   });
+  // экран не гаснет, пока звучит любой мир (погасший экран — Safari душит таймеры и кадры: часы и физика сбиваются); минуту тишины — отпускаем.
+  // Заодно «Сейчас играет» на iPhone показывает мир, а не безымянную дорожку
+  let soundAt = 0, metaW = 0;
+  setInterval(() => {
+    const now = performance.now();
+    if (window.t2d.sounding()) { soundAt = now; wake(); }
+    else if (lock && now - soundAt > 60000) { lock.release().catch(() => {}); lock = null; }
+    if ('mediaSession' in navigator && window.MediaMetadata && metaW !== nav.world && worlds[nav.world]) {
+      metaW = nav.world;
+      try { navigator.mediaSession.metadata = new MediaMetadata({ title: `${worlds[nav.world].n} · ${worlds[nav.world].title}`, artist: 'touch2decay', album: 'Universum', artwork: [{ src: 'icon-512.png', sizes: '512x512', type: 'image/png' }] }); } catch (_) { /* ok */ }
+    }
+  }, 1000);
+  document.addEventListener('touchstart', () => { if (window.t2d.sounding()) wake(); }, { passive: true });   // Safari даёт держать экран после касания
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', resize);
   if (document.fonts && document.fonts.load) {
@@ -3990,7 +4038,7 @@
   window.t2d = {
     worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return strikes; },
     go(w) { nav.world = w; nav.view = 'play'; nav.anim = null; nav.settings = false; if (worlds[w].enter) worlds[w].enter(); },
-    get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey,   // сразу в мир, без касаний (тесты)
+    get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey,   // сразу в мир, без касаний (тесты)
     get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
     hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,

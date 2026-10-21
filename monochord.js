@@ -446,6 +446,7 @@
       st.str.forEach((q, i) => { Object.assign(str[i], q); send({ t: 'sus', i, on: q.sus }); });
       Object.assign(fx, st.fx); applyFx(); setWind(st.wind || 0);
       if (st.auto) { const on = st.auto.on; Object.assign(auto, st.auto); setAuto(on); }
+      if (str.some((s) => s.sus)) { start(); setLive(true); }
     },
     sounding, tempo: { set: (bpm) => { auto.bpm = bpm; } },
   };

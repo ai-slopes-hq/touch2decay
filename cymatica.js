@@ -250,6 +250,7 @@
     const echoSend = g(0);                       // эхо — пары линий в retime(), доля темпа с луча time (1/4d на 40 BPM — 2.25 с)
     nodes = { out, hallSend, echoSend };
     actx = ctx; echoes = [];                     // новый звуковой контекст — пары эха заводятся заново
+    started = false; ready = false; node = null;  // и модуль пластины — заново (перезапуск звука после смены выхода)
     applyFx();
     if (entered) start();
     send({ t: 'f0', hz: effF0() });

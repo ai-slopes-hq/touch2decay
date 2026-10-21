@@ -73,6 +73,11 @@
 
 `SL` — список LFO строк `{id, key, base, spec {morph, rate, depth, ph}, u, sd, get, set, shapes}`; плашка с `spec.lfo {id, keys, shapes: 'classic' | 'random'}` (FX — `world.fx.lfo {keys, shapes}`, id `fx<n>`; свои плашки — `T.openSheet({…, lfo})`) показывает у строк из `keys` «~» (как `slfo` у планеты). `slTick` — фаза каждый кадр, `set(key, base ± depth/2·fn)` ~30 Гц; classic — `morphFn` (таблицы WAVES), random — `RND_SHAPES` (ramp up/down, steps, smooth; случайное — `hash(sd + номер периода)`). Касания: `sllfo` (тап по «~»: панель `fxSheet.lfoKey`), `slstrip` (полоса форм / пад: `shapeT`, `padRate`, `padDepth`), `sloff`; тянешь строку с LFO — двигаешь `base`. Рисование: «~», размах и точка на строке, `drawSlPanel` (копия панели планеты). `T.lfoClear(prefix)` — снять LFO предмета (корзина ветра Monochordum, закрытая звезда). Тесты: `t2d.sl()`, `t2d.slOpen()`, `t2d.fxGeo()`.
 
+## Телефон: экран, выход звука
+
+- Экран держит общий сторож (`setInterval` 1 с): звучит любой мир — `wake()` (Wake Lock), минута тишины — отпустить; ещё `wake()` на каждом `touchstart` (Safari хочет касание). Раньше лок снимался каждый кадр, если в Tenebrae тихо, — в других мирах экран гас. `mediaSession.metadata` — имя мира.
+- `restartAudio()`: снимки миров (кроме Tenebrae) → `build()` (новый `AudioContext`, голоса Tenebrae пересобираются) → `old.close()` → `restore` снимков → `enter()` текущего и звучащих миров (модули worklet заводятся заново; в `build` Cymatica — `started = false`). Зовётся на `mediaDevices.devicechange` (800 мс) и из concordia (*restart audio*). `audioPref.stable` (localStorage `t2d-audio`) — `latencyHint: 'playback'`. Сценарий `shot.py audio`.
+
 ## Производительность (важно — на iPhone лагало)
 
 - Молчащий мир отцеплен от выхода (`setLive` в `laboratorium.js` и `natura.js`, через 7–9 с тишины): его зал, хор, задержка не считаются — меньше нагрузки и треска. Анализатор (`AnalyserNode`) держит цепь живой — цеплять его только вместе с выходом.

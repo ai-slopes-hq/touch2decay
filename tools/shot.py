@@ -1337,7 +1337,26 @@ async def sc_tria(p):                              # Tria corpora: тела мо
     assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
 
 
-SCENARIOS = {'tria': sc_tria, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_audio(p):                             # перезапуск звука (смена выхода): патчи живут, звук возвращается; concordia — stable/restart
+    await p.pin(150, 600); await p.pg.wait_for_timeout(500)
+    await p.js('()=>t2d.go(8)'); await p.pg.wait_for_timeout(1500)
+    a = await p.js('()=>t2d.ocean.at(1.0, 0.6)'); await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(1200)
+    lv0 = await p.js('()=>T2D.level'); id0 = await p.js('()=>t2d.ctxId')
+    await p.js('()=>t2d.restartAudio()'); await p.pg.wait_for_timeout(2500)
+    id1 = await p.js('()=>t2d.ctxId'); lv1 = await p.js('()=>T2D.level')
+    print('  level before / after restart', round(lv0, 3), round(lv1, 3))
+    assert id1 != id0, 'a new audio context'
+    assert await p.js('()=>t2d.ocean.voices.filter(v=>v.pinned).length') == 1, 'the city survives the restart'
+    assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned)'), 'the Tenebrae planet survives'
+    assert lv1 > 0.02, f'sound comes back after restart: {lv1}'
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    sun = await p.js('()=>t2d.mapSun()'); await p.tap(sun['x'], sun['y']); await p.pg.wait_for_timeout(200)
+    await p.shot('concordia-audio')
+    await p.tap(sun['x'], sun['y'] + 30 + 178); await p.pg.wait_for_timeout(1500)
+    assert await p.js('()=>t2d.ctxId') != id1, 'tap restart audio — rebuilt'
+
+
+SCENARIOS = {'audio': sc_audio, 'tria': sc_tria, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
