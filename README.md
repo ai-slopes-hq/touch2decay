@@ -143,7 +143,7 @@
 - **Четыре шестерни** — четыре дорожки: гнёзд по кругу — шагов. Маятник качается, и за каждый его такт все шестерни поворачиваются на шаг — рывком, как спуск часов; у шестерён разное число шагов — полиритм. **Тап по гнезду** — штифт (залитый кружок), ещё тап — убрать; штифт пришёл наверх, к собачке, — колокольчик над шестернёй качается и звучит удар. Спицы шестерни — отношение FM.
 - **Тянешь шестерню вверх-вниз** — её нота (с ладом — по ступеням; если часы стоят — сразу слышно). **Держишь шестерню** — плашка: *teeth* (3–16 шагов), *fold* (складки), *ratio* (отношение FM: 0.5 … 5.4), *index*, *decay*, *level*, *ramp* и *ramp to* — рампа за оборот шестерни: от нуля к вершине и сброс на новом обороте, в fold, index, decay или pitch (ноты карабкаются вверх, с ладом — по ступеням). Модуляция идёт в том же полиритме, что и удары; на рисунке спицы светлеют к концу оборота.
 - **Маятник** между шестернями (и середина циферблата): тап — пуск/стоп, вбок — темп (с concordia — общий с другими секвенсерами).
-- **FX**: *sol*, *fortuna*, *fortuna mode*, *fortuna to*, *decay* (общий звон), *hall*.
+- **FX**: *sol*, *fortuna*, *fortuna mode*, *fortuna to*, *decay* (общий звон), *chance* — вероятность каждого удара (100 % — все), *hall*.
 - **Кубик** — зубцы вразброс, штифты по Евклиду, ноты — ступени, тембры случайно, часы идут. Корзина снимает все штифты, отмена — как везде.
 - Солнце — четвертью в правом верхнем углу: тап — карта.
 
@@ -196,14 +196,14 @@
 - **Колокол-буй — эхо**: тянешь поперёк — время (1/8, 3/16, 1/4, 3/8, 1/2 такта), дальше в море — дольше повторы, у горизонта — бесконечные. Каждый удар — круги от буя, каждый круг — повтор. Плашка: *time*, *feedback*, *dark*, *send*.
 - **Тап по ночному небу** — падает звезда и гасит накопившееся эхо (за долю секунды), потом буй снова слушает.
 - **Туман — ревер**: тянешь его верхний край вверх — больше зала; туман прячет дальние кораблики и садящуюся луну. Плашка: *amount*, *size* (хвост до 9 с).
-- **FX**: *wow* — лента эха плывёт; *mare* — шум моря накатывает волнами; *drive* — тёплый перегруз аккордов; *spread*.
+- **FX**: *wow* — лента эха плывёт; *mare* — шум моря накатывает волнами; *drive* — тёплый перегруз аккордов; *chance* — вероятность каждого удара (100 % — все); *spread*. С LFO на *cutoff* луна стоит на месте, а качание фильтра видно по цвету: ниже базы — кровавая.
 - **Кубик** — дорожка из 3–7 ударов (больше на «и»), две-три тоники по ступеням (меняются к середине такта), аккорд, октава, эхо, луна и туман вразброс; маяк загорается. Корзина — кораблики тонут; отмена — как везде.
 
 ## LFO в плашках миров V–XIII
 
 Как у планеты Tenebrae: у строки плашки справа кнопка «~». Тап — LFO на эту строку и снизу его панель: полоса форм (тап или веди — форма) и пад (вправо — скорость 0.03–20 Гц, вверх — глубина), на паде бежит сама волна; *off* — снять, глубину увёл в ноль — тоже снят. На строке видно размах LFO и бегущую точку; тянешь строку — двигаешь середину размаха. Формы: в Inferno, Paradisus, Monochordum и Oceanus — те же, что у планет (triangle … grain); в Horologium, Firmamentum, Tria corpora, Arcadia и у буя и тумана Portus — как West Coast: ramp up, ramp down, ступени, плавная случайность. LFO продолжают качать и при закрытой плашке.
 
-- **FX** каждого мира: Inferno — structure, fire, smoke, ice, storm; Paradisus — shimmer, gloria, vibrato, orbits (aether — без: пересчёт собора тяжёлый); Monochordum — decay, brightness, body, sympathy, chorus, hall; Oceanus — tension, damping, tide, wind, hall; Horologium — sol, fortuna, decay, hall; Firmamentum — scintilla, drift, cometa, crepitus, fulgur, spread, hall; Tria corpora — gravitas (земля дышит), flux, nexus, hall; Arcadia — relief, pace, wind, chorus, phaser, hall; Portus — wow, mare, drive, spread (фильтр, эхо и зал Portus — в сцене).
+- **FX** каждого мира: Inferno — structure, fire, smoke, ice, storm; Paradisus — shimmer, gloria, vibrato, orbits (aether — без: пересчёт собора тяжёлый); Monochordum — decay, brightness, body, sympathy, chorus, chance (вероятность каждого шага автострама), hall; Oceanus — tension, damping, tide, wind, hall; Horologium — sol, fortuna, decay, hall; Firmamentum — scintilla, drift, cometa, crepitus, fulgur, spread, hall; Tria corpora — gravitas (земля дышит), flux, nexus, hall; Arcadia — relief, pace, wind, chorus, phaser, hall; Portus — wow, mare, drive, spread (фильтр, эхо и зал Portus — в сцене).
 - **Плашки предметов**: круг Inferno (pitch, width, drive, level), струна Monochordum (pitch — вибрато, brightness, decay, level), ветер Monochordum (порывы), Земля Monochordum (strength, swing), звезда Firmamentum (pulse, formant — мерцание, window, mask, level). Корзина снимает LFO ветра; закрыл звезду — её LFO снят.
 
 ## Телефон и внешние устройства

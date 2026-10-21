@@ -21,7 +21,7 @@
   // ---------- состояние ----------
   const gear = (teeth, pins, semi, o = {}) => ({ teeth, pins: new Set(pins), semi, fold: 0.5, ratio: 1.5, index: 0.2, decay: 0.4, level: 0.8, ramp: 0, rampTo: 0, hit: 0, ...o });
   const gears = [gear(4, [0, 2], 0), gear(6, [0, 3, 4], 7, { ratio: 2, fold: 0.7, index: 0.1 }), gear(5, [1], 12, { ratio: 2.76, decay: 0.25, index: 0.35 }), gear(7, [0, 5], -5, { ratio: 1, fold: 0.3, decay: 0.6 })];
-  const fx = { sol: 0.4, fortuna: 0.15, fmode: 0, fto: 0, decay: 0.5, hall: 0.35 };
+  const fx = { sol: 0.4, fortuna: 0.15, fmode: 0, fto: 0, decay: 0.5, chance: 1, hall: 0.35 };
   const TARGETS = ['fold', 'index', 'decay', 'pitch'];    // куда идут рампа шестерни и fortuna
   let chance = 0, smoothV = 0, smoothT = 0;               // fortuna — источник случайности: ступень на каждый удар или плавное блуждание
   const seq = { playing: false, bpm: 100, next: 0, step: 0 };
@@ -88,6 +88,7 @@
   function strike(gi, t, step, vel = 0.85) {
     const g = gears[gi];
     start();
+    if (Math.random() >= fx.chance) return;              // chance: каждый удар — с этой вероятностью
     const mods = [0, 0, 0, 0];                             // fold, index, decay, pitch
     if (g.ramp > 0) mods[g.rampTo] += g.ramp * ((step % g.teeth) / Math.max(1, g.teeth - 1));   // рампа за оборот шестерни: от нуля к вершине, на новом обороте — сброс
     if (fx.fortuna > 0) {                                  // fortuna: изредка пропуск, разная сила и случайное напряжение в цель
@@ -301,10 +302,10 @@
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
-    sectors: [{ key: 'sol', label: 'sol', ang: deg(190) }, { key: 'fortuna', label: 'fortuna', ang: deg(160) }, { key: 'fmode', label: 'fortuna mode', ang: deg(140) }, { key: 'fto', label: 'fortuna to', ang: deg(120) }, { key: 'decay', label: 'decay', ang: deg(100) }, { key: 'hall', label: 'hall', ang: deg(80) }],
+    sectors: [{ key: 'sol', label: 'sol', ang: deg(190) }, { key: 'fortuna', label: 'fortuna', ang: deg(160) }, { key: 'fmode', label: 'fortuna mode', ang: deg(140) }, { key: 'fto', label: 'fortuna to', ang: deg(120) }, { key: 'decay', label: 'decay', ang: deg(100) }, { key: 'chance', label: 'chance', ang: deg(90) }, { key: 'hall', label: 'hall', ang: deg(80) }],
     get: (k) => (k === 'fto' ? fx.fto / 3 : fx[k]), set: (k, v) => { if (k === 'fmode') fx.fmode = v >= 0.5 ? 1 : 0; else if (k === 'fto') fx.fto = Math.round(v * 3); else fx[k] = v; applyFx(); },
     text: (k) => (k === 'fmode' ? (fx.fmode ? 'smooth' : 'stepped') : k === 'fto' ? TARGETS[fx.fto] : `${Math.round(fx[k] * 100)}%`),
-    lfo: { keys: ['sol', 'fortuna', 'decay', 'hall'], shapes: 'random' },   // West Coast: рампы и случайность
+    lfo: { keys: ['sol', 'fortuna', 'decay', 'chance', 'hall'], shapes: 'random' },   // West Coast: рампы и случайность
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // зубцы — вразброс (полиритм), штифты по Евклиду, ноты — ступени, тембры — случайно; часы идут

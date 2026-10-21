@@ -24,7 +24,7 @@
   // ---------- состояние ----------
   const str = F_OPEN.map((f, i) => ({ r: [1, 2 / 3, 1 / 2, 1 / 3][i], sus: false, bright: 0.55, decay: 0.55, level: 0.8, en: 0, bow: 0, eh: 0, hn: 2 }));
   const NODES = [[1 / 2, 2], [1 / 3, 3], [2 / 3, 3], [1 / 4, 4], [3 / 4, 4]];   // узлы флажолетов на звучащей части
-  const fx = { decay: 0.55, bright: 0.55, body: 0.4, sympathy: 0.4, chorus: 0, hall: 0.35 };
+  const fx = { decay: 0.55, bright: 0.55, body: 0.4, sympathy: 0.4, chorus: 0, chance: 1, hall: 0.35 };
   let wind = 0, lastWind = 0.5;                            // ветер — часть патча (корзина глушит), не FX: голова ветра слева
   const tonic = () => (T.scaleOn ? 2 ** (T.scaleRoot / 12) : 1);
   const hzOf = (i) => (F_OPEN[i] * tonic()) / str[i].r;
@@ -149,7 +149,7 @@
     const now = actx.currentTime, ahead = now + 0.2;
     if (!auto.next) auto.next = now + 0.05;
     while (auto.next < ahead) {
-      if (auto.next > now + 0.003) strumAt(auto.next, auto.step);
+      if (auto.next > now + 0.003 && Math.random() < fx.chance) strumAt(auto.next, auto.step);   // chance — у автострама
       const sw = auto.step % 2 === 0 ? 1 + auto.swing * 0.5 : 1 - auto.swing * 0.5;   // swing: чётные длиннее
       auto.step++; auto.next += stepSec() * sw;
     }
@@ -419,10 +419,10 @@
   const fxw = {
     sectors: [
       { key: 'decay', label: 'decay', ang: deg(200) }, { key: 'bright', label: 'brightness', ang: deg(170) }, { key: 'body', label: 'body', ang: deg(140) },
-      { key: 'sympathy', label: 'sympathy', ang: deg(125) }, { key: 'chorus', label: 'chorus', ang: deg(110) }, { key: 'hall', label: 'hall', ang: deg(80) },
+      { key: 'sympathy', label: 'sympathy', ang: deg(125) }, { key: 'chorus', label: 'chorus', ang: deg(110) }, { key: 'chance', label: 'chance', ang: deg(95) }, { key: 'hall', label: 'hall', ang: deg(80) },
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
-    lfo: { keys: ['decay', 'bright', 'body', 'sympathy', 'chorus', 'hall'], shapes: 'classic' },
+    lfo: { keys: ['decay', 'bright', 'body', 'sympathy', 'chorus', 'chance', 'hall'], shapes: 'classic' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // подставки — на пифагоровы лады, одна-две струны поют сами

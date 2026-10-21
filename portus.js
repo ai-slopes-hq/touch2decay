@@ -29,7 +29,7 @@
   const buoy = { u: 0.35, d: 0.45 };
   const fog = { amt: 0.45, size: 0.7 };                   // ревер
   const pharos = { chord: 2, oct: 0, len: 0.25, lvl: 0.8, swing: 0 };   // аккорд и октава всей дорожки
-  const fx = { wow: 0.25, mare: 0, drive: 0.25, spread: 0.6 };
+  const fx = { wow: 0.25, mare: 0, drive: 0.25, spread: 0.6, chance: 1 };
   const seq = { playing: false, bpm: 120, next: 0, step: 0 };
   const stepSec = () => 60 / seq.bpm / 4;
   const root = () => (T.scaleOn ? T.scaleRoot : 0);
@@ -50,7 +50,7 @@
   function geo() {
     const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, Ws = Math.min(W, (H - T.safeBot) * 0.62), cx = W / 2;
     const fx0 = cx - Ws / 2, fx1 = cx + Ws / 2, hor = top + (bot - top) * 0.3, qy = bot - 66, Wh = Ws / 2 - 4;
-    const mr = Math.min(46, W * 0.12), moon = { x: Math.max(0, fx0), y: hor - mr * 0.35 - luna.cut * (hor - top - mr * 0.9), r: mr };   // луна вместо солнца: в левом углу, выше — фильтр открыт; к горизонту — садится
+    const mr = Math.min(46, W * 0.12), cb = T.lfoBase ? T.lfoBase('portus-luna', 'cut') : null, moon = { x: Math.max(0, fx0), y: hor - mr * 0.35 - (cb ?? luna.cut) * (hor - top - mr * 0.9), r: mr, lfo: cb != null ? clamp(0.5 + (cb - luna.cut) * 1.6) : -1 };   // с LFO на cutoff луна стоит на базе, а качание — цвет: ниже базы — кровавая   // луна вместо солнца: в левом углу, выше — фильтр открыт; к горизонту — садится
     const ph = { x: fx1 - 40, y: qy - 50 };                                                    // маяк на правом мысу, у нас под рукой
     return { W, H, top, bot, cx, Ws, fx0, fx1, hor, qy, Wh, moon, ph, fogTop: hor - 6 - fog.amt * (hor - top - 40) * 0.7 };
   }
@@ -175,7 +175,7 @@
     if (!seq.next) seq.next = now + 0.05;
     while (seq.next < ahead) {
       const j = seq.step % NSTEP, sw = j % 2 ? pharos.swing * stepSec() * 0.5 : 0, is = isleOn(j);
-      if (seq.next + sw > now + 0.003 && is) stab(seq.next + sw, is, j % 4 === 2 ? 1 : 0.85, nextGap(j));
+      if (seq.next + sw > now + 0.003 && is && Math.random() < fx.chance) stab(seq.next + sw, is, j % 4 === 2 ? 1 : 0.85, nextGap(j));
       lastSteps.push([seq.next, seq.step]); if (lastSteps.length > 24) lastSteps.shift();
       seq.step++; seq.next += stepSec();
     }
@@ -384,7 +384,8 @@
     c.save(); c.beginPath(); c.rect(M.x, G.top - 40, G.Ws, G.hor - G.top + 40); c.clip();
     T.glowAt(M.x, M.y, R * 2.6, 0.08 + 0.22 * luna.cut);
     if (luna.res > 0.04) for (let k = 1; k <= 3; k++) { c.setLineDash([1.5, 3.5]); c.strokeStyle = rgba(LIGHT, (0.15 + 0.45 * luna.res) / k); c.lineWidth = 1; c.beginPath(); c.arc(M.x, M.y, R + 5 + k * (3 + 7 * luna.res), 0, TAU); c.stroke(); } c.setLineDash([]);
-    c.fillStyle = rgba(LIGHT, 0.2 + 0.7 * a); c.beginPath(); c.arc(M.x, M.y, R, 0, TAU); c.fill();
+    const bl = M.lfo < 0 ? 0 : M.lfo, mc = [LIGHT[0] - 70 * bl, LIGHT[1] - 165 * bl, LIGHT[2] - 105 * bl].map(Math.round);   // бледная … blood moon
+    c.fillStyle = rgba(mc, 0.2 + 0.7 * (M.lfo < 0 ? a : 0.75)); c.beginPath(); c.arc(M.x, M.y, R, 0, TAU); c.fill();
     c.strokeStyle = rgba(LIGHT, 0.95); c.lineWidth = 1.4; c.stroke();
     c.strokeStyle = rgba(LIGHT, 0.5); c.lineWidth = 0.8; c.beginPath(); c.arc(M.x, M.y, R + 4, -Math.PI / 2, Math.PI / 2); c.stroke();
     c.strokeStyle = `rgba(${PAPER},0.45)`; c.lineWidth = 0.8;                                  // моря и кратеры
@@ -519,9 +520,9 @@
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
-    sectors: [{ key: 'wow', label: 'wow', ang: deg(180) }, { key: 'mare', label: 'mare', ang: deg(150) }, { key: 'drive', label: 'drive', ang: deg(120) }, { key: 'spread', label: 'spread', ang: deg(90) }],
+    sectors: [{ key: 'wow', label: 'wow', ang: deg(180) }, { key: 'mare', label: 'mare', ang: deg(150) }, { key: 'drive', label: 'drive', ang: deg(130) }, { key: 'chance', label: 'chance', ang: deg(110) }, { key: 'spread', label: 'spread', ang: deg(90) }],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyAll(); }, text: (k) => (k === 'mare' && fx.mare < 0.01 ? 'calm' : `${Math.round(fx[k] * 100)}%`),
-    lfo: { keys: ['wow', 'mare', 'drive', 'spread'], shapes: 'random' },
+    lfo: { keys: ['wow', 'mare', 'drive', 'chance', 'spread'], shapes: 'random' },
     arc: () => fx.drive, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyAll(); },
   };
   function dice() {                                       // дорожка: 3–7 ударов, больше на «и»; две-три тоники ступенями лада, сменяются по половинам такта; эхо, туман, луна

@@ -1230,7 +1230,7 @@ async def sc_horologium(p):                        # Horologium: штифт на
     await p.js("()=>{t2d.horo.setFx('sol', 0.9); t2d.horo.setFx('fortuna', 0.6); t2d.horo.setFx('fto', 1/3); t2d.horo.gears.forEach(g=>{g.ramp=0.8; g.rampTo=3})}"); await p.pg.wait_for_timeout(1200)
     await p.shot('horologium-ramp')
     r = await p.js("()=>{t2d.horo.setFx('fmode', 1); return t2d.worlds[9].fx.text('fmode') + ' ' + t2d.worlds[9].fx.text('fto')}"); assert r == 'smooth index', f'fortuna mode and target: {r}'
-    r = await p.js("()=>t2d.worlds[9].fx.sectors.length"); assert r == 6, 'FX: sol, fortuna, mode, to, decay, hall'
+    r = await p.js("()=>t2d.worlds[9].fx.sectors.length"); assert r == 7, 'FX: sol, fortuna, mode, to, decay, chance, hall'
     await p.js("()=>t2d.horo.gears.forEach(g=>{g.ramp=0})")
     print('  horologium level, sol + fortuna:', round(await p.js('()=>T2D.level'), 3))
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
@@ -1435,6 +1435,14 @@ async def sc_portus(p):                            # Portus: остров на �
     a1 = await p.js('()=>t2d.portus.fog.amt'); assert a1 > a0 + 0.1, f'drag the fog up — more reverb: {a0} -> {a1}'
     M = await p.js('()=>t2d.portus.geo().moon'); await p.hold(M['x'] + M['r'] * 0.5, M['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold the moon — its sheet'
+    assert await p.js("()=>t2d.slAdd('cut')"), 'LFO on the moon cutoff'
+    ys, ls = [], []
+    for _ in range(12):
+        M = await p.js('()=>t2d.portus.geo().moon'); ys.append(M['y']); ls.append(M['lfo']); await p.pg.wait_for_timeout(120)
+    print('  moon with LFO: y spread', round(max(ys) - min(ys), 2), 'tint', round(min(ls), 2), '…', round(max(ls), 2))
+    assert max(ys) - min(ys) < 1 and max(ls) - min(ls) > 0.2, f'LFO on cutoff — the moon stays, its colour swings: {ys} {ls}'
+    await p.shot('portus-bloodmoon')
+    await p.js("()=>T2D.lfoClear('portus-luna')")
     await p.tap(200, 120); await p.pg.wait_for_timeout(150)
     ph = await p.js('()=>t2d.portus.geo().ph'); await p.hold(ph['x'], ph['y'] - 40, ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold the lighthouse — its sheet (chord)'
