@@ -3127,7 +3127,7 @@
     3: [['tap', 'tap the lamp · the jug', 'light the fire · douse it'], ['drag', 'drag a flask', 'sideways — pitch · up — level'],
       ['draw', 'from a neck to a flask', 'a tube: modulation · to itself — pelican'], ['tap', 'tap a tube', 'remove it'],
       ['hold', 'hold a flask', 'its sheet: pitch, level, pelican'], ['double', 'double tap a flask', 'crack it · mend it'],
-      ['hold', 'hold a jar', 'the still on its note · double tap — keep'], ['up', 'solve · coagula — up', 'dirty delay: time · amount'],
+      ['hold', 'hold a metal below', 'the still on its note · double tap — keep'], ['up', 'solve · coagula arcs — up', 'dirty delay: time · amount'],
       ['tap', 'tap the sun', 'map of worlds']],
     4: [['tap', 'tap water · tap a lily', 'plant a lily · remove it'], ['drag', 'drag a lily', 'across — note · along — step'],
       ['hold', 'hold a lily', 'its sheet: wave, filter, envelope, chance'], ['draw', 'draw through lilies', 'glide between their notes'],

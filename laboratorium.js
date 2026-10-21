@@ -36,12 +36,6 @@
   const jars = JAR_DEF.slice();
 
   const carriers = () => OPS.map((_, i) => i).filter((i) => !mods.some((m) => m[0] === i));
-  function levelOf(i, seen = new Set()) {
-    if (seen.has(i)) return 0;
-    seen.add(i);
-    const outs = mods.filter((m) => m[0] === i).map((m) => m[1]);
-    return outs.length ? 1 + Math.max(...outs.map((j) => levelOf(j, new Set(seen)))) : 0;
-  }
   const reaches = (a, b, seen = new Set()) => a === b || (!seen.has(a) && (seen.add(a), mods.some(([s, d]) => s === a && reaches(d, b, seen))));
   // цвет жидкости: свой + всё, что в колбу натекло (вес — уровень модулятора)
   function mixed(i, depth = 0) {
@@ -56,63 +50,26 @@
   const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const noteName = (f) => { const m = Math.round(33 + 12 * Math.log2(f / 55)); return `${NAMES[((m % 12) + 12) % 12]}${Math.floor(m / 12) - 1}`; };
 
-  // ---------- геометрия: ярусы по алгоритму; на экране колбы плавно доезжают ----------
+  // ---------- геометрия: эмблема «квадратура круга» (как в Atalanta Fugiens) — колбы на углах квадрата, вписанного в круг,
+  // яйцо философов в центре на треножнике над лампой Гермеса; у каждой стихии свой угол: aer — слева сверху, ignis — справа сверху,
+  // terra — слева снизу, aqua — справа снизу. Сверху — лента со свитком волны, снизу — полоса медальонов-металлов ----------
+  const CORNER = [[1, -1], [-1, -1], [1, 1], [-1, 1]];          // ignis, aer, aqua, terra
+  const deg = (d) => (d * Math.PI) / 180;
   function geo() {
     const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, h = bot - top;
-    const shelf = bot - 18, egg = { x: W / 2, y: shelf - 0.25 * h }, furn = { y0: egg.y + 22, y1: shelf - 62 };
-    // свиток с формой волны — вверху, слева от солнца; под ним ярусы колб растягиваются на всю высоту:
-    // меньше ярусов — крупнее колбы и шире шаг
-    const scroll = { x0: 16, x1: W - 96, y0: top + 8, y1: top + 8 + Math.min(64, 0.09 * h) };
-    const lv = OPS.map((_, i) => levelOf(i)), nT = Math.max(...lv) + 1;
-    const perTier = Math.max(...Array.from({ length: nT }, (_, l) => lv.filter((v) => v === l).length));
-    const L0 = egg.y - 0.17 * h, yMin = scroll.y1 + 34;
-    let r = Math.min(42, W / (perTier * 3.2));
-    if (nT > 1) r = Math.min(r, (L0 - yMin) / (2.7 * (nT - 1) + 2.4));   // ярусы вразбежку — колбы могут стоять теснее по высоте
-    r = Math.max(20, r);
-    const dy = nT > 1 ? (L0 - yMin - 2.4 * r) / (nT - 1) : 0;
-    const pos = [], car = carriers();
-    car.forEach((i, k) => { pos[i] = { x: W * (car.length === 1 ? 0.5 : 0.22 + (0.56 * k) / (car.length - 1)), y: L0 }; });
-    for (let l = 1; l <= 3; l++) {
-      const at = OPS.map((_, i) => i).filter((i) => lv[i] === l);
-      at.forEach((i, k) => {
-        const outs = mods.filter((m) => m[0] === i).map((m) => pos[m[1]]).filter(Boolean);
-        const x = outs.length ? outs.reduce((s, p) => s + p.x, 0) / outs.length : W / 2;
-        const zig = at.length === 1 ? (l % 2 ? 1 : -1) * W * 0.21 : (k - (at.length - 1) / 2) * W * 0.32;   // один на ярусе — вразбежку от того, в кого льёт: трубки читаются, колонки нет
-        pos[i] = { x: clamp(x + zig, W * 0.17, W * 0.83), y: L0 - l * dy };
-      });
-    }
-    return { W, H, top, bot, h, shelf, egg, furn, r, pos, scroll, tiers: Array.from({ length: nT }, (_, l) => L0 - l * dy), sun: { x: W, y: T.topY + 2, r: Math.min(64, W * 0.16) } };   // солнце — в правом верхнем углу, к центру карты
+    const sun = { x: W, y: T.topY + 2, r: Math.min(42, W * 0.11) };   // солнце — четвертью в правом верхнем углу, к центру карты
+    const bh = clamp(h * 0.11, 40, 84), band = bot - 34;        // лента и полоса металлов
+    const yA = top + 6 + bh + 34, yB = band - 58;               // эмблема — между лентой и металлами, с надписями solve · coagula
+    const R = Math.max(110, Math.min(W * 0.45, (yB - yA) / 2 - 18)), cx = W / 2, cy = (yA + yB) / 2;
+    const by1 = Math.max(top + 6 + bh, cy - R - 40), banner = { x0: 34, x1: W - 114, y0: by1 - bh, y1: by1 };   // лента — над самой эмблемой
+    const s = R * 0.52, r = R * 0.15;
+    const pos = CORNER.map(([dx, dy]) => ({ x: cx + dx * s, y: cy + dy * s }));
+    return { W, H, top, bot, h, cx, cy, R, s, r, pos, banner, band, sun, egg: { x: cx, y: cy - 4, rx: R * 0.14, ry: R * 0.18 }, lamp: { x: cx, y: cy + R * 0.48 } };
   }
-  const shown = [];                          // где колбы нарисованы сейчас (едут к своим ярусам)
-  function ease(G, dt) {
-    const k = 1 - Math.exp(-dt / 0.12);
-    G.pos.forEach((p, i) => { if (!shown[i]) shown[i] = { ...p }; shown[i].x += (p.x - shown[i].x) * k; shown[i].y += (p.y - shown[i].y) * k; });
-  }
-  const P = (i) => shown[i] || geo().pos[i];
-
-  // ---------- колбы: форма — у каждой стихии своя ----------
-  // контур колбы без устья; neck — верх горлышка
-  function flaskPath(c, kind, x, y, r) {
-    const nw = r * 0.26, neckTop = y - r * 1.95;
-    c.moveTo(x - nw, neckTop);
-    const ell = (cx, cy, rx, ry) => { const f = Math.asin(nw / rx); c.lineTo(x - nw, cy - ry * Math.cos(f)); c.ellipse(cx, cy, rx, ry, 0, -Math.PI / 2 - f, -Math.PI / 2 + f, true); };
-    if (kind === 'flat') ell(x, y + r * 0.25, r * 1.3, r * 0.68);
-    else if (kind === 'round') ell(x, y, r, r);
-    else if (kind === 'pear') ell(x, y - r * 0.1, r * 0.78, r * 1.2);
-    else if (kind === 'gourd') {
-      const ru = r * 0.5, yu = y - r * 0.85, f = Math.asin(nw / ru);
-      c.lineTo(x - nw, yu - ru * Math.cos(f));
-      c.arc(x, yu, ru, -Math.PI / 2 - f, Math.PI * 0.72, true);
-      c.ellipse(x, y + r * 0.2, r * 0.95, r * 0.78, 0, -Math.PI * 0.62, -Math.PI * 0.38, true);
-      c.arc(x, yu, ru, Math.PI * 0.28, -Math.PI / 2 + f, true);
-    } else { c.lineTo(x - nw * 1.3, y + r * 0.6); c.arc(x, y + r * 0.6, nw * 1.3, Math.PI, 0, true); c.lineTo(x + nw, neckTop); }
-    c.lineTo(x + nw, neckTop);
-    return { neckTop, nw };
-  }
-  const bodyBox = (kind, x, y, r) => ({ flat: [y + r * 0.25 - r * 0.68, y + r * 0.93, r * 1.3], round: [y - r, y + r, r], pear: [y - r * 1.3, y + r * 1.1, r * 0.78], gourd: [y - r * 1.35, y + r * 0.98, r * 0.95], tube: [y - r * 1.4, y + r * 0.6 + r * 0.34, r * 0.34] })[kind];
-  function flaskGeo(G, i) {
-    const p = P(i), [yTop, yBot, hw] = bodyBox(OPS[i].shape, p.x, p.y, G.r);
-    return { p, yTop, yBot, hw, neckTop: p.y - G.r * 1.95, nw: G.r * 0.26 };
+  const lighter = (col) => col.map((v) => Math.min(255, v + 50));
+  function flaskGeo(G, i) {                          // круглая колба: тело — круг, горлышко вверх
+    const p = G.pos[i], r = G.r;
+    return { p, yTop: p.y - r, yBot: p.y + r, hw: r, neckTop: p.y - r * 1.9, nw: r * 0.21 };
   }
 
   // форма волны колбы — то, что она звучит: FM считается напрямую по фазе (как в звуке: девиация = уровень × 3 × частота приёмника),
@@ -152,29 +109,33 @@
     return m > 1e-3 ? w.map((v) => v / m) : w;
   }
 
-  // свиток: крупно форма волны — колбы, которую держишь (её цветом, с нотой), иначе бледно — всего аппарата
+  // лента-филактерий вверху: крупно форма волны — колбы, которую держишь (её цветом, с подписью), иначе бледно — всего аппарата
   let focusI = null, focusUntil = 0;
-  function drawScroll(c, G, now) {
-    const { x0, x1, y0, y1 } = G.scroll, cy = (y0 + y1) / 2, hh = (y1 - y0) / 2;
+  function drawBanner(c, G, now) {
+    const { x0, x1, y0, y1 } = G.banner, cy = (y0 + y1) / 2, hh = (y1 - y0) / 2;
     const live = focusI != null && now < focusUntil;
-    c.fillStyle = T.BG; c.fillRect(x0 + 6, y0, x1 - x0 - 12, y1 - y0);
-    c.strokeStyle = T.ink(0.75); c.lineWidth = 1.1;
-    c.beginPath(); c.moveTo(x0 + 6, y0 + 0.5); c.lineTo(x1 - 6, y0 + 0.5); c.moveTo(x0 + 6, y1 - 0.5); c.lineTo(x1 - 6, y1 - 0.5); c.stroke();
-    for (const [x, d] of [[x0 + 6, -1], [x1 - 6, 1]]) {   // свёрнутые концы свитка
-      c.beginPath(); c.ellipse(x, cy, 6, hh, 0, 0, TAU); c.stroke();
-      c.beginPath(); c.arc(x + d * 1, cy - hh * 0.35, 2.5, 0, TAU); c.stroke();
+    c.fillStyle = T.BG; c.fillRect(x0, y0, x1 - x0, y1 - y0);
+    c.strokeStyle = T.ink(0.75); c.lineWidth = 1; c.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0);
+    c.strokeStyle = T.ink(0.55);
+    for (const d of [-1, 1]) {                       // концы ленты загнуты и раздвоены
+      const x = d < 0 ? x0 : x1;
+      c.beginPath();
+      c.moveTo(x, y0 + 0.5); c.quadraticCurveTo(x + d * 12, y0, x + d * 14, cy - 2); c.quadraticCurveTo(x + d * 15, y1 - 2, x + d * 4, y1); c.lineTo(x, y1);
+      c.moveTo(x + d * 14, cy - 2); c.lineTo(x + d * 20, y1 + 4); c.lineTo(x + d * 4, y1);
+      c.stroke();
     }
-    c.strokeStyle = T.ink(0.15); c.lineWidth = 0.8; c.setLineDash([2, 4]);
-    c.beginPath(); c.moveTo(x0 + 14, cy); c.lineTo(x1 - 14, cy); c.stroke(); c.setLineDash([]);
     const w = live ? waveOf(focusI) : waveOut();
     if (!w) return;
-    const n = w.length, xa = x0 + 16, xb = x1 - 16, amp = hh - 7;
-    c.strokeStyle = live ? rgba(mixed(focusI).map((v) => Math.min(255, v + 50)), 0.95) : T.ink(heat > 0.05 || voices.size ? 0.55 : 0.3);
-    c.lineWidth = live ? 1.8 : 1.2; c.lineJoin = 'round';
+    const n = w.length, xa = x0 + 8, xb = x1 - 8, amp = hh - 5;
+    c.strokeStyle = live ? rgba(lighter(mixed(focusI)), 0.95) : T.ink(heat > 0.05 || voices.size ? 0.55 : 0.3);
+    c.lineWidth = live ? 1.5 : 1.1; c.lineJoin = 'round';
     c.beginPath();
     for (let k = 0; k < n; k++) { const X = xa + (k / (n - 1)) * (xb - xa), Y = cy - w[k] * amp; k ? c.lineTo(X, Y) : c.moveTo(X, Y); }
     c.stroke();
-    if (live) { const o = OPS[focusI]; T.mapText(`${o.key} · ${noteName(o.f)}`, xa, y0 + 10, 12, 0.75, 'left'); }
+    if (live) {
+      const o = OPS[focusI], to = mods.filter((m) => m[0] === focusI).map((m) => OPS[m[1]].key);
+      T.mapText(`${o.key} · ${noteName(o.f)} · ${to.length ? 'index' : 'volume'} ${Math.round(o.level * 100)}%${to.length ? ` → ${to.join(', ')}` : ''}`, (x0 + x1) / 2, y1 + 15, 13, 0.8, 'center');
+    }
   }
   // пар из горлышек — хвост стекла (vitrum): выше и дольше, пока звучит
   function drawSteam(c, G, now) {
@@ -191,43 +152,40 @@
     }
   }
 
-  // стеллаж: под каждым ярусом колб — полка двойной линией на кронштейнах (несущие — на нижней, над яйцом)
-  function drawRack(c, G) {
-    c.strokeStyle = T.ink(0.5); c.lineWidth = 1;
-    for (const y0 of G.tiers) {                    // полка — только под колбами своего яруса, шея нижних её не пересекает
-      const xs = OPS.map((_, i) => P(i)).filter((p) => Math.abs(p.y - y0) < 2).map((p) => p.x);
-      if (!xs.length) continue;
-      const y = y0 + G.r * 0.95 + 4, x0 = Math.max(10, Math.min(...xs) - G.r * 1.6), x1 = Math.min(G.W - 10, Math.max(...xs) + G.r * 1.6);
-      c.beginPath(); c.moveTo(x0, y + 0.5); c.lineTo(x1, y + 0.5); c.moveTo(x0, y + 4.5); c.lineTo(x1, y + 4.5); c.stroke();
-      c.beginPath(); for (const bx of [x0 + 10, x1 - 10]) { c.moveTo(bx, y + 5); c.lineTo(bx, y + 16); c.lineTo(bx + (bx < G.W / 2 ? 10 : -10), y + 5); } c.stroke();
-    }
-  }
+  // колба: стекло — тонкой линией, жидкость — как раскрашенная от руки гравюра: бледная заливка и штриховка цветом смеси,
+  // поверхность — форма волны колбы; знак стихии на стекле, имя — под колбой
   const tubes = [];                          // для попадания пальцем: [{ s, d, pts }] и пеликаны [{ i, pts }]
   function drawFlask(c, i, G, now, held) {
-    const o = OPS[i], { p, yTop, yBot, hw } = flaskGeo(G, i), r = G.r, col = mixed(i);
-    c.save();
-    c.beginPath(); flaskPath(c, o.shape, p.x, p.y, r); c.closePath(); c.clip();
-    const lvl = o.level * (1 - drain[i]), sy = yBot - lvl * (yBot - yTop), wv = waveOf(i), n = wv.length, amp = Math.min(5, (yBot - yTop) * 0.12) * (0.8 + 0.3 * heat);
-    c.beginPath(); c.moveTo(p.x - hw - 2, yBot + 4);
-    for (let k = 0; k < n; k++) c.lineTo(p.x - hw - 2 + (k / (n - 1)) * (2 * hw + 4), sy - wv[k] * amp);   // поверхность — форма волны
-    c.lineTo(p.x + hw + 2, yBot + 4); c.closePath();
-    c.fillStyle = rgba(col, 0.78); c.fill();
-    c.strokeStyle = rgba(col.map((v) => Math.min(255, v + 60)), 0.9); c.lineWidth = 1; c.stroke();
+    const o = OPS[i], { p, yTop, yBot, hw, neckTop, nw } = flaskGeo(G, i), r = G.r, col = mixed(i);
+    if (held) { c.strokeStyle = rgba(col, 0.22); c.lineWidth = 8; c.beginPath(); c.arc(p.x, p.y, r + 11, 0, TAU); c.stroke(); }
+    c.fillStyle = T.BG; c.beginPath(); c.arc(p.x, p.y, r, 0, TAU); c.fill();
+    c.save(); c.beginPath(); c.arc(p.x, p.y, r - 1, 0, TAU); c.clip();
+    const lvl = o.level * (1 - drain[i]), sy = yBot - 2 - lvl * (yBot - yTop - 6), wv = waveOf(i), n = wv.length, amp = Math.min(4, r * 0.14) * (0.8 + 0.3 * heat);
+    const surf = () => { for (let k = 0; k < n; k++) { const X = p.x - hw + (k / (n - 1)) * 2 * hw, Y = sy - wv[k] * amp; k ? c.lineTo(X, Y) : c.moveTo(X, Y); } };
+    c.beginPath(); surf(); c.lineTo(p.x + hw, yBot); c.lineTo(p.x - hw, yBot); c.closePath();
+    c.fillStyle = rgba(col, 0.12); c.fill();
+    c.save(); c.clip();
+    c.strokeStyle = rgba(col, 0.5); c.lineWidth = 1; c.beginPath();
+    for (let y = sy - amp + 2; y < yBot; y += 3.4) { c.moveTo(p.x - hw, y); c.lineTo(p.x + hw, y); }
+    c.stroke(); c.restore();
+    c.beginPath(); surf(); c.strokeStyle = rgba(lighter(col), 0.95); c.lineWidth = 1.4; c.stroke();
     // пузыри — пока горит огонь, в такт биениям FM: чем больше индекс, тем мельче и чаще; у пеликана — кипит
     const idx = mods.filter(([a, d]) => d === i && !broken[a]).reduce((q, [a]) => q + OPS[a].level, 0), boil = broken[i] ? 0 : o.fb;
     const nb = broken[i] ? 0 : Math.round(heat * (1 + fx.athanor * 2 + idx * 4 + boil * 8)), per = 1500 / (1 + idx * 1.5 + boil * 3);
+    c.lineWidth = 0.8;
     for (let k = 0; k < nb; k++) {
       const t = (now / (per + k * 170) + k * 0.37) % 1, bx = p.x + Math.sin(k * 2.3 + t * 5) * hw * 0.55, by = yBot - 4 - t * (yBot - sy - 4);
-      T.ring(bx, by, (1.8 + (k % 3) * 0.5) / (1 + idx * 0.8) + boil * 1.2, 0.5 * (1 - t), 0.8);
+      c.strokeStyle = rgba(lighter(col), 0.7 * (1 - t)); c.beginPath(); c.arc(bx, by, (1.8 + (k % 3) * 0.5) / (1 + idx * 0.8) + boil * 1.2, 0, TAU); c.stroke();
     }
     c.restore();
-    c.strokeStyle = T.ink(held ? 1 : 0.9); c.lineWidth = held ? 1.8 : 1.2;   // стекло: контур, устье, блик
-    c.beginPath(); const nk = flaskPath(c, o.shape, p.x, p.y, r); c.stroke();
-    c.beginPath(); c.ellipse(p.x, nk.neckTop, nk.nw + 2.5, 2, 0, 0, TAU); c.stroke();
+    c.strokeStyle = T.ink(held ? 1 : 0.9); c.lineWidth = held ? 1.6 : 1.2;   // стекло: тело с горлышком, устье, блик
+    const fa = Math.asin(nw / r);
+    c.beginPath(); c.moveTo(p.x - nw, neckTop); c.lineTo(p.x - nw, p.y - r * Math.cos(fa)); c.arc(p.x, p.y, r, -Math.PI / 2 - fa, -Math.PI / 2 + fa, true); c.lineTo(p.x + nw, neckTop); c.stroke();
+    c.beginPath(); c.ellipse(p.x, neckTop, nw + 2.5, 2, 0, 0, TAU); c.stroke();
     c.strokeStyle = T.ink(0.35); c.lineWidth = 1;
-    c.beginPath(); c.arc(p.x - hw * 0.15, (yTop + yBot) / 2, hw * 0.62, Math.PI * 1.08, Math.PI * 1.4); c.stroke();
+    c.beginPath(); c.arc(p.x - hw * 0.15, p.y, hw * 0.62, Math.PI * 1.08, Math.PI * 1.4); c.stroke();
     if (drain[i] > 0) {                              // трещины: зигзаг от удара, жидкость каплями стекает вниз
-      const cx = p.x + hw * 0.25, cy = (yTop + yBot) / 2 + r * 0.1;
+      const cx = p.x + hw * 0.25, cy = p.y + r * 0.1;
       c.strokeStyle = T.ink(0.85 * drain[i]); c.lineWidth = 1; c.beginPath();
       for (const [a, L] of [[-2.3, 1], [-0.6, 0.8], [0.9, 0.9], [2.4, 0.6]]) {
         c.moveTo(cx, cy);
@@ -239,17 +197,14 @@
         c.fillStyle = rgba(mixed(i), 0.8 * (1 - t) * Math.max(0.2, 1 - drain[i] * 0.7)); c.beginPath(); c.arc(cx + 2, cy + 6 + t * 46, 1.6, 0, TAU); c.fill();
       }
     }
-    if (o.fb > 0.02) {                           // пеликан — наружу, толще — сильнее
-      let sd = p.x <= G.W / 2 ? -1 : 1;
-      if (p.x + sd * (hw + r * 1.6) < 8 || p.x + sd * (hw + r * 1.6) > G.W - 8) sd = -sd;   // у края — петля внутрь, не за экран
-      const sx = p.x + sd * nk.nw, s0 = nk.neckTop + r * 0.35, ex = p.x + sd * hw * 0.92, ey = (yTop + yBot) / 2 + r * 0.15;
+    if (o.fb > 0.02) {                           // пеликан — горлышко загнуто обратно в тело, с наружной стороны; толще — сильнее
+      const sd = CORNER[i][0], sx = p.x + sd * nw, s0 = neckTop + r * 0.35, ex = p.x + sd * hw * 0.92, ey = p.y + r * 0.15;
       const cp = [[sx, s0], [sx + sd * r * 1.5, s0 - r * 0.9], [ex + sd * r * 1.4, ey - r * 0.3], [ex, ey]];
-      tube(c, () => { c.beginPath(); c.moveTo(...cp[0]); c.bezierCurveTo(...cp[1], ...cp[2], ...cp[3]); }, 2 + 3 * o.fb, rgba(col, 0.85), now, o.fb * heat);
+      tube(c, () => { c.beginPath(); c.moveTo(...cp[0]); c.bezierCurveTo(...cp[1], ...cp[2], ...cp[3]); }, 2 + 3 * o.fb, rgba(lighter(col), 0.85), now, o.fb * heat);
       tubes.push({ i, pts: sample([cp]) });
     }
-    const out = p.x <= G.W / 2 ? -1 : 1, lx = clamp(p.x + out * (hw + 16), 16, G.W - 16), ly = Math.max(yTop + 8, p.y + r * 0.2);   // стихия — снаружи, у тела колбы
-    elementGlyph(c, lx, ly, o.up, o.bar, 6, 0.75);
-    T.mapText(o.key, lx, ly + 18, 11, 0.4, 'center');
+    elementGlyph(c, p.x, p.y - r * 0.42, o.up, o.bar, 5, 0.6);   // знак стихии — на стекле
+    T.mapText(o.key, p.x, yBot + 14, 12, held ? 0.9 : 0.55, 'center');
   }
   function elementGlyph(c, x, y, up, bar, s, a) {
     const u = up ? -1 : 1;
@@ -268,65 +223,84 @@
   }
   const bez = (a, b, c2, d, t) => { const u = 1 - t; return [u * u * u * a[0] + 3 * u * u * t * b[0] + 3 * u * t * t * c2[0] + t * t * t * d[0], u * u * u * a[1] + 3 * u * u * t * b[1] + 3 * u * t * t * c2[1] + t * t * t * d[1]]; };
   const sample = (segs) => segs.flatMap((s) => Array.from({ length: 13 }, (_, k) => bez(...s, k / 12)));
-  function modSegs(G, s, d) {                       // трубка от горлышка s к горлышку d: выгиб к середине, мимо своих колб
-    const a = flaskGeo(G, s), b = flaskGeo(G, d), ax = a.p.x, ay = a.neckTop, bx = b.p.x, by = b.neckTop;
-    const side = ax <= G.W / 2 ? 1 : -1, o = G.r * 1.7;
-    return [[[ax, ay - 2], [ax + side * o * 0.4, ay - 40], [ax + side * o, ay - 10], [ax + side * o, (ay + by) / 2]],
-      [[ax + side * o, (ay + by) / 2], [ax + side * o, by - 24], [bx, by - 22], [bx, by - 4]]];
+  // трубки модуляции идут по «дороге» вокруг квадрата — скруглённому прямоугольнику между колбами и кольцом, каждая в своей полосе.
+  // От горлышка: у верхних колб — прямо вверх на дорогу, у нижних — вбок наружу над плечом; в чужое горлышко трубка входит так же
+  function road(G, lane) {
+    const e = G.s + G.r + 12 + lane * 6, x0 = G.cx - e, x1 = G.cx + e, y0 = G.cy - G.s - G.r * 1.9 - 12 - lane * 6, y1 = G.cy + G.s + G.r + 30 + lane * 6;   // снизу — под подписями колб
+    const q = 56 + lane * 14;                          // углы скруглены круто — дорога не выходит за кольцо
+    const pts = [];
+    for (const [cx, cy, a0] of [[x0 + q, y0 + q, Math.PI], [x1 - q, y0 + q, -Math.PI / 2], [x1 - q, y1 - q, 0], [x0 + q, y1 - q, Math.PI / 2]]) {
+      for (let k = 0; k <= 6; k++) { const a = a0 + (k / 6) * (Math.PI / 2); pts.push([cx + Math.cos(a) * q, cy + Math.sin(a) * q]); }
+    }
+    const out = [];                                   // прямые стороны — точками через 10 px: к дороге можно примкнуть где угодно
+    for (let k = 0; k < pts.length; k++) {
+      const a = pts[k], b = pts[(k + 1) % pts.length], m = Math.max(1, Math.floor(Math.hypot(b[0] - a[0], b[1] - a[1]) / 10));
+      for (let j = 0; j < m; j++) out.push([a[0] + ((b[0] - a[0]) * j) / m, a[1] + ((b[1] - a[1]) * j) / m]);
+    }
+    return { pts: out, x0, x1, y0, y1 };
+  }
+  function stub(G, i, rd) {                           // от горлышка до дороги
+    const q = flaskGeo(G, i), [dx, dy] = CORNER[i], x = q.p.x, n = q.neckTop - 2;
+    if (dy < 0) return [[x, n], [x, n - 8]];
+    return [[x, n], [x, n - 14], [dx < 0 ? rd.x0 : rd.x1, n - 14]];
+  }
+  function route(G, s, d, lane) {
+    const rd = road(G, lane), a = stub(G, s, rd), b = stub(G, d, rd).reverse(), N = rd.pts.length;
+    const near = (p) => { let bi = 0, bd = 1e9; rd.pts.forEach((q, k) => { const dd = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2; if (dd < bd) { bd = dd; bi = k; } }); return bi; };
+    const ia = near(a[a.length - 1]), ib = near(b[0]), fw = (ib - ia + N) % N, bw = (ia - ib + N) % N, mid = [];
+    if (fw <= bw) for (let k = 1; k < fw; k++) mid.push(rd.pts[(ia + k) % N]);
+    else for (let k = 1; k < bw; k++) mid.push(rd.pts[(ia - k + N) % N]);
+    return [...a, ...mid, ...b];
+  }
+  function smooth(c, pts) {                           // ломаная со скруглёнными изломами
+    c.beginPath(); c.moveTo(...pts[0]);
+    for (let k = 1; k < pts.length - 1; k++) c.quadraticCurveTo(pts[k][0], pts[k][1], (pts[k][0] + pts[k + 1][0]) / 2, (pts[k][1] + pts[k + 1][1]) / 2);
+    c.lineTo(...pts[pts.length - 1]);
   }
   function drawTubes(c, G, now) {
-    for (const [s, d] of mods) {
-      const segs = modSegs(G, s, d);
-      tube(c, () => { c.beginPath(); c.moveTo(...segs[0][0]); for (const sg of segs) c.bezierCurveTo(...sg[1], ...sg[2], ...sg[3]); }, 3, rgba(mixed(s), 0.95), now, broken[s] ? 0 : heat * Math.log2(OPS[s].f / 20) / 2.5, true);   // капли — скорость по частоте модулятора
-      tubes.push({ s, d, pts: sample(segs) });
-    }
-    for (const i of carriers()) {                 // несущие сливают снизу в приёмник
-      const { p, yBot } = flaskGeo(G, i), e = G.egg;
-      const path = () => { c.beginPath(); c.moveTo(p.x, yBot + 40); c.bezierCurveTo(p.x, e.y - 60, e.x + (p.x - e.x) * 0.25, e.y - 70, e.x + (p.x - e.x) * 0.08, e.y - 46); };
-      tube(c, path, 3, rgba(mixed(i), 0.95), now, OPS[i].level * heat);
-      c.strokeStyle = T.ink(0.8); c.lineWidth = 1.2;
-      c.beginPath(); c.moveTo(p.x, yBot); c.lineTo(p.x, yBot + 40); c.stroke();
-      c.strokeRect(p.x - 4, yBot + 34, 8, 4);
+    mods.forEach(([s, d], k) => {
+      const pts = route(G, s, d, k % 3);
+      tube(c, () => smooth(c, pts), 3, rgba(lighter(mixed(s)), 0.95), now, broken[s] ? 0 : heat * Math.log2(OPS[s].f / 20) / 2.5, true);   // капли — скорость по частоте модулятора
+      tubes.push({ s, d, pts });
+    });
+    for (const i of carriers()) {                 // несущие сливают из горлышка в яйцо
+      const q = flaskGeo(G, i), e = G.egg, N = [q.p.x, q.neckTop - 2], M = [e.x + (q.p.x < e.x ? -3 : 3), e.y - e.ry - 12];
+      const seg = [N, [N[0], N[1] - (CORNER[i][1] < 0 ? 26 : 30)], [M[0] + (N[0] - M[0]) * 0.45, M[1] - 44], M];
+      tube(c, () => { c.beginPath(); c.moveTo(...seg[0]); c.bezierCurveTo(...seg[1], ...seg[2], ...seg[3]); }, 3, rgba(lighter(mixed(i)), 0.95), now, broken[i] ? 0 : OPS[i].level * heat, true);
     }
   }
 
-  // приёмник — яйцо философов на атаноре; жидкость — смесь несущих
+  // яйцо философов в центре: жидкость — смесь несущих штрихом, поверхность — живая осциллограмма выхода; горлышко — куда льют несущие
   function drawEgg(c, G, now) {
-    const e = G.egg, car = carriers(), rx = 24, ry = 30;
+    const e = G.egg, car = carriers(), rx = e.rx, ry = e.ry;
     let col = [0, 0, 0], w = 0;
     for (const i of car) { const m = mixed(i), k = OPS[i].level; for (let q = 0; q < 3; q++) col[q] += m[q] * k; w += k; }
-    col = col.map((v) => Math.round(v / (w || 1)));
-    const lv = clamp(w / car.length);
-    c.save(); c.beginPath(); c.ellipse(e.x, e.y, rx, ry, 0, 0, TAU); c.clip();
-    const sy = e.y + ry - lv * 2 * ry * 0.8;
-    c.fillStyle = rgba(col, 0.8); c.beginPath(); c.moveTo(e.x - rx, e.y + ry);
-    const sc = scope(40);                            // поверхность — живая осциллограмма выхода
-    for (let k = 0; k <= 40; k++) c.lineTo(e.x - rx + (k / 40) * 2 * rx, sy - (sc ? sc[Math.min(39, k)] * 7 : 0));
-    c.lineTo(e.x + rx, e.y + ry); c.closePath(); c.fill();
+    col = w ? col.map((v) => Math.round(v / w)) : [200, 122, 74];
+    const lv = car.length ? clamp(w / car.length) : 0.3, sy = e.y + ry - lv * 2 * ry * 0.8, sc = scope(40);
+    c.fillStyle = T.BG; c.beginPath(); c.ellipse(e.x, e.y, rx, ry, 0, 0, TAU); c.fill();
+    c.save(); c.beginPath(); c.ellipse(e.x, e.y, rx - 1, ry - 1, 0, 0, TAU); c.clip();
+    const surf = () => { for (let k = 0; k <= 40; k++) { const X = e.x - rx + (k / 40) * 2 * rx, Y = sy - (sc ? sc[Math.min(39, k)] * 7 : 0); k ? c.lineTo(X, Y) : c.moveTo(X, Y); } };
+    c.strokeStyle = rgba(col, 0.45); c.lineWidth = 1; c.beginPath();
+    for (let y = sy + 2; y < e.y + ry; y += 3.4) { c.moveTo(e.x - rx, y); c.lineTo(e.x + rx, y); }
+    c.stroke();
+    c.beginPath(); surf(); c.strokeStyle = rgba(lighter(col), 0.95); c.lineWidth = 1.4; c.stroke();
     c.restore();
     c.strokeStyle = T.ink(0.9); c.lineWidth = 1.2;
     c.beginPath(); c.ellipse(e.x, e.y, rx, ry, 0, -Math.PI / 2 + 0.25, -Math.PI / 2 - 0.25 + TAU); c.stroke();
-    c.beginPath(); c.moveTo(e.x - 6, e.y - ry + 1); c.lineTo(e.x - 6, e.y - ry - 14); c.moveTo(e.x + 6, e.y - ry + 1); c.lineTo(e.x + 6, e.y - ry - 14); c.stroke();
-    c.beginPath(); c.ellipse(e.x, e.y - ry - 14, 8.5, 2, 0, 0, TAU); c.stroke();
-    c.strokeStyle = T.ink(0.35); c.beginPath(); c.arc(e.x - 4, e.y - 2, rx * 0.65, Math.PI * 1.05, Math.PI * 1.4); c.stroke();
+    c.strokeStyle = T.ink(0.25); c.lineWidth = 1; c.beginPath(); c.ellipse(e.x, e.y, rx - 4, ry - 4, 0, 0, TAU); c.stroke();
+    c.strokeStyle = T.ink(0.9); c.lineWidth = 1.2;
+    c.beginPath(); c.moveTo(e.x - 6, e.y - ry + 1); c.lineTo(e.x - 6, e.y - ry - 12); c.moveTo(e.x + 6, e.y - ry + 1); c.lineTo(e.x + 6, e.y - ry - 12); c.stroke();
+    c.beginPath(); c.ellipse(e.x, e.y - ry - 12, 8.5, 2, 0, 0, TAU); c.stroke();
   }
-  // атанор — печь-башня из кирпича; горит огонь — дрон звучит (тап по печи), выше пламя — сильнее жар (FX athanor)
-  const furnBox = (G) => ({ x0: G.W / 2 - 74, x1: G.W / 2 + 74, y0: G.furn.y0, y1: G.furn.y1 });   // атанор шире: на его лице — уроборосы solve и coagula
-  function drawFurnace(c, G, now) {
-    const { x0, x1, y0, y1 } = furnBox(G);
-    c.fillStyle = T.BG; c.fillRect(x0, y0, x1 - x0, y1 - y0);
-    c.strokeStyle = T.ink(0.85); c.lineWidth = 1.2; c.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0);
-    c.beginPath(); c.moveTo(x0 - 6, y0); c.lineTo(x1 + 6, y0); c.moveTo(x0 - 6, y1); c.lineTo(x1 + 6, y1); c.stroke();
-    c.strokeStyle = T.ink(0.22); c.lineWidth = 0.8; c.beginPath();
-    for (let y = y0 + 9, row = 0; y < y1; y += 9, row++) { c.moveTo(x0, y); c.lineTo(x1, y); for (let x = x0 + (row % 2 ? 9 : 0); x < x1; x += 18) { c.moveTo(x, y - 9); c.lineTo(x, y); } }
+  // треножник под яйцом и лампа Гермеса между его ногами: тап — огонь; пламя лижет яйцо, выше — сильнее жар (athanor)
+  const lampBox = (G) => ({ x: G.lamp.x, y: G.lamp.y, w: 30, h: 48 });
+  function drawStand(c, G, now) {
+    const e = G.egg, L = G.lamp;
+    c.strokeStyle = T.ink(0.6); c.lineWidth = 1; c.beginPath();
+    for (const d of [-1, 1]) { c.moveTo(e.x + d * e.rx * 0.55, e.y + e.ry * 0.83); c.lineTo(e.x + d * e.rx * 1.15, L.y); c.moveTo(e.x + d * (e.rx * 1.15 - 5), L.y); c.lineTo(e.x + d * (e.rx * 1.15 + 5), L.y); }
     c.stroke();
-    const ax = G.W / 2, ay = y1, aw = 28, ah = Math.min(52, (y1 - y0) * 0.78);
-    c.fillStyle = T.BG; c.beginPath(); c.moveTo(ax - aw, ay); c.lineTo(ax - aw, ay - ah + aw); c.arc(ax, ay - ah + aw, aw, Math.PI, 0); c.lineTo(ax + aw, ay); c.closePath(); c.fill();
-    c.strokeStyle = T.ink(0.85); c.lineWidth = 1.2; c.stroke();
-    drawLamp(c, ax, ay, Math.min(aw * 0.75, ah * 0.32), now);
+    drawLamp(c, L.x, L.y, 11, now);
   }
-  // лампа Гермеса в арке атанора: стеклянный резервуар со спиртом, фитиль; тап — загорается. Пламя — жар (athanor)
-  const lampBox = (G) => { const b = furnBox(G); return { x: G.W / 2, y: b.y1, w: 34, h: Math.min(52, (b.y1 - b.y0) * 0.78) }; };
   function drawLamp(c, x, y, r, now) {
     const by = y - r - 2;
     c.fillStyle = T.BG; c.strokeStyle = T.ink(0.9); c.lineWidth = 1.1;
@@ -346,52 +320,53 @@
       c.quadraticCurveTo(x + w * k, top - hh * k * 0.55, x + w * k, top); c.quadraticCurveTo(x, top + 3, x - w * k, top); c.stroke();
     }
   }
-  // сажа над лампой: копится, пока горит, кувшин её не смывает — история сессии
+  // сажа: над яйцом копится, пока горит; кувшин её не смывает — история сессии
   function drawSoot(c, G) {
     if (soot < 0.01) return;
-    const b = furnBox(G), x = G.W / 2, y0 = b.y0 - 2, H = 90 + 120 * soot;
-    c.strokeStyle = T.ink(0.07 + 0.22 * soot); c.lineWidth = 0.8; c.beginPath();
-    for (let k = -8; k <= 8; k++) {
-      const xx = x + k * 4.5, hh = H * (1 - Math.abs(k) / 9) * (0.8 + 0.2 * Math.sin(k * 7.3));
+    const e = G.egg, x = e.x, y0 = e.y - e.ry - 16, H = 20 + 60 * soot;
+    c.strokeStyle = T.ink(0.06 + 0.2 * soot); c.lineWidth = 0.8; c.beginPath();
+    for (let k = -6; k <= 6; k++) {
+      const xx = x + k * 4, hh = H * (1 - Math.abs(k) / 7) * (0.8 + 0.2 * Math.sin(k * 7.3));
       c.moveTo(xx, y0); c.quadraticCurveTo(xx + k * 0.8, y0 - hh * 0.6, xx + k * 1.6, y0 - hh);
     }
     c.stroke();
   }
 
-  // кувшин с водой у печи: тап — заливает огонь, всё в лаборатории затихает (пар и шипение)
+  // кувшин с водой — за кольцом слева внизу: тап — заливает огонь, всё в лаборатории затихает (пар и шипение)
   let pourAt = -1e9;
   const POUR_MS = 1600;
-  const jugBox = (G) => { const b = furnBox(G); return { x: b.x1 + 34, y: b.y1, w: 26, h: 40 }; };
+  const jugBox = (G) => ({ x: Math.max(30, G.cx - G.R * 0.92), y: Math.min(G.cy + G.R + 70, G.band - 22), w: 26, h: 40 });
   function drawJug(c, G, now) {
     const { x, y, h } = jugBox(G), k = clamp((now - pourAt) / POUR_MS), tilt = k < 1 ? Math.sin(Math.min(1, k * 1.6) * Math.PI) * -0.95 : 0;
-    const b = furnBox(G), ax = G.W / 2, ay = b.y1 - 14;
-    if (k < 1 && tilt < -0.4) {                        // струя из носика в топку
-      const sx = x - 24, sy = y - h + 6;
+    const L = G.lamp;
+    if (k < 1 && tilt < -0.4) {                        // струя из носика к лампе
+      const sx = x + 24, sy = y - h + 6;
       c.strokeStyle = rgba(OPS[2].col, 0.85); c.lineWidth = 2.2;
       c.setLineDash([4, 3]); c.lineDashOffset = -now * 0.12;
-      c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo(sx - 20, sy - 8, ax + 10, ay); c.stroke();
+      c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo(sx + 30, sy - 60, L.x - 4, L.y - 20); c.stroke();
       c.setLineDash([]); c.lineDashOffset = 0;
     }
-    if (k < 1 && k > 0.25) {                           // пар из арки
+    if (k < 1 && k > 0.25) {                           // пар от лампы
       for (let i = 0; i < 6; i++) {
-        const t = (k - 0.25) / 0.75, px = ax - 14 + i * 6 + Math.sin(now * 0.004 + i) * 4, py = ay - 10 - t * 70 - i * 6;
+        const t = (k - 0.25) / 0.75, px = L.x - 14 + i * 6 + Math.sin(now * 0.004 + i) * 4, py = L.y - 24 - t * 60 - i * 5;
         c.strokeStyle = T.ink(0.5 * (1 - t)); c.lineWidth = 1;
         c.beginPath(); c.arc(px, py, 4 + t * 8, Math.PI * 1.1, Math.PI * 1.9); c.stroke();
       }
     }
-    c.save(); c.translate(x, y); c.rotate(tilt);
-    const body = () => {                                // кувшин: пузатое тело, горло, носик влево, ручка вправо
+    c.save(); c.translate(x, y); c.scale(-1, 1); c.rotate(tilt);   // носик — вправо, к лампе
+    const body = () => {
       c.beginPath(); c.moveTo(-9, 0); c.bezierCurveTo(-17, -10, -15, -26, -7, -30); c.lineTo(-8, -h + 4); c.lineTo(-14, -h + 1);
       c.lineTo(-7, -h); c.lineTo(8, -h); c.lineTo(7, -30); c.bezierCurveTo(15, -26, 17, -10, 9, 0); c.closePath();
     };
     c.fillStyle = T.BG; body(); c.fill();
     c.save(); body(); c.clip();
-    const wl = k < 1 ? -18 + 12 * k : -20;             // вода внутри — убывает, пока льём
-    c.fillStyle = rgba(OPS[2].col, 0.55); c.fillRect(-20, wl, 40, 30);
+    const wl = k < 1 ? -18 + 12 * k : -20;             // вода — штрихом, убывает, пока льём
+    c.strokeStyle = rgba(OPS[2].col, 0.6); c.lineWidth = 1; c.beginPath();
+    for (let yy = wl; yy < 0; yy += 3.4) { c.moveTo(-20, yy); c.lineTo(20, yy); }
+    c.stroke();
     c.restore();
-    c.strokeStyle = T.ink(0.9); c.lineWidth = 1.2; body(); c.stroke();
+    c.strokeStyle = T.ink(0.85); c.lineWidth = 1.1; body(); c.stroke();
     c.beginPath(); c.moveTo(8, -h + 6); c.bezierCurveTo(20, -h + 4, 22, -18, 12, -12); c.stroke();   // ручка
-    c.strokeStyle = T.ink(0.35); c.beginPath(); c.arc(-3, -14, 8, Math.PI * 1.05, Math.PI * 1.45); c.stroke();
     c.restore();
   }
   // шипение пара — короткий шум через полосовой фильтр
@@ -424,25 +399,37 @@
     }, 450);
   }
 
-  // ---------- две крутилки-уробороса у печи: слева solve, справа coagula ----------
-  // тело змеи растёт по кругу со значением; на максимуме голова кусает хвост
+  // ---------- solve и coagula — дуги на кольце эмблемы, слева и справа внизу (под большой палец); тянешь вверх или вправо — больше.
+  // Залитая часть дуги — значение: solve — ртуть, coagula — сера; слова гравированы по кольцу снаружи и разгораются с coagula ----------
   const KNOBS = ['solve', 'coagula'];
-  const knobAt = (G, k) => { const b = furnBox(G); return { x: G.W / 2 + (k === 'solve' ? -52 : 52), y: b.y0 - 15, R: 14 }; };   // две склянки на атаноре, по бокам яйца
-  // склянки solve и coagula: жидкость — сколько эффекта; solve — ртуть (рябь чаще, чем короче задержка), coagula — сера (рябь выше, чем больше повторов)
-  const VIAL = { solve: [196, 204, 214], coagula: [204, 96, 46] };
-  function drawKnob(c, G, k, now, held) {
-    const { x, y, R } = knobAt(G, k), v = fx[k], col = VIAL[k], top = y + R - v * 2 * R * 0.85;
-    c.save(); c.beginPath(); c.arc(x, y, R - 1, 0, TAU); c.clip();
-    const fr = k === 'solve' ? 6 - 4 * fx.solve : 2, amp = 1 + 2.5 * fx.coagula;
-    c.fillStyle = rgba(col, 0.82); c.beginPath(); c.moveTo(x - R, y + R);
-    for (let q = 0; q <= 16; q++) { const u = q / 16; c.lineTo(x - R + u * 2 * R, top - Math.sin(u * TAU * fr * 0.5 + now * 0.004) * amp * (v > 0.02 ? 1 : 0)); }
-    c.lineTo(x + R, y + R); c.closePath(); c.fill(); c.restore();
-    c.strokeStyle = T.ink(held ? 1 : 0.85); c.lineWidth = held ? 1.6 : 1.1;
-    c.beginPath(); c.arc(x, y, R, -Math.PI / 2 + 0.38, -Math.PI / 2 - 0.38 + TAU); c.stroke();
-    c.beginPath(); c.moveTo(x - R * 0.37, y - R * 0.93); c.lineTo(x - R * 0.37, y - R * 1.7); c.moveTo(x + R * 0.37, y - R * 0.93); c.lineTo(x + R * 0.37, y - R * 1.7); c.stroke();
-    c.beginPath(); c.ellipse(x, y - R * 1.7, R * 0.5, 1.8, 0, 0, TAU); c.stroke();
-    T.mapText(k, x, y + R + 12, 11, held ? 0.9 : 0.5, 'center');
-    if (held) T.mapText(`${k} · ${fxw.text(k)}`, x, y - R * 1.7 - 16, 13, 0.9, 'center');
+  const ARC = { solve: [166, 118], coagula: [62, 14] };        // градусы: значение 0 → 1, слева направо по низу кольца
+  const VIAL = { solve: [200, 206, 216], coagula: [217, 182, 74] };
+  const arcAng = (k, v) => deg(ARC[k][0] + (ARC[k][1] - ARC[k][0]) * v);
+  const knobAt = (G, k) => { const a = arcAng(k, 0.5); return { x: G.cx + Math.cos(a) * (G.R + 4), y: G.cy + Math.sin(a) * (G.R + 4), R: 14 }; };
+  function knobHit(G, k, x, y) {
+    const d = Math.hypot(x - G.cx, y - G.cy), a = ((Math.atan2(y - G.cy, x - G.cx) * 180) / Math.PI + 360) % 360, [a0, a1] = ARC[k];
+    return Math.abs(d - G.R - 4) < 20 && a > Math.min(a0, a1) - 5 && a < Math.max(a0, a1) + 5;
+  }
+  function drawArcs(c, G, now, held) {
+    for (const k of KNOBS) {
+      const [a0, a1] = ARC[k], rr = G.R + 4, v = fx[k], h = held.has(k);
+      c.strokeStyle = T.ink(h ? 0.3 : 0.16); c.lineWidth = 7;
+      c.beginPath(); c.arc(G.cx, G.cy, rr, deg(Math.min(a0, a1)), deg(Math.max(a0, a1))); c.stroke();
+      if (v > 0.005) { c.strokeStyle = rgba(VIAL[k], h ? 0.95 : 0.8); c.beginPath(); c.arc(G.cx, G.cy, rr, arcAng(k, v), deg(a0)); c.stroke(); }
+      const e = arcAng(k, v);                           // засечка на конце значения
+      c.strokeStyle = T.ink(0.8); c.lineWidth = 1;
+      c.beginPath(); c.moveTo(G.cx + Math.cos(e) * (rr - 6), G.cy + Math.sin(e) * (rr - 6)); c.lineTo(G.cx + Math.cos(e) * (rr + 6), G.cy + Math.sin(e) * (rr + 6)); c.stroke();
+      // слово по кольцу: буквы вдоль дуги; coagula разгорается, при длинном solve буквы дрожат (крошево)
+      const word = k.toUpperCase(), step = 4.6, mid = (a0 + a1) / 2, al = (k === 'coagula' ? 0.35 + 0.55 * fx.coagula : 0.55) + (h ? 0.2 : 0);
+      const jit = fx.coagula > 0.02 ? fx.solve * fx.solve * 2.5 : 0;
+      c.font = `13px ${T.MAP}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+      [...word].forEach((ch, j) => {
+        const a = deg(mid + ((word.length - 1) / 2 - j) * step), q = jit * Math.sin(now * 0.013 * (1 + (j % 3)) + j * 1.7), R2 = G.R + 26 + q;
+        c.fillStyle = T.ink(Math.min(1, al));
+        c.save(); c.translate(G.cx + Math.cos(a) * R2, G.cy + Math.sin(a) * R2); c.rotate(a - Math.PI / 2); c.fillText(ch, 0, 0); c.restore();
+      });
+      if (h) { const a = deg(mid), p = [G.cx + Math.cos(a) * (G.R - 22), G.cy + Math.sin(a) * (G.R - 22)]; T.mapText(fxw.text(k), p[0], p[1], 13, 0.9, 'center'); }
+    }
   }
 
   // ---------- семь банок металлов — клавиши, как сенсоры Lyra (♄ ♃ ♂ ☉ ♀ ☿ ☽ — снизу вверх) ----------
@@ -459,24 +446,18 @@
     else if (k === 'saturnus') { c.moveTo(x - s * 0.3, y - s); c.lineTo(x - s * 0.3, y + s * 0.3); c.moveTo(x - s * 0.7, y - s * 0.6); c.lineTo(x + s * 0.1, y - s * 0.6); c.moveTo(x - s * 0.3, y - s * 0.05); c.quadraticCurveTo(x + s * 0.6, y - s * 0.5, x + s * 0.35, y + s * 0.4); c.quadraticCurveTo(x + s * 0.15, y + s, x + s * 0.6, y + s * 0.85); }
     c.stroke();
   }
-  const jarBox = (G, i) => { const x0 = 16, x1 = G.W - 78, n = 7, w = Math.min(34, (x1 - x0) / n - 7), X = x0 + ((i + 0.5) / n) * (x1 - x0); return { X, y: G.shelf, w, h: 40 }; };
+  // семь металлов — полоса медальонов под эмблемой, по пологой дуге; металл в ладу — двойной обвод и знак ярче
+  const jarBox = (G, i) => { const x0 = 34, x1 = G.W - 116, X = x0 + (i / 6) * (x1 - x0), cy = G.band - 10 + (i - 3) ** 2 * 2; return { X, y: cy + 17, w: 34, h: 34, cy }; };
   function drawJars(c, G, now) {
-    const { x: _x } = { x: 0 }, xr = G.W - 74;
-    c.strokeStyle = T.ink(0.8); c.lineWidth = 1.2;
-    c.beginPath(); c.moveTo(10, G.shelf + 0.5); c.lineTo(xr, G.shelf + 0.5); c.moveTo(10, G.shelf + 5.5); c.lineTo(xr, G.shelf + 5.5); c.stroke();
     for (let i = 0; i < 7; i++) {
-      const { X, y, w, h } = jarBox(G, i), v = voices.get(i), on = !!(v && v.on), a = on ? 1 : 0.6;
-      c.strokeStyle = T.ink(a); c.lineWidth = on ? 1.6 : 1.1;
-      c.beginPath();
-      c.moveTo(X - w / 2, y); c.lineTo(X - w / 2, y - h + 10); c.quadraticCurveTo(X - w / 2, y - h + 4, X - w / 4, y - h + 3);
-      c.lineTo(X + w / 4, y - h + 3); c.quadraticCurveTo(X + w / 2, y - h + 4, X + w / 2, y - h + 10); c.lineTo(X + w / 2, y); c.stroke();
-      c.strokeRect(X - w / 4 - 1, y - h - 2, w / 2 + 2, 5);
-      c.beginPath(); c.arc(X, y - h - 4, 2, Math.PI, 0); c.stroke();
-      const pcs = T.scalePCs, inScale = pcs && pcs.includes(((jars[i] % 12) + 12) % 12);   // нота банки в ладу — знак металла светится
-      if (inScale) T.glowAt(X, y - h / 2 + 4, 16, 0.14);
-      planet(c, METALS[i], X, y - h / 2 + 4, 7, inScale ? Math.max(a, 0.95) : a);
-      if (on) T.glowAt(X, y - h / 2, 26, 0.18);
-      if (v && v.latched) T.dot(X, y + 11, 1.8, 0.8);   // оставлена звучать
+      const { X, cy } = jarBox(G, i), v = voices.get(i), on = !!(v && v.on);
+      const pcs = T.scalePCs, inScale = pcs && pcs.includes(((jars[i] % 12) + 12) % 12);
+      if (on) T.glowAt(X, cy, 30, 0.2);
+      c.fillStyle = T.BG; c.beginPath(); c.arc(X, cy, 16, 0, TAU); c.fill();
+      T.ring(X, cy, 16, on ? 1 : inScale ? 0.85 : 0.4, on ? 1.5 : 1);
+      if (inScale) T.ring(X, cy, 20, 0.25, 1);
+      planet(c, METALS[i], X, cy, 7, on ? 1 : inScale ? 0.95 : 0.45);
+      if (v && v.latched) T.dot(X, cy + 25, 1.8, 0.8);   // оставлена звучать
     }
   }
 
@@ -484,22 +465,11 @@
   let noSun = false;                                // снимок для карты — без солнца: на карте солнце одно, в центре
   function drawSun(c, G, now) { if (!noSun) T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, -1, now); }
 
-  // ---------- стена: бледные алхимические рисунки, одна картинка на размер экрана ----------
-  // квадратура круга (круг — треугольник — круг — квадрат — круг, как в Atalanta Fugiens), девиз, уроборос, знаки веществ
+  // ---------- фон: чёрное поле и бледная геометрия эмблемы — квадрат через колбы, треугольник, круги; кольцо со шкалой.
+  // Одна картинка на размер экрана ----------
   let wallC = null, wallKey = '';
-  const emblem = (G) => ({ cx: G.W * 0.62, cy: G.top + 0.36 * G.h, R: Math.min(G.W * 0.34, G.h * 0.2) });
-  // девиз по дуге под кругом — живой: разгорается с coagula, буквы дрожат, когда solve длинный (крошево)
-  function drawMotto(c, G, now) {
-    const { cx, cy, R } = emblem(G), motto = 'SOLVE  ET  COAGVLA', span = 1.1, a0 = 0.16 + 0.6 * fx.coagula, jit = fx.coagula > 0.02 ? fx.solve * fx.solve * 2.5 : 0;
-    c.font = `italic 13px ${T.MAP}`; c.textAlign = 'center'; c.textBaseline = 'middle';
-    [...motto].forEach((ch, i) => {
-      const a = Math.PI / 2 + span / 2 - (i / (motto.length - 1)) * span, j = jit * Math.sin(now * 0.013 * (1 + (i % 3)) + i * 1.7);
-      c.fillStyle = T.ink(a0 * (0.85 + 0.15 * Math.sin(now * 0.002 + i)));
-      c.save(); c.translate(cx + Math.cos(a) * (R + 20 + j), cy + Math.sin(a) * (R + 20 + j)); c.rotate(a - Math.PI / 2); c.fillText(ch, 0, 0); c.restore();
-    });
-  }
   function wall(G) {
-    const key = `${G.W}x${G.H}x${T.DPR}|${G.top}|${G.bot}`;
+    const key = `${G.W}x${G.H}x${T.DPR}|${G.cx}|${G.cy}|${G.R}`;
     if (wallC && key === wallKey) return wallC;
     wallKey = key;
     wallC = document.createElement('canvas');
@@ -507,35 +477,16 @@
     const x = wallC.getContext('2d');
     x.setTransform(T.DPR, 0, 0, T.DPR, 0, 0);
     x.fillStyle = T.BG; x.fillRect(0, 0, G.W, G.H);
-    const ink = (a) => `rgba(237,237,237,${a})`;
-    // квадратура круга
-    const { cx, cy, R } = emblem(G);
-    x.strokeStyle = ink(0.1); x.lineWidth = 1;
-    const circ = (r) => { x.beginPath(); x.arc(cx, cy, r, 0, TAU); x.stroke(); };
-    circ(R); circ(R + 4);
+    const ink = (a) => `rgba(237,237,237,${a})`, { cx, cy, R, s } = G;
+    const circ = (r, a) => { x.strokeStyle = ink(a); x.beginPath(); x.arc(cx, cy, r, 0, TAU); x.stroke(); };
+    x.lineWidth = 1;
+    x.strokeStyle = ink(0.11); x.strokeRect(cx - s, cy - s, 2 * s, 2 * s);
     x.beginPath(); for (let k = 0; k < 3; k++) { const a = -Math.PI / 2 + (k * TAU) / 3; k ? x.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R) : x.moveTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R); } x.closePath(); x.stroke();
-    circ(R / 2);
-    const q = R / 2 / Math.SQRT2; x.strokeRect(cx - q, cy - q, 2 * q, 2 * q);
-    circ(q);
-    x.beginPath(); x.moveTo(cx, cy - R - 10); x.lineTo(cx, cy + R + 10); x.moveTo(cx - R - 10, cy); x.lineTo(cx + R + 10, cy); x.setLineDash([2, 5]); x.stroke(); x.setLineDash([]);
-    for (let d = 0; d < 360; d += 10) {                // шкала по внешнему кругу
-      const a = (d * Math.PI) / 180, l = d % 30 ? 3 : 6;
-      x.beginPath(); x.moveTo(cx + Math.cos(a) * (R + 4), cy + Math.sin(a) * (R + 4)); x.lineTo(cx + Math.cos(a) * (R + 4 + l), cy + Math.sin(a) * (R + 4 + l)); x.stroke();
-    }
-    // знаки веществ по стене: сера, соль, ртуть, сурьма, купорос, огонь философов
-    const glyphs = [[0.1, 0.12], [0.88, 0.5], [0.12, 0.47], [0.9, 0.7], [0.5, 0.06], [0.42, 0.62]];
-    x.strokeStyle = ink(0.13); x.lineWidth = 1;
-    glyphs.forEach(([gx, gy], i) => {
-      const X = G.W * gx, Y = G.top + G.h * gy, s = 7;
-      x.beginPath();
-      if (i === 0) { x.moveTo(X, Y - s); x.lineTo(X - s * 0.8, Y + s * 0.3); x.lineTo(X + s * 0.8, Y + s * 0.3); x.closePath(); x.moveTo(X, Y + s * 0.3); x.lineTo(X, Y + s * 1.3); x.moveTo(X - s * 0.45, Y + s * 0.85); x.lineTo(X + s * 0.45, Y + s * 0.85); }   // сера
-      else if (i === 1) { x.arc(X, Y, s * 0.7, 0, TAU); x.moveTo(X - s * 0.7, Y); x.lineTo(X + s * 0.7, Y); }   // соль
-      else if (i === 2) { x.arc(X, Y, s * 0.5, 0, TAU); x.moveTo(X - s * 0.5, Y - s); x.quadraticCurveTo(X, Y - s * 0.3, X + s * 0.5, Y - s); x.moveTo(X, Y + s * 0.5); x.lineTo(X, Y + s * 1.3); x.moveTo(X - s * 0.35, Y + s * 0.9); x.lineTo(X + s * 0.35, Y + s * 0.9); }   // ртуть
-      else if (i === 3) { x.arc(X, Y + s * 0.3, s * 0.6, 0, TAU); x.moveTo(X, Y - s * 0.3); x.lineTo(X, Y - s * 1.2); x.moveTo(X - s * 0.4, Y - s * 0.8); x.lineTo(X + s * 0.4, Y - s * 0.8); }   // сурьма
-      else if (i === 4) { x.moveTo(X - s, Y - s * 0.6); x.lineTo(X + s, Y - s * 0.6); x.lineTo(X, Y + s); x.closePath(); x.moveTo(X - s * 0.5, Y); x.lineTo(X + s * 0.5, Y); }   // воздух
-      else { x.arc(X, Y, s * 0.8, 0, TAU); x.moveTo(X - s * 0.8, Y); x.lineTo(X + s * 0.8, Y); x.moveTo(X, Y - s * 0.8); x.lineTo(X, Y + s * 0.8); }   // купорос
-      x.stroke();
-    });
+    circ(s * Math.SQRT2, 0.1); circ(R * 0.36, 0.11);
+    circ(R, 0.75); circ(R + 8, 0.3);
+    x.strokeStyle = ink(0.35); x.beginPath();
+    for (let d = 0; d < 360; d += 5) { const a = deg(d), l = d % 15 ? 2.5 : 5; x.moveTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R); x.lineTo(cx + Math.cos(a) * (R + l), cy + Math.sin(a) * (R + l)); }
+    x.stroke();
     return wallC;
   }
 
@@ -768,7 +719,7 @@
     return null;
   }
   function hitJar(G, x, y) {
-    for (let i = 0; i < 7; i++) { const b = jarBox(G, i); if (Math.abs(x - b.X) < b.w / 2 + 4 && y > b.y - b.h - 10 && y < b.y + 12) return i; }
+    for (let i = 0; i < 7; i++) { const b = jarBox(G, i); if (Math.hypot(x - b.X, y - b.cy) < 21) return i; }
     return -1;
   }
   const segDist = (px, py, ax, ay, bx, by) => {
@@ -786,7 +737,7 @@
   }
   function down(f) {
     const G = geo();
-    for (const k of KNOBS) { const q = knobAt(G, k); if (Math.hypot(f.x - q.x, f.y - q.y) < q.R + 14) { touches.set(f.id, { kind: 'knob', k, v0: fx[k] }); return; } }
+    for (const k of KNOBS) if (knobHit(G, k, f.x, f.y)) { touches.set(f.id, { kind: 'knob', k, v0: fx[k] }); return; }
     const j = hitJar(G, f.x, f.y);
     if (j >= 0) {
       const now = performance.now(), dbl = lastJarTap && lastJarTap.j === j && now - lastJarTap.t < T.DTAP_MS;
@@ -878,7 +829,7 @@
         T.mapText(`${noteName(o.f)} · ${Math.round(o.f)} Hz`, a.p.x, a.neckTop - 18, 14, 0.9, 'center');
       } else if (t.kind === 'jar' && t.drag) {
         const b = jarBox(G, t.j);
-        T.mapText(noteName(55 * 2 ** (jars[t.j] / 12)), b.X, b.y - b.h - 22, 15, 0.95, 'center');
+        T.mapText(noteName(55 * 2 ** (jars[t.j] / 12)), b.X, b.cy - 30, 15, 0.95, 'center');
       }
     }
   }
@@ -903,7 +854,6 @@
   }
 
   // ---------- мир ----------
-  const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
     sectors: [
       { key: 'athanor', label: 'athanor', ang: deg(180) },
@@ -936,27 +886,24 @@
     draw(now) {
       const c = T.g, G = geo(), dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      ease(G, dt);
       for (const t of touches.values()) if (t.kind === 'flask' && !t.axis && !t.sheet && now - t.t0 > T.HOLD_MS) { t.sheet = true; flaskSheet(t.i); }   // держишь колбу — плашка снизу
       heat += ((fire ? 1 : 0) - heat) * (1 - Math.exp(-dt / (fire ? 0.35 : 0.6)));
       for (let i = 0; i < 4; i++) drain[i] = clamp(drain[i] + (broken[i] ? dt / 1.6 : -dt / 0.5));   // вытекает за 1.6 с, чинится за 0.5
       soot = Math.min(1, soot + (dt * heat) / 240);   // за 4 минуты огня — густая
       tubes.length = 0;
       c.drawImage(wall(G), 0, 0, T.W, T.H);
-      drawMotto(c, G, now);
       drawSun(c, G, now);
-      drawScroll(c, G, now);
+      drawBanner(c, G, now);
       drawSoot(c, G);
-      drawFurnace(c, G, now);
-      drawJug(c, G, now);
       const heldK = new Set([...touches.values()].filter((t) => t.kind === 'knob').map((t) => t.k));
-      for (const k of KNOBS) drawKnob(c, G, k, now, heldK.has(k));
-      drawRack(c, G);
+      drawArcs(c, G, now, heldK);
       drawTubes(c, G, now);
+      drawStand(c, G, now);
+      drawEgg(c, G, now);
       const held = new Set([...touches.values()].filter((t) => t.kind === 'flask').map((t) => t.i));
       for (let i = 0; i < OPS.length; i++) drawFlask(c, i, G, now, held.has(i));
       drawSteam(c, G, now);
-      drawEgg(c, G, now);
+      drawJug(c, G, now);
       drawJars(c, G, now);
       drawRoot(c);
       drawTouches(c, G, now);
@@ -982,13 +929,13 @@
   T.registerWorld(3, lab);
   window.t2d.lab = {
     OPS, fx, geo, mixed, jars, waveOf, waveOut, get focus() { return focusI; }, setFx: (k, v) => fxw.set(k, v), get solveOn() { return !!(bus && bus.sc.tick); }, get mods() { return mods; }, get fire() { return fire; }, get live() { return voices.has('fire'); },
-    get broken() { return broken.slice(); }, get soot() { return soot; }, lamp: () => { const b = lampBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
+    get broken() { return broken.slice(); }, get soot() { return soot; }, lamp: () => { const b = lampBox(geo()); return { x: b.x, y: b.y - 14 }; },
     get voices() { return [...voices].map(([k, v]) => ({ k, on: v.on, latched: v.latched })); },
-    jar: (i) => { const b = jarBox(geo(), i); return { x: b.X, y: b.y - b.h / 2 }; },
+    jar: (i) => { const b = jarBox(geo(), i); return { x: b.X, y: b.cy }; },
     at: (i) => { const q = flaskGeo(geo(), i); return { x: q.p.x, y: (q.yTop + q.yBot) / 2, neckY: q.neckTop + 4 }; },
     knob: (k) => { const q = knobAt(geo(), k); return { x: q.x, y: q.y }; },
     jug: () => { const b = jugBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
-    furnace: () => { const b = lampBox(geo()); return { x: b.x, y: b.y - b.h / 2 }; },
+    furnace: () => { const b = lampBox(geo()); return { x: b.x, y: b.y - 14 }; },
     tubeAt: (s, d) => { const t = tubes.find((q) => q.s === s && q.d === d), G = geo(); if (!t) return null; const p = t.pts.find((q, k) => k > 3 && !hitFlask(G, q[0], q[1])) || t.pts[8]; return { x: p[0], y: p[1] }; },   // точка трубки не над колбой
   };
 })();
