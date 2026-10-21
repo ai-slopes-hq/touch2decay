@@ -45,7 +45,7 @@
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const pre = g(1), out = g(1.4), hallSend = g(0), h = T.hall();
+    const pre = g(1), out = g(1.8), hallSend = g(0), h = T.hall();
     pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
     bus = { pre, out, hallSend, hall: h, input, live: false };
     const K = 6, n = 2048, c = new Float32Array(n);      // складки: синус от входа × K — чем громче вход, тем больше перегибов
@@ -71,26 +71,39 @@
   }
   const sunHeight = (step) => Math.sin((step / SUN_STEPS) * TAU);   // −1 — полночь, +1 — полдень
   // удар: FM-пара → складки → low pass gate (срез и громкость по одной огибающей, как вактрол)
-  function strike(gi, t, step) {
+  // вактрол: быстрый спад и долгий тёмный хвост; срез гаснет медленнее громкости — «бонг», а не просто тише
+  function vactrol(tau, M = 160) {
+    const D = Math.min(6, tau * 14), e = new Float32Array(M);
+    for (let k = 0; k < M; k++) { const t = (k / (M - 1)) * D, w = k > M * 0.85 ? (M - 1 - k) / (M * 0.15) : 1; e[k] = (0.72 * Math.exp(-t / tau) + 0.28 * Math.exp(-t / (tau * 4))) * w; }
+    return { e, D };
+  }
+  const PAN = [-0.45, 0.45, -0.25, 0.25];
+  // удар: FM-пара → складки → low pass gate (срез, громкость и индекс FM — по одной нелинейной огибающей вактрола)
+  function strike(gi, t, step, vel = 0.85) {
     const g = gears[gi], ctx = actx, f0 = hzOf(g);
     let fold = clamp(g.fold + fx.sol * 0.6 * sunHeight(step)), f = f0;
-    if (fx.fortuna > 0) {                                  // fortuna: пропуск, лишняя складка, прыжок на октаву
+    if (fx.fortuna > 0) {                                  // fortuna: пропуск, лишняя складка, прыжок на октаву, разная сила
       if (Math.random() < fx.fortuna * 0.35) return;
       fold = clamp(fold + (Math.random() - 0.5) * fx.fortuna);
       if (Math.random() < fx.fortuna * 0.2) f *= Math.random() < 0.5 ? 2 : 0.5;
+      vel = clamp(vel * (1 - fx.fortuna * 0.4 * Math.random()), 0.2, 1);
     }
-    const car = ctx.createOscillator(), mod = ctx.createOscillator(), mg = ctx.createGain(), drive = ctx.createGain(), sh = ctx.createWaveShaper(), lp = ctx.createBiquadFilter(), vca = ctx.createGain();
-    car.frequency.value = f; mod.frequency.value = f * g.ratio; mg.gain.value = g.index * f * 3;
+    const car = ctx.createOscillator(), mod = ctx.createOscillator(), mg = ctx.createGain(), drive = ctx.createGain(), sh = ctx.createWaveShaper(), lp = ctx.createBiquadFilter(), vca = ctx.createGain(), pan = ctx.createStereoPanner();
+    car.frequency.value = f; mod.frequency.value = f * g.ratio; mod.type = 'triangle';
     mod.connect(mg).connect(car.frequency);
     drive.gain.value = (1 + fold * 5) / 6; sh.curve = foldCurve; sh.oversample = '2x';
-    lp.type = 'lowpass'; lp.Q.value = 0.9;
-    const dec = 0.06 + (g.decay * 0.7 + fx.decay * 0.3) ** 1.6 * 1.6, tau = dec / 3, end = t + 0.004 + dec * 1.6, peak = 0.32 * g.level;
-    lp.frequency.setValueAtTime(9000, t); lp.frequency.setTargetAtTime(140, t + 0.004, tau * 0.8);
-    vca.gain.setValueAtTime(0, t); vca.gain.linearRampToValueAtTime(peak, t + 0.004); vca.gain.setTargetAtTime(0, t + 0.004, tau);
-    vca.gain.setValueAtTime(peak * Math.exp(-(dec * 1.6) / tau) + 0.0001, end - 0.02); vca.gain.linearRampToValueAtTime(0, end);   // до тишины раньше стопа
-    car.connect(drive).connect(sh).connect(lp).connect(vca).connect(bus.pre);
+    lp.type = 'lowpass'; lp.Q.value = 1.6; pan.pan.value = PAN[gi];
+    const dec = 0.04 + (g.decay * 0.7 + fx.decay * 0.3) ** 1.7 * 1.3, tau = dec / 3, { e, D } = vactrol(tau), A = 0.0025, peak = 0.34 * g.level * (0.55 + 0.45 * vel);
+    const fmax = 1800 + 12000 * vel ** 1.5, fmin = 70, M = e.length, cut = new Float32Array(M), amp = new Float32Array(M), idx = new Float32Array(M), ix = g.index * f * 3;
+    for (let k = 0; k < M; k++) { const x = e[k]; cut[k] = fmin * (fmax / fmin) ** (x ** 0.7); amp[k] = peak * x ** 1.5; idx[k] = ix * (0.25 + 0.75 * x); }
+    amp[M - 1] = 0;
+    lp.frequency.setValueAtTime(fmax, t); lp.frequency.setValueCurveAtTime(cut, t + A, D);
+    vca.gain.setValueAtTime(0, t); vca.gain.linearRampToValueAtTime(peak, t + A); vca.gain.setValueCurveAtTime(amp, t + A, D);
+    mg.gain.setValueAtTime(ix, t); mg.gain.setValueCurveAtTime(idx, t + A, D);
+    const end = t + A + D;
+    car.connect(drive).connect(sh).connect(lp).connect(vca).connect(pan).connect(bus.pre);
     car.start(t); mod.start(t); car.stop(end + 0.02); mod.stop(end + 0.02);
-    car.onended = () => { for (const n of [car, mod, mg, drive, sh, lp, vca]) n.disconnect(); };
+    car.onended = () => { for (const n of [car, mod, mg, drive, sh, lp, vca, pan]) n.disconnect(); };
     setTimeout(() => { g.hit = performance.now(); }, Math.max(0, (t - ctx.currentTime) * 1000));
     lastSound = performance.now(); setLive(true);
   }
@@ -100,7 +113,7 @@
     if (!seq.next) seq.next = now + 0.05;
     while (seq.next < ahead) {
       if (seq.next > now + 0.003) {                       // опоздавший удар пропускаем — задним числом щёлкает
-        gears.forEach((g, i) => { if (g.pins.has(seq.step % g.teeth)) strike(i, seq.next, seq.step); });
+        gears.forEach((g, i) => { const j = seq.step % g.teeth; if (g.pins.has(j)) strike(i, seq.next, seq.step, j === Math.min(...g.pins) ? 1 : 0.78); });   // первый штифт оборота — акцент
         if (fx.fortuna > 0 && Math.random() < fx.fortuna * 0.25) setTimeout(() => { moonA = Math.random(); moonHit = performance.now(); }, Math.max(0, (seq.next - now) * 1000));
       }
       lastSteps.push([seq.next, seq.step]); if (lastSteps.length > 16) lastSteps.shift();
