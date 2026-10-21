@@ -30,7 +30,8 @@
   const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
 
   // ---------- состояние ----------
-  const fx = { shimmer: 0.35, gloria: 0.2, aether: 0.5, vibrato: 0.4 };
+  const fx = { shimmer: 0.35, gloria: 0.2, aether: 0.5, vibrato: 0.4, orbits: 0.35 };
+  let orbitT = 0, openness = 0, driftAt = 0, flashes = [];   // планеты на сферах (полиритм), раскрытие розы, вспышки над ангелами
   const angels = [];                                      // { k, v (0..5, по кругу), pinned, singers, detune, vib, breath, reg, n: узлы, lvl }
   let glitter = [];                                       // вспышки зёрен на розе: { t, a, r }
   const tonic = () => 110 * 2 ** ((T.scaleOn ? T.scaleRoot : 0) / 12);   // тоника лада во второй октаве (A2 = 110)
@@ -38,6 +39,9 @@
   const hzOf = (a) => tonic() * harm(a.k) * [0.5, 1, 2][a.reg];
   const vowelAt = (v) => { const i = Math.floor(v) % 5, j = (i + 1) % 5, t = v - Math.floor(v); return { i, j, t }; };
   const vowelName = (v) => VOW[Math.round(v) % 5];
+  const vEff = (a) => (a.pinned ? (((a.v + 0.45 * fx.vibrato * Math.sin(performance.now() * 0.00025 * a.dr + a.seed)) % 5) + 5) % 5 : a.v);   // оставленный ангел медленно плывёт по гласным
+  const frac = (x) => x - Math.floor(x);
+  const planetAt = (k) => frac(orbitT * harm(k) + k * 0.13);   // планета сферы: harm(k) оборотов за круг — видимый полиритм
   function formants(v) {                                  // между гласными — плавно: частоты по логарифму, громкость линейно
     const { i, j, t } = vowelAt(v), A = FORM[VOW[i]], B = FORM[VOW[j]];
     return A.map((p, q) => [p[0] * (B[q][0] / p[0]) ** t, p[1] + (B[q][1] - p[1]) * t, p[2] + (B[q][2] - p[2]) * t]);
@@ -143,7 +147,7 @@
       vg.connect(o.detune); o.connect(src); o.start(t); return o;
     });
     const ns = ctx.createBufferSource(), ng = g(a.breath * 0.25); ns.buffer = noiseBuf; ns.loop = true; ns.connect(ng); ns.start(t, Math.random() * 1.5);
-    const fs = formants(a.v).map(([fr, db, bw]) => {
+    const fs = formants(vEff(a)).map(([fr, db, bw]) => {
       const bp = ctx.createBiquadFilter(), fg = g(10 ** ((db * DBK) / 20) * FGK); bp.type = 'bandpass'; bp.frequency.value = fr; bp.Q.value = fr / (bw * BWK);
       src.connect(bp); ng.connect(bp); bp.connect(fg).connect(vca); return { bp, fg };
     });
@@ -173,7 +177,7 @@
     for (const o of n.oscs) o.frequency.setTargetAtTime(f, t, 0.04);
     n.body.frequency.setTargetAtTime(Math.min(2400, f * 5), t, 0.05);
     for (const s of n.sh) s.o.frequency.setTargetAtTime(f * s.m, t, 0.04);
-    formants(a.v).forEach(([fr, db, bw], q) => {
+    formants(vEff(a)).forEach(([fr, db, bw], q) => {
       n.fs[q].bp.frequency.setTargetAtTime(fr, t, 0.05); n.fs[q].bp.Q.setTargetAtTime(fr / (bw * BWK), t, 0.05); n.fs[q].fg.gain.setTargetAtTime(10 ** ((db * DBK) / 20) * FGK, t, 0.05);
     });
     n.vg.gain.setTargetAtTime(vibCents(a), t, 0.1);
@@ -210,6 +214,23 @@
     } else grainAcc = 0;
     for (const a of angels) a.lvl += ((a.n ? 1 : 0) - a.lvl) * (1 - Math.exp(-dt / 0.3));
     if (glitter.length) glitter = glitter.filter((q) => now - q.t < 900);
+    if (flashes.length) flashes = flashes.filter((q) => now - q.t < 1200);
+    const lv = angels.reduce((x, a) => x + a.lvl, 0) / 3 + fx.gloria * 0.3;
+    openness += (clamp(lv) - openness) * (1 - Math.exp(-dt / 1.2));   // роза раскрывается с хором
+    if (fx.vibrato > 0.01 && now - driftAt > 120) { driftAt = now; for (const a of angels) if (a.pinned && a.n) retune(a); }
+    if (fx.orbits > 0.01) {                               // планеты: прошла над оставленным ангелом своей сферы — ангел вспыхивает зёрнами
+      const prev = angels.filter((a) => a.pinned).map((a) => planetAt(a.k));
+      orbitT += dt / (70 / (0.3 + 1.7 * fx.orbits));
+      angels.filter((a) => a.pinned).forEach((a, i) => {
+        const p0 = prev[i], p1 = planetAt(a.k), u = a.v / 5, step = frac(p1 - p0);
+        if (step < 0.5 && frac(u - p0) < step && a.n) chime(a);
+      });
+    }
+  }
+  function chime(a) {
+    const f = hzOf(a);
+    for (let i = 0; i < 6; i++) setTimeout(() => grain(f), i * 45);
+    const G = geo(), p = anglePos(G, a.k, a.v); flashes.push({ t: performance.now(), x: p.x, y: p.y });
   }
 
   // ---------- касания ----------
@@ -221,7 +242,7 @@
     for (const a of angels) if (a.pinned) { const p = anglePos(G, a.k, a.v), d = Math.hypot(x - p.x, y - p.y); if (d < bd) { bd = d; best = a; } }
     return best;
   }
-  function newAngel(k, v) { return { k, v, pinned: false, singers: 4, detune: 0.5, vib: 0.5, breath: 0.25, reg: 1, n: null, lvl: 0 }; }
+  function newAngel(k, v) { return { k, v, pinned: false, singers: 4, detune: 0.5, vib: 0.5, breath: 0.25, reg: 1, n: null, lvl: 0, seed: Math.random() * TAU, dr: 0.7 + Math.random() * 0.6 }; }
   function down(f) {
     const G = geo(), now = performance.now();
     if (Math.hypot(f.x - G.cx, f.y - G.cy) < G.rose) {    // роза — россыпь зёрен
@@ -303,15 +324,6 @@
       x.fillStyle = ink(0.35); const n = 10 + k * 2;
       for (let j = 0; j < n; j++) { const a = (j / n) * TAU + k * 0.3; x.beginPath(); x.arc(G.cx + Math.cos(a) * s.rx, G.cy + Math.sin(a) * s.ry, 0.9, 0, TAU); x.fill(); }
     });
-    for (let t = 0; t < 4; t++) {                          // Небесная роза: ярусы лепестков
-      const [r, n, op] = [[1, 16, 0.5], [0.76, 12, 0.65], [0.53, 9, 0.8], [0.3, 6, 0.9]][t], R = G.rose * r;
-      x.strokeStyle = ink(op);
-      for (let j = 0; j < n; j++) {
-        const a = (j / n) * TAU + t * 0.2, ri = R * 0.62, a1 = a - (Math.PI / n) * 0.95, a2 = a + (Math.PI / n) * 0.95;
-        x.beginPath(); x.moveTo(G.cx + Math.cos(a1) * ri, G.cy + Math.sin(a1) * ri * 1.12);
-        x.quadraticCurveTo(G.cx + Math.cos(a) * (R + 3), G.cy + Math.sin(a) * (R + 3) * 1.12, G.cx + Math.cos(a2) * ri, G.cy + Math.sin(a2) * ri * 1.12); x.stroke();
-      }
-    }
     x.strokeStyle = rgba(GOLD, 1); x.beginPath(); x.arc(G.cx, G.cy, 4.5, 0, TAU); x.stroke();
     x.fillStyle = rgba(GOLD, 1); x.beginPath(); x.arc(G.cx, G.cy, 1.6, 0, TAU); x.fill();
     x.strokeStyle = rgba(GOLD, 0.7); x.beginPath();         // божественный свет — четверть сияния из угла
@@ -344,6 +356,22 @@
       for (let j = 0; j < 18; j++) { const a = (j / 18) * TAU + now * 0.00005; c.moveTo(G.cx + Math.cos(a) * 44, G.cy + Math.sin(a) * 70); c.lineTo(G.cx + Math.cos(a) * 300, G.cy + Math.sin(a) * 480); }
       c.stroke();
     }
+    for (let t = 0; t < 4; t++) {                          // Небесная роза: ярусы лепестков, раскрываются с хором
+      const [r, n, op] = [[1, 16, 0.5], [0.76, 12, 0.65], [0.53, 9, 0.8], [0.3, 6, 0.9]][t], R = G.rose * r * (0.88 + 0.28 * openness), o = openness;
+      c.strokeStyle = T.ink(op); c.lineWidth = 1;
+      for (let j = 0; j < n; j++) {
+        const a = (j / n) * TAU + t * 0.2 + o * 0.15 * (t % 2 ? 1 : -1), ri = R * (0.62 - 0.12 * o), sp = (Math.PI / n) * (0.8 + 0.3 * o), a1 = a - sp, a2 = a + sp;
+        c.beginPath(); c.moveTo(G.cx + Math.cos(a1) * ri, G.cy + Math.sin(a1) * ri * 1.12);
+        c.quadraticCurveTo(G.cx + Math.cos(a) * (R + 3), G.cy + Math.sin(a) * (R + 3) * 1.12, G.cx + Math.cos(a2) * ri, G.cy + Math.sin(a2) * ri * 1.12); c.stroke();
+      }
+    }
+    if (fx.orbits > 0.01) G.sph.forEach((sp, k) => {      // планеты на сферах
+      const u = planetAt(k) * TAU, x = G.cx + Math.sin(u) * sp.rx, y = G.cy - Math.cos(u) * sp.ry, al = 0.35 + 0.5 * Math.min(1, fx.orbits * 2);
+      c.fillStyle = BGC; c.beginPath(); c.arc(x, y, 4, 0, TAU); c.fill();
+      c.strokeStyle = rgba(GOLD, al); c.lineWidth = 1; c.beginPath(); c.arc(x, y, 4, 0, TAU); c.stroke();
+      c.fillStyle = rgba(GOLD, al); c.beginPath(); c.arc(x, y, 1.6, 0, TAU); c.fill();
+    });
+    for (const q of flashes) { const k = 1 - (performance.now() - q.t) / 1200; c.strokeStyle = rgba(LIGHT, 0.6 * k); c.lineWidth = 1; c.beginPath(); for (let j = 0; j < 8; j++) { const a = (j / 8) * TAU, r0 = 14, r1 = 14 + 14 * (1 - k); c.moveTo(q.x + Math.cos(a) * r0, q.y - 8 + Math.sin(a) * r0); c.lineTo(q.x + Math.cos(a) * r1, q.y - 8 + Math.sin(a) * r1); } c.stroke(); }
     for (const q of glitter) {                            // зёрна Gloria вспыхивают на розе
       const k = 1 - (now - q.t) / 900, r = G.rose * (0.3 + q.r * 0.9);
       c.fillStyle = rgba(GOLD, 0.9 * k); c.beginPath(); c.arc(G.cx + Math.cos(q.a) * r, G.cy + Math.sin(q.a) * r * 1.12, 1.2 + k, 0, TAU); c.fill();
@@ -353,7 +381,7 @@
       const p = anglePos(G, a.k, a.v), h = held.has(a);
       c.save(); c.translate(p.x, p.y); c.scale(1.35, 1.35);   // ангел крупнее штриха сфер — под палец и на глаз
       angel(c, 0, 0, a.lvl, h);
-      halo(c, 0, 0, a.v, a.pinned, 0.5 + 0.5 * a.lvl);
+      halo(c, 0, 0, vEff(a), a.pinned, 0.5 + 0.5 * a.lvl);
       c.restore();
     }
     for (const a of held) {                               // подписи — только пока трогаешь
@@ -373,8 +401,9 @@
       { key: 'gloria', label: 'gloria', ang: deg(170) },
       { key: 'aether', label: 'aether', ang: deg(140) },
       { key: 'vibrato', label: 'vibrato', ang: deg(110) },
+      { key: 'orbits', label: 'orbits', ang: deg(80) },
     ],
-    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
+    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => (k === 'orbits' && fx.orbits <= 0.01 ? 'off' : `${Math.round(fx[k] * 100)}%`),
     arc: () => fx.aether, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function clearAll() { for (const a of angels.splice(0)) voiceOff(a, 0.4); }
@@ -408,6 +437,6 @@
   T.registerWorld(6, paradisus);
   window.t2d.par = {
     angels, fx, geo, setFx: (k, v) => fxw.set(k, v), get live() { return !!(bus && bus.live); },
-    at: (k, v) => anglePos(geo(), k, v), hz: (a) => hzOf(a), dice: () => dice(), get glitter() { return glitter.length; },
+    at: (k, v) => anglePos(geo(), k, v), hz: (a) => hzOf(a), dice: () => dice(), get glitter() { return glitter.length; }, get flashes() { return flashes.length; }, get open() { return openness; }, planet: planetAt, vEff, orbit: (x) => { orbitT = x; },
   };
 })();

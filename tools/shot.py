@@ -1024,6 +1024,18 @@ async def sc_paradisus(p):                         # Paradisus: ангел по�
     await p.pg.wait_for_timeout(300); await p.hold(a['x'], a['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold a staying angel — its sheet'
     await p.shot('paradisus-sheet')
+    await p.js("()=>{const a=t2d.par.angels.find(a=>a.pinned); t2d.par.setFx('orbits', 1); t2d.par.orbit((a.v/5 - 0.004 - a.k*0.13 + 2)/(9-a.k));}")
+    await p.pg.wait_for_timeout(500)
+    assert await p.js('()=>t2d.par.flashes') > 0, 'a planet passes the staying angel — it chimes'
+    await p.js("()=>t2d.par.setFx('vibrato', 1)")
+    vs = []
+    for _ in range(4): vs.append(await p.js('()=>t2d.par.vEff(t2d.par.angels.find(a=>a.pinned))')); await p.pg.wait_for_timeout(900)
+    v0, v1 = min(vs), max(vs)
+    await p.js("()=>t2d.par.setFx('vibrato', 0.4)")
+    assert abs(v1 - v0) > 0.01, f'a staying angel drifts through vowels: {v0} {v1}'
+    assert await p.js('()=>t2d.par.open') > 0.2, 'the rose opens with the choir'
+    await p.shot('paradisus-orbits')
+    await p.js("()=>t2d.par.setFx('orbits', 0)"); g0 = await p.js('()=>t2d.par.glitter'); await p.pg.wait_for_timeout(100)
     await p.tap(200, 120); await p.pg.wait_for_timeout(150)
     g = await p.js('()=>t2d.par.geo()'); await p.tap(g['cx'], g['cy']); await p.pg.wait_for_timeout(250)
     assert await p.js('()=>t2d.par.glitter') > 3, 'tap the rose — grains glitter'
