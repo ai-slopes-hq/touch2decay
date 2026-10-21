@@ -1403,10 +1403,12 @@ async def sc_portus(p):                            # Portus: остров на �
     await p.shot('portus-empty')
     a = await p.js('()=>t2d.portus.col(2, 0)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(300)
     b = await p.js('()=>t2d.portus.col(10, 7)'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(300)
-    st = await p.js('()=>t2d.portus.isles.map(i=>[i.step, i.p])'); assert st == [[2, 0], [10, 7]], f'tap the sea on a ray — an island on that step and depth: {st}'
-    h0, h1 = await p.js('()=>t2d.portus.isles.map(i=>t2d.portus.hz(i))'); print('  roots:', round(h0, 1), round(h1, 1)); assert h0 < 75 and h1 > h0 * 1.4, f'low dub roots, further out — higher: {h0} {h1}'
+    st = await p.js('()=>t2d.portus.isles.map(i=>[i.step, i.p])'); assert st == [[2, 0], [10, 7]], f'tap the fairway — a boat on that step, across — its note: {st}'
+    h0, h1 = await p.js('()=>t2d.portus.isles.map(i=>t2d.portus.hz(i))'); print('  roots:', round(h0, 1), round(h1, 1)); assert abs(h0 - 110) < 1 and h1 > h0 * 1.4, f'A2 at octave 0, across — higher: {h0} {h1}'
+    await p.js('()=>{t2d.portus.pharos.oct = -2}'); h2 = await p.js('()=>t2d.portus.hz(t2d.portus.isles[0])'); assert abs(h2 - 27.5) < 0.5, f'lighthouse octave −2: {h2}'
+    await p.js('()=>{t2d.portus.pharos.oct = -1}')
     L = await p.js('()=>t2d.portus.lantern(6)'); await p.tap(L['x'], L['y']); await p.pg.wait_for_timeout(100)
-    assert 6 in await p.js('()=>t2d.portus.steps'), 'tap a lantern — an island on its ray'
+    assert 6 in await p.js('()=>t2d.portus.steps'), 'tap a marker lamp — a boat on that step'
     ph = await p.js('()=>t2d.portus.geo().ph'); await p.tap(ph['x'], ph['y'] - 40); await p.pg.wait_for_timeout(2500)
     assert await p.js('()=>t2d.portus.seq.playing'), 'tap the lighthouse — it plays'
     lv = await p.js('()=>T2D.level'); print('  portus level, playing:', round(lv, 3)); assert lv > 0.02, f'chords are heard: {lv}'
@@ -1416,7 +1418,7 @@ async def sc_portus(p):                            # Portus: остров на �
     c1 = await p.js('()=>t2d.portus.luna.cut'); assert c1 > c0 + 0.15, f'drag the moon up — the filter opens: {c0} -> {c1}'
     await p.up()
     B = await p.js('()=>t2d.portus.buoyAt()'); f0 = await p.js('()=>t2d.portus.fb()')
-    pid = await p.hold(B['x'], B['y'], ms=60); s2 = await p.js('()=>t2d.portus.col(5, 10)'); await p.drag(pid, B['x'], B['y'], s2['x'], s2['y'], steps=8); await p.up()
+    pid = await p.hold(B['x'], B['y'], ms=60); s2 = await p.js('()=>t2d.portus.col(14, 2)'); await p.drag(pid, B['x'], B['y'], s2['x'], s2['y'], steps=8); await p.up()
     f1 = await p.js('()=>t2d.portus.fb()'); assert f1 > f0, f'buoy out to sea — longer echo: {f0} -> {f1}'
     await p.pg.wait_for_timeout(1500); await p.shot('portus-echo')
     S = await p.js('()=>t2d.portus.sky()'); await p.tap(S['x'], S['y']); await p.pg.wait_for_timeout(200)
