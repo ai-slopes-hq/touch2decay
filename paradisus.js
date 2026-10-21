@@ -59,14 +59,60 @@
 
   // ---------- звук ----------
   let actx = null, bus = null, lastSound = 0, ascPh = 0, grainAcc = 0, noiseBuf = null;
+  // собор: свёртка с длинным отзвуком, который считается здесь же (шум со спадом, чем дальше — тем темнее; каналы — разный шум).
+  // Свёртку браузер считает сам, быстро; отзвук пересчитывается только при смене aether
+  function cathedralIR(ctx, t60) {
+    const sr = ctx.sampleRate, len = Math.round(sr * (t60 + 0.3)), buf = ctx.createBuffer(2, len, sr), pre = Math.round(sr * 0.022), fade = sr * 0.03;
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      let y = 0, e = 0;
+      for (let i = pre; i < len; i++) {
+        const t = (i - pre) / sr, fc = 9000 * Math.pow(1200 / 9000, Math.min(1, t / t60)), a = Math.exp((-2 * Math.PI * fc) / sr);
+        y = (1 - a) * (Math.random() * 2 - 1) + a * y;
+        const v = y * Math.exp((-6.9 * t) / t60) * Math.min(1, (i - pre) / fade);
+        d[i] = v; e += v * v;
+      }
+      const k = 1 / Math.sqrt(e || 1);                    // энергия отзвука — единица: шум проходит с прежней громкостью
+      for (let i = 0; i < len; i++) d[i] *= k;
+    }
+    return buf;
+  }
+  // сдвиг на октаву вверх: две линии задержки, время бежит вниз пилой (окно 60 мс), окна вполнакладку — косинус², сумма — единица
+  function octaver(ctx, inp, out) {
+    const w = 0.06, t0 = ctx.currentTime + 0.05, win = new Float32Array(256);
+    for (let i = 0; i < 256; i++) { const x = (i / 255) * 2 - 1; win[i] = Math.cos((Math.PI * x) / 2) ** 2; }
+    const n = Math.round(w * ctx.sampleRate), ramp = ctx.createBuffer(1, n, ctx.sampleRate), rd = ramp.getChannelData(0);
+    for (let i = 0; i < n; i++) rd[i] = (i / n) * 2 - 1;   // точная пила из буфера: у осциллятора-пилы склон не ровный (Гиббс) — октава уезжала на 1.84
+    return [0, w / 2].map((off) => {
+      const saw = ctx.createBufferSource(), dt = ctx.createGain(), dl = ctx.createDelay(0.2), sh = ctx.createWaveShaper(), tg = ctx.createGain();
+      saw.buffer = ramp; saw.loop = true;
+      dl.delayTime.value = w / 2; dt.gain.value = -w / 2; tg.gain.value = 0; sh.curve = win;
+      saw.connect(dt).connect(dl.delayTime); saw.connect(sh).connect(tg.gain);
+      inp.connect(dl).connect(tg).connect(out);
+      saw.start(t0, off);
+      return { saw, dl, tg };
+    });
+  }
+  let irAt = 0, irT60 = 0, irTimer = 0;
+  function setIR(now = false) {                           // aether — длина отзвука; пересчёт не чаще раза в 250 мс
+    if (!bus) return;
+    const t60 = 2.5 + fx.aether * 7;
+    if (Math.abs(t60 - irT60) < 0.3 && bus.conv.buffer) return;
+    clearTimeout(irTimer);
+    const go = () => { irT60 = t60; irAt = performance.now(); bus.conv.buffer = cathedralIR(actx, t60); };
+    if (now || performance.now() - irAt > 250) go(); else irTimer = setTimeout(go, 250);
+  }
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const inp = g(1), out = g(2.2), hallSend = g(0), shim = g(0), h = T.hall();
-    inp.connect(out); inp.connect(hallSend); hallSend.connect(h.input); shim.connect(h.input); h.out.connect(g(1)).connect(out);
+    const inp = g(1), out = g(2.2), send = g(0), revIn = g(1), conv = ctx.createConvolver(), wet = g(1), fb = g(0), hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), oct = g(1);
+    conv.normalize = false; hp.type = 'highpass'; hp.frequency.value = 160; lp.type = 'lowpass'; lp.frequency.value = 7000;
+    inp.connect(out); inp.connect(send).connect(hp).connect(revIn).connect(conv).connect(wet).connect(out);
+    conv.connect(lp); octaver(ctx, lp, oct); oct.connect(fb).connect(revIn);   // шиммер: хвост собора на октаву вверх — снова в собор
     const n = ctx.sampleRate * 2; noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
-    bus = { inp, out, hallSend, shim, hall: h, input, live: false, asc: null };
+    bus = { inp, out, send, conv, wet, fb, input, live: false, asc: null };
+    irT60 = 0; setIR(true);
     for (const a of angels) { a.n = null; if (a.pinned) voiceOn(a); }
     applyFx();
   }
@@ -97,7 +143,7 @@
       const bp = ctx.createBiquadFilter(), fg = g(10 ** (db / 20) * 2.2); bp.type = 'bandpass'; bp.frequency.value = fr; bp.Q.value = fr / bw;
       src.connect(bp); ng.connect(bp); bp.connect(fg).connect(vca); return { bp, fg };
     });
-    const sh = [2, 4].map((m, i) => { const o = ctx.createOscillator(), og = g(0.05 / (i + 1)); o.frequency.value = f * m; vg.connect(o.detune); o.connect(og).connect(bus.shim); o.start(t); return { o, og, m }; });   // шиммер — октавы вверх только в зал
+    const sh = [];
     vib.start(t);
     vca.connect(bus.inp);
     vca.gain.setTargetAtTime(0.5, t, 0.25);              // хор вступает мягко
@@ -129,9 +175,10 @@
   function applyFx() {
     if (!bus) return;
     const t = actx.currentTime;
-    bus.hallSend.gain.setTargetAtTime(0.3 + fx.aether * 0.6, t, 0.05);
-    bus.shim.gain.setTargetAtTime(fx.shimmer * 1.2, t, 0.05);
-    for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.aether * 6)), t, 0.05);
+    bus.send.gain.setTargetAtTime(0.35 + fx.aether * 0.5, t, 0.05);
+    bus.wet.gain.setTargetAtTime(0.9 + fx.aether * 0.5, t, 0.05);
+    bus.fb.gain.setTargetAtTime(fx.shimmer * 0.62, t, 0.08);   // доля хвоста, ушедшего на октаву вверх обратно в собор
+    setIR();
     for (const a of angels) retune(a);
     ascOn(fx.ascensio > 0.01);
   }
@@ -378,6 +425,6 @@
   T.registerWorld(6, paradisus);
   window.t2d.par = {
     angels, fx, geo, setFx: (k, v) => fxw.set(k, v), get live() { return !!(bus && bus.live); },
-    at: (k, v) => anglePos(geo(), k, v), hz: (a) => hzOf(a), get glitter() { return glitter.length; },
+    at: (k, v) => anglePos(geo(), k, v), hz: (a) => hzOf(a), dice: () => dice(), get glitter() { return glitter.length; },
   };
 })();
