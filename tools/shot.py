@@ -1452,6 +1452,49 @@ async def sc_portus(p):                            # Portus: остров на �
     assert await p.js('()=>t2d.view') == 'map', 'tap the moon — map'
 
 
+async def sc_tonitrus(p):                         # Tonitrus: тап по земле — молния и гром; рисуешь молнию; туча — дождь; колокола; «~» — сами; плашки; кубик; корзина; отмена
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(14)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 14], 'the card above Horologium opens Tonitrus'
+    await p.shot('tonitrus-empty')
+    r = await p.js('()=>[t2d.tonitrus.rumble(0.15), t2d.tonitrus.rumble(4)]'); print('  rumble near/far:', r)
+    assert r[0]['lead'] < r[1]['lead'] and r[0]['ms'] < 400, f'far thunder comes later; rendering is quick: {r}'
+    a = await p.js('()=>t2d.tonitrus.landAt(0.3, -0.2)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(120)
+    assert await p.js('()=>t2d.tonitrus.strikes') == 1, 'tap the steppe — a strike'
+    await p.shot('tonitrus-bolt'); await p.pg.wait_for_timeout(1500)
+    lv = await p.js('()=>T2D.level'); print('  thunder level:', round(lv, 3)); assert lv > 0.01, f'thunder is heard: {lv}'
+    s0 = await p.js('()=>t2d.tonitrus.skyAt(0.9, 0.95)'); s1 = await p.js('()=>t2d.tonitrus.skyAt(0.35, 0.75)')
+    pid = await p.hold(s0['x'], s0['y'], ms=60); await p.drag(pid, s0['x'], s0['y'], s1['x'], s1['y'], steps=10); await p.up(); await p.pg.wait_for_timeout(60)
+    assert await p.js('()=>t2d.tonitrus.strikes') == 2, 'draw across the sky — your own bolt'
+    await p.shot('tonitrus-drawn')
+    c = await p.js('()=>t2d.tonitrus.cloudAt()'); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(1500)
+    assert await p.js('()=>t2d.tonitrus.rain.on'), 'tap the cloud — rain'
+    print('  rain:', round(await p.js('()=>t2d.tonitrus.rainLv'), 3)); assert await p.js('()=>t2d.tonitrus.rainLv') > 0.05, 'the rain is falling (worklet)'
+    await p.shot('tonitrus-rain')
+    b = await p.js('()=>t2d.tonitrus.bellAt(1)'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(300)
+    bl = await p.js('()=>t2d.tonitrus.lv[1]'); print('  bell:', round(bl, 4)); assert bl > 0.001, f'tap a bell — it rings: {bl}'
+    for k in ['bolt', 'bells']:
+        A = await p.js(f"()=>t2d.tonitrus.autoAt('{k}')"); await p.tap(A['x'], A['y']); await p.pg.wait_for_timeout(100)
+        assert await p.js(f"()=>t2d.tonitrus.auto.{k}"), f'tap ~ — {k} by itself'
+    await p.pg.wait_for_timeout(2500); await p.shot('tonitrus-auto')
+    c = await p.js('()=>t2d.tonitrus.cloudAt()'); await p.hold(c['x'], c['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold the cloud — its sheet'
+    await p.shot('tonitrus-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    s = await p.js('()=>t2d.tonitrus.skyAt(0.85, -0.6)'); await p.hold(s['x'], s['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold the sky — fulmen sheet'
+    await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(3000)
+    assert await p.js('()=>t2d.tonitrus.auto.bolt && t2d.tonitrus.rain.on'), 'dice — a storm'
+    await p.shot('tonitrus')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+    assert not await p.js('()=>t2d.tonitrus.rain.on || t2d.tonitrus.auto.bolt'), 'trash — calm'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.tonitrus.rain.on'), 'undo brings the storm back'
+    B = await p.js('()=>t2d.backPos()'); await p.tap(B['x'], B['y']); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'back arrow — map'
+    await p.shot('tonitrus-map')
+
+
 async def sc_nav(p):                               # стрелка у названия — карта; свайп от левого края — карта; на карте звучащий мир в лучах; concordia → микшер: фейдер, mute, мастер
     await p.js('()=>t2d.go(10)'); await p.pg.wait_for_timeout(300)
     B = await p.js('()=>t2d.backPos()'); await p.tap(B['x'], B['y']); await p.pg.wait_for_timeout(900)
@@ -1488,7 +1531,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'tonitrus': sc_tonitrus, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

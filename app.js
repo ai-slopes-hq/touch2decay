@@ -3467,7 +3467,7 @@
   // карта — поле карт 6 × 6, как расклад Таро: открытые миры — лицом вверх в середине (наверху ад и рай, под ними Cymatica и
   // Tenebrae, под эклиптикой Laboratorium и Natura, под лабораторией — Monochordum), остальные — рубашкой вверх, пока не открыты.
   // Между третьим и четвёртым рядом — эклиптика с солнцем (concordia). Клетка — [столбец, ряд] от левого верхнего угла
-  const CELL = { 6: [1, 0], 5: [2, 0], 2: [1, 1], 1: [2, 1], 3: [1, 2], 4: [2, 2], 7: [1, 3], 8: [2, 3], 9: [0, 2], 10: [3, 1], 11: [3, 2], 12: [0, 3], 13: [3, 3] };   // поле 4 × 4: 13 миров, три рубашки
+  const CELL = { 6: [1, 0], 5: [2, 0], 2: [1, 1], 1: [2, 1], 3: [1, 2], 4: [2, 2], 7: [1, 3], 8: [2, 3], 9: [0, 2], 10: [3, 1], 11: [3, 2], 12: [0, 3], 13: [3, 3], 14: [0, 1] };   // поле 4 × 4: 14 миров, две рубашки
   const GRID = 4, ECL = 40, HALF = GRID / 2;          // эклиптика — между верхней и нижней половиной
   function field() {
     const top = scopeY + 40, bot = H - safeBot - 10, gap = clamp(W * 0.014, 4, 9);
@@ -3541,7 +3541,7 @@
   function worldImage(w) { return ENTER.has(w) ? snaps[w] : artFor(w); }
   // эмблемы звука на карте: гравюрный знак генератора каждого мира и латинская строка; рисуются один раз на размер экрана
   const emblems = {};
-  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'plicatio · horae', 'pulsar · stellae', 'chaos · tria corpora', 'terrain · montes', 'concentus · echo'];
+  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'plicatio · horae', 'pulsar · stellae', 'chaos · tria corpora', 'terrain · montes', 'concentus · echo', 'fulmen · tonitrus'];
   const fontKey = () => (document.fonts ? document.fonts.status : '');
   function emblemFor(w) {                                 // лицо карты мира: подложка мира, двойная рамка, номер сверху, медальон со знаком звука, имя снизу
     const F = field(), pw = F.cw, ph = F.ch, key = `${pw}x${ph}|${DPR}|${fontKey()}`;
@@ -3672,6 +3672,17 @@
       x.fillStyle = 'rgba(238,198,126,0.9)'; x.fillRect(tx - R * 0.07, ty - R * 1.08, R * 0.14, R * 0.16);
       x.fillStyle = 'rgba(238,198,126,0.12)'; x.beginPath(); x.moveTo(tx, ty - R); x.lineTo(cx - R * 1.1, hy - R * 0.1); x.lineTo(cx - R * 1.1, hy + R * 0.25); x.closePath(); x.fill();
       x.strokeStyle = ink2(0.75); for (let k = 1; k <= 3; k++) { x.globalAlpha = 1 - k * 0.25; x.beginPath(); x.ellipse(cx - R * 0.25, cy + R * 0.55, R * 0.22 * k, R * 0.07 * k, 0, 0, T2); x.stroke(); } x.globalAlpha = 1;
+    }
+    if (w === 14) {                                         // степь в грозу: туча, молния до земли, косой дождь, звонница
+      const hy = cy + R * 0.45;
+      x.strokeStyle = ink2(0.6); x.beginPath(); x.moveTo(cx - R * 1.15, hy); x.lineTo(cx + R * 1.15, hy); x.stroke();
+      x.fillStyle = (th && th.bg) || BG0; x.strokeStyle = ink2(0.9); x.beginPath(); x.moveTo(cx - R * 0.9, cy - R * 0.35);
+      x.bezierCurveTo(cx - R * 0.95, cy - R * 0.85, cx - R * 0.45, cy - R * 0.95, cx - R * 0.3, cy - R * 0.7); x.bezierCurveTo(cx - R * 0.15, cy - R * 1.1, cx + R * 0.45, cy - R * 1.05, cx + R * 0.45, cy - R * 0.7);
+      x.bezierCurveTo(cx + R * 0.85, cy - R * 0.85, cx + R * 1.0, cy - R * 0.4, cx + R * 0.8, cy - R * 0.35); x.closePath(); x.fill(); x.stroke();
+      x.strokeStyle = ink2(0.45); x.beginPath(); for (let k = 0; k < 7; k++) { const px = cx - R * 0.7 + k * R * 0.22; x.moveTo(px, cy - R * 0.25); x.lineTo(px - R * 0.12, cy + R * 0.2); } x.stroke();
+      x.strokeStyle = 'rgba(224,228,255,0.95)'; x.lineWidth = 1.6; x.beginPath(); x.moveTo(cx + R * 0.1, cy - R * 0.38); x.lineTo(cx - R * 0.08, cy - R * 0.02); x.lineTo(cx + R * 0.12, cy + R * 0.02); x.lineTo(cx - R * 0.05, hy); x.stroke(); x.lineWidth = 1;
+      const bx = cx + R * 0.7, by = hy - R * 0.5; x.strokeStyle = ink2(0.9); x.beginPath(); x.moveTo(bx - R * 0.25, hy); x.lineTo(bx - R * 0.25, by); x.lineTo(bx + R * 0.25, by); x.lineTo(bx + R * 0.25, hy); x.stroke();
+      x.beginPath(); x.moveTo(bx - R * 0.07, by + R * 0.04); x.lineTo(bx - R * 0.12, by + R * 0.24); x.lineTo(bx + R * 0.12, by + R * 0.24); x.lineTo(bx + R * 0.07, by + R * 0.04); x.closePath(); x.stroke();
     }
     // гравированный медальон: двойной круг, засечки по сторонам света, ромбики на диагоналях
     const M = M0, my = mc;
