@@ -3,7 +3,8 @@
 // поток пульсаретов. Высота над горизонтом — частота пульсаций: у горизонта звезда мигает ритмом, выше мерцание сливается в тон
 // (граница — пунктир limen, около 20 Гц); вбок по своду — формант (окраска). Под звездой — луч: его форма — форма пульсарета.
 // Тап по звезде — закрыть дыру; тянешь — двигаешь; держишь — плашка (cycles, window, mask, level). FX: scintilla (пульсы
-// сбиваются и пропадают), drift (форманты плывут), spread (стерео), hall. Солнце — под землёй в левом нижнем углу: тап — карта.
+// сбиваются и пропадают), drift (форманты плывут), crepitus (треск пыли — пылинки вспыхивают на своде), fulgur (вспышки у
+// края слуха — от звезды вверх бьёт прямой луч), spread (стерео), hall. Солнце — под землёй в левом нижнем углу: тап — карта.
 (() => {
   'use strict';
   const T = window.T2D;
@@ -17,7 +18,8 @@
 
   // ---------- состояние ----------
   const stars = [];                                       // {slot, h (0 горизонт … 1 зенит), u (−1 … 1 по своду), cyc, win, mask, lvl, flash}
-  const fx = { scintilla: 0.1, drift: 0.2, cometa: 0, spread: 0.6, hall: 0.45 };
+  const fx = { scintilla: 0.1, drift: 0.2, cometa: 0, crepitus: 0, fulgur: 0, spread: 0.6, hall: 0.45 };
+  const specks = [], bolts = []; let specksN = 0, boltsN = 0;                          // пылинки треска {x, y, a, t}, лучи вспышек {slot, t}
   let comet = null, cometNext = 0, comets = 0;          // комета — рампа: пролетает по своду и разгоняет пульсацию звёзд, мимо которых летит
   let counts = new Array(SMAX).fill(0), gains = new Array(SMAX).fill(0);
   function fpOf(s) {                                      // высота — частота пульсаций; в области тона с ладом — по ступеням
@@ -68,6 +70,13 @@
         if (d.t !== 'p') return;
         for (const s of stars) if (d.c[s.slot] !== counts[s.slot]) s.flash = performance.now();   // прозвучал пульсарет — звезда вспыхнула
         counts = d.c; gains = d.g;
+        const now = performance.now(), G = geo();
+        for (const [pan, a] of d.k || []) {                  // треск — пылинка на своде: вбок — по стерео, высота — любая
+          const h = 0.05 + Math.random() * 0.85; specksN++; specks.push({ ...fromSky(G, { h, u: clamp(pan * 0.9 + (Math.random() - 0.5) * 0.2, -1, 1) }), a: Math.min(1, 0.25 + a * 3), t: now + Math.random() * 30 });
+        }
+        if (specks.length > 60) specks.splice(0, specks.length - 60);
+        for (const i of d.f || []) { boltsN++; bolts.push({ slot: i, t: now }); }   // вспышка — прямой луч от звезды
+        if (bolts.length > 12) bolts.splice(0, bolts.length - 12);
       };
       ready = true;
       applyFx();
@@ -90,7 +99,7 @@
     const t = actx.currentTime;
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.5, t, 0.05);
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 5)), t, 0.05);
-    send({ t: 'fx', jit: fx.scintilla, spread: fx.spread });
+    send({ t: 'fx', jit: fx.scintilla, spread: fx.spread, crep: fx.crepitus, fulg: fx.fulgur });
   }
   function sendStar(s, on = true) {
     send({ t: 'voice', i: s.slot, on, fp: fpOf(s), ff: ffOf(s), cyc: s.cyc, win: s.win, mask: s.mask, lvl: s.lvl * 0.55, pan: s.u * 0.8 });
@@ -224,6 +233,22 @@
     x.strokeStyle = ink(0.08); x.beginPath(); for (let y = hy + 18; y < G.H; y += 5) { x.moveTo(0, y); x.lineTo(G.W, y); } x.stroke();
     return wallC;
   }
+  function drawDust(c, G, now) {                         // пылинки треска гаснут за ~¼ с; лучи вспышек — тонкая прямая до свода, ~0.1 с
+    for (let j = specks.length - 1; j >= 0; j--) {
+      const p = specks[j], k = (now - p.t) / 260;
+      if (k > 1) { specks.splice(j, 1); continue; }
+      if (k < 0) continue;
+      const a = p.a * (1 - k) ** 2; c.fillStyle = ink(0.9 * a); c.fillRect(p.x - 0.5, p.y - 0.5, 1.3, 1.3);
+      if (p.a > 0.6) { c.strokeStyle = ink(0.5 * a); c.lineWidth = 1; c.beginPath(); c.moveTo(p.x - 3, p.y); c.lineTo(p.x + 3, p.y); c.moveTo(p.x, p.y - 3); c.lineTo(p.x, p.y + 3); c.stroke(); }
+    }
+    for (let j = bolts.length - 1; j >= 0; j--) {
+      const b = bolts[j], k = (now - b.t) / 110, s = stars.find((q) => q.slot === b.slot);
+      if (k > 1 || !s) { bolts.splice(j, 1); continue; }
+      const p = fromSky(G, s), top = G.hy - G.RY * Math.sqrt(Math.max(0, 1 - ((p.x - G.cx) / G.RX) ** 2)) + 6;
+      c.strokeStyle = `rgba(255,255,255,${0.75 * (1 - k)})`; c.lineWidth = 1; c.beginPath(); c.moveTo(p.x + 0.5, p.y - 9); c.lineTo(p.x + 0.5, top); c.stroke();
+      c.strokeStyle = ink(0.4 * (1 - k)); c.beginPath(); c.moveTo(p.x - 5, top + 3); c.lineTo(p.x + 6, top + 3); c.stroke();
+    }
+  }
   function drawStar(c, G, s, now, held) {
     const p = fromSky(G, s), fp = fpOf(s), g = gains[s.slot] || 0;
     const blink = fp < 18 ? Math.exp(-(now - s.flash) / (80 + 300 / Math.max(1, fp))) : 1;   // ритм — вспышка на каждом пульсарете; тон — ровный свет
@@ -254,6 +279,7 @@
     c.drawImage(wall(G), 0, 0, T.W, T.H);
     const held = new Set([...touches.values()].filter((t) => t.kind === 'star').map((t) => t.s));
     drawComet(c, G, now);
+    drawDust(c, G, now);
     for (const s of stars) drawStar(c, G, s, now, held.has(s));
     if (!noSun) { c.save(); c.beginPath(); c.rect(0, 0, G.W, G.sun.y); c.clip(); T.sunGlyph(c, G.sun.x, G.sun.y, -Math.PI / 2, 0, 1.2, now, INK, BGC); c.restore(); }
   }
@@ -261,9 +287,9 @@
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
-    sectors: [{ key: 'scintilla', label: 'scintilla', ang: deg(190) }, { key: 'drift', label: 'drift', ang: deg(160) }, { key: 'cometa', label: 'cometa', ang: deg(135) }, { key: 'spread', label: 'spread', ang: deg(110) }, { key: 'hall', label: 'hall', ang: deg(80) }],
-    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => (k === 'cometa' && fx.cometa <= 0.01 ? 'off' : `${Math.round(fx[k] * 100)}%`),
-    lfo: { keys: ['scintilla', 'drift', 'cometa', 'spread', 'hall'], shapes: 'random' },
+    sectors: [{ key: 'scintilla', label: 'scintilla', ang: deg(200) }, { key: 'drift', label: 'drift', ang: deg(180) }, { key: 'cometa', label: 'cometa', ang: deg(160) }, { key: 'crepitus', label: 'crepitus', ang: deg(140) }, { key: 'fulgur', label: 'fulgur', ang: deg(120) }, { key: 'spread', label: 'spread', ang: deg(100) }, { key: 'hall', label: 'hall', ang: deg(80) }],
+    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => (['cometa', 'crepitus', 'fulgur'].includes(k) && fx[k] <= 0.01 ? 'off' : `${Math.round(fx[k] * 100)}%`),
+    lfo: { keys: ['scintilla', 'drift', 'cometa', 'crepitus', 'fulgur', 'spread', 'hall'], shapes: 'random' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // одна звезда — ритм у горизонта, две-три — тоны выше; окна и циклы вразброс
@@ -293,7 +319,7 @@
   };
   T.registerWorld(10, firm);
   window.t2d.firm = {
-    stars, fx, geo, setFx: (k, v) => fxw.set(k, v), get comets() { return comets; }, get comet() { return comet; }, launch: () => { cometNext = 1; }, get ready() { return ready; }, get gains() { return gains; }, get counts() { return counts; }, fp: fpOf, ff: ffOf, LIMEN,
+    stars, fx, geo, setFx: (k, v) => fxw.set(k, v), get comets() { return comets; }, get comet() { return comet; }, launch: () => { cometNext = 1; }, get ready() { return ready; }, get specks() { return specksN; }, get bolts() { return boltsN; }, get gains() { return gains; }, get counts() { return counts; }, fp: fpOf, ff: ffOf, LIMEN,
     at: (h, u) => fromSky(geo(), { h, u }),
   };
 })();

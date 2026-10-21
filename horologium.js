@@ -19,14 +19,14 @@
   const SUN_STEPS = 64;                                   // солнце обходит циферблат за 64 такта маятника
 
   // ---------- состояние ----------
-  const gear = (teeth, pins, semi, o = {}) => ({ teeth, pins: new Set(pins), semi, fold: 0.35, ratio: 1.5, index: 0.4, decay: 0.4, level: 0.8, ramp: 0, rampTo: 0, hit: 0, ...o });
-  const gears = [gear(4, [0, 2], 0), gear(6, [0, 3, 4], 7, { ratio: 2, fold: 0.5 }), gear(5, [1], 12, { ratio: 2.76, decay: 0.25 }), gear(7, [0, 5], -5, { ratio: 1, fold: 0.2, decay: 0.6 })];
+  const gear = (teeth, pins, semi, o = {}) => ({ teeth, pins: new Set(pins), semi, fold: 0.5, ratio: 1.5, index: 0.2, decay: 0.4, level: 0.8, ramp: 0, rampTo: 0, hit: 0, ...o });
+  const gears = [gear(4, [0, 2], 0), gear(6, [0, 3, 4], 7, { ratio: 2, fold: 0.7, index: 0.1 }), gear(5, [1], 12, { ratio: 2.76, decay: 0.25, index: 0.35 }), gear(7, [0, 5], -5, { ratio: 1, fold: 0.3, decay: 0.6 })];
   const fx = { sol: 0.4, fortuna: 0.15, fmode: 0, fto: 0, decay: 0.5, hall: 0.35 };
   const TARGETS = ['fold', 'index', 'decay', 'pitch'];    // куда идут рампа шестерни и fortuna
   let chance = 0, smoothV = 0, smoothT = 0;               // fortuna — источник случайности: ступень на каждый удар или плавное блуждание
   const seq = { playing: false, bpm: 100, next: 0, step: 0 };
   const stepSec = () => 60 / seq.bpm / 2;                 // такт маятника — восьмая
-  let moonA = 0.3, moonHit = 0;
+  let moonA = 0.3, moonV = 0.3, moonHit = 0;
   const hzSemi = (s) => 110 * 2 ** ((T.scaleOn ? T.snapSemi(Math.round(s) + 24) - 24 : s) / 12);   // от A2; с ладом — ближайшая ступень
   const hzOf = (g) => hzSemi(g.semi);
   const noteName = (f) => { const m = Math.round(12 * Math.log2(f / 55)); return `${NOTES[((m % 12) + 12) % 12]}${Math.floor((m + 9) / 12) + 1}`; };
@@ -43,18 +43,28 @@
   }
 
   // ---------- звук ----------
-  let actx = null, bus = null, foldCurve = null, lastSound = 0;
+  let actx = null, bus = null, node = null, ready = false, started = false, lastSound = 0;
   const lastSteps = [];                                   // [время, шаг] — что сейчас под молоточками
+  const queue = [];
+  const send = (m) => { if (node && ready) node.port.postMessage(m); else queue.push(m); };
+  const VER = (document.currentScript && new URL(document.currentScript.src, location.href).searchParams.get('v')) || '0';
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const pre = g(1), out = g(1.8), hallSend = g(0), h = T.hall();
     pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
     bus = { pre, out, hallSend, hall: h, input, live: false };
-    const K = 6, n = 2048, c = new Float32Array(n);      // складки: синус от входа × K — чем громче вход, тем больше перегибов
-    for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.sin((Math.PI / 2) * K * x); }
-    foldCurve = c;
+    ready = false; node = null; started = false; queue.length = 0;
     applyFx();
+  }
+  function start() {                                       // голоса West Coast (horo-worklet.js) — когда в мир впервые зашли
+    if (started || !actx) return;
+    started = true;
+    actx.audioWorklet.addModule(`horo-worklet.js?v=${VER}`).then(() => {
+      node = new AudioWorkletNode(actx, 'horo', { numberOfInputs: 0, outputChannelCount: [2] });
+      node.connect(bus.pre); ready = true;
+      while (queue.length) node.port.postMessage(queue.shift());
+    }).catch(() => { started = false; });
   }
   function setLive(on) {
     if (!bus || bus.live === on) return;
@@ -73,17 +83,11 @@
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4)), t, 0.05);
   }
   const sunHeight = (step) => Math.sin((step / SUN_STEPS) * TAU);   // −1 — полночь, +1 — полдень
-  // удар: FM-пара → складки → low pass gate (срез и громкость по одной огибающей, как вактрол)
-  // вактрол: быстрый спад и долгий тёмный хвост; срез гаснет медленнее громкости — «бонг», а не просто тише
-  function vactrol(tau, M = 160) {
-    const D = Math.min(6, tau * 14), e = new Float32Array(M);
-    for (let k = 0; k < M; k++) { const t = (k / (M - 1)) * D, w = k > M * 0.85 ? (M - 1 - k) / (M * 0.15) : 1; e[k] = (0.72 * Math.exp(-t / tau) + 0.28 * Math.exp(-t / (tau * 4))) * w; }
-    return { e, D };
-  }
   const PAN = [-0.45, 0.45, -0.25, 0.25];
-  // удар: FM-пара → складки → low pass gate (срез, громкость и индекс FM — по одной нелинейной огибающей вактрола)
+  // удар: сложный генератор → складки → low pass gate; всё по сэмплам в horo-worklet.js, здесь — только параметры
   function strike(gi, t, step, vel = 0.85) {
-    const g = gears[gi], ctx = actx;
+    const g = gears[gi];
+    start();
     const mods = [0, 0, 0, 0];                             // fold, index, decay, pitch
     if (g.ramp > 0) mods[g.rampTo] += g.ramp * ((step % g.teeth) / Math.max(1, g.teeth - 1));   // рампа за оборот шестерни: от нуля к вершине, на новом обороте — сброс
     if (fx.fortuna > 0) {                                  // fortuna: изредка пропуск, разная сила и случайное напряжение в цель
@@ -91,24 +95,10 @@
       vel = clamp(vel * (1 - fx.fortuna * 0.3 * Math.random()), 0.2, 1);
       mods[fx.fto] += fx.fortuna * (fx.fmode ? smoothV : chance);
     }
-    const fold = clamp(g.fold + fx.sol * 0.6 * sunHeight(step) + mods[0]), f = hzSemi(g.semi + Math.round(mods[3] * 12)), idxK = Math.max(0, 1 + 2 * mods[1]), decK = Math.max(0.2, 1 + 2 * mods[2]);
-    const car = ctx.createOscillator(), mod = ctx.createOscillator(), mg = ctx.createGain(), drive = ctx.createGain(), sh = ctx.createWaveShaper(), lp = ctx.createBiquadFilter(), vca = ctx.createGain(), pan = ctx.createStereoPanner();
-    car.frequency.value = f; mod.frequency.value = f * g.ratio; mod.type = 'triangle';
-    mod.connect(mg).connect(car.frequency);
-    drive.gain.value = (1 + fold * 5) / 6; sh.curve = foldCurve; sh.oversample = '2x';
-    lp.type = 'lowpass'; lp.Q.value = 1.6; pan.pan.value = PAN[gi];
-    const dec = (0.04 + (g.decay * 0.7 + fx.decay * 0.3) ** 1.7 * 1.3) * decK, tau = dec / 3, { e, D } = vactrol(tau), A = 0.0025, peak = 0.34 * g.level * (0.55 + 0.45 * vel);
-    const fmax = 1800 + 12000 * vel ** 1.5, fmin = 70, M = e.length, cut = new Float32Array(M), amp = new Float32Array(M), idx = new Float32Array(M), ix = g.index * f * 3 * idxK;
-    for (let k = 0; k < M; k++) { const x = e[k]; cut[k] = fmin * (fmax / fmin) ** (x ** 0.7); amp[k] = peak * x ** 1.5; idx[k] = ix * (0.25 + 0.75 * x); }
-    amp[M - 1] = 0;
-    lp.frequency.setValueAtTime(fmax, t); lp.frequency.setValueCurveAtTime(cut, t + A, D);
-    vca.gain.setValueAtTime(0, t); vca.gain.linearRampToValueAtTime(peak, t + A); vca.gain.setValueCurveAtTime(amp, t + A, D);
-    mg.gain.setValueAtTime(ix, t); mg.gain.setValueCurveAtTime(idx, t + A, D);
-    const end = t + A + D;
-    car.connect(drive).connect(sh).connect(lp).connect(vca).connect(pan).connect(bus.pre);
-    car.start(t); mod.start(t); car.stop(end + 0.02); mod.stop(end + 0.02);
-    car.onended = () => { for (const n of [car, mod, mg, drive, sh, lp, vca, pan]) n.disconnect(); };
-    setTimeout(() => { g.hit = performance.now(); }, Math.max(0, (t - ctx.currentTime) * 1000));
+    const fold = clamp(g.fold + fx.sol * 0.6 * sunHeight(step) + mods[0]), f = hzSemi(g.semi + Math.round(mods[3] * 12)), idx = g.index * Math.max(0, 1 + 2 * mods[1]), decK = Math.max(0.2, 1 + 2 * mods[2]);
+    const dec = (0.04 + (g.decay * 0.7 + fx.decay * 0.3) ** 1.7 * 1.3) * decK;
+    send({ t: 'hit', i: gi, at: t, f, ratio: g.ratio, idx, fold, dec, vel, peak: 0.38 * g.level * (0.55 + 0.45 * vel), fmax: 2500 + 15000 * vel ** 1.5, pan: PAN[gi] });
+    setTimeout(() => { g.hit = performance.now(); }, Math.max(0, (t - actx.currentTime) * 1000));
     lastSound = performance.now(); setLive(true);
   }
   function schedule() {
@@ -128,7 +118,7 @@
     }
   }
   setInterval(schedule, 25);
-  function play(on = !seq.playing) { seq.playing = on; seq.next = 0; if (on) { setLive(true); schedule(); } }
+  function play(on = !seq.playing) { seq.playing = on; seq.next = 0; if (on) { start(); setLive(true); schedule(); } }
   function curStep() {                                     // какой шаг сейчас слышен (и сколько от него прошло, 0…1)
     if (!actx || !lastSteps.length) return { s: seq.step, k: 1 };
     const t = actx.currentTime;
@@ -272,13 +262,17 @@
     const { x: cx, y: cy, r: R } = G.dial, cs = curStep(), step = cs.s + (seq.playing ? cs.k : 0), ri = R - 26;
     const sa = (step / SUN_STEPS) * TAU + Math.PI, sx = cx + Math.sin(sa) * ri * 0.78, sy = cy - Math.cos(sa) * ri * 0.78;   // солнце: полдень наверху
     c.strokeStyle = ink(0.75); c.lineWidth = 1.2; c.beginPath(); c.moveTo(cx, cy); c.lineTo(sx, sy); c.stroke();
-    const sr = 6 + 3 * fx.sol;
+    const sr = 7.5;                                        // солнце не прыгает в размере: sol (и его LFO) — живость лучей
     c.fillStyle = BGC; c.beginPath(); c.arc(sx, sy, sr, 0, TAU); c.fill(); c.strokeStyle = ink(0.9); c.lineWidth = 1; c.stroke();
-    c.beginPath(); for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU; c.moveTo(sx + Math.cos(a) * (sr + 2), sy + Math.sin(a) * (sr + 2)); c.lineTo(sx + Math.cos(a) * (sr + 5 + 3 * fx.sol), sy + Math.sin(a) * (sr + 5 + 3 * fx.sol)); } c.stroke();
-    const ma = moonA * TAU, mx = cx + Math.sin(ma) * ri * 0.52, my = cy - Math.cos(ma) * ri * 0.52, jump = clamp(1 - (now - moonHit) / 400);   // луна — fortuna: прыгает
-    c.strokeStyle = ink(0.45 + 0.4 * fx.fortuna); c.beginPath(); c.moveTo(cx, cy); c.lineTo(mx, my); c.stroke();
-    c.fillStyle = ink(0.85); c.beginPath(); c.arc(mx, my, 5, 0, TAU); c.fill(); c.fillStyle = BGC; c.beginPath(); c.arc(mx + 2.3, my - 1, 4.4, 0, TAU); c.fill();
-    if (jump > 0) T.glowAt(mx, my, 14, jump * 0.3);
+    const sp = now * 0.0006 * (0.3 + 2.5 * fx.sol); c.beginPath();
+    for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU + sp * 0.4, l = 3 + fx.sol * 7 * (0.55 + 0.45 * Math.sin(sp * 5 + k * 2.3)) * (k % 2 ? 0.7 : 1); c.moveTo(sx + Math.cos(a) * (sr + 2), sy + Math.sin(a) * (sr + 2)); c.lineTo(sx + Math.cos(a) * (sr + 2 + l), sy + Math.sin(a) * (sr + 2 + l)); }
+    c.stroke();
+    moonV += (moonA - moonV) * 0.06;                       // луна — fortuna: стоит напротив солнца, напряжение — цвет, от бледной до кровавой
+    const ma = sa + Math.PI, mx = cx + Math.sin(ma) * ri * 0.55, my = cy - Math.cos(ma) * ri * 0.55, jump = clamp(1 - (now - moonHit) / 400);
+    const bl = fx.fortuna > 0 ? clamp((moonV - 0.08) / 0.84) * clamp(fx.fortuna * 2.5) : 0, mc = `${Math.round(214 - 64 * bl)},${Math.round(180 - 150 * bl)},${Math.round(110 - 85 * bl)}`;
+    c.strokeStyle = ink(0.3 + 0.3 * fx.fortuna); c.beginPath(); c.moveTo(cx, cy); c.lineTo(mx, my); c.stroke();
+    c.fillStyle = `rgba(${mc},${0.75 + 0.25 * bl})`; c.beginPath(); c.arc(mx, my, 5, 0, TAU); c.fill(); c.fillStyle = BGC; c.beginPath(); c.arc(mx + 2.3, my - 1, 4.4 * (1 - 0.5 * bl), 0, TAU); c.fill();   // кровавая — почти полная
+    if (jump > 0) T.glowAt(mx, my, 14, jump * 0.2);
     c.fillStyle = ink(0.9); c.beginPath(); c.arc(cx, cy, 3.5, 0, TAU); c.fill();
   }
   function drawPendulum(c, G, now) {
@@ -318,7 +312,7 @@
     gears.forEach((g) => {
       g.teeth = TEETH[Math.floor(R() * 10)]; const k = 1 + Math.floor(R() * Math.max(1, g.teeth / 2)), rot = Math.floor(R() * g.teeth);
       g.pins = new Set(euclid(k, g.teeth).map((p) => (p + rot) % g.teeth));
-      g.semi = [-12, -5, 0, 3, 7, 10, 12, 15][Math.floor(R() * 8)]; g.fold = R() * 0.8; g.ratio = RATIOS[Math.floor(R() * RATIOS.length)]; g.index = R() * 0.8; g.decay = 0.1 + R() * 0.7; g.ramp = R() < 0.4 ? 0.3 + R() * 0.5 : 0; g.rampTo = Math.floor(R() * 4);
+      g.semi = [-12, -5, 0, 3, 7, 10, 12, 15][Math.floor(R() * 8)]; g.fold = 0.2 + R() * 0.7; g.ratio = RATIOS[Math.floor(R() * RATIOS.length)]; g.index = R() * 0.5; g.decay = 0.1 + R() * 0.7; g.ramp = R() < 0.4 ? 0.3 + R() * 0.5 : 0; g.rampTo = Math.floor(R() * 4);
     });
     if (!seq.playing) play(true);
   }
@@ -329,7 +323,7 @@
     legend: [['tap', 'tap the pendulum', 'clock runs / stops'], ['drag', 'drag the pendulum sideways', 'tempo'],
       ['tap', 'tap a tooth', 'a pin · at the top the hammer strikes'], ['up', 'drag a wheel up or down', 'its note'],
       ['hold', 'hold a wheel', 'its sheet: teeth, fold, ratio, index, decay, level, ramp'], ['tap', 'tap the sun', 'map of worlds']],
-    build, tick, draw, down, move, up, dice,
+    build, tick, draw, down, move, up, dice, enter: start,
     clear() { for (const g of gears) g.pins.clear(); },
     snapshot: () => JSON.stringify({ g: gears.map((g) => ({ ...g, pins: [...g.pins], hit: 0 })), fx, bpm: seq.bpm }),
     restore(js) {
@@ -341,7 +335,7 @@
   };
   T.registerWorld(9, horo);
   window.t2d.horo = {
-    gears, fx, seq, geo, setFx: (k, v) => fxw.set(k, v), play, get live() { return !!(bus && bus.live); }, hz: hzOf,
+    gears, fx, seq, geo, setFx: (k, v) => fxw.set(k, v), play, get live() { return !!(bus && bus.live); }, get ready() { return ready; }, hz: hzOf,
     tooth: (i, j) => { const G = geo(), c = curStep(), g = gears[i], a = ((j - c.s) / g.teeth) * TAU, [gx, gy] = G.pos[i], r = G.Rg - 15; return { x: gx + Math.sin(a) * r, y: gy - Math.cos(a) * r }; },
     bob: () => { const G = geo(), a = swingA(performance.now()), L = G.bob.y - G.pivot.y; return { x: G.pivot.x + Math.sin(a) * L, y: G.pivot.y + Math.cos(a) * L }; },
   };

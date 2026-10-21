@@ -35,7 +35,7 @@
 | VI | Paradisus — хор ангелов, форманты, собор | `paradisus.js` | `docs/worlds/paradisus.md` |
 | VII | Monochordum — Карплус — Стронг, страм, ветер, автострам | `monochord.js`, `monochord-worklet.js` | `docs/worlds/monochordum.md` |
 | VIII | Oceanus — сканирующий синтез, карта T-O, луна | `oceanus.js`, `ocean-worklet.js` | `docs/worlds/oceanus.md` |
-| IX | Horologium — West Coast, шестерни, LPG | `horologium.js` | `docs/worlds/horologium.md` |
+| IX | Horologium — West Coast, шестерни, LPG | `horologium.js`, `horo-worklet.js` | `docs/worlds/horologium.md` |
 | X | Firmamentum — пульсарный синтез, свод | `firmamentum.js`, `pulsar-worklet.js` | `docs/worlds/firmamentum.md` |
 | XI | Tria corpora — задача трёх тел, FM по кругу | `tria.js` | `docs/worlds/tria.md` |
 | XII | Arcadia — wave terrain, страна в псевдоперспективе, кубик — новая страна | `arcadia.js`, `terrain-worklet.js` | `docs/worlds/arcadia.md` |

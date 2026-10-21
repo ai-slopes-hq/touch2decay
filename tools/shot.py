@@ -1213,6 +1213,7 @@ async def sc_horologium(p):                        # Horologium: штифт на
     assert await p.js('()=>t2d.horo.gears[0].pins.has(1)') and await p.js('()=>t2d.horo.gears[0].pins.size') == n0 + 1, 'tap a tooth — a pin'
     await p.shot('horologium-still')
     b = await p.js('()=>t2d.horo.bob()'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(1600)
+    assert await p.js('()=>t2d.horo.ready'), 'West Coast voices are loaded'
     b = await p.js('()=>t2d.horo.bob()')
     assert await p.js('()=>t2d.horo.seq.playing'), 'tap the pendulum — the clock runs'
     lv = await p.js('()=>T2D.level'); print('  horologium level, running:', round(lv, 3)); assert lv > 0.02, f'hammers strike: {lv}'
@@ -1273,6 +1274,10 @@ async def sc_firmamentum(p):                       # Firmamentum: прокол �
     n = await p.js('()=>t2d.firm.stars.length'); assert 3 <= n <= 4, f'dice — a rhythm and tones: {n}'
     await p.js("()=>{t2d.firm.setFx('scintilla', 0.6); t2d.firm.setFx('drift', 0.6); t2d.firm.setFx('cometa', 1); t2d.firm.launch()}"); await p.pg.wait_for_timeout(1800)
     assert await p.js('()=>t2d.firm.comets') >= 1, 'cometa — a comet flies'
+    await p.js("()=>{t2d.firm.setFx('crepitus', 0.8); t2d.firm.setFx('fulgur', 1)}"); await p.pg.wait_for_timeout(2500)
+    sp, bo = await p.js('()=>[t2d.firm.specks, t2d.firm.bolts]'); print('  crepitus specks:', sp, 'fulgur bolts:', bo); assert sp > 3 and bo > 0, f'crepitus and fulgur: {sp} {bo}'
+    r = await p.js("()=>t2d.worlds[10].fx.sectors.length"); assert r == 7, 'FX: scintilla, drift, cometa, crepitus, fulgur, spread, hall'
+    await p.shot('firmamentum-dust')
     await p.shot('firmamentum-comet')
     print('  firmamentum level, dice:', round(await p.js('()=>T2D.level'), 3)); await p.shot('firmamentum')
     c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(2500)
