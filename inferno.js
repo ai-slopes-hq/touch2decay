@@ -4,7 +4,7 @@
 // внутри его зоны (с ладом — по ступеням); быстро провёл сквозь круги — арфа, каскад вниз. Двойной тап — на круге остаётся грешник,
 // круг горит сам (до 4). Держишь круг с грешником — плашка: цвет шума, ширина полос, перегруз, уровень. FX: structure (гармоники · лад · металл),
 // fire (перегруз), smoke (тёмный зал), ice (Коцит: добротность растёт, звон стоит сам).
-// Тап по Коциту на дне — бесконечное падение (Шепард), вверх по нему — быстрее; корзина гасит. В левом нижнем углу — вечная тьма (к центру карты): тап — карта. Спека: docs/superpowers/specs/2026-10-20-inferno-design.md
+// В левом нижнем углу — вечная тьма (к центру карты): тап — карта. Спека: docs/superpowers/specs/2026-10-20-inferno-design.md
 (() => {
   'use strict';
   const T = window.T2D;
@@ -23,7 +23,6 @@
   // ---------- состояние ----------
   const circ = NAMES.map((_, k) => ({ pos: 0.5, sinner: false, held: 0, color: k < 3 ? 0 : k < 6 ? 1 : k < 8 ? 2 : 3, width: 0.5, drive: 0.15 + k * 0.08, level: 0.7, lvl: 0, n: null }));
   const fx = { structure: 0, fire: 0.2, smoke: 0.35, ice: 0 };
-  const fall = { on: false, amt: 0.5 };                  // бесконечное падение — часть сцены (тап по Коциту), не FX: корзина его гасит
   const semiOf = (k, pos) => { let s = (8 - k) * SPAN + pos * SPAN; if (T.scaleOn) s = T.snapSemi(Math.round(s)); return s; };
   const hzOf = (k) => 55 * 2 ** (semiOf(k, circ[k].pos) / 12);
   const structName = () => (fx.structure < 1 / 3 ? 'harmonic' : fx.structure < 2 / 3 ? 'scale' : 'metal');
@@ -57,7 +56,7 @@
   const posAt = (G, k, x) => { const r = G.rings[k]; return clamp((x - (G.cx - r.rx)) / (2 * r.rx)); };
 
   // ---------- звук ----------
-  let actx = null, bus = null, lastSound = 0, fallPh = 0, strikes = 0;
+  let actx = null, bus = null, lastSound = 0, strikes = 0;
   const bufs = {};
   function noiseBufs(ctx) {                              // шумы считаются один раз: белый, розовый, коричневый, треск, гранулы
     const n = ctx.sampleRate * 2, mk = () => ctx.createBuffer(1, n, ctx.sampleRate);
@@ -97,7 +96,7 @@
     fire.oversample = '2x'; smLP.type = 'lowpass'; smLP.frequency.value = 1400;
     inp.connect(pre).connect(fire).connect(out);
     fire.connect(smoke).connect(smLP).connect(h.input); h.out.connect(g(0.9)).connect(out);
-    bus = { inp, pre, fire, out, smoke, hall: h, input, live: false, fall: null };
+    bus = { inp, pre, fire, out, smoke, hall: h, input, live: false };
     for (const c of circ) c.n = null;
     applyFx();
     for (let k = 0; k < 9; k++) if (circ[k].sinner) smoulder(k, true);
@@ -182,37 +181,14 @@
     bus.smoke.gain.setTargetAtTime(fx.smoke * fx.smoke * 1.4, t, 0.05);
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.smoke * 5)), t, 0.05);
     for (let i = 0; i < 9; i++) retune(i);
-    fallOn(fall.on);
   }
-  // бесконечное падение: семь синусов через октаву скользят вниз, громкость — колоколом по спектру (тон Шепарда)
-  function fallOn(on) {
-    if (!bus) return;
-    if (on && !bus.fall) {
-      const oscs = Array.from({ length: 7 }, () => { const o = actx.createOscillator(), gg = actx.createGain(); gg.gain.value = 0; o.connect(gg).connect(bus.inp); o.start(); return { o, gg }; });
-      bus.fall = oscs; setLive(true);
-    } else if (!on && bus.fall) {
-      const f = bus.fall; bus.fall = null;
-      for (const { o, gg } of f) { gg.gain.setTargetAtTime(0, actx.currentTime, 0.1); o.stop(actx.currentTime + 0.6); o.onended = () => { o.disconnect(); gg.disconnect(); }; }
-    }
-  }
-  function fallTick(dt) {
-    if (!bus || !bus.fall) return;
-    fallPh = (fallPh - dt * (0.04 + fall.amt * 0.25) + 7) % 7;
-    const t = actx.currentTime;
-    bus.fall.forEach(({ o, gg }, i) => {
-      const oc = (i + fallPh) % 7, f = 40 * 2 ** oc, a = Math.sin((Math.PI * oc) / 7) ** 2;
-      o.frequency.setTargetAtTime(f, t, 0.03); gg.gain.setTargetAtTime(a * (0.3 + fall.amt * 0.7) * 0.05, t, 0.05);
-    });
-  }
-  const sounding = () => fall.on || circ.some((c) => c.sinner || c.held > 0);
+  const sounding = () => circ.some((c) => c.sinner || c.held > 0);
 
   // ---------- касания ----------
   const touches = new Map();
   let lastTap = null;
   function down(f) {
-    const G = geo(), K = G.coc;
-    if (Math.abs(f.x - G.cx) < K.rx + 18 && Math.abs(f.y - K.cy) < 24) { touches.set(f.id, { kind: 'coc', a0: fall.amt, y0: f.y, moved: false }); return; }   // Коцит — падение
-    const k = circleAt(G, f.x, f.y);
+    const G = geo(), k = circleAt(G, f.x, f.y);
     if (k < 0) { touches.set(f.id, { kind: 'none' }); return; }
     const now = performance.now(), c = circ[k];
     if (lastTap && lastTap.k === k && now - lastTap.t < T.DTAP_MS) {   // двойной тап — грешник: круг горит сам; ещё раз — отпустить
@@ -231,12 +207,6 @@
   function move(f) {
     const t = touches.get(f.id);
     if (!t || t.kind === 'none') return;
-    if (t.kind === 'coc') {                               // по Коциту вверх — падение быстрее и громче, вниз — тише
-      if (!t.moved && Math.abs(f.y - t.y0) < 6) return;
-      t.moved = true; fall.amt = clamp(t.a0 - (f.y - t.y0) / 150);
-      if (!fall.on) { fall.on = true; applyFx(); }
-      return;
-    }
     t.x = f.x; t.y = f.y;
     if (t.sheet) return;
     const G = geo(), kk = circleAt(G, f.x, f.y, true);
@@ -257,7 +227,6 @@
   function up(f) {
     const t = touches.get(f.id);
     touches.delete(f.id);
-    if (t && t.kind === 'coc' && !t.moved) { fall.on = !fall.on; applyFx(); return; }   // тап по Коциту — падение вкл / выкл
     if (!t || t.kind !== 'circle') return;
     if (t.smoulder) { circ[t.k].held--; refresh(t.k); }
   }
@@ -270,7 +239,6 @@
       const target = c.sinner || c.held > 0 ? c.level : 0;
       c.lvl += (target - c.lvl) * (1 - Math.exp(-dt / (target > c.lvl ? 0.08 : 0.4 + fx.ice * 3)));
     }
-    fallTick(dt);
   }
   // держишь круг с грешником, не двигая, — плашка круга: цвет шума, ширина полос, перегруз, уровень
   function circleSheet(k) {
@@ -364,15 +332,6 @@
     c.drawImage(wall(G), 0, 0, T.W, T.H);
     drawInscription(c, G, now);
     drawSmoke(c, G, now);
-    if (fall.on) {                                        // тени падают по стенкам — бесконечное падение
-      c.strokeStyle = T.ink(0.12 + 0.25 * fall.amt); c.lineWidth = 1; c.beginPath();
-      const span = G.yC - G.y0, sp = 0.02 + fall.amt * 0.12;
-      for (let i = 0; i < 6; i++) {
-        const y = G.y0 + ((now * sp + i * (span / 6)) % span), k = clamp((y - G.y0) / (G.dy * 8), 0, 1), rx = G.rings[0].rx + (G.rings[8].rx - G.rings[0].rx) * k;
-        for (const s of [-1, 1]) { const x = G.cx + s * rx * 0.92; c.moveTo(x - 3, y - 7); c.lineTo(x, y); c.lineTo(x + 3, y - 7); }
-      }
-      c.stroke();
-    }
     const held = new Map();
     for (const t of touches.values()) if (t.kind === 'circle') held.set(t.k, t);
     G.rings.forEach((r, k) => {
@@ -393,11 +352,6 @@
         sinner(c, x, r.cy + Math.sqrt(1 - u * u) * r.ry);
       }
     });
-    if (fall.on) {                                        // падение: над озером тонкая воронка-вихрь
-      c.strokeStyle = T.ink(0.25 + 0.35 * fall.amt); c.lineWidth = 1; c.beginPath();
-      for (let j = 0; j < 3; j++) { const ph = (now * (0.0006 + fall.amt * 0.002) + j / 3) % 1, rr = G.coc.rx * (1 - ph); c.ellipse(G.cx, G.coc.cy - 8 - ph * 10, rr, rr * 0.22, 0, 0, TAU); }
-      c.stroke();
-    }
     // Коцит — ледяное озеро на дне
     const K = G.coc;
     c.strokeStyle = rgba(ICE, 0.85); c.lineWidth = 1; c.beginPath(); c.ellipse(G.cx, K.cy, K.rx, K.ry, 0, 0, TAU); c.stroke();
@@ -442,21 +396,21 @@
     fx: fxw,
     legend: [['tap', 'tap a circle', 'a strike rings in its resonator'], ['hold', 'hold a circle', 'it smoulders while held'],
       ['drag', 'drag along a circle', 'pitch within its zone'], ['double', 'double tap a circle', 'a sinner stays, the circle burns'],
-      ['draw', 'swipe down through circles', 'a cascade into the pit'], ['tap', 'tap Cocytus · drag up', 'the endless fall · faster'], ['hold', 'hold a burning circle', 'its sheet: noise, width, drive, level'], ['tap', 'tap the darkness', 'map of worlds']],
+      ['draw', 'swipe down through circles', 'a cascade into the pit'], ['hold', 'hold a burning circle', 'its sheet: noise, width, drive, level'], ['tap', 'tap the darkness', 'map of worlds']],
     build, tick, draw, down, move, up, dice,
-    clear() { for (let k = 0; k < 9; k++) { circ[k].sinner = false; refresh(k); } fall.on = false; fallOn(false); },
-    snapshot: () => JSON.stringify({ circ: circ.map((q) => ({ pos: q.pos, sinner: q.sinner, color: q.color, width: q.width, drive: q.drive, level: q.level })), fx, fall }),
+    clear() { for (let k = 0; k < 9; k++) { circ[k].sinner = false; refresh(k); } },
+    snapshot: () => JSON.stringify({ circ: circ.map((q) => ({ pos: q.pos, sinner: q.sinner, color: q.color, width: q.width, drive: q.drive, level: q.level })), fx }),
     restore(js) {
       const st = JSON.parse(js);
       st.circ.forEach((s, k) => { const was = circ[k].color; Object.assign(circ[k], s); if (was !== s.color) recolor(k); });
-      Object.assign(fx, st.fx); if (st.fall) Object.assign(fall, st.fall); else fall.on = false; applyFx();
+      Object.assign(fx, st.fx); applyFx();
       for (let k = 0; k < 9; k++) refresh(k);
     },
     sounding,
   };
   T.registerWorld(5, inferno);
   window.t2d.inf = {
-    circ, fx, fall, geo, get strikes() { return strikes; }, get live() { return !!(bus && bus.live); }, setFx: (k, v) => fxw.set(k, v), get bus() { return bus; },
+    circ, fx, geo, get strikes() { return strikes; }, get live() { return !!(bus && bus.live); }, setFx: (k, v) => fxw.set(k, v), get bus() { return bus; },
     at: (k, pos = 0.5) => { const G = geo(), r = G.rings[k]; return { x: G.cx - r.rx + 2 * r.rx * pos, y: r.cy }; },
   };
 })();
