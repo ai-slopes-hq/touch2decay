@@ -918,7 +918,7 @@ async def sc_startmap(p):                          # карта — старто
     q = await p.js('()=>t2d.mapCell(0, 0)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.view') == 'map' and await p.js('()=>t2d.mapPeek()'), 'a face-down card only shivers — nondum'
     await p.shot('map-peek'); await p.pg.wait_for_timeout(300)
-    for w in (1, 2, 3, 4, 5, 6, 7):
+    for w in (1, 2, 3, 4, 5, 6, 7, 8):
         q = await p.js(f'()=>t2d.mapPanel({w})'); assert q[0] >= 0 and q[0] + q[2] <= W and q[1] > 0 and q[1] + q[3] < H, f'card {w} on screen {q}'
     sun = await p.js('()=>t2d.mapSun()'); await p.tap(sun['x'], sun['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.nav.settings'), 'tap the sun on the map — concordia'
@@ -1104,7 +1104,51 @@ async def sc_monochord(p):                         # Monochordum: щипок, с
     assert await p.js('()=>t2d.view') == 'map', 'tap the cloud — map'
 
 
-SCENARIOS = {'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_oceanus(p):                           # Oceanus: город поёт, двойной тап — остаётся, ведёшь — нота, вода — волны, всплеск, плашка, FX, кубик, корзина, отмена, солнце — карта
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(8)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 8], 'the card under Natura opens Oceanus'
+    for _ in range(30):
+        if await p.js('()=>t2d.ocean.ready'): break
+        await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.ocean.ready'), 'ocean worklet is up'
+    a = await p.js('()=>t2d.ocean.at(0.3, 0.85)'); pid = await p.hold(a['x'], a['y'], ms=700)
+    assert await p.js('()=>t2d.ocean.voices.length') == 1, 'touch the land — a city sings'
+    lv = await p.js('()=>T2D.level'); print('  oceanus level, one city:', round(lv, 3)); assert lv > 0.03, f'the city is heard: {lv}'
+    h0 = await p.js('()=>t2d.ocean.hz(t2d.ocean.voices[0])')
+    b = await p.js('()=>t2d.ocean.at(0.3, 0.2)'); await p.drag(pid, a['x'], a['y'], b['x'], b['y'], steps=8)
+    h1 = await p.js('()=>t2d.ocean.hz(t2d.ocean.voices[0])'); assert abs(h1 / h0 - 4) < 0.3, f'inland — two octaves up: {h0} -> {h1}'
+    await p.shot('oceanus-held'); await p.up(); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.ocean.voices.length') == 0, 'finger up — the city is silent'
+    a = await p.js('()=>t2d.ocean.at(1.2, 0.5)'); await p.pin(a['x'], a['y'])
+    assert await p.js('()=>t2d.ocean.voices.filter(v=>v.pinned).length') == 1, 'double tap — the city stays'
+    await p.pg.wait_for_timeout(600)
+    s0 = await p.js('()=>Array.from(t2d.ocean.shape)')
+    w = await p.js('()=>t2d.ocean.water(2.5, 0.95)'); w2 = await p.js('()=>t2d.ocean.water(2.9, 0.95)')
+    pid = await p.hold(w['x'], w['y'], ms=200); await p.drag(pid, w['x'], w['y'], w2['x'], w2['y'], steps=6); await p.pg.wait_for_timeout(200)
+    s1 = await p.js('()=>Array.from(t2d.ocean.shape)')
+    dif = max(abs(x - y) for x, y in zip(s0, s1)); print('  ocean shape moved by', round(dif, 3)); assert dif > 0.2, f'touch the water — it follows the finger: {dif}'
+    await p.shot('oceanus-water'); await p.up(); await p.pg.wait_for_timeout(100)
+    await p.pg.wait_for_timeout(300); a = await p.js('()=>t2d.ocean.at(1.2, 0.5)'); await p.hold(a['x'], a['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a staying city — its sheet'
+    await p.shot('oceanus-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    await p.js("()=>{t2d.ocean.setFx('wind', 0.8); t2d.ocean.setFx('tension', 0.8)}"); await p.pg.wait_for_timeout(1500)
+    print('  oceanus level, wind:', round(await p.js('()=>T2D.level'), 3)); await p.shot('oceanus-wind')
+    await p.js("()=>{t2d.ocean.setFx('wind', 0)}")
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1200)
+    n = await p.js('()=>t2d.ocean.voices.length'); assert 2 <= n <= 3, f'dice — two or three cities: {n}'
+    print('  oceanus level, dice:', round(await p.js('()=>T2D.level'), 3)); await p.shot('oceanus')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.ocean.voices.length') == 0, 'trash — no cities'
+    await p.pg.wait_for_timeout(3000); lv = await p.js('()=>T2D.level'); assert lv < 0.01, f'after trash it is silent: {lv}'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.ocean.voices.length') == n, 'undo brings the cities back'
+    S = await p.js('()=>t2d.ocean.geo().sun'); await p.tap(S['x'] + 20, S['y'] + 20); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
+    await p.shot('map-ocean')
+
+
+SCENARIOS = {'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
