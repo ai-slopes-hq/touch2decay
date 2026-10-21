@@ -945,7 +945,7 @@ async def sc_legenda(p):                           # тап по заголов�
     for w in (1, 2, 3, 4):
         await p.js(f'()=>t2d.go({w})'); await p.pg.wait_for_timeout(900)
         tw = await p.js('()=>t2d.titleW()')
-        await p.tap(16 + tw / 2, await p.js('()=>t2d.scopeY()') + 20); await p.pg.wait_for_timeout(150)
+        await p.tap(46 + tw / 2, await p.js('()=>t2d.scopeY()') + 20); await p.pg.wait_for_timeout(150)
         L = await p.js('()=>t2d.legenda()')
         assert L and len(L['rows']) >= 8, f'world {w}: tap the title — legenda'
         assert L['top'] + L['h'] < H, f'world {w}: legenda fits the screen {L}'
@@ -1371,8 +1371,9 @@ async def sc_arcadia(p):                           # Arcadia: странник �
     b = await p.js('()=>t2d.arc.at(-0.3, 0.4)'); pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], b['x'], b['y'], steps=8)
     f1 = await p.js('()=>t2d.arc.hz(t2d.arc.travellers[0])'); assert f1 > f0 * 1.4, f'drag north — higher: {f0} -> {f1}'
     await p.shot('arcadia-held'); await p.up(); await p.pg.wait_for_timeout(600)
-    r0 = await p.js('()=>t2d.arc.travellers[0].r'); e = await p.js('()=>t2d.arc.loop(0)[0]')   # восточная точка петли
-    pid = await p.hold(e['x'], e['y'], ms=40); await p.drag(pid, e['x'], e['y'], e['x'] + 45, e['y'], steps=6); await p.up()
+    r0 = await p.js('()=>t2d.arc.travellers[0].r'); e = await p.js('()=>{const h=t2d.arc.at(t2d.arc.travellers[0].u, t2d.arc.travellers[0].v); return t2d.arc.loop(0).filter(q=>q.x>30).sort((a,b)=>Math.hypot(b.x-h.x,b.y-h.y)-Math.hypot(a.x-h.x,a.y-h.y))[0]}')   # точка петли подальше от флажка
+    c = await p.js('()=>{const c=t2d.arc.centers[t2d.arc.travellers[0].slot]; return t2d.arc.ground(c[0], c[1])}'); dx, dy = e['x'] - c['x'], e['y'] - c['y']; L = max(1, (dx * dx + dy * dy) ** 0.5)
+    pid = await p.hold(e['x'], e['y'], ms=40); await p.drag(pid, e['x'], e['y'], e['x'] + dx / L * 50, e['y'] + dy / L * 50, steps=6); await p.up()
     r1 = await p.js('()=>t2d.arc.travellers[0].r'); assert r1 > r0 + 0.08, f'drag the rim — a wider orbit: {r0} -> {r1}'
     await p.pg.wait_for_timeout(300)
     s = await p.js('()=>t2d.arc.at(t2d.arc.travellers[0].u, t2d.arc.travellers[0].v)'); await p.hold(s['x'], s['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
@@ -1446,7 +1447,43 @@ async def sc_portus(p):                            # Portus: остров на �
     assert await p.js('()=>t2d.view') == 'map', 'tap the moon — map'
 
 
-SCENARIOS = {'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_nav(p):                               # стрелка у названия — карта; свайп от левого края — карта; на карте звучащий мир в лучах; concordia → микшер: фейдер, mute, мастер
+    await p.js('()=>t2d.go(10)'); await p.pg.wait_for_timeout(300)
+    B = await p.js('()=>t2d.backPos()'); await p.tap(B['x'], B['y']); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the back arrow — map'
+    await p.js('()=>t2d.go(12)'); await p.pg.wait_for_timeout(300); await p.shot('nav-arrow')
+    a = await p.js('()=>t2d.arc.at(0.2, -0.4)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(1200)
+    pid = await p.hold(4, 500, ms=40); await p.drag(pid, 4, 500, 140, 510, steps=8); await p.up(); await p.pg.wait_for_timeout(1500)
+    assert await p.js('()=>t2d.view') == 'map', 'swipe from the left edge — map'
+    lv = await p.js('()=>t2d.chanLvl[12]'); print('  arcadia channel level on the map:', round(lv or 0, 4)); assert lv and lv > 0.003, f'the sounding world has a level: {lv}'
+    await p.shot('nav-map-live')
+    S = await p.js('()=>t2d.mapSun()'); await p.tap(S['x'], S['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.nav.settings') is True, 'tap the sun — concordia'
+    await p.shot('nav-concordia')
+    sy = S['y']
+    # найти строку mixer: перебором по высоте, пока не откроется
+    opened = False
+    for dy in range(150, 330, 8):
+        await p.tap(200, sy + dy); await p.pg.wait_for_timeout(80)
+        st = await p.js('()=>t2d.nav.settings')
+        if st == 'mix': opened = True; break
+        if st is not True: await p.tap(S['x'], S['y']); await p.pg.wait_for_timeout(80)
+    assert opened, 'concordia → mixer'
+    await p.pg.wait_for_timeout(400); await p.shot('nav-mixer')
+    g = await p.js('()=>t2d.mixGeo()'); r = next(q for q in g['rows'] if q['n'] == 12)
+    x0 = g['tx0'] + (g['tx1'] - g['tx0']) * (36 / 42)
+    pid = await p.hold(x0, r['y'], ms=40); await p.drag(pid, x0, r['y'], x0 - 60, r['y'], steps=6); await p.up(); await p.pg.wait_for_timeout(200)
+    gn = await p.js('()=>t2d.chanGains[12]'); assert gn < 0.7, f'drag the Arcadia fader left — quieter: {gn}'
+    await p.tap(g['mx'], r['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.mix.mute[12]') and await p.js('()=>t2d.chanGains[12]') < 0.01, 'tap mute — silent'
+    m = g['mr'][0]; pid = await p.hold(g['tx1'] - 2, m['y'], ms=40); await p.drag(pid, g['tx1'] - 2, m['y'], g['tx1'] - 120, m['y'], steps=6); await p.up()
+    assert await p.js('()=>t2d.mix.lpf') < 0.8, 'master low-pass closes'
+    await p.shot('nav-mixer-set')
+    await p.tap(5, 5); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
+
+
+SCENARIOS = {'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
