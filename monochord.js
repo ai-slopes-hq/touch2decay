@@ -126,6 +126,7 @@
     pluck(i, (f.y - G.y0) / Math.max(10, yb - G.y0));
     touches.set(f.id, { kind: 'string', i, x0: f.x, y0: f.y, x: f.x, y: f.y, t0: now, lx: f.x, lt: now, moved: false, px: f.x });
   }
+  const BOW_WAIT = 150;                                   // мс: столько палец решает — смычок или страм
   function strum(t, f, G) {                               // страм: каждая струна, которую палец пересёк выше её подставки, — щипок; сила — скорость
     const now = performance.now(), a = Math.min(t.px, f.x), b = Math.max(t.px, f.x), v = (b - a) / Math.max(8, now - (t.st || t.lt));
     let hit = false;
@@ -151,8 +152,14 @@
     t.x = f.x; t.y = f.y;
     if (!t.moved && Math.hypot(f.x - t.x0, f.y - t.y0) > 8) t.moved = true;
     if (t.moved) {                                        // поперёк струны — смычок: сила — скорость пальца
-      const now = performance.now(), v = Math.abs(f.x - t.lx) / Math.max(8, now - t.lt);
+      const now = performance.now(), dx = f.x - t.lx, v = Math.abs(dx) / Math.max(8, now - t.lt);
       t.lx = f.x; t.lt = now;
+      if (!t.bowing) {                                    // смычок — только если задержался у струны или повёл назад; быстро ушёл к соседней — это страм
+        const turn = t.dir && dx && Math.sign(dx) !== t.dir;
+        if (!t.dir && Math.abs(dx) > 1) t.dir = Math.sign(dx);
+        if (!turn && now - t.t0 < BOW_WAIT) return;
+        t.bowing = true;
+      }
       const s = str[t.i]; s.bow = clamp(v * 1.4); send({ t: 'bow', i: t.i, amp: s.bow }); setLive(true); lastSound = now;
     }
   }
