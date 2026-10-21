@@ -1289,6 +1289,23 @@ async def sc_firmamentum(p):                       # Firmamentum: прокол �
     assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
 
 
+async def sc_triaenergy(p):                        # Tria: энергия броска сохраняется — тела не слипаются; decay — садятся в клубок
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(11)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    for k in range(3):
+        d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(300)
+        e0 = await p.js('()=>t2d.tria.energy()'); sp = []
+        for _ in range(20):
+            await p.pg.wait_for_timeout(1000); sp.append(await p.js('()=>t2d.tria.spread()'))
+        e1 = await p.js('()=>t2d.tria.energy()')
+        print(f'  dice {k}: energy {e0:.2f} -> {e1:.2f}, spread over 20 s', ' '.join(f'{x:.2f}' for x in sp[::2]))
+        assert abs(e1 - e0) < 0.05 * abs(e0) + 0.05, f'energy is kept: {e0} -> {e1}'
+        assert max(sp[10:]) > 0.25, f'the three do not stick in one ball: {sp}'
+    await p.js("()=>t2d.tria.setFx('decay', 1)"); await p.pg.wait_for_timeout(25000)
+    sp = await p.js('()=>t2d.tria.spread()'); print('  decay 100 %, after 25 s spread', round(sp, 3)); assert sp < 0.2, f'decay — they settle: {sp}'
+    await p.js("()=>t2d.tria.setFx('decay', 0)")
+
+
 async def sc_tria(p):                              # Tria corpora: тела молчат, брошенное — хаос и звук, якорь, плашка, Fiat lux, FX, кубик, корзина, отмена, солнце — карта
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(11)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
@@ -1496,7 +1513,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

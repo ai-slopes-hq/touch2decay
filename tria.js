@@ -19,7 +19,7 @@
   // ---------- состояние ----------
   const rest = () => [0, 1, 2].map((i) => { const a = -Math.PI / 2 + (i * TAU) / 3; return { x: Math.cos(a) * 0.5, y: Math.sin(a) * 0.5 }; });
   const bodies = rest().map((p, i) => ({ ...p, vx: 0, vy: 0, m: 1, fixed: false, semi: [0, 7, 12][i], level: 0.8, trail: [], amp: 0, hz: 110 }));
-  const fx = { gravitas: 0.5, flux: 0.5, nexus: 0.35, hall: 0.35 };
+  const fx = { gravitas: 0.5, flux: 0.5, nexus: 0.35, decay: 0, hall: 0.35 };
   let still = true, lux = false, cadit = false, encounters = 0;   // cadit — тяга выключена: всё падает на дно блюда
   const Gc = () => 0.25 + 0.75 * fx.gravitas;
   const tonic = () => (T.scaleOn ? T.scaleRoot : 0);
@@ -53,9 +53,34 @@
     }
     return [ax, ay];
   }
-  function physics(dt) {                                  // перешагивание (leapfrog), 8 подшагов за кадр; блюдо держит тела
+  // энергия сохраняется: край упругий, скорость не срезается; leapfrog копит ошибку на близких пролётах — поэтому подшагов больше,
+  // когда тела близко и быстры, и после кадра скорости чуть подправляются к энергии броска E0 (новая E0 — после любого вмешательства).
+  // decay — единственный сток: трение, система медленно садится в клубок.
+  let E0 = null, eKey = '', eDirty = true;
+  function energy() {
+    const eps2 = lux ? 1e-6 : EPS * EPS, g = Gc();
+    let K = 0, U = 0;
+    bodies.forEach((b, i) => {
+      if (!b.fixed) K += (b.m * (b.vx * b.vx + b.vy * b.vy)) / 2;
+      if (!lux) U += (b.m * KC * (b.x * b.x + b.y * b.y)) / 2;
+      for (let j = i + 1; j < 3; j++) { const q = bodies[j], d2 = (q.x - b.x) ** 2 + (q.y - b.y) ** 2 + eps2; U -= (g * b.m * q.m) / Math.sqrt(d2); }
+    });
+    return { K, U };
+  }
+  function keepEnergy(dt) {
+    if (cadit) { E0 = null; return; }
+    const key = `${Gc()}|${lux}|${bodies.map((b) => `${b.m},${b.fixed},${!!b.held}`).join(';')}`, any = bodies.some((b) => b.held);
+    if (fx.decay > 0.005 && !any) { const f = Math.exp(-0.3 * fx.decay * fx.decay * dt); for (const b of bodies) { b.vx *= f; b.vy *= f; } eDirty = true; }   // decay: трение
+    const { K, U } = energy();
+    if (eDirty || any || key !== eKey || E0 == null) { E0 = K + U; eKey = key; eDirty = false; return; }
+    const Kt = E0 - U;
+    if (K > 1e-6) { const k = Math.min(1.03, Math.max(0.97, Math.sqrt(Math.max(0, Kt) / K))); for (const b of bodies) if (!b.fixed) { b.vx *= k; b.vy *= k; } }
+  }
+  function physics(dt) {                                  // перешагивание (leapfrog), 8…64 подшага за кадр; блюдо держит тела
     if (still) return;
-    const n = 8, h = (dt * (0.5 + fx.gravitas)) / n;
+    let dmin = 9, vmax = 0;
+    for (let i = 0; i < 3; i++) { const a = bodies[i]; vmax = Math.max(vmax, Math.hypot(a.vx, a.vy)); for (let j = i + 1; j < 3; j++) dmin = Math.min(dmin, Math.hypot(bodies[j].x - a.x, bodies[j].y - a.y)); }
+    const T0 = dt * (0.5 + fx.gravitas), n = Math.min(64, Math.max(8, Math.ceil((T0 * (vmax + 1) * 12) / Math.max(dmin, lux ? 0.02 : EPS)))), h = T0 / n;
     for (let s = 0; s < n; s++) {
       for (let i = 0; i < 3; i++) { const b = bodies[i]; if (b.fixed || b.held) continue; const [ax, ay] = accel(i, bodies); b.vx += ax * h / 2; b.vy += ay * h / 2; }
       for (const b of bodies) { if (b.fixed || b.held) continue; b.x += b.vx * h; b.y += b.vy * h; }
@@ -67,20 +92,21 @@
       for (const b of bodies) {                           // край блюда: отскок с потерей; слишком быстрые — притормаживают
         const r = Math.hypot(b.x, b.y);
         if (r > 0.97) {
-          const nx = b.x / r, ny = b.y / r, vn = b.vx * nx + b.vy * ny, k = cadit ? 1.35 : 1.8;
+          const nx = b.x / r, ny = b.y / r, vn = b.vx * nx + b.vy * ny, k = cadit ? 1.35 : 2;   // без cadit — упруго
           if (vn > 0) { b.vx -= k * vn * nx; b.vy -= k * vn * ny; }
           if (cadit) { b.vx *= 0.985; b.vy *= 0.985; }   // на дне — трение: тела скатываются и замирают
           b.x = nx * 0.97; b.y = ny * 0.97;
         }
-        const v = Math.hypot(b.vx, b.vy); if (v > 4) { b.vx *= 4 / v; b.vy *= 4 / v; }
+        const v = Math.hypot(b.vx, b.vy); if (v > 14) { b.vx *= 14 / v; b.vy *= 14 / v; eDirty = true; }   // только от взрыва
       }
     }
+    keepEnergy(T0);
   }
   function fiatLux() {                                    // восьмёрка Шенсине — Монтгомери: три равных тела гоняются друг за другом по одной кривой
     const s = 0.55, g = Gc(), k = Math.sqrt(g / s), x1 = [-0.97000436, 0.24308753], v3 = [-0.93240737, -0.86473146];
     const P = [[x1[0], x1[1]], [-x1[0], -x1[1]], [0, 0]], V = [[-v3[0] / 2, -v3[1] / 2], [-v3[0] / 2, -v3[1] / 2], v3];
     bodies.forEach((b, i) => { b.x = P[i][0] * s; b.y = P[i][1] * s; b.vx = V[i][0] * k; b.vy = V[i][1] * k; b.m = 1; b.fixed = false; b.trail = []; });
-    lux = true; cadit = false; still = false; start(); luxAt = performance.now();
+    lux = true; cadit = false; still = false; eDirty = true; start(); luxAt = performance.now();
   }
   let luxAt = 0;
 
@@ -205,7 +231,7 @@
     touches.delete(f.id);
     if (!t || t.kind !== 'body') return;
     const b = bodies[t.i], G = geo();
-    b.held = false;
+    b.held = false; eDirty = true;
     if (t.moved && !b.fixed) {                            // бросок: скорость пальца за последние кадры
       const h = t.hist, a = h[0], z = h[h.length - 1], dtm = Math.max(16, z[0] - a[0]);
       b.vx = clamp(((z[1] - a[1]) / G.R / dtm) * 1000 * 0.5, -3, 3); b.vy = clamp(((z[2] - a[2]) / G.R / dtm) * 1000 * 0.5, -3, 3);
@@ -309,15 +335,15 @@
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
-    sectors: [{ key: 'gravitas', label: 'gravitas', ang: deg(190) }, { key: 'flux', label: 'flux', ang: deg(150) }, { key: 'nexus', label: 'nexus', ang: deg(115) }, { key: 'hall', label: 'hall', ang: deg(80) }],
-    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
-    lfo: { keys: ['gravitas', 'flux', 'nexus', 'hall'], shapes: 'random' },   // gravitas с рампой — земля дышит
+    sectors: [{ key: 'gravitas', label: 'gravitas', ang: deg(190) }, { key: 'flux', label: 'flux', ang: deg(150) }, { key: 'nexus', label: 'nexus', ang: deg(125) }, { key: 'decay', label: 'decay', ang: deg(100) }, { key: 'hall', label: 'hall', ang: deg(80) }],
+    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => (k === 'decay' && fx.decay <= 0.005 ? 'off' : `${Math.round(fx[k] * 100)}%`),
+    lfo: { keys: ['gravitas', 'flux', 'nexus', 'decay', 'hall'], shapes: 'random' },   // gravitas с рампой — земля дышит
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // тела разбросаны и брошены, массы и ноты — аккорд
     const R = Math.random, chords = [[0, 7, 12], [0, 3, 7], [0, 5, 10], [-5, 0, 7], [0, 4, 11]], ch = chords[Math.floor(R() * chords.length)];
     bodies.forEach((b, i) => { const a = R() * TAU, r = 0.25 + R() * 0.55; b.x = Math.cos(a) * r; b.y = Math.sin(a) * r; b.vx = (R() - 0.5) * 1.6; b.vy = (R() - 0.5) * 1.6; b.m = 0.6 + R() * 1.2; b.semi = ch[i]; b.fixed = false; b.trail = []; });
-    lux = false; cadit = false; still = false; start();
+    lux = false; cadit = false; still = false; eDirty = true; start();
   }
   const tria = {
     n: 'XI', title: 'Tria corpora', sub: 'sal · sulphur · mercurius', theme: { ink: INK, bg: BGC, paper: PAPER },
@@ -333,14 +359,14 @@
     restore(js) {
       const st = JSON.parse(js);
       st.b.forEach((q, i) => Object.assign(bodies[i], q, { trail: [] }));
-      Object.assign(fx, st.fx); still = st.still; lux = st.lux; cadit = !!st.cadit; applyFx();
+      Object.assign(fx, st.fx); still = st.still; lux = st.lux; cadit = !!st.cadit; eDirty = true; applyFx();
       if (!still) start();
     },
     sounding, mapShot(on) { noSun = on; },
   };
   T.registerWorld(11, tria);
   window.t2d.tria = {
-    bodies, fx, geo, setFx: (k, v) => fxw.set(k, v), get still() { return still; }, get lux() { return lux; }, get cadit() { return cadit; }, get encounters() { return encounters; }, fiatLux,
+    bodies, fx, geo, setFx: (k, v) => fxw.set(k, v), get still() { return still; }, get lux() { return lux; }, get cadit() { return cadit; }, get encounters() { return encounters; }, fiatLux, energy: () => { const e = energy(); return e.K + e.U; }, spread: () => { const B = bodies, d = (i, j) => Math.hypot(B[i].x - B[j].x, B[i].y - B[j].y); return (d(0, 1) + d(1, 2) + d(0, 2)) / 3; },
     at: (i) => px(geo(), bodies[i]),
   };
 })();
