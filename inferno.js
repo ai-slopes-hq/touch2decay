@@ -21,12 +21,15 @@
   const SPAN = 60 / 9;                                    // у каждого круга своя зона ~⅔ октавы: 55–1760 Гц на девять кругов
 
   // ---------- состояние ----------
-  const circ = NAMES.map((_, k) => ({ pos: 0.5, sinner: false, held: 0, color: k < 3 ? 0 : k < 6 ? 1 : k < 8 ? 2 : 3, width: 0.5, drive: 0.15 + k * 0.08, level: 0.7, lvl: 0, n: null }));
-  const fx = { structure: 0, fire: 0.2, smoke: 0.35, ice: 0 };
+  const circ = NAMES.map((_, k) => ({ pos: 0.5, sinner: false, held: 0, color: k < 3 ? 0 : k < 6 ? 1 : k < 8 ? 2 : 3, width: 0.5, drive: 0.15 + k * 0.08, level: 0.7, lvl: 0, n: null, lfo: { rate: 0.4, depth: 0, shape: 0, to: 0, ph: Math.random(), v: 0, sh: 0 } }));
+  const SHAPES = ['sine', 'triangle', 'square', 'random'], LFO_TO = ['pitch', 'level'];
+  const lfoHz = (q) => 0.05 * 240 ** q.rate;              // 0.05 … 12 Гц
+  const fx = { structure: 0, fire: 0.2, smoke: 0.35, ice: 0, storm: 0.6 };
   const semiOf = (k, pos) => { let s = (8 - k) * SPAN + pos * SPAN; if (T.scaleOn) s = T.snapSemi(Math.round(s)); return s; };
   let iceE = 0, iceSet = 0, stormSemi = 0, stormPh = 0, stormAt = 0;   // иней растёт постепенно; буря второго круга качает его высоту
   const rot = new Array(9).fill(0), sparks = [];
-  const hzOf = (k) => 55 * 2 ** ((semiOf(k, circ[k].pos) + (k === 1 ? stormSemi : 0)) / 12);
+  const hzOf = (k) => 55 * 2 ** ((semiOf(k, circ[k].pos) + (k === 1 ? stormSemi : 0) + lfoSemi(k)) / 12);
+  const lfoSemi = (k) => { const l = circ[k].lfo; return l.depth > 0 && l.to === 0 ? l.depth * 7 * l.v : 0; };
   const structName = () => (fx.structure < 1 / 3 ? 'harmonic' : fx.structure < 2 / 3 ? 'scale' : 'metal');
   function ratios(k) {                                    // три полосы резонатора круга
     if (fx.structure < 1 / 3) return [1, 2, 3];          // гармоники: шум поёт нотой
@@ -141,8 +144,16 @@
         b.f.frequency.setTargetAtTime(f, t, 0.03); b.f.Q.setTargetAtTime(q, t, 0.05); b.bg.gain.setTargetAtTime(mk, t, 0.05);
       }
     });
-    n.vca.gain.setTargetAtTime(c.level, t, 0.05);
+    n.vca.gain.setTargetAtTime(lvlOf(c), t, 0.05);
     n.sh.curve = curve(1 + c.drive * 6);
+  }
+  const lvlOf = (c) => (c.lfo.depth > 0 && c.lfo.to === 1 ? c.level * (1 - c.lfo.depth * 0.5 * (1 - c.lfo.v)) : c.level);   // LFO в громкость — тремоло, пламя дышит
+  function lfoApply(k) {                                  // LFO круга — только частоты полос и громкость, без пересчёта добротности
+    const c = circ[k], n = c.n;
+    if (!n) return;
+    const t = actx.currentTime, f0 = hzOf(k), rs = ratios(k), sharp = c.lfo.shape >= 2 ? 0.004 : 0.02;
+    n.bands.forEach((b, j) => b.f.frequency.setTargetAtTime(Math.min(18000, f0 * rs[j]), t, sharp));
+    n.vca.gain.setTargetAtTime(lvlOf(c), t, sharp);
   }
   function strike(k, vel = 1) {                           // удар: всплеск шума звенит в резонаторе круга
     if (!bus) return;
@@ -259,9 +270,17 @@
     }
     iceE += (fx.ice - iceE) * (1 - Math.exp(-s / (fx.ice > iceE ? 6 : 3)));   // Коцит замерзает медленно, оттаивает быстрее
     if (Math.abs(iceE - iceSet) > 0.02) { iceSet = iceE; for (let k = 0; k < 9; k++) retune(k); }
-    if (burning(1)) {                                     // буря второго круга (Luxuria): ветер сам качает его высоту
+    circ.forEach((c, k) => {                              // LFO кругов: sine, triangle, square, random (ступени)
+      const l = c.lfo;
+      if (l.depth <= 0) { l.v = 0; return; }
+      const p0 = l.ph; l.ph = (l.ph + s * lfoHz(l)) % 1;
+      if (l.ph < p0) l.sh = Math.random() * 2 - 1;
+      l.v = l.shape === 0 ? Math.sin(l.ph * TAU) : l.shape === 1 ? 1 - 4 * Math.abs(l.ph - 0.5) : l.shape === 2 ? (l.ph < 0.5 ? 1 : -1) : l.sh;
+      if (burning(k) || c.lvl > 0.01) lfoApply(k);
+    });
+    if (burning(1) && fx.storm > 0.01) {                  // буря второго круга (Luxuria): ветер сам качает его высоту; storm = 0 — выключена
       stormPh += s * (0.11 + 0.06 * Math.sin(now * 0.00031));
-      stormSemi = 3.5 * Math.sin(stormPh * TAU) + 1.2 * Math.sin(stormPh * TAU * 2.7 + 1);
+      stormSemi = fx.storm * (5.8 * Math.sin(stormPh * TAU) + 2 * Math.sin(stormPh * TAU * 2.7 + 1));
       if (now - stormAt > 50) { stormAt = now; retune(1); }
     } else stormSemi *= 0.9;
   }
@@ -270,12 +289,18 @@
     const c = circ[k];
     T.openSheet({
       title: `${ROMAN[k]} · ${NAMES[k]}`, hint: 'circle — tap outside to close',
-      rows: [{ key: 'color', label: 'noise' }, { key: 'width', label: 'width' }, { key: 'drive', label: 'drive' }, { key: 'level', label: 'level' }],
-      get: (key) => (key === 'color' ? (c.color + 0.5) / 5 : c[key]),
+      rows: [{ key: 'color', label: 'noise' }, { key: 'width', label: 'width' }, { key: 'drive', label: 'drive' }, { key: 'level', label: 'level' },
+        { key: 'lfoDepth', label: 'lfo depth' }, { key: 'lfoRate', label: 'lfo rate' }, { key: 'lfoShape', label: 'lfo shape' }, { key: 'lfoTo', label: 'lfo to' }],
+      get: (key) => (key === 'color' ? (c.color + 0.5) / 5 : key === 'lfoDepth' ? c.lfo.depth : key === 'lfoRate' ? c.lfo.rate : key === 'lfoShape' ? (c.lfo.shape + 0.5) / 4 : key === 'lfoTo' ? c.lfo.to : c[key]),
       set: (key, v) => {
-        if (key === 'color') { const i = Math.min(4, Math.floor(v * 5)); if (i !== c.color) { c.color = i; recolor(k); } } else { c[key] = v; retune(k); }
+        if (key === 'color') { const i = Math.min(4, Math.floor(v * 5)); if (i !== c.color) { c.color = i; recolor(k); } }
+        else if (key === 'lfoDepth') { c.lfo.depth = v < 0.02 ? 0 : v; if (!c.lfo.depth) retune(k); }
+        else if (key === 'lfoRate') c.lfo.rate = v;
+        else if (key === 'lfoShape') c.lfo.shape = Math.min(3, Math.floor(v * 4));
+        else if (key === 'lfoTo') { c.lfo.to = v >= 0.5 ? 1 : 0; retune(k); }
+        else { c[key] = v; retune(k); }
       },
-      text: (key) => (key === 'color' ? COLORS[c.color] : `${Math.round(c[key] * 100)}%`),
+      text: (key) => (key === 'color' ? COLORS[c.color] : key === 'lfoDepth' ? (c.lfo.depth ? `${Math.round(c.lfo.depth * 100)}%` : 'off') : key === 'lfoRate' ? `${lfoHz(c.lfo).toFixed(lfoHz(c.lfo) < 1 ? 2 : 1)} Hz` : key === 'lfoShape' ? SHAPES[c.lfo.shape] : key === 'lfoTo' ? LFO_TO[c.lfo.to] : `${Math.round(c[key] * 100)}%`),
     });
   }
 
@@ -377,7 +402,7 @@
         }
         c.stroke();
       }
-      if (q.lvl > 0.04) flames(c, G, k, q.lvl, h ? EMBER2 : EMBER, now);
+      if (q.lvl > 0.04) flames(c, G, k, q.lvl * (q.lfo.depth > 0 && q.lfo.to === 1 ? 1 - q.lfo.depth * 0.5 * (1 - q.lfo.v) : 1), h ? EMBER2 : EMBER, now);
       if (iceE > 0.02 && k >= 9 - iceE * 9) {             // иней ползёт снизу вверх — растёт со временем
         c.strokeStyle = rgba(ICE, 0.45); c.lineWidth = 1; c.beginPath();
         for (let j = 0; j < 14; j++) { const a = Math.PI * (0.08 + (0.84 * j) / 13), x = G.cx - Math.cos(a) * r.rx, y = r.cy + Math.sin(a) * r.ry + 5; c.moveTo(x - 2, y); c.lineTo(x, y - 3); c.lineTo(x + 2, y); }
@@ -417,9 +442,10 @@
       { key: 'fire', label: 'fire', ang: deg(170) },
       { key: 'smoke', label: 'smoke', ang: deg(140) },
       { key: 'ice', label: 'ice', ang: deg(80) },
+      { key: 'storm', label: 'storm', ang: deg(60) },
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); },
-    text: (k) => (k === 'structure' ? structName() : `${Math.round(fx[k] * 100)}%`),
+    text: (k) => (k === 'structure' ? structName() : k === 'storm' && fx.storm <= 0.01 ? 'off' : `${Math.round(fx[k] * 100)}%`),
     arc: () => fx.smoke, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // 2–3 грешника на случайных кругах, случайная structure
@@ -438,10 +464,10 @@
     fx: fxw,
     legend: [['tap', 'tap a circle', 'a strike rings in its resonator'], ['hold', 'hold a circle', 'it smoulders while held'],
       ['drag', 'drag along a circle', 'pitch within its zone'], ['double', 'double tap a circle', 'a sinner stays, the circle burns'],
-      ['draw', 'swipe down through circles', 'a cascade into the pit'], ['hold', 'hold a burning circle', 'its sheet: noise, width, drive, level'], ['tap', 'tap the darkness', 'map of worlds']],
+      ['draw', 'swipe down through circles', 'a cascade into the pit'], ['hold', 'hold a burning circle', 'its sheet: noise, width, drive, level, lfo'], ['tap', 'tap the darkness', 'map of worlds']],
     build, tick, draw, down, move, up, dice,
     clear() { for (let k = 0; k < 9; k++) { circ[k].sinner = false; refresh(k); } },
-    snapshot: () => JSON.stringify({ circ: circ.map((q) => ({ pos: q.pos, sinner: q.sinner, color: q.color, width: q.width, drive: q.drive, level: q.level })), fx }),
+    snapshot: () => JSON.stringify({ circ: circ.map((q) => ({ pos: q.pos, sinner: q.sinner, color: q.color, width: q.width, drive: q.drive, level: q.level, lfo: { ...q.lfo } })), fx }),
     restore(js) {
       const st = JSON.parse(js);
       st.circ.forEach((s, k) => { const was = circ[k].color; Object.assign(circ[k], s); if (was !== s.color) recolor(k); });

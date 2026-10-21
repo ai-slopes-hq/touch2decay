@@ -991,7 +991,15 @@ async def sc_inferno(p):                           # Inferno: удар, тлен
     await p.shot('inferno-fx')
     a = await p.js('()=>t2d.inf.at(1, 0.5)'); await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(1500)
     st = await p.js('()=>t2d.inf.storm'); assert abs(st) > 0.05, f'the storm of the second circle sways its pitch: {st}'
-    await p.shot('inferno-storm'); await p.pin(a['x'], a['y'])
+    await p.shot('inferno-storm')
+    await p.js("()=>t2d.inf.setFx('storm', 0)"); await p.pg.wait_for_timeout(1200)
+    st = await p.js('()=>t2d.inf.storm'); assert abs(st) < 0.05, f'storm = 0 — the storm is off: {st}'
+    await p.js("()=>t2d.inf.setFx('storm', 0.6)")
+    await p.js("()=>{const l=t2d.inf.circ[1].lfo; l.depth=0.8; l.rate=0.9; l.shape=3; l.to=0}"); vs = []
+    for _ in range(5): vs.append(await p.js('()=>t2d.inf.circ[1].lfo.v')); await p.pg.wait_for_timeout(150)
+    assert len(set(round(v, 3) for v in vs)) > 2, f'circle LFO runs (random steps): {vs}'
+    await p.js("()=>{t2d.inf.circ[1].lfo.depth=0}")
+    await p.pin(a['x'], a['y'])
     await p.js("()=>{t2d.inf.setFx('ice', 0)}")
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(300)
     n = await p.js('()=>t2d.inf.circ.filter(c=>c.sinner).length'); assert 2 <= n <= 3, f'dice — 2–3 sinners: {n}'
