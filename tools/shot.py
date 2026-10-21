@@ -1059,6 +1059,13 @@ async def sc_monochord(p):                         # Monochordum: щипок, с
     bow = await p.js('()=>t2d.mono.str[2].bow'); assert bow > 0.05, f'stroke across — bowing: {bow}'
     await p.up(); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.mono.str[2].bow') == 0, 'finger up — the bow lifts'
+    await p.pg.wait_for_timeout(1500)
+    e0 = await p.js('()=>t2d.mono.str.map(s=>s.en)')
+    g0 = await p.js('()=>t2d.mono.geo()'); y = g0['y0'] + 40
+    pid = await p.hold(g0['box']['x0'] - 20, y, ms=40); await p.drag(pid, g0['box']['x0'] - 20, y, g0['box']['x1'] + 10, y, steps=8); await p.up(); await p.pg.wait_for_timeout(200)
+    e1 = await p.js('()=>t2d.mono.str.map(s=>s.en)'); print('  strum energies', [round(x, 4) for x in e1])
+    assert all(e1[i] > max(0.003, e0[i] * 1.5) for i in range(4)), f'sweep across all strings — strum: {e0} -> {e1}'
+    assert await p.js('()=>t2d.mono.str.every(s=>!s.bow)'), 'strum is not a bow'
     a = await p.js('()=>t2d.mono.at(3, 0.15)'); await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(1200)
     assert await p.js('()=>t2d.mono.str[3].sus'), 'double tap — the string sings by itself'
     e = await p.js('()=>t2d.mono.str[3].en'); assert e > 0.001, f'Aeolian string sounds: {e}'

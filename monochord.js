@@ -113,23 +113,41 @@
   function down(f) {
     start();
     const G = geo(), i = stringAt(G, f.x, f.y), now = performance.now();
-    if (i < 0) { touches.set(f.id, { kind: 'none' }); return; }
+    const free = () => touches.set(f.id, f.y > G.y0 - 10 && f.y < G.y1 + 14 ? { kind: 'strum', px: f.x, lt: now } : { kind: 'none' });   // мимо струн — можно начать страм
+    if (i < 0) { free(); return; }
     const yb = yOfR(G, str[i].r);
     if (Math.abs(f.y - yb) < 20) { touches.set(f.id, { kind: 'bridge', i, x0: f.x, y0: f.y }); return; }   // подставка — высота
-    if (f.y > yb) { touches.set(f.id, { kind: 'none' }); return; }   // ниже подставки струна заглушена
+    if (f.y > yb) { free(); return; }                     // ниже подставки струна заглушена
     if (lastTap && lastTap.i === i && now - lastTap.t < T.DTAP_MS) {   // двойной тап — струна поёт сама (Эолова)
       lastTap = null; str[i].sus = !str[i].sus; send({ t: 'sus', i, on: str[i].sus }); if (str[i].sus) { setLive(true); lastSound = now; }
       touches.set(f.id, { kind: 'none' }); return;
     }
     lastTap = { i, t: now };
     pluck(i, (f.y - G.y0) / Math.max(10, yb - G.y0));
-    touches.set(f.id, { kind: 'string', i, x0: f.x, y0: f.y, x: f.x, y: f.y, t0: now, lx: f.x, lt: now, moved: false });
+    touches.set(f.id, { kind: 'string', i, x0: f.x, y0: f.y, x: f.x, y: f.y, t0: now, lx: f.x, lt: now, moved: false, px: f.x });
+  }
+  function strum(t, f, G) {                               // страм: каждая струна, которую палец пересёк выше её подставки, — щипок; сила — скорость
+    const now = performance.now(), a = Math.min(t.px, f.x), b = Math.max(t.px, f.x), v = (b - a) / Math.max(8, now - (t.st || t.lt));
+    let hit = false;
+    G.xs.forEach((sx, i) => {
+      if (sx <= a || sx > b || (t.kind === 'string' && i === t.i && !t.strum)) return;
+      const yb = yOfR(G, str[i].r);
+      if (f.y > yb - 4 || f.y < G.y0 - 10) return;
+      pluck(i, (f.y - G.y0) / Math.max(10, yb - G.y0), clamp(0.35 + v * 0.6, 0.3, 1)); hit = true;
+    });
+    t.px = f.x; t.st = now;
+    return hit;
   }
   function move(f) {
     const t = touches.get(f.id);
     if (!t || t.kind === 'none' || t.sheet) return;
     const G = geo();
     if (t.kind === 'bridge') { const s = str[t.i]; s.r = snapR(rOfY(G, f.y)); retune(t.i); t.y = f.y; return; }
+    if (t.kind === 'strum') { strum(t, f, G); return; }
+    if (strum(t, f, G) || t.strum) {                      // ушёл на соседнюю струну — это уже страм, смычок снят
+      if (!t.strum) { t.strum = true; const s = str[t.i]; if (s.bow > 0) { s.bow = 0; send({ t: 'bow', i: t.i, amp: 0 }); } }
+      t.moved = true; t.x = f.x; t.y = f.y; return;
+    }
     t.x = f.x; t.y = f.y;
     if (!t.moved && Math.hypot(f.x - t.x0, f.y - t.y0) > 8) t.moved = true;
     if (t.moved) {                                        // поперёк струны — смычок: сила — скорость пальца
@@ -265,7 +283,7 @@
     n: 'VII', title: 'Monochordum', sub: 'chorda mundi',
     corner: { hit: (f) => { const h = geo().hand; return Math.hypot(f.x - h.x, f.y - h.y) < h.r * 1.1; }, draw: () => {} },   // рука Бога в облаке — карта
     fx: fxw,
-    legend: [['tap', 'tap a string above its bridge', 'pluck · near the end — bright'], ['drag', 'stroke across a string', 'bow it · speed — pressure'],
+    legend: [['tap', 'tap a string above its bridge', 'pluck · near the end — bright'], ['drag', 'stroke back and forth on a string', 'bow it · speed — pressure'], ['draw', 'sweep across the strings', 'strum · speed — strength'],
       ['up', 'drag a bridge', 'pitch · sticks to Pythagorean frets'], ['double', 'double tap a string', 'it sings by itself, like an Aeolian harp'],
       ['hold', 'hold a string', 'its sheet: brightness, decay, level'], ['tap', 'tap the cloud', 'map of worlds']],
     build, tick, draw, down, move, up, dice, enter: start,
