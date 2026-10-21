@@ -36,7 +36,7 @@
     const xs = Array.from({ length: N }, (_, i) => cx + (i - (N - 1) / 2) * sp);
     const box = { x0: xs[0] - sp * 0.7, x1: xs[N - 1] + sp * 0.7 }, ye = y0 + 0.25 * (y1 - y0);   // ye — Эмпирей, верхний лад
     const r = Math.max(28, Math.min(60, (W - box.x1) * 0.36)), hx = Math.min(box.x1 + (W - box.x1) / 2, box.x1 + r * 1.7);
-    const ar = Math.max(16, Math.min(26, box.x0 * 0.26)), aeolus = { x: Math.max(ar * 1.3, box.x0 - ar * 2.4), y: y0 + (ye - y0) * 0.55, r: ar };   // голова ветра — слева над Эмпиреем
+    const ar = Math.max(16, Math.min(28, box.x0 * 0.3)), aeolus = { x: Math.max(ar * 1.3, box.x0 - ar * 2.4), y: y0 + (ye - y0) * 0.55, r: ar };   // роза ветров — слева над Эмпиреем
     return { W, H, Ws, top, bot, cx, y0, y1, xs, sp, box, hand: { x: hx, y: y0 + (ye - y0) * 0.45, r }, aeolus };   // облако — справа над дугами интервалов
   }
   const yOfR = (G, r) => G.y0 + r * (G.y1 - G.y0);       // подставка: звучит от колков (y0) до неё
@@ -264,24 +264,33 @@
     c.strokeStyle = T.ink(0.8); c.fillStyle = T.BG; scallop(pts, 1.55); c.fill(); c.stroke();
     c.strokeStyle = T.ink(0.18); scallop(pts.map(([x, y]) => [hx + (x - hx) * 0.6, hy + (y - hy) * 0.6 + r * 0.1]), 1.4); c.stroke();
   }
-  function drawAeolus(c, G, now, held) {                  // голова ветра, как на старых картах: щёки надуты, дует на струны; сильнее ветер — длиннее и ярче струи
-    const { x, y, r } = G.aeolus, w = wind, puff = 1 + 0.1 * w;
-    c.lineWidth = 1; c.fillStyle = T.BG; c.strokeStyle = T.ink(held ? 1 : 0.8);
-    c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); c.stroke();                                         // лицо
-    c.strokeStyle = T.ink(0.45); c.beginPath();                                                          // кудри ветра — с затылка
-    for (let k = 0; k < 6; k++) { const a = Math.PI * (0.62 + k * 0.15), px = x + Math.cos(a) * r, py = y + Math.sin(a) * r; c.moveTo(px, py); c.quadraticCurveTo(px + Math.cos(a) * r * 0.5 - 4, py + Math.sin(a) * r * 0.4, px + Math.cos(a) * r * 0.35 - 7, py + Math.sin(a) * r * 0.55); }
+  let roseA = 0, roseT = 0;
+  function drawAeolus(c, G, now, held) {                  // роза ветров, как на старых картах: с ветром крутится и дует струями на струны
+    const { x, y, r } = G.aeolus, w = wind, dt = roseT ? Math.min(0.1, (now - roseT) / 1000) : 0;
+    roseT = now; roseA += dt * w * 1.6;
+    c.lineWidth = 1; c.fillStyle = T.BG;
+    c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+    c.strokeStyle = T.ink(held ? 0.95 : 0.7); c.beginPath(); c.arc(x, y, r, 0, TAU); c.stroke();
+    c.strokeStyle = T.ink(0.3); c.beginPath(); c.arc(x, y, r - 3, 0, TAU); c.stroke();
+    c.strokeStyle = T.ink(0.45); c.beginPath();                                           // деления по кругу — 32 румба
+    for (let k = 0; k < 32; k++) { const a = (k / 32) * TAU + roseA, l = k % 4 ? 2 : 4; c.moveTo(x + Math.cos(a) * (r - 3), y + Math.sin(a) * (r - 3)); c.lineTo(x + Math.cos(a) * (r - 3 - l), y + Math.sin(a) * (r - 3 - l)); }
     c.stroke();
-    c.strokeStyle = T.ink(0.7); c.beginPath(); c.arc(x + r * 0.3, y + r * 0.2, r * 0.3 * puff, 0, TAU); c.stroke();   // надутая щека
-    c.beginPath(); c.arc(x + r * 0.15, y - r * 0.28, r * 0.13, 0.15 * Math.PI, 0.85 * Math.PI); c.stroke();          // закрытый глаз
-    c.beginPath(); c.moveTo(x - r * 0.2, y - r * 0.5); c.quadraticCurveTo(x + r * 0.15, y - r * 0.62, x + r * 0.42, y - r * 0.45); c.stroke();   // бровь
-    const mx = x + r * 0.92, my = y + r * 0.22;                                                          // губы трубочкой
-    c.beginPath(); c.ellipse(mx, my, r * 0.12, r * 0.09 * (0.6 + w), 0, 0, TAU); c.stroke();
-    if (w > 0.01) {                                       // струи ветра — к струнам, бегут быстрее с силой
-      const len = (G.box.x1 - mx) * (0.35 + 0.65 * w);
-      c.strokeStyle = T.ink(0.12 + 0.45 * w); c.beginPath();
+    const ray = (a, len, wd, al) => {                    // луч розы: ромб, одна половина залита, другая — контур
+      const tx = x + Math.cos(a) * len, ty = y + Math.sin(a) * len, l1 = a - Math.PI / 2, l2 = a + Math.PI / 2;
+      const ax = x + Math.cos(l1) * wd, ay = y + Math.sin(l1) * wd, bx = x + Math.cos(l2) * wd, by = y + Math.sin(l2) * wd;
+      c.fillStyle = T.ink(al); c.beginPath(); c.moveTo(x, y); c.lineTo(ax, ay); c.lineTo(tx, ty); c.closePath(); c.fill();
+      c.fillStyle = T.BG; c.beginPath(); c.moveTo(x, y); c.lineTo(bx, by); c.lineTo(tx, ty); c.closePath(); c.fill();
+      c.strokeStyle = T.ink(al); c.beginPath(); c.moveTo(ax, ay); c.lineTo(tx, ty); c.lineTo(bx, by); c.stroke();
+    };
+    for (let k = 0; k < 4; k++) ray(roseA + Math.PI / 4 + (k * Math.PI) / 2, r * 0.55, r * 0.13, 0.55);   // короткие — между сторонами света
+    for (let k = 0; k < 4; k++) ray(roseA + (k * Math.PI) / 2, r * 0.86, r * 0.17, 0.85);                  // длинные — стороны света
+    c.fillStyle = T.BG; c.beginPath(); c.arc(x, y, r * 0.09, 0, TAU); c.fill(); c.strokeStyle = T.ink(0.85); c.stroke();
+    if (w > 0.01) {                                       // струи ветра от розы к струнам: длиннее, ярче и быстрее с силой
+      const mx = x + r + 4, len = (G.box.x1 - mx) * (0.35 + 0.65 * w);
+      c.strokeStyle = T.ink(0.12 + 0.45 * w); c.lineWidth = 1; c.beginPath();
       for (let k = -2; k <= 2; k++) {
-        const ph = (now * 0.0004 * (1 + w * 3) + (k + 2) * 0.23) % 1, a = k * 0.09, x0 = mx + 6 + ph * len * 0.6, y0 = my + k * 5 + Math.tan(a) * (x0 - mx);
-        c.moveTo(x0, y0); c.bezierCurveTo(x0 + 14, y0 - 4, x0 + 22, y0 + 4, x0 + 30 + 20 * w, y0 + Math.tan(a) * 30);
+        const ph = (now * 0.0004 * (1 + w * 3) + (k + 2) * 0.23) % 1, sl = k * 0.09, x0 = mx + ph * len * 0.6, y0 = y + k * 6 + Math.tan(sl) * (x0 - mx);
+        c.moveTo(x0, y0); c.bezierCurveTo(x0 + 14, y0 - 4, x0 + 22, y0 + 4, x0 + 30 + 20 * w, y0 + Math.tan(sl) * 30);
       }
       c.stroke();
     }
@@ -340,7 +349,7 @@
     fx: fxw,
     legend: [['tap', 'tap a string above its bridge', 'pluck · near the end — bright'], ['drag', 'stroke back and forth on a string', 'bow it · speed — pressure'], ['draw', 'sweep across the strings', 'strum · speed — strength'],
       ['up', 'drag a bridge', 'pitch · sticks to Pythagorean frets'], ['double', 'double tap a string', 'it sings by itself, like an Aeolian harp'],
-      ['hold', 'hold a string', 'its sheet: brightness, decay, level'], ['up', 'drag the wind head up', 'wind · every string sings · tap — on / off'], ['tap', 'tap the cloud', 'map of worlds']],
+      ['hold', 'hold a string', 'its sheet: brightness, decay, level'], ['up', 'drag the wind rose up', 'wind · every string sings · tap — on / off'], ['tap', 'tap the cloud', 'map of worlds']],
     build, tick, draw, down, move, up, dice, enter: start,
     clear() { str.forEach((s, i) => { s.sus = false; s.bow = 0; send({ t: 'sus', i, on: false }); send({ t: 'bow', i, amp: 0 }); }); setWind(0); },
     snapshot: () => JSON.stringify({ str: str.map((s) => ({ r: s.r, sus: s.sus, bright: s.bright, decay: s.decay, level: s.level })), fx, wind }),
