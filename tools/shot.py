@@ -994,7 +994,44 @@ async def sc_inferno(p):                           # Inferno: удар, тлен
     assert await p.js('()=>t2d.view') == 'map', 'tap the darkness — map'
 
 
-SCENARIOS = {'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_paradisus(p):                         # Paradisus: ангел поёт, гласная вдоль, сфера поперёк, закрепить, плашка, роза, FX, кубик, корзина, отмена, свет — карта
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(6)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 6], 'map quadrant above Cymatica opens Paradisus'
+    a = await p.js('()=>t2d.par.at(3, 0)'); pid = await p.hold(a['x'], a['y'], ms=600)
+    assert await p.js('()=>t2d.par.angels.length') == 1, 'touch a sphere — an angel sings'
+    lv = await p.js('()=>T2D.level'); print('  paradisus level, one angel:', round(lv, 3)); assert lv > 0.05, f'the angel is heard: {lv}'
+    assert await p.js('()=>t2d.par.angels[0].k') == 3, 'on the touched sphere'
+    b = await p.js('()=>t2d.par.at(3, 1.6)'); await p.drag(pid, a['x'], a['y'], b['x'], b['y'], steps=10)
+    v = await p.js('()=>t2d.par.angels[0].v'); assert 1.2 < v < 2.0, f'drag along — the vowel glides: {v}'
+    c = await p.js('()=>t2d.par.at(6, 1.6)'); await p.drag(pid, b['x'], b['y'], c['x'], c['y'], steps=6)
+    assert await p.js('()=>t2d.par.angels[0].k') == 6, 'drag across — another sphere'
+    await p.shot('paradisus-held'); await p.up(); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.par.angels.length') == 0, 'finger up — the angel is gone'
+    a = await p.js('()=>t2d.par.at(5, 4.2)'); await p.pin(a['x'], a['y'])
+    assert await p.js('()=>t2d.par.angels.filter(a=>a.pinned).length') == 1, 'double tap — the angel stays'
+    await p.pg.wait_for_timeout(300); await p.hold(a['x'], a['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a staying angel — its sheet'
+    await p.shot('paradisus-sheet')
+    await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    g = await p.js('()=>t2d.par.geo()'); await p.tap(g['cx'], g['cy']); await p.pg.wait_for_timeout(250)
+    assert await p.js('()=>t2d.par.glitter') > 3, 'tap the rose — grains glitter'
+    await p.js("()=>{t2d.par.setFx('ascensio', 0.6); t2d.par.setFx('shimmer', 0.8); t2d.par.setFx('gloria', 0.6)}"); await p.pg.wait_for_timeout(700)
+    await p.shot('paradisus-fx'); await p.js("()=>{t2d.par.setFx('ascensio', 0)}")
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(700)
+    assert await p.js('()=>t2d.par.angels.filter(a=>a.pinned).length') == 3, 'dice — a triad of three angels'
+    print('  paradisus level, dice:', round(await p.js('()=>T2D.level'), 3))
+    await p.shot('paradisus')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.par.angels.length') == 0, 'trash — the choir is silent'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.par.angels.length') == 3, 'undo brings the angels back'
+    L = await p.js('()=>t2d.par.geo().light'); await p.tap(L['x'] - 30, L['y'] - 30); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the light — map'
+    await p.shot('map-heaven')
+
+
+SCENARIOS = {'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
