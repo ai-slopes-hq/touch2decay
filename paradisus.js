@@ -3,7 +3,7 @@
 // Primum Mobile у самого света — девятая. Тронул сферу — там ангел и поёт, пока держишь; вдоль сферы — гласная (a сверху, дальше
 // по часовой e, i, o, u); поперёк — на другую сферу (прилипает к ближайшей). Двойной тап — ангел остаётся и поёт сам (до 4); держишь
 // закреплённого — его плашка: хор (1–5 певчих), расстройка, вибрато, дыхание, регистр. Роза в центре — Gloria: облако зёрен хора,
-// тап по ней — россыпь. FX: shimmer (октава вверх в зале), gloria, aether (зал), vibrato, ascensio (бесконечный подъём — Шепард).
+// тап по ней — россыпь. FX: shimmer (октава вверх в зале), gloria, aether (зал), vibrato. Лестница Иакова в левом нижнем углу — бесконечный подъём (Шепард): тап — вкл/выкл, вверх — быстрее.
 // В правом нижнем углу (к центру карты) — божественный свет: тап — карта. Спека: docs/superpowers/specs/2026-10-20-paradisus-design.md
 (() => {
   'use strict';
@@ -27,7 +27,8 @@
   const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
 
   // ---------- состояние ----------
-  const fx = { shimmer: 0.35, gloria: 0.2, aether: 0.5, vibrato: 0.4, ascensio: 0 };
+  const fx = { shimmer: 0.35, gloria: 0.2, aether: 0.5, vibrato: 0.4 };
+  const asc = { on: false, amt: 0.5 };                   // бесконечный подъём — часть сцены (лестница Иакова), не FX: корзина его гасит
   const angels = [];                                      // { k, v (0..5, по кругу), pinned, singers, detune, vib, breath, reg, n: узлы, lvl }
   let glitter = [];                                       // вспышки зёрен на розе: { t, a, r }
   const tonic = () => 110 * 2 ** ((T.scaleOn ? T.scaleRoot : 0) / 12);   // тоника лада во второй октаве (A2 = 110)
@@ -45,7 +46,7 @@
     const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, h = bot - top, cx = W / 2, cy = top + h * 0.48;
     const RX = W / 2 - 14, RY = Math.min(cy - top - 10, bot - cy - 10), rx0 = W * 0.13, ry0 = rx0 * 1.6;
     const sph = NAMES.map((_, k) => ({ rx: rx0 + ((RX - rx0) * k) / 8, ry: ry0 + ((RY - ry0) * k) / 8 }));
-    return { W, H, top, bot, cx, cy, sph, rose: rx0 * 0.72, light: { x: W, y: H - T.safeBot, r: Math.min(100, W * 0.26) } };
+    return { W, H, top, bot, cx, cy, sph, rose: rx0 * 0.72, light: { x: W, y: H - T.safeBot, r: Math.min(100, W * 0.26) }, ladder: { x0: W * 0.05, y0: bot + 2, x1: W * 0.16, y1: bot - Math.min(130, h * 0.17) } };   // лестница Иакова — в левом нижнем углу, мимо сфер
   }
   const angleAt = (G, k, x, y) => { const s = G.sph[k]; return (Math.atan2((x - G.cx) / s.rx, -(y - G.cy) / s.ry) + TAU) % TAU; };
   const vOf = (ang) => (ang / TAU) * 5;
@@ -55,6 +56,8 @@
     G.sph.forEach((s, k) => { const rho = Math.hypot(dx / s.rx, dy / s.ry), d = Math.abs(r - r / Math.max(rho, 1e-6)); if (d < bd) { bd = d; best = k; } });
     return bd < 30 ? best : -1;
   }
+  const segDist = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy, t = clamp(((px - ax) * dx + (py - ay) * dy) / l); return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
+  const ladderHit = (G, x, y) => { const L = G.ladder; return segDist(x, y, L.x0, L.y0, L.x1, L.y1) < 26; };
   function anglePos(G, k, v) { const s = G.sph[k], a = (v / 5) * TAU; return { x: G.cx + Math.sin(a) * s.rx, y: G.cy - Math.cos(a) * s.ry }; }
 
   // ---------- звук ----------
@@ -123,7 +126,7 @@
   }
   setInterval(() => {
     if (!bus) return;
-    if (angels.length || fx.ascensio > 0.01) lastSound = performance.now();
+    if (angels.length || asc.on) lastSound = performance.now();
     else if (performance.now() - lastSound > 9000) setLive(false);
   }, 1000);
   const vibCents = (a) => 30 * fx.vibrato * (0.3 + a.vib * 1.4);
@@ -180,7 +183,7 @@
     bus.fb.gain.setTargetAtTime(fx.shimmer * 0.62, t, 0.08);   // доля хвоста, ушедшего на октаву вверх обратно в собор
     setIR();
     for (const a of angels) retune(a);
-    ascOn(fx.ascensio > 0.01);
+    ascOn(asc.on);
   }
   // Gloria — облако зёрен хора: короткие окна синуса на гармониках поющих ангелов, по стерео вразброс, в зал
   function grain(fBase) {
@@ -206,9 +209,9 @@
   }
   function tick(now, dt) {
     if (bus && bus.asc) {
-      ascPh = (ascPh + dt * (0.03 + fx.ascensio * 0.2)) % 7;
+      ascPh = (ascPh + dt * (0.03 + asc.amt * 0.2)) % 7;
       const t = actx.currentTime;
-      bus.asc.forEach(({ o, gg }, i) => { const oc = (i + ascPh) % 7, a = Math.sin((Math.PI * oc) / 7) ** 2; o.frequency.setTargetAtTime(55 * 2 ** oc, t, 0.03); gg.gain.setTargetAtTime(a * fx.ascensio * 0.035, t, 0.05); });
+      bus.asc.forEach(({ o, gg }, i) => { const oc = (i + ascPh) % 7, a = Math.sin((Math.PI * oc) / 7) ** 2; o.frequency.setTargetAtTime(55 * 2 ** oc, t, 0.03); gg.gain.setTargetAtTime(a * (0.3 + asc.amt * 0.7) * 0.035, t, 0.05); });
     }
     const singing = angels.filter((a) => a.n);
     if (fx.gloria > 0.01 && singing.length) {
@@ -231,6 +234,7 @@
   function newAngel(k, v) { return { k, v, pinned: false, singers: 3, detune: 0.4, vib: 0.5, breath: 0.25, reg: 1, n: null, lvl: 0 }; }
   function down(f) {
     const G = geo(), now = performance.now();
+    if (ladderHit(G, f.x, f.y)) { touches.set(f.id, { kind: 'ladder', a0: asc.amt, y0: f.y, moved: false }); return; }   // лестница — подъём
     if (Math.hypot(f.x - G.cx, f.y - G.cy) < G.rose) {    // роза — россыпь зёрен
       const singing = angels.filter((a) => a.n), base = singing.length ? hzOf(singing[0]) : tonic() * 2;
       for (let i = 0; i < 12; i++) setTimeout(() => grain(base), i * 35);
@@ -260,6 +264,12 @@
   }
   function move(f) {
     const t = touches.get(f.id);
+    if (t && t.kind === 'ladder') {                       // по лестнице вверх — подъём быстрее и громче
+      if (!t.moved && Math.abs(f.y - t.y0) < 6) return;
+      t.moved = true; asc.amt = clamp(t.a0 - (f.y - t.y0) / 150);
+      if (!asc.on) { asc.on = true; applyFx(); }
+      return;
+    }
     if (!t || t.kind !== 'angel' || t.sheet) return;
     t.x = f.x; t.y = f.y;
     if (Math.hypot(f.x - t.x0, f.y - t.y0) < 6 && !t.moved) return;
@@ -272,6 +282,7 @@
   function up(f) {
     const t = touches.get(f.id);
     touches.delete(f.id);
+    if (t && t.kind === 'ladder' && !t.moved) { asc.on = !asc.on; applyFx(); return; }   // тап по лестнице — подъём вкл / выкл
     if (!t || t.kind !== 'angel') return;
     if (t.temp && !t.a.pinned) { voiceOff(t.a, 0.5); const i = angels.indexOf(t.a); if (i >= 0) angels.splice(i, 1); }
   }
@@ -291,6 +302,21 @@
   }
 
   // ---------- рисование ----------
+  function drawLadder(c, G, now) {                        // лестница Иакова: две тетивы и ступени; идёт подъём — по ней поднимаются крылышки
+    const L = G.ladder, dx = L.x1 - L.x0, dy = L.y1 - L.y0, len = Math.hypot(dx, dy), nx = -dy / len, ny = dx / len, w = 7, a = asc.on ? 0.85 : 0.5;
+    c.strokeStyle = T.ink(a); c.lineWidth = 1; c.beginPath();
+    for (const s of [-1, 1]) { c.moveTo(L.x0 + nx * w * s, L.y0 + ny * w * s); c.lineTo(L.x1 + nx * w * s * 0.7, L.y1 + ny * w * s * 0.7); }
+    const n = Math.round(len / 13);
+    for (let i = 1; i < n; i++) { const t = i / n, x = L.x0 + dx * t, y = L.y0 + dy * t, ww = w * (1 - 0.3 * t); c.moveTo(x - nx * ww, y - ny * ww); c.lineTo(x + nx * ww, y + ny * ww); }
+    c.stroke();
+    c.strokeStyle = rgba(GOLD, asc.on ? 0.8 : 0.35); c.beginPath();
+    for (let j = 0; j < 9; j++) { const q = Math.PI * 1.25 + (j / 8) * Math.PI * 0.5; c.moveTo(L.x1 + Math.cos(q) * 5, L.y1 + Math.sin(q) * 5); c.lineTo(L.x1 + Math.cos(q) * 14, L.y1 + Math.sin(q) * 14); }
+    c.stroke();
+    if (asc.on) for (let i = 0; i < 3; i++) {             // крылышки поднимаются по ступеням
+      const t = ((now * (0.00012 + asc.amt * 0.0005)) + i / 3) % 1, x = L.x0 + dx * t, y = L.y0 + dy * t;
+      c.strokeStyle = T.ink(0.8 * Math.sin(Math.PI * t)); c.beginPath(); c.moveTo(x - 5, y); c.quadraticCurveTo(x - 2.5, y - 4, x, y - 1); c.quadraticCurveTo(x + 2.5, y - 4, x + 5, y); c.stroke();
+    }
+  }
   let wallC = null, wallKey = '';
   function wall(G) {                                      // фон: слоновая кость, лучи от розы, сферы с точками-звёздами, божественный свет в углу
     const key = `${G.W}x${G.H}x${T.DPR}|${G.cy}`;
@@ -351,9 +377,10 @@
       for (let j = 0; j < 18; j++) { const a = (j / 18) * TAU + now * 0.00005; c.moveTo(G.cx + Math.cos(a) * 44, G.cy + Math.sin(a) * 70); c.lineTo(G.cx + Math.cos(a) * 300, G.cy + Math.sin(a) * 480); }
       c.stroke();
     }
-    if (fx.ascensio > 0.01) {                             // ascensio — крылышки плывут вверх
-      c.strokeStyle = T.ink(0.18 + 0.2 * fx.ascensio); c.lineWidth = 1; c.beginPath();
-      const span = G.bot - G.top, sp = 0.015 + fx.ascensio * 0.06;
+    drawLadder(c, G, now);
+    if (asc.on) {                                         // подъём — крылышки плывут вверх
+      c.strokeStyle = T.ink(0.18 + 0.2 * asc.amt); c.lineWidth = 1; c.beginPath();
+      const span = G.bot - G.top, sp = 0.015 + asc.amt * 0.06;
       for (let i = 0; i < 7; i++) {
         const x = G.W * (0.12 + ((i * 0.37) % 0.76)), y = G.bot - ((now * sp + i * (span / 7)) % span);
         c.moveTo(x - 6, y); c.quadraticCurveTo(x - 3, y - 5, x, y - 1); c.quadraticCurveTo(x + 3, y - 5, x + 6, y);
@@ -389,14 +416,13 @@
       { key: 'gloria', label: 'gloria', ang: deg(170) },
       { key: 'aether', label: 'aether', ang: deg(140) },
       { key: 'vibrato', label: 'vibrato', ang: deg(110) },
-      { key: 'ascensio', label: 'ascensio', ang: deg(80) },
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
     arc: () => fx.aether, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
-  function clearAll() { for (const a of angels.splice(0)) voiceOff(a, 0.4); }
+  function clearAll() { for (const a of angels.splice(0)) voiceOff(a, 0.4); if (asc.on) { asc.on = false; ascOn(false); } }
   function dice() {                                       // три ангела на сферах аккорда 4 · 5 · 6 — мажорное трезвучие в чистом строе
-    clearAll();
+    for (const a of angels.splice(0)) voiceOff(a, 0.4);   // подъём кубик не трогает
     const chords = [[4, 5, 6], [3, 4, 5], [4, 6, 8], [5, 6, 8], [2, 3, 5]], ch = chords[Math.floor(Math.random() * chords.length)];
     const v0 = Math.random() * 5;                       // гласные — вразброс по кругу, ангелы не толпятся
     ch.forEach((n, i) => { const a = newAngel(9 - n, (v0 + i * 1.7 + Math.random() * 0.4) % 5); a.pinned = true; angels.push(a); voiceOn(a); });
@@ -408,23 +434,23 @@
     fx: fxw,
     legend: [['tap', 'touch a sphere', 'an angel sings while held'], ['drag', 'drag along a sphere', 'the vowel: a, e, i, o, u'],
       ['drag', 'drag across', 'to another sphere — another harmonic'], ['double', 'double tap', 'the angel stays and sings · again — let go'],
-      ['hold', 'hold a staying angel', 'its sheet: choir, detune, vibrato, breath, register'], ['tap', 'tap the rose', 'a shower of grains'],
+      ['hold', 'hold a staying angel', 'its sheet: choir, detune, vibrato, breath, register'], ['tap', 'tap the rose', 'a shower of grains'], ['tap', "tap Jacob's ladder · drag up", 'the endless ascent · faster'],
       ['tap', 'tap the light', 'map of worlds']],
     build, tick, draw, down, move, up, dice,
     clear: clearAll,
-    snapshot: () => JSON.stringify({ angels: angels.filter((a) => a.pinned).map((a) => ({ k: a.k, v: a.v, singers: a.singers, detune: a.detune, vib: a.vib, breath: a.breath, reg: a.reg })), fx }),
+    snapshot: () => JSON.stringify({ angels: angels.filter((a) => a.pinned).map((a) => ({ k: a.k, v: a.v, singers: a.singers, detune: a.detune, vib: a.vib, breath: a.breath, reg: a.reg })), fx, asc }),
     restore(js) {
       const st = JSON.parse(js);
       clearAll();
-      Object.assign(fx, st.fx);
+      Object.assign(fx, st.fx); if (st.asc) Object.assign(asc, st.asc);
       for (const s of st.angels) { const a = Object.assign(newAngel(s.k, s.v), s, { pinned: true }); angels.push(a); voiceOn(a); }
       applyFx();
     },
-    sounding: () => angels.length > 0,
+    sounding: () => angels.length > 0 || asc.on,
   };
   T.registerWorld(6, paradisus);
   window.t2d.par = {
-    angels, fx, geo, setFx: (k, v) => fxw.set(k, v), get live() { return !!(bus && bus.live); },
+    angels, fx, asc, geo, setFx: (k, v) => fxw.set(k, v), get live() { return !!(bus && bus.live); },
     at: (k, v) => anglePos(geo(), k, v), hz: (a) => hzOf(a), dice: () => dice(), get glitter() { return glitter.length; },
   };
 })();

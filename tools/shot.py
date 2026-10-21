@@ -979,15 +979,19 @@ async def sc_inferno(p):                           # Inferno: удар, тлен
     assert await p.js('()=>T2D.sheetOpen'), 'long hold on a burning circle — its sheet'
     await p.shot('inferno-sheet')
     await p.tap(200, 140); await p.pg.wait_for_timeout(100)
-    await p.js("()=>{t2d.inf.setFx('fall', 0.6); t2d.inf.setFx('ice', 0.7); t2d.inf.setFx('smoke', 0.7)}"); await p.pg.wait_for_timeout(600)
+    K = await p.js('()=>t2d.inf.geo().coc'); cx = await p.js('()=>t2d.inf.geo().cx'); await p.tap(cx, K['cy']); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.inf.fall.on'), 'tap Cocytus — the endless fall'
+    pid = await p.hold(cx, K['cy'], ms=60); await p.drag(pid, cx, K['cy'], cx, K['cy'] - 40, steps=6); await p.up()
+    assert await p.js('()=>t2d.inf.fall.amt') > 0.7, 'drag up on Cocytus — faster'
+    await p.js("()=>{t2d.inf.setFx('ice', 0.7); t2d.inf.setFx('smoke', 0.7)}"); await p.pg.wait_for_timeout(600)
     await p.shot('inferno-fx')
-    await p.js("()=>{t2d.inf.setFx('fall', 0); t2d.inf.setFx('ice', 0)}")
+    await p.js("()=>{t2d.inf.setFx('ice', 0)}")
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(300)
     n = await p.js('()=>t2d.inf.circ.filter(c=>c.sinner).length'); assert 2 <= n <= 3, f'dice — 2–3 sinners: {n}'
     await p.pg.wait_for_timeout(1200); print('  inferno level, dice:', round(await p.js('()=>T2D.level'), 3))
     await p.shot('inferno')
     c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.inf.circ.every(c=>!c.sinner)'), 'trash — no sinners'
+    assert await p.js('()=>t2d.inf.circ.every(c=>!c.sinner) && !t2d.inf.fall.on'), 'trash — no sinners, the fall stops'
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.inf.circ.filter(c=>c.sinner).length') == n, 'undo brings the sinners back'
     D = await p.js('()=>t2d.inf.geo().dark'); await p.tap(D['x'] + 30, D['y'] - 30); await p.pg.wait_for_timeout(900)
@@ -1016,14 +1020,16 @@ async def sc_paradisus(p):                         # Paradisus: ангел по�
     await p.tap(200, 120); await p.pg.wait_for_timeout(150)
     g = await p.js('()=>t2d.par.geo()'); await p.tap(g['cx'], g['cy']); await p.pg.wait_for_timeout(250)
     assert await p.js('()=>t2d.par.glitter') > 3, 'tap the rose — grains glitter'
-    await p.js("()=>{t2d.par.setFx('ascensio', 0.6); t2d.par.setFx('shimmer', 0.8); t2d.par.setFx('gloria', 0.6)}"); await p.pg.wait_for_timeout(700)
-    await p.shot('paradisus-fx'); await p.js("()=>{t2d.par.setFx('ascensio', 0)}")
+    L = await p.js('()=>{const L=t2d.par.geo().ladder; return {x:(L.x0+L.x1)/2, y:(L.y0+L.y1)/2}}'); await p.tap(L['x'], L['y']); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.par.asc.on'), "tap Jacob's ladder — the endless ascent"
+    await p.js("()=>{t2d.par.setFx('shimmer', 0.8); t2d.par.setFx('gloria', 0.6)}"); await p.pg.wait_for_timeout(700)
+    await p.shot('paradisus-fx')
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(700)
     assert await p.js('()=>t2d.par.angels.filter(a=>a.pinned).length') == 3, 'dice — a triad of three angels'
     print('  paradisus level, dice:', round(await p.js('()=>T2D.level'), 3))
     await p.shot('paradisus')
     c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.par.angels.length') == 0, 'trash — the choir is silent'
+    assert await p.js('()=>t2d.par.angels.length') == 0 and not await p.js('()=>t2d.par.asc.on'), 'trash — the choir and the ascent are silent'
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.par.angels.length') == 3, 'undo brings the angels back'
     L = await p.js('()=>t2d.par.geo().light'); await p.tap(L['x'] - 30, L['y'] - 30); await p.pg.wait_for_timeout(900)
