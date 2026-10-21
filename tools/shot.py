@@ -1179,6 +1179,10 @@ async def sc_oceanus(p):                           # Oceanus: город поё�
     await p.pg.wait_for_timeout(300); a = await p.js('()=>t2d.ocean.at(1.2, 0.5)'); await p.hold(a['x'], a['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold a staying city — its sheet'
     await p.shot('oceanus-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    m = await p.js('()=>t2d.ocean.moonAt()'); await p.hold(m['x'], m['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold the moon — luna sheet'
+    await p.js('()=>{t2d.ocean.luna.sway=0.8; t2d.ocean.luna.to=1; t2d.worlds[8].fx.set("tide", t2d.ocean.fx.tide)}')
+    await p.shot('oceanus-luna'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
     w = await p.js('()=>t2d.ocean.water(4.0, 0.9)'); await p.tap(w['x'], w['y']); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.ocean.ripples') > 0, 'quick tap on the water — rings spread'
     await p.js("()=>{const v=t2d.ocean.voices.find(v=>v.pinned); v.path=2; t2d.ocean.send(v)}"); await p.pg.wait_for_timeout(600)

@@ -77,8 +77,19 @@
     if (voices.length || gains.some((x) => x > 0.002)) lastSound = performance.now();
     else if (performance.now() - lastSound > 8000) setLive(false);
   }, 1000);
+  const luna = { orbit: 0.45, storm: 0, sway: 0, to: 0 };   // луна — LFO мира: орбита, рывки, качание (sway) натяжения, высоты или затухания
+  const SWAY_TO = ['tension', 'pitch', 'damping'];
+  function lunaSheet() {
+    T.openSheet({
+      title: 'luna', hint: 'the moon — tap outside to close',
+      rows: [{ key: 'orbit', label: 'orbit' }, { key: 'storm', label: 'shape' }, { key: 'pull', label: 'pull' }, { key: 'sway', label: 'sway' }, { key: 'to', label: 'sway to' }],
+      get: (k) => (k === 'pull' ? fx.tide : k === 'to' ? (luna.to + 0.5) / 3 : luna[k]),
+      set: (k, v) => { if (k === 'pull') fx.tide = v; else if (k === 'storm') luna.storm = v >= 0.5 ? 1 : 0; else if (k === 'to') luna.to = Math.min(2, Math.floor(v * 3)); else luna[k] = v; applyFx(); },
+      text: (k) => (k === 'orbit' ? `${(1 / (0.005 * 40 ** luna.orbit)).toFixed(0)} s` : k === 'storm' ? (luna.storm ? 'storm' : 'sine') : k === 'to' ? SWAY_TO[luna.to] : k === 'sway' && luna.sway < 0.01 ? 'off' : `${Math.round((k === 'pull' ? fx.tide : luna[k]) * 100)}%`),
+    });
+  }
   function sendParams() {
-    send({ t: 'params', kt: 0.004 * 60 ** fx.tension, damp: 0.00003 * 300 ** fx.damping, kc: 0.0015 + 0.004 * fx.tide, wind: fx.wind * fx.wind, tide: fx.tide * 0.9, moonRate: 0.02 + fx.tide * 0.05 });
+    send({ t: 'params', kt: 0.004 * 60 ** fx.tension, damp: 0.00003 * 300 ** fx.damping, kc: 0.0015 + 0.004 * fx.tide, wind: fx.wind * fx.wind, tide: fx.tide * 0.9, moonRate: 0.005 * 40 ** luna.orbit, storm: luna.storm, sway: luna.sway, swayTo: luna.to });
   }
   function applyFx() {
     if (!bus) return;
@@ -110,7 +121,8 @@
   }
   function down(f) {
     start();
-    const G = geo(), P = polar(G, f.x, f.y), now = performance.now();
+    const G = geo(), P = polar(G, f.x, f.y), now = performance.now(), mp = at(G, moon * TAU, G.Rf + 22);
+    if (Math.hypot(f.x - mp.x, f.y - mp.y) < 26) { touches.set(f.id, { kind: 'moon', t0: now }); return; }   // луна: держишь — её плашка
     if (P.d < G.Rd - 2) {                                  // земля: города-голоса
       const near = voiceAt(G, f.x, f.y);
       if (near && near.pinned) {
@@ -168,6 +180,7 @@
     });
   }
   function tick(now) {
+    for (const t of touches.values()) if (t.kind === 'moon' && !t.sheet && now - t.t0 > T.HOLD_MS * 0.6) { t.sheet = true; lunaSheet(); }
     for (const t of touches.values()) if (t.kind === 'voice' && !t.temp && !t.moved && !t.sheet && now - t.t0 > T.HOLD_MS) { t.sheet = true; voiceSheet(t.v); }   // держишь оставленный город — плашка
   }
 
@@ -267,6 +280,7 @@
     }
     c.stroke();
     const ma = moon * TAU, mp = at(G, ma, G.Rf + 22), mr = 5 + 4 * fx.tide;   // луна тянет воду на себя
+    if (luna.sway > 0.01) { c.strokeStyle = ink(0.15 + 0.35 * luna.sway); c.lineWidth = 1; c.setLineDash(luna.storm ? [2, 3] : []); c.beginPath(); c.arc(mp.x, mp.y, mr + 4 + 6 * luna.sway * (0.5 + 0.5 * Math.sin(ma)), 0, TAU); c.stroke(); c.setLineDash([]); }   // качание: ореол дышит с луной
     c.fillStyle = ink(0.85); c.beginPath(); c.arc(mp.x, mp.y, mr, 0, TAU); c.fill();
     c.fillStyle = BGC; c.beginPath(); c.arc(mp.x + mr * 0.45, mp.y - mr * 0.2, mr * 0.88, 0, TAU); c.fill();
     if (fx.tide > 0.05) { c.strokeStyle = ink(0.12 + 0.2 * fx.tide); c.setLineDash([2, 5]); c.beginPath(); const q = at(G, ma, surf(G, ma) + 4); c.moveTo(mp.x, mp.y); c.lineTo(q.x, q.y); c.stroke(); c.setLineDash([]); }
@@ -331,22 +345,22 @@
     legend: [['tap', 'touch the land', 'a city sings while you hold it'], ['double', 'double tap the land', 'the city stays (up to four)'],
       ['drag', 'drag a city', 'pitch · clockwise — semitones, inland — octave up'], ['hold', 'hold a staying city', 'its sheet: level, octave'],
       ['drag', 'touch the ocean', 'pull the water · waves run round — the timbre lives'], ['tap', 'quick tap on the water', 'splash'],
-      ['tap', 'tap the sun', 'map of worlds']],
+      ['hold', 'hold the moon', 'its sheet: orbit, shape, pull, sway — the moon as an LFO'], ['tap', 'tap the sun', 'map of worlds']],
     build, tick, draw, down, move, up, dice, enter: () => { inWorld = true; start(); }, leave: () => { inWorld = false; },
     clear() { while (voices.length) dropVoice(voices[0]); },
-    snapshot: () => JSON.stringify({ v: voices.filter((v) => v.pinned).map(({ ang, rn, lvl, oct, path }) => ({ ang, rn, lvl, oct, path })), fx }),
+    snapshot: () => JSON.stringify({ v: voices.filter((v) => v.pinned).map(({ ang, rn, lvl, oct, path }) => ({ ang, rn, lvl, oct, path })), fx, luna: { ...luna } }),
     restore(js) {
       const st = JSON.parse(js);
       while (voices.length) dropVoice(voices[0]);
       for (const q of st.v) { const v = addVoice(q.ang, q.rn, true); if (v) { v.lvl = q.lvl; v.oct = q.oct; v.path = q.path || 0; sendVoice(v); } }
-      Object.assign(fx, st.fx); applyFx();
+      Object.assign(fx, st.fx); if (st.luna) Object.assign(luna, st.luna); applyFx();
     },
     sounding, mapShot(on) { noSun = on; },
   };
   T.registerWorld(8, ocean);
   window.t2d.ocean = {
     voices, fx, geo, setFx: (k, v) => fxw.set(k, v), get ready() { return ready; }, get live() { return !!(bus && bus.live); },
-    get shape() { return shape; }, get ripples() { return ripples.length; }, send: (v) => sendVoice(v), get gains() { return gains; }, hz: hzOf,
+    luna, moonAt: () => { const G = geo(); return at(G, moon * TAU, G.Rf + 22); }, get shape() { return shape; }, get ripples() { return ripples.length; }, send: (v) => sendVoice(v), get gains() { return gains; }, hz: hzOf,
     at: (a, rn) => at(geo(), a, rn * geo().Rd), water: (a, k) => { const G = geo(); return at(G, a, G.Rd + (G.Ro - G.Rd) * k); },
   };
 })();
