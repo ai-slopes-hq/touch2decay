@@ -985,7 +985,13 @@ async def sc_inferno(p):                           # Inferno: удар, тлен
     await p.shot('inferno-sheet')
     await p.tap(200, 140); await p.pg.wait_for_timeout(100)
     await p.js("()=>{t2d.inf.setFx('ice', 0.7); t2d.inf.setFx('smoke', 0.7)}"); await p.pg.wait_for_timeout(600)
+    i1 = await p.js('()=>t2d.inf.ice'); assert 0.02 < i1 < 0.4, f'ice grows slowly, not at once: {i1}'
+    await p.pg.wait_for_timeout(4000); i2 = await p.js('()=>t2d.inf.ice'); assert i2 > i1 + 0.15, f'Cocytus keeps freezing: {i1} -> {i2}'
+    assert await p.js('()=>t2d.inf.sparks') > 3, 'burning circles throw sparks'
     await p.shot('inferno-fx')
+    a = await p.js('()=>t2d.inf.at(1, 0.5)'); await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(1500)
+    st = await p.js('()=>t2d.inf.storm'); assert abs(st) > 0.05, f'the storm of the second circle sways its pitch: {st}'
+    await p.shot('inferno-storm'); await p.pin(a['x'], a['y'])
     await p.js("()=>{t2d.inf.setFx('ice', 0)}")
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(300)
     n = await p.js('()=>t2d.inf.circ.filter(c=>c.sinner).length'); assert 2 <= n <= 3, f'dice — 2–3 sinners: {n}'

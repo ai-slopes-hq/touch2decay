@@ -24,7 +24,9 @@
   const circ = NAMES.map((_, k) => ({ pos: 0.5, sinner: false, held: 0, color: k < 3 ? 0 : k < 6 ? 1 : k < 8 ? 2 : 3, width: 0.5, drive: 0.15 + k * 0.08, level: 0.7, lvl: 0, n: null }));
   const fx = { structure: 0, fire: 0.2, smoke: 0.35, ice: 0 };
   const semiOf = (k, pos) => { let s = (8 - k) * SPAN + pos * SPAN; if (T.scaleOn) s = T.snapSemi(Math.round(s)); return s; };
-  const hzOf = (k) => 55 * 2 ** (semiOf(k, circ[k].pos) / 12);
+  let iceE = 0, iceSet = 0, stormSemi = 0, stormPh = 0, stormAt = 0;   // иней растёт постепенно; буря второго круга качает его высоту
+  const rot = new Array(9).fill(0), sparks = [];
+  const hzOf = (k) => 55 * 2 ** ((semiOf(k, circ[k].pos) + (k === 1 ? stormSemi : 0)) / 12);
   const structName = () => (fx.structure < 1 / 3 ? 'harmonic' : fx.structure < 2 / 3 ? 'scale' : 'metal');
   function ratios(k) {                                    // три полосы резонатора круга
     if (fx.structure < 1 / 3) return [1, 2, 3];          // гармоники: шум поёт нотой
@@ -111,7 +113,7 @@
     if (sounding()) lastSound = performance.now();
     else if (performance.now() - lastSound > 8000) setLive(false);
   }, 1000);
-  const Qof = (c) => (4 + (1 - c.width) * 60) * (1 + fx.ice * 8);
+  const Qof = (c) => (4 + (1 - c.width) * 60) * (1 + iceE * 8);
   function circleNodes(k) {                               // резонатор круга — по требованию: три полосы → перегруз → срез верха → уровень
     const c = circ[k];
     if (c.n) return c.n;
@@ -150,6 +152,14 @@
     s.connect(gg).connect(n.exc); s.start();
     s.onended = () => { s.disconnect(); gg.disconnect(); };
     circ[k].lvl = 1; strikes++;
+    spark(k, 10);
+  }
+  function spark(k, n) {                                  // угольки с круга: летят вверх и гаснут
+    const G = geo(), r = G.rings[k];
+    for (let i = 0; i < n && sparks.length < 160; i++) {
+      const a = Math.PI * (0.1 + 0.8 * Math.random());
+      sparks.push({ x: G.cx - Math.cos(a) * r.rx, y: r.cy + Math.sin(a) * r.ry, vx: (Math.random() - 0.5) * 14, vy: -28 - Math.random() * 40, life: 1, k });
+    }
   }
   function smoulder(k, on) {                              // тлеет: шум своего цвета идёт в резонатор, пока держишь (или горит грешник)
     if (!bus) return;
@@ -235,10 +245,25 @@
       if (t.kind !== 'circle' || t.harp) continue;
       if (!t.smoulder && now - t.t0 > 160) { t.smoulder = true; circ[t.k].held++; refresh(t.k); }   // держишь — круг тлеет
     }
-    for (const c of circ) {
+    const s = dt;
+    circ.forEach((c, k) => {
       const target = c.sinner || c.held > 0 ? c.level : 0;
-      c.lvl += (target - c.lvl) * (1 - Math.exp(-dt / (target > c.lvl ? 0.08 : 0.4 + fx.ice * 3)));
+      c.lvl += (target - c.lvl) * (1 - Math.exp(-dt / (target > c.lvl ? 0.08 : 0.4 + iceE * 3)));
+      rot[k] += s * (0.04 + 0.7 * c.lvl) * (k % 2 ? 1 : -1);   // круги вращаются: горящие — быстрее, соседние — навстречу
+      if (c.lvl > 0.05 && Math.random() < s * 30 * c.lvl) spark(k, 1);
+    });
+    for (let i = sparks.length - 1; i >= 0; i--) {        // угольки летят вверх, их сносит, они гаснут
+      const p = sparks[i];
+      p.x += (p.vx + Math.sin(now * 0.003 + i) * 8) * s; p.y += p.vy * s; p.vy *= 1 - s * 0.6; p.life -= s * 0.7;
+      if (p.life <= 0) sparks.splice(i, 1);
     }
+    iceE += (fx.ice - iceE) * (1 - Math.exp(-s / (fx.ice > iceE ? 6 : 3)));   // Коцит замерзает медленно, оттаивает быстрее
+    if (Math.abs(iceE - iceSet) > 0.02) { iceSet = iceE; for (let k = 0; k < 9; k++) retune(k); }
+    if (burning(1)) {                                     // буря второго круга (Luxuria): ветер сам качает его высоту
+      stormPh += s * (0.11 + 0.06 * Math.sin(now * 0.00031));
+      stormSemi = 3.5 * Math.sin(stormPh * TAU) + 1.2 * Math.sin(stormPh * TAU * 2.7 + 1);
+      if (now - stormAt > 50) { stormAt = now; retune(1); }
+    } else stormSemi *= 0.9;
   }
   // держишь круг с грешником, не двигая, — плашка круга: цвет шума, ширина полос, перегруз, уровень
   function circleSheet(k) {
@@ -341,8 +366,19 @@
       c.lineWidth = hot ? 1.3 : 1;
       c.beginPath(); c.ellipse(G.cx, r.cy, r.rx, r.ry, 0, 0, TAU); c.stroke();
       c.strokeStyle = T.ink(0.12); c.lineWidth = 1; c.beginPath(); c.ellipse(G.cx, r.cy + 3, r.rx - 3, r.ry - 1.5, 0, 0, TAU); c.stroke();
+      c.strokeStyle = hot ? rgba(EMBER, 0.35) : T.ink(0.22); c.lineWidth = 1; c.beginPath();   // засечки на круге — видно, как он вращается
+      for (let j = 0; j < 16; j++) { const a = rot[k] + (j / 16) * TAU, sn = Math.sin(a); if (sn < 0.05) continue; const x = G.cx + Math.cos(a) * r.rx, y = r.cy + sn * r.ry; c.moveTo(x, y - 2); c.lineTo(x, y + 2.5); }
+      c.stroke();
+      if (k === 1 && Math.abs(stormSemi) > 0.05 && q.lvl > 0.04) {   // буря второго круга: порывы носятся по кругу
+        c.strokeStyle = T.ink(0.15 + 0.4 * q.lvl); c.lineWidth = 1; c.beginPath();
+        for (let j = 0; j < 5; j++) {
+          const a0 = stormPh * TAU * 1.5 + (j / 5) * TAU, rr = 1 + 0.12 * Math.sin(j * 2.3 + stormPh * 9);
+          for (let u = 0; u <= 10; u++) { const a = a0 + u * 0.09, x = G.cx + Math.cos(a) * r.rx * rr, y = r.cy + Math.sin(a) * r.ry * rr * 2.2 - 6 - u * 0.4; u ? c.lineTo(x, y) : c.moveTo(x, y); }
+        }
+        c.stroke();
+      }
       if (q.lvl > 0.04) flames(c, G, k, q.lvl, h ? EMBER2 : EMBER, now);
-      if (fx.ice > 0.02 && k >= 9 - fx.ice * 9) {         // иней ползёт снизу вверх
+      if (iceE > 0.02 && k >= 9 - iceE * 9) {             // иней ползёт снизу вверх — растёт со временем
         c.strokeStyle = rgba(ICE, 0.45); c.lineWidth = 1; c.beginPath();
         for (let j = 0; j < 14; j++) { const a = Math.PI * (0.08 + (0.84 * j) / 13), x = G.cx - Math.cos(a) * r.rx, y = r.cy + Math.sin(a) * r.ry + 5; c.moveTo(x - 2, y); c.lineTo(x, y - 3); c.lineTo(x + 2, y); }
         c.stroke();
@@ -356,9 +392,15 @@
     const K = G.coc;
     c.strokeStyle = rgba(ICE, 0.85); c.lineWidth = 1; c.beginPath(); c.ellipse(G.cx, K.cy, K.rx, K.ry, 0, 0, TAU); c.stroke();
     c.strokeStyle = rgba(ICE, 0.3); c.beginPath(); c.ellipse(G.cx, K.cy, K.rx - 6, K.ry - 3, 0, 0, TAU); c.stroke();
-    c.strokeStyle = rgba(ICE, 0.35 + 0.4 * fx.ice); c.beginPath();
+    c.strokeStyle = rgba(ICE, 0.35 + 0.4 * iceE); c.beginPath();
     for (let j = 0; j < 9; j++) { const x = G.cx - K.rx * 0.7 + (j / 8) * K.rx * 1.4, y = K.cy + Math.sin(j * 2.1) * 3; c.moveTo(x - 2.5, y); c.lineTo(x + 2.5, y); c.moveTo(x, y - 2); c.lineTo(x, y + 2); }
     c.stroke();
+    if (iceE > 0.03) {                                    // лёд трескается и растёт: трещины от середины, длиннее с инеем
+      c.strokeStyle = rgba(ICE, 0.25 + 0.5 * iceE); c.beginPath();
+      for (let j = 0; j < 7; j++) { const a = (j / 7) * TAU + 0.4, L = (0.3 + 0.9 * iceE) * K.rx * (0.7 + 0.3 * Math.sin(j * 3.1)); c.moveTo(G.cx, K.cy); c.lineTo(G.cx + Math.cos(a) * L * 0.5, K.cy + Math.sin(a) * L * 0.12 + Math.sin(j) * 2); c.lineTo(G.cx + Math.cos(a) * L, K.cy + Math.sin(a) * L * 0.22); }
+      c.stroke();
+    }
+    for (const p of sparks) { c.fillStyle = rgba(p.life > 0.5 ? EMBER2 : EMBER, Math.min(1, p.life * 1.2)); c.fillRect(p.x - 0.8, p.y - 0.8, 1.6 + p.life, 1.6 + p.life); }   // угольки
     for (const [k, t] of held) {                          // подписи — только пока трогаешь
       const r = G.rings[k], s = semiOf(k, circ[k].pos);
       T.mapText(`${ROMAN[k]} · ${NAMES[k]}`, G.cx + r.rx, r.cy - r.ry - 22, 15, 0.95, 'right');
@@ -410,7 +452,7 @@
   };
   T.registerWorld(5, inferno);
   window.t2d.inf = {
-    circ, fx, geo, get strikes() { return strikes; }, get live() { return !!(bus && bus.live); }, setFx: (k, v) => fxw.set(k, v), get bus() { return bus; },
+    circ, fx, geo, get strikes() { return strikes; }, get ice() { return iceE; }, get storm() { return stormSemi; }, get sparks() { return sparks.length; }, get live() { return !!(bus && bus.live); }, setFx: (k, v) => fxw.set(k, v), get bus() { return bus; },
     at: (k, pos = 0.5) => { const G = geo(), r = G.rings[k]; return { x: G.cx - r.rx + 2 * r.rx * pos, y: r.cy }; },
   };
 })();
