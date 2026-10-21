@@ -3257,7 +3257,7 @@
   // карта — поле карт 6 × 6, как расклад Таро: открытые миры — лицом вверх в середине (наверху ад и рай, под ними Cymatica и
   // Tenebrae, под эклиптикой Laboratorium и Natura, под лабораторией — Monochordum), остальные — рубашкой вверх, пока не открыты.
   // Между третьим и четвёртым рядом — эклиптика с солнцем (concordia). Клетка — [столбец, ряд] от левого верхнего угла
-  const CELL = { 6: [2, 1], 5: [3, 1], 2: [2, 2], 1: [3, 2], 3: [2, 3], 4: [3, 3], 7: [2, 4], 8: [3, 4], 9: [1, 3] };
+  const CELL = { 6: [2, 1], 5: [3, 1], 2: [2, 2], 1: [3, 2], 3: [2, 3], 4: [3, 3], 7: [2, 4], 8: [3, 4], 9: [1, 3], 10: [4, 3] };
   const GRID = 6, ECL = 40;
   function field() {
     const top = scopeY + 40, bot = H - safeBot - 10, gap = clamp(W * 0.014, 4, 9);
@@ -3324,7 +3324,7 @@
   function worldImage(w) { return ENTER.has(w) ? snaps[w] : artFor(w); }
   // эмблемы звука на карте: гравюрный знак генератора каждого мира и латинская строка; рисуются один раз на размер экрана
   const emblems = {};
-  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'plicatio · horae'];
+  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'plicatio · horae', 'pulsar · stellae'];
   const fontKey = () => (document.fonts ? document.fonts.status : '');
   function emblemFor(w) {                                 // лицо карты мира: подложка мира, двойная рамка, номер сверху, медальон со знаком звука, имя снизу
     const F = field(), pw = F.cw, ph = F.ch, key = `${pw}x${ph}|${DPR}|${fontKey()}`;
@@ -3418,6 +3418,15 @@
       const gy = cy + R * 0.75, gr = R * 0.45; x.strokeStyle = ink2(0.8); x.beginPath();
       for (let k = 0; k < 10; k++) { const a0 = (k / 10) * T2; for (const [da, rr] of [[-0.12, gr], [0.12, gr], [0.2, gr * 0.8], [T2 / 10 - 0.2, gr * 0.8]]) { const a = a0 + da; x.lineTo(cx + Math.sin(a) * rr, gy - Math.cos(a) * rr); } }
       x.closePath(); x.stroke(); x.beginPath(); x.arc(cx, gy, gr * 0.25, 0, T2); x.stroke();
+    }
+    if (w === 10) {                                         // твердь: купол над землёй, звёзды-проколы, под ними — пульсареты
+      const by = cy + R * 0.55, rr = R * 1.05;
+      x.strokeStyle = ink2(0.85); x.beginPath(); x.arc(cx, by, rr, Math.PI, 0); x.stroke(); x.beginPath(); x.moveTo(cx - rr * 1.15, by); x.lineTo(cx + rr * 1.15, by); x.stroke();
+      x.strokeStyle = ink2(0.9);
+      for (const [sx, sy] of [[-0.45, -0.55], [0.3, -0.75], [0.55, -0.3], [-0.1, -0.25]]) { const px = cx + sx * rr, py = by + sy * rr; x.beginPath(); for (let k = 0; k < 8; k++) { const a = (k / 8) * T2, l = k % 2 ? 2 : 4; x.moveTo(px, py); x.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); } x.stroke(); }
+      x.strokeStyle = ink2(0.7); x.beginPath(); const py = by + R * 0.42;
+      for (let i = 0; i <= 80; i++) { const u = i / 80, k = (u * 4) % 1, env = k < 0.35 ? Math.sin((Math.PI * k) / 0.35) ** 2 : 0, px = cx - R * 0.9 + u * R * 1.8, yy = py - Math.sin(k * 40) * env * R * 0.18; i ? x.lineTo(px, yy) : x.moveTo(px, yy); }
+      x.stroke();
     }
     // гравированный медальон: двойной круг, засечки по сторонам света, ромбики на диагоналях
     const M = M0, my = mc;

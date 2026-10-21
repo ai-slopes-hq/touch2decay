@@ -1,8 +1,8 @@
 // Офлайн без залипания старой версии.
 // Код и страница — сначала из сети (мимо HTTP-кеша), кеш — только запасной вариант без сети.
 // Шрифты, иконки и гравюры не меняются — сразу из кеша.
-const CACHE = 't2d-v127';   // при выкладке менять вместе с app.js?v= в index.html
-const SHELL = ['./', './index.html', './app.js', './cymatica.js', './plate-worklet.js', './laboratorium.js', './natura.js', './inferno.js', './paradisus.js', './monochord.js', './monochord-worklet.js', './oceanus.js', './ocean-worklet.js', './horologium.js', './manifest.webmanifest'];
+const CACHE = 't2d-v128';   // при выкладке менять вместе с app.js?v= в index.html
+const SHELL = ['./', './index.html', './app.js', './cymatica.js', './plate-worklet.js', './laboratorium.js', './natura.js', './inferno.js', './paradisus.js', './monochord.js', './monochord-worklet.js', './oceanus.js', './ocean-worklet.js', './horologium.js', './firmamentum.js', './pulsar-worklet.js', './manifest.webmanifest'];
 const STATIC = ['./icon-180.png', './icon-192.png', './icon-512.png',
   './fonts/im-fell-english-latin-400-italic.woff2', './fonts/im-fell-english-latin-400-normal.woff2',
   './art/leo-viridis.png', './art/leo-viridis-wash.png', './art/fons-mercurialis.png', './art/terra-octobre.jpg'];

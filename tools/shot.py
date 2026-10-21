@@ -918,7 +918,7 @@ async def sc_startmap(p):                          # карта — старто
     q = await p.js('()=>t2d.mapCell(0, 0)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.view') == 'map' and await p.js('()=>t2d.mapPeek()'), 'a face-down card only shivers — nondum'
     await p.shot('map-peek'); await p.pg.wait_for_timeout(300)
-    for w in (1, 2, 3, 4, 5, 6, 7, 8, 9):
+    for w in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
         q = await p.js(f'()=>t2d.mapPanel({w})'); assert q[0] >= 0 and q[0] + q[2] <= W and q[1] > 0 and q[1] + q[3] < H, f'card {w} on screen {q}'
     sun = await p.js('()=>t2d.mapSun()'); await p.tap(sun['x'], sun['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.nav.settings'), 'tap the sun on the map — concordia'
@@ -1214,7 +1214,44 @@ async def sc_horologium(p):                        # Horologium: штифт на
     assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
 
 
-SCENARIOS = {'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_firmamentum(p):                       # Firmamentum: прокол — звезда пульсирует, вверх — тон, вбок — формант, тап — закрыть, плашка, FX, кубик, корзина, отмена, солнце — карта
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(10)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 10], 'the card right of Natura opens Firmamentum'
+    for _ in range(30):
+        if await p.js('()=>t2d.firm.ready'): break
+        await p.pg.wait_for_timeout(100)
+    L = await p.js('()=>t2d.firm.LIMEN')
+    a = await p.js(f'()=>t2d.firm.at({L * 0.5}, -0.3)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(1500)
+    assert await p.js('()=>t2d.firm.stars.length') == 1, 'tap the sky — a star'
+    fp = await p.js('()=>t2d.firm.fp(t2d.firm.stars[0])'); c = await p.js('()=>t2d.firm.counts[t2d.firm.stars[0].slot]')
+    print('  low star:', round(fp, 2), 'pulses/s, pulsarets so far', c); assert fp < 20 and c >= 1, f'near the horizon — a rhythm: {fp} {c}'
+    await p.shot('firmamentum-rhythm')
+    b = await p.js('()=>t2d.firm.at(0.75, -0.3)'); pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], b['x'], b['y'], steps=8)
+    fp2 = await p.js('()=>t2d.firm.fp(t2d.firm.stars[0])'); assert fp2 > 40, f'drag up — a tone: {fp2}'
+    ff0 = await p.js('()=>t2d.firm.ff(t2d.firm.stars[0])'); b2 = await p.js('()=>t2d.firm.at(0.75, 0.5)'); await p.drag(pid, b['x'], b['y'], b2['x'], b2['y'], steps=6)
+    ff1 = await p.js('()=>t2d.firm.ff(t2d.firm.stars[0])'); assert ff1 > ff0 * 1.5, f'drag sideways — formant: {ff0} -> {ff1}'
+    await p.shot('firmamentum-held'); await p.up(); await p.pg.wait_for_timeout(1000)
+    lv = await p.js('()=>T2D.level'); print('  firmamentum level, one tone:', round(lv, 3)); assert lv > 0.02, f'the star is heard: {lv}'
+    s = await p.js('()=>t2d.firm.at(0.75, 0.5)'); await p.hold(s['x'], s['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a star — its sheet'
+    await p.shot('firmamentum-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    await p.tap(s['x'], s['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.firm.stars.length') == 0, 'tap a star — the hole closes'
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
+    n = await p.js('()=>t2d.firm.stars.length'); assert 3 <= n <= 4, f'dice — a rhythm and tones: {n}'
+    await p.js("()=>{t2d.firm.setFx('scintilla', 0.6); t2d.firm.setFx('drift', 0.6)}"); await p.pg.wait_for_timeout(800)
+    print('  firmamentum level, dice:', round(await p.js('()=>T2D.level'), 3)); await p.shot('firmamentum')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(2500)
+    assert await p.js('()=>t2d.firm.stars.length') == 0, 'trash — the firmament is whole'
+    lv = await p.js('()=>T2D.level'); assert lv < 0.01, f'after trash it is silent: {lv}'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.firm.stars.length') == n, 'undo brings the stars back'
+    S = await p.js('()=>t2d.firm.geo().sun'); await p.tap(S['x'] + 20, S['y'] + 20); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
+
+
+SCENARIOS = {'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
