@@ -198,8 +198,20 @@
     x.strokeStyle = ink(0.5); x.beginPath();                                                  // T: Танаис — Нил поперёк, Средиземное море вниз
     x.moveTo(cx - Rd, cy); x.lineTo(cx + Rd, cy); x.moveTo(cx, cy); x.lineTo(cx, cy + Rd); x.stroke();
     x.strokeStyle = ink(0.6); x.beginPath(); x.arc(cx, cy, 3, 0, TAU); x.stroke();          // Иерусалим — пуп земли
-    x.font = `italic 12px ${T.MAP}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = ink(0.32);
-    x.fillText('ASIA', cx, cy - Rd * 0.5); x.fillText('EUROPA', cx - Rd * 0.5, cy + Rd * 0.42); x.fillText('AFRICA', cx + Rd * 0.5, cy + Rd * 0.42);
+    x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.font = `italic 11px ${T.MAP}`; x.fillStyle = ink(0.42);                                // воды буквы T: Танаис и Нил — поперёк, Великое море — вниз
+    x.fillText('Tanais', cx - Rd * 0.5, cy - 8); x.fillText('Nilus', cx + Rd * 0.5, cy - 8);
+    x.save(); x.translate(cx + 8, cy + Rd * 0.55); x.rotate(Math.PI / 2); x.fillText('Mare Magnum', 0, 0); x.restore();
+    x.font = `italic 10px ${T.MAP}`; x.fillStyle = ink(0.26);                                // части света — по сыновьям Ноя
+    x.fillText('Sem', cx - Rd * 0.42, cy - Rd * 0.3); x.fillText('Iafeth', cx - Rd * 0.42, cy + Rd * 0.62); x.fillText('Cham', cx + Rd * 0.42, cy + Rd * 0.62);
+    x.fillText('Hierusalem', cx, cy + 11);
+    const py = cy - Rd * 0.68, pr = Math.max(7, Rd * 0.07);                                   // земной рай на востоке (наверху): ограда и четыре реки
+    x.strokeStyle = ink(0.55); x.beginPath(); x.arc(cx, py, pr, 0, TAU); x.stroke();
+    x.strokeStyle = ink(0.25); x.beginPath(); x.arc(cx, py, pr - 2.5, 0, TAU); x.stroke();
+    x.strokeStyle = ink(0.35); x.beginPath();
+    for (const a of [-0.9, -0.3, 0.3, 0.9]) { const sx = cx + Math.sin(a) * pr, sy = py + Math.cos(a) * pr; x.moveTo(sx, sy); x.quadraticCurveTo(sx + Math.sin(a) * 10, sy + 8, sx + Math.sin(a) * 16, sy + 16 + Math.abs(a) * 4); }
+    x.stroke();
+    x.fillStyle = ink(0.4); x.fillText('Paradisus', cx, py + pr + 27);
     for (let k = 0; k < 12; k++) {                        // полутоны по краю земли; ступени лада — длиннее
       const pc = (k + root()) % 12, inScale = !pcs || pcs.includes(pc), a = (k / 12) * TAU, p = at(G, a, Rd), q = at(G, a, Rd - (inScale ? 7 : 3));
       x.strokeStyle = ink(inScale ? 0.55 : 0.22); x.beginPath(); x.moveTo(p.x, p.y); x.lineTo(q.x, q.y); x.stroke();
