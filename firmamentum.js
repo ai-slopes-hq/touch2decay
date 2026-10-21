@@ -17,12 +17,13 @@
 
   // ---------- состояние ----------
   const stars = [];                                       // {slot, h (0 горизонт … 1 зенит), u (−1 … 1 по своду), cyc, win, mask, lvl, flash}
-  const fx = { scintilla: 0.1, drift: 0.2, spread: 0.6, hall: 0.45 };
+  const fx = { scintilla: 0.1, drift: 0.2, cometa: 0, spread: 0.6, hall: 0.45 };
+  let comet = null, cometNext = 0, comets = 0;          // комета — рампа: пролетает по своду и разгоняет пульсацию звёзд, мимо которых летит
   let counts = new Array(SMAX).fill(0), gains = new Array(SMAX).fill(0);
   function fpOf(s) {                                      // высота — частота пульсаций; в области тона с ладом — по ступеням
     let f = FP_LO * (FP_HI / FP_LO) ** s.h;
     if (T.scaleOn && f > 27.5) { const st = 12 * Math.log2(f / 55); f = 55 * 2 ** ((T.snapSemi(Math.round(st) + 24) - 24) / 12); }
-    return f;
+    return f * (s.cm || 1);
   }
   const ffOf = (s) => FF_LO * (FF_HI / FF_LO) ** ((s.u + 1) / 2) * 2 ** (s.dr || 0);
   const LIMEN = Math.log(20 / FP_LO) / Math.log(FP_HI / FP_LO);   // высота, где ритм становится тоном
@@ -112,6 +113,33 @@
       for (const s of stars) { s.dr = 0.6 * fx.drift * Math.sin(now * 0.00021 + s.ph) + 0.25 * fx.drift * Math.sin(now * 0.00057 + s.ph * 2); send({ t: 'voice', i: s.slot, ff: ffOf(s) }); }
     }
     for (const t of touches.values()) if (t.kind === 'star' && !t.moved && !t.sheet && !t.fresh && now - t.t0 > T.HOLD_MS) { t.sheet = true; starSheet(t.s); }
+    cometTick(now);
+  }
+  function cometTick(now) {
+    const G = geo();
+    if (!comet && fx.cometa > 0.01 && stars.length) {     // новая комета: от края свода вниз через небо, раз в 4…24 с (чаще с cometa)
+      if (!cometNext) cometNext = now + 1500;
+      if (now > cometNext) {
+        const dir = Math.random() < 0.5 ? -1 : 1, a = { h: 0.55 + Math.random() * 0.4, u: -0.9 * dir }, b = { h: 0.05 + Math.random() * 0.35, u: 0.9 * dir };
+        comet = { a: fromSky(G, a), b: fromSky(G, b), t0: now, dur: 3500 + Math.random() * 3000 }; comets++;
+      }
+    }
+    let changed = false;
+    for (const s of stars) {                              // звезда рядом с кометой — пульсация разгоняется (до двух октав), потом отпускает
+      let cm = 1;
+      if (comet) { const k = Math.min(1, (now - comet.t0) / comet.dur), x = comet.a.x + (comet.b.x - comet.a.x) * k, y = comet.a.y + (comet.b.y - comet.a.y) * k, p = fromSky(G, s), d = Math.hypot(p.x - x, p.y - y); cm = 2 ** (2 * fx.cometa * Math.max(0, 1 - d / 90)); }
+      if (Math.abs(cm - (s.cm || 1)) > 0.01) { s.cm = cm; changed = true; }
+    }
+    if (changed && now - (cometTick.at || 0) > 33) { cometTick.at = now; for (const s of stars) send({ t: 'voice', i: s.slot, fp: fpOf(s) }); }
+    if (comet && now - comet.t0 > comet.dur) { comet = null; cometNext = now + (24000 - 20000 * fx.cometa) * (0.6 + 0.8 * Math.random()); for (const s of stars) { s.cm = 1; send({ t: 'voice', i: s.slot, fp: fpOf(s) }); } }
+  }
+  function drawComet(c, G, now) {                        // голова и хвост — бледное золото; хвост — назад по пути
+    if (!comet) return;
+    const k = Math.min(1, (now - comet.t0) / comet.dur), x = comet.a.x + (comet.b.x - comet.a.x) * k, y = comet.a.y + (comet.b.y - comet.a.y) * k;
+    const dx = comet.b.x - comet.a.x, dy = comet.b.y - comet.a.y, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L, fade = Math.min(1, k * 6, (1 - k) * 6);
+    for (let j = 0; j < 4; j++) { c.strokeStyle = rgba(GOLD, (0.5 - j * 0.11) * fade); c.lineWidth = 1; c.beginPath(); c.moveTo(x - uy * (j - 1.5) * 1.6, y + ux * (j - 1.5) * 1.6); c.lineTo(x - ux * (70 + j * 18) - uy * (j - 1.5) * 4, y - uy * (70 + j * 18) + ux * (j - 1.5) * 4); c.stroke(); }
+    T.glowAt(x, y, 16, 0.35 * fade);
+    c.fillStyle = rgba(GOLD, 0.95 * fade); c.beginPath(); c.arc(x, y, 2.6, 0, TAU); c.fill();
   }
 
   // ---------- касания ----------
@@ -225,6 +253,7 @@
     const c = T.g, G = geo();
     c.drawImage(wall(G), 0, 0, T.W, T.H);
     const held = new Set([...touches.values()].filter((t) => t.kind === 'star').map((t) => t.s));
+    drawComet(c, G, now);
     for (const s of stars) drawStar(c, G, s, now, held.has(s));
     if (!noSun) { c.save(); c.beginPath(); c.rect(0, 0, G.W, G.sun.y); c.clip(); T.sunGlyph(c, G.sun.x, G.sun.y, -Math.PI / 2, 0, 1.2, now, INK, BGC); c.restore(); }
   }
@@ -232,9 +261,9 @@
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
-    sectors: [{ key: 'scintilla', label: 'scintilla', ang: deg(190) }, { key: 'drift', label: 'drift', ang: deg(150) }, { key: 'spread', label: 'spread', ang: deg(115) }, { key: 'hall', label: 'hall', ang: deg(80) }],
-    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
-    lfo: { keys: ['scintilla', 'drift', 'spread', 'hall'], shapes: 'random' },
+    sectors: [{ key: 'scintilla', label: 'scintilla', ang: deg(190) }, { key: 'drift', label: 'drift', ang: deg(160) }, { key: 'cometa', label: 'cometa', ang: deg(135) }, { key: 'spread', label: 'spread', ang: deg(110) }, { key: 'hall', label: 'hall', ang: deg(80) }],
+    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => (k === 'cometa' && fx.cometa <= 0.01 ? 'off' : `${Math.round(fx[k] * 100)}%`),
+    lfo: { keys: ['scintilla', 'drift', 'cometa', 'spread', 'hall'], shapes: 'random' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // одна звезда — ритм у горизонта, две-три — тоны выше; окна и циклы вразброс
@@ -264,7 +293,7 @@
   };
   T.registerWorld(10, firm);
   window.t2d.firm = {
-    stars, fx, geo, setFx: (k, v) => fxw.set(k, v), get ready() { return ready; }, get gains() { return gains; }, get counts() { return counts; }, fp: fpOf, ff: ffOf, LIMEN,
+    stars, fx, geo, setFx: (k, v) => fxw.set(k, v), get comets() { return comets; }, get comet() { return comet; }, launch: () => { cometNext = 1; }, get ready() { return ready; }, get gains() { return gains; }, get counts() { return counts; }, fp: fpOf, ff: ffOf, LIMEN,
     at: (h, u) => fromSky(geo(), { h, u }),
   };
 })();

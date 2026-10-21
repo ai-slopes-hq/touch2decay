@@ -1271,7 +1271,9 @@ async def sc_firmamentum(p):                       # Firmamentum: прокол �
     assert await p.js('()=>t2d.firm.stars.length') == 0, 'tap a star — the hole closes'
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
     n = await p.js('()=>t2d.firm.stars.length'); assert 3 <= n <= 4, f'dice — a rhythm and tones: {n}'
-    await p.js("()=>{t2d.firm.setFx('scintilla', 0.6); t2d.firm.setFx('drift', 0.6)}"); await p.pg.wait_for_timeout(800)
+    await p.js("()=>{t2d.firm.setFx('scintilla', 0.6); t2d.firm.setFx('drift', 0.6); t2d.firm.setFx('cometa', 1); t2d.firm.launch()}"); await p.pg.wait_for_timeout(1800)
+    assert await p.js('()=>t2d.firm.comets') >= 1, 'cometa — a comet flies'
+    await p.shot('firmamentum-comet')
     print('  firmamentum level, dice:', round(await p.js('()=>T2D.level'), 3)); await p.shot('firmamentum')
     c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(2500)
     assert await p.js('()=>t2d.firm.stars.length') == 0, 'trash — the firmament is whole'
