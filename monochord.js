@@ -22,8 +22,9 @@
   const RATIO_NAMES = new Map([[1, '1 : 1'], [8 / 9, '9 : 8 · tonus'], [3 / 4, '4 : 3 · diatessaron'], [2 / 3, '3 : 2 · diapente'], [1 / 2, '2 : 1 · diapason'], [1 / 3, '3 : 1'], [1 / 4, '4 : 1 · disdiapason']]);
 
   // ---------- состояние ----------
-  const str = F_OPEN.map((f, i) => ({ r: [1, 2 / 3, 1 / 2, 1 / 3][i], sus: false, bright: 0.55, decay: 0.55, level: 0.8, en: 0, bow: 0 }));
-  const fx = { decay: 0.55, bright: 0.55, body: 0.4, chorus: 0, hall: 0.35 };
+  const str = F_OPEN.map((f, i) => ({ r: [1, 2 / 3, 1 / 2, 1 / 3][i], sus: false, bright: 0.55, decay: 0.55, level: 0.8, en: 0, bow: 0, eh: 0, hn: 2 }));
+  const NODES = [[1 / 2, 2], [1 / 3, 3], [2 / 3, 3], [1 / 4, 4], [3 / 4, 4]];   // узлы флажолетов на звучащей части
+  const fx = { decay: 0.55, bright: 0.55, body: 0.4, sympathy: 0.4, chorus: 0, hall: 0.35 };
   let wind = 0, lastWind = 0.5;                            // ветер — часть патча (корзина глушит), не FX: голова ветра слева
   const tonic = () => (T.scaleOn ? 2 ** (T.scaleRoot / 12) : 1);
   const hzOf = (i) => (F_OPEN[i] * tonic()) / str[i].r;
@@ -80,7 +81,7 @@
     ctx.audioWorklet.addModule(`monochord-worklet.js?v=${VER}`).then(() => {
       node = new AudioWorkletNode(ctx, 'monochord', { numberOfInputs: 0, outputChannelCount: [2] });
       node.connect(bus.pre);
-      node.port.onmessage = (e) => { if (e.data.t === 'energy') e.data.e.forEach((v, i) => { str[i].en = v; }); };
+      node.port.onmessage = (e) => { const d = e.data; if (d.t === 'energy') d.e.forEach((v, i) => { str[i].en = v; str[i].eh = d.h[i]; if (d.n) str[i].hn = d.n[i]; }); };
       ready = true;
       for (let i = 0; i < N; i++) { retune(i); if (str[i].sus) send({ t: 'sus', i, on: true }); }
       send({ t: 'wind', amt: wind });
@@ -119,6 +120,7 @@
       for (const l of C.lines) l.lg.gain.setTargetAtTime(0.001 + 0.004 * fx.chorus, t, 0.05);
     }
     bus.body.gain.setTargetAtTime(fx.body * 2.5, t, 0.05);
+    send({ t: 'couple', amt: 0.0015 * fx.sympathy });
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.4, t, 0.05);
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4)), t, 0.05);
     for (let i = 0; i < N; i++) retune(i);
@@ -149,7 +151,9 @@
       touches.set(f.id, { kind: 'none' }); return;
     }
     lastTap = { i, t: now };
-    pluck(i, (f.y - G.y0) / Math.max(10, yb - G.y0));
+    const nd = NODES.find(([u]) => Math.abs(f.y - (G.y0 + u * (yb - G.y0))) < 7);
+    if (nd) { start(); setLive(true); lastSound = now; send({ t: 'harm', i, n: nd[1], vel: 0.9 }); }   // тап на узле — флажолет
+    else pluck(i, (f.y - G.y0) / Math.max(10, yb - G.y0));
     touches.set(f.id, { kind: 'string', i, x0: f.x, y0: f.y, x: f.x, y: f.y, t0: now, lx: f.x, lt: now, moved: false, px: f.x });
   }
   const BOW_WAIT = 150;                                   // мс: столько палец решает — смычок или страм
@@ -308,12 +312,28 @@
       c.strokeStyle = T.ink(0.3); c.lineWidth = 1; c.beginPath(); c.moveTo(x, yb); c.lineTo(x, G.y1 + 6); c.stroke();   // заглушенная часть — ниже подставки
       c.strokeStyle = T.ink(s.sus ? 1 : 0.85); c.lineWidth = s.sus ? 1.6 : 1.2; c.beginPath();   // звучащая часть: стоячая волна — размах по энергии
       const n = 40, ph = now * 0.09 + i;
-      for (let k = 0; k <= n; k++) { const u = k / n, y = G.y0 + u * (yb - G.y0), dx = amp * (Math.sin(Math.PI * u) * Math.sin(ph) * 0.7 + Math.sin(TAU * u) * Math.sin(ph * 1.7 + i) * 0.3); k ? c.lineTo(x + dx, y) : c.moveTo(x + dx, y); }
+      const ah = Math.min(7, s.eh * 60);                  // флажолет: стоячая волна с узлами
+      for (let k = 0; k <= n; k++) { const u = k / n, y = G.y0 + u * (yb - G.y0), dx = amp * (Math.sin(Math.PI * u) * Math.sin(ph) * 0.7 + Math.sin(TAU * u) * Math.sin(ph * 1.7 + i) * 0.3) + ah * Math.sin(s.hn * Math.PI * u) * Math.sin(ph * s.hn * 0.7); k ? c.lineTo(x + dx, y) : c.moveTo(x + dx, y); }
       c.stroke();
+      c.fillStyle = T.ink(h || ah > 0.5 ? 0.6 : 0.22);    // узлы флажолетов — точки на звучащей части
+      for (const [u, m] of NODES) { const y = G.y0 + u * (yb - G.y0), on = ah > 0.5 && Math.abs(u * s.hn - Math.round(u * s.hn)) < 1e-6; c.beginPath(); c.arc(x, y, on ? 2.6 : 1.6, 0, TAU); c.fill(); }
       if (s.sus) { c.strokeStyle = T.ink(0.25); c.lineWidth = 6; c.beginPath(); c.moveTo(x, G.y0); c.lineTo(x, yb); c.stroke(); }
       c.fillStyle = T.BG; c.strokeStyle = T.ink(h ? 1 : 0.85); c.lineWidth = 1.2;   // подставка — треугольник
       c.beginPath(); c.moveTo(x - 9, yb + 7); c.lineTo(x, yb - 4); c.lineTo(x + 9, yb + 7); c.closePath(); c.fill(); c.stroke();
       c.fillStyle = T.ink(0.85); c.beginPath(); c.arc(x, G.y1 + 6, 2.2, 0, TAU); c.fill();   // нижний порожек
+    });
+    str.forEach((s, i) => {                               // сфера Фладда под подставкой загорается, пока струна звучит
+      const e = Math.min(1, (s.en + s.eh) * 25);
+      if (e < 0.05) return;
+      let best = null, bd = 0.02;
+      for (const m of MARKS) { const d = Math.abs(Math.log2(m[0] / s.r)); if (d < bd) { bd = d; best = m; } }
+      if (!best) return;
+      const y = yOfR(G, best[0]), x = G.box.x0 - 14;
+      const sx = x + 8, cc = T.g;                                     // звёздочка между подписью и ящиком — лучи по силе звука
+      cc.strokeStyle = T.ink(0.3 + 0.6 * e); cc.lineWidth = 1; cc.beginPath();
+      for (let k = 0; k < 8; k++) { const a = (k / 8) * TAU, l = k % 2 ? 2.5 : 4 + 2 * e; cc.moveTo(sx + Math.cos(a) * 1.5, y + Math.sin(a) * 1.5); cc.lineTo(sx + Math.cos(a) * l, y + Math.sin(a) * l); }
+      cc.stroke();
+      T.mapText(best[1], x, y, 11, 0.45 + 0.55 * e, 'right');
     });
     for (const [i, t] of held) {                          // подписи — только пока трогаешь
       if (t.kind !== 'bridge') continue;
@@ -332,7 +352,7 @@
   const fxw = {
     sectors: [
       { key: 'decay', label: 'decay', ang: deg(200) }, { key: 'bright', label: 'brightness', ang: deg(170) }, { key: 'body', label: 'body', ang: deg(140) },
-      { key: 'chorus', label: 'chorus', ang: deg(110) }, { key: 'hall', label: 'hall', ang: deg(80) },
+      { key: 'sympathy', label: 'sympathy', ang: deg(125) }, { key: 'chorus', label: 'chorus', ang: deg(110) }, { key: 'hall', label: 'hall', ang: deg(80) },
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
@@ -348,7 +368,7 @@
     corner: { hit: (f) => { const h = geo().hand; return Math.hypot(f.x - h.x, f.y - h.y) < h.r * 1.1; }, draw: () => {} },   // рука Бога в облаке — карта
     fx: fxw,
     legend: [['tap', 'tap a string above its bridge', 'pluck · near the end — bright'], ['drag', 'stroke back and forth on a string', 'bow it · speed — pressure'], ['draw', 'sweep across the strings', 'strum · speed — strength'],
-      ['up', 'drag a bridge', 'pitch · sticks to Pythagorean frets'], ['double', 'double tap a string', 'it sings by itself, like an Aeolian harp'],
+      ['up', 'drag a bridge', 'pitch · sticks to Pythagorean frets'], ['tap', 'tap a dot on a string', 'harmonic (flageolet) · 1/2, 1/3, 1/4'], ['double', 'double tap a string', 'it sings by itself, like an Aeolian harp'],
       ['hold', 'hold a string', 'its sheet: brightness, decay, level'], ['up', 'drag the wind rose up', 'wind · every string sings · tap — on / off'], ['tap', 'tap the cloud', 'map of worlds']],
     build, tick, draw, down, move, up, dice, enter: start,
     clear() { str.forEach((s, i) => { s.sus = false; s.bow = 0; send({ t: 'sus', i, on: false }); send({ t: 'bow', i, amp: 0 }); }); setWind(0); },

@@ -1065,6 +1065,8 @@ async def sc_monochord(p):                         # Monochordum: щипок, с
     a = await p.js('()=>t2d.mono.at(1, 0.3)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(250)
     e = await p.js('()=>t2d.mono.str[1].en'); lv = await p.js('()=>T2D.level'); print('  monochord pluck: energy', round(e, 4), 'level', round(lv, 3))
     assert e > 0.003, f'tap — the string is plucked: {e}'
+    others = await p.js('()=>[0,2,3].map(i=>t2d.mono.str[i].en)'); print('  sympathetic strings', [round(x, 5) for x in others])
+    assert max(others) > 0.0003, f'the other strings answer through the shared bridge: {others}'
     await p.shot('monochord-pluck')
     b = await p.js('()=>t2d.mono.at(0, t2d.mono.str[0].r)'); h0 = await p.js('()=>t2d.mono.hz(0)')
     pid = await p.hold(b['x'], b['y'], ms=80); c = await p.js('()=>t2d.mono.at(0, 0.5)'); await p.drag(pid, b['x'], b['y'], c['x'], c['y'] + 2, steps=10)
@@ -1078,6 +1080,10 @@ async def sc_monochord(p):                         # Monochordum: щипок, с
     await p.up(); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.mono.str[2].bow') == 0, 'finger up — the bow lifts'
     await p.pg.wait_for_timeout(1500)
+    a = await p.js('()=>{const s=t2d.mono.str[2]; return t2d.mono.at(2, s.r/2)}'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(250)
+    hh = await p.js('()=>[t2d.mono.str[2].eh, t2d.mono.str[2].hn]'); print('  harmonic', hh)
+    assert hh[0] > 0.003 and hh[1] == 2, f'tap the middle dot — a flageolet an octave up: {hh}'
+    await p.shot('monochord-harmonic'); await p.pg.wait_for_timeout(1500)
     e0 = await p.js('()=>t2d.mono.str.map(s=>s.en)')
     g0 = await p.js('()=>t2d.mono.geo()'); y = g0['y0'] + 40
     pid = await p.hold(g0['box']['x0'] - 20, y, ms=40); await p.drag(pid, g0['box']['x0'] - 20, y, g0['box']['x1'] + 10, y, steps=8); await p.up(); await p.pg.wait_for_timeout(200)
