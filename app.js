@@ -3124,7 +3124,7 @@
       ['drag', 'drag a bead out · in', 'its note up · down'], ['drag', "drag a ring's end", 'its length — polyrhythm'],
       ['twist', 'twist with two fingers', 'turn a ring · transpose the plate'], ['hold', 'hold the moon', 'plate drift: depth, rate, shape'],
       ['tap', 'tap the resonator', 'map of worlds']],
-    3: [['tap', 'tap the lamp · the jug', 'light the fire · douse it'], ['drag', 'drag a flask', 'sideways — pitch · up — level'],
+    3: [['tap', 'tap the lamp or the egg', 'fire on · off'], ['drag', 'drag a flask', 'sideways — pitch · up — level'],
       ['draw', 'from a neck to a flask', 'a tube: modulation · to itself — pelican'], ['tap', 'tap a tube', 'remove it'],
       ['hold', 'hold a flask', 'its sheet: pitch, level, pelican'], ['double', 'double tap a flask', 'crack it · mend it'],
       ['hold', 'hold a metal below', 'the still on its note · double tap — keep'], ['up', 'solve · coagula arcs — up', 'dirty delay: time · amount'],

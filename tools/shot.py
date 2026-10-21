@@ -734,7 +734,7 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     assert await p.js('()=>t2d.lab.mods') == m0 and await p.js('()=>t2d.lab.fire'), 'undo brings tubes and fire back'
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
     assert await p.js('()=>t2d.lab.fire && t2d.lab.live'), 'dice keeps a burning fire burning'
-    jg = await p.js('()=>t2d.lab.jug()'); await p.tap(jg['x'], jg['y']); await p.pg.wait_for_timeout(1200)
+    await p.tap(fb['x'], fb['y']); await p.pg.wait_for_timeout(1200)                      # ещё тап по лампе — погасить
     m1 = await p.js('()=>t2d.lab.mods'); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(300)
     assert not await p.js('()=>t2d.lab.fire'), 'dice does not light the fire'
     await p.tap(fb['x'], fb['y']); await p.pg.wait_for_timeout(1500)
@@ -747,11 +747,9 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     s0 = await p.js('()=>t2d.lab.jars[4]'); j = await p.js('()=>t2d.lab.jar(4)')
     pid = await p.hold(j['x'], j['y'], ms=60); await p.drag(pid, j['x'], j['y'], j['x'], j['y'] - 30, steps=6); await p.up()
     assert await p.js('()=>t2d.lab.jars[4]') == s0 + 5, 'jar up 30 px — its note five semitones up'
-    await p.tap(fb['x'], fb['y']); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.lab.fire'), 'tap the furnace again — it keeps burning (only the jug puts it out)'
-    jg = await p.js('()=>t2d.lab.jug()'); await p.tap(jg['x'], jg['y']); await p.pg.wait_for_timeout(700)
+    e = await p.js('()=>t2d.lab.geo().egg'); await p.tap(e['x'], e['y']); await p.pg.wait_for_timeout(700)   # тап по яйцу — тоже огонь: погасить
     await p.shot('lab-jug'); await p.pg.wait_for_timeout(300)
-    assert not await p.js('()=>t2d.lab.fire') and not any(v['latched'] for v in await p.js('()=>t2d.lab.voices')), 'jug — fire out, kept jars quiet'
+    assert not await p.js('()=>t2d.lab.fire') and not any(v['latched'] for v in await p.js('()=>t2d.lab.voices')), 'tap the egg while burning — fire out, kept jars quiet'
     await p.js("()=>{t2d.lab.setFx('solve', 0.2); t2d.lab.setFx('coagula', 0)}")
     for k, d in (('solve', 96), ('coagula', 112)):                        # склянки на атаноре: вверх — больше
         q = await p.js(f"()=>t2d.lab.knob('{k}')"); pid = await p.hold(q['x'], q['y'], ms=60)
