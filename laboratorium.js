@@ -372,8 +372,7 @@
     lastSound = performance.now(); setLive(true);
   }
   function douse() {                                  // погасить: гаснет всё — огонь и оставленные банки
-    pourAt = performance.now();
-    hiss();
+    pourAt = performance.now();                      // без шипения: только пар над лампой
     for (const [k, gr] of [...voices]) if (k !== 'fire') { kill(gr, 0.4); voices.delete(k); }
     setFire(false);
   }
