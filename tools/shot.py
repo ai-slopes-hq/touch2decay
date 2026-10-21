@@ -918,7 +918,7 @@ async def sc_startmap(p):                          # карта — старто
     q = await p.js('()=>t2d.mapCell(0, 0)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.view') == 'map' and await p.js('()=>t2d.mapPeek()'), 'a face-down card only shivers — nondum'
     await p.shot('map-peek'); await p.pg.wait_for_timeout(300)
-    for w in (1, 2, 3, 4, 5, 6, 7, 8):
+    for w in (1, 2, 3, 4, 5, 6, 7, 8, 9):
         q = await p.js(f'()=>t2d.mapPanel({w})'); assert q[0] >= 0 and q[0] + q[2] <= W and q[1] > 0 and q[1] + q[3] < H, f'card {w} on screen {q}'
     sun = await p.js('()=>t2d.mapSun()'); await p.tap(sun['x'], sun['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.nav.settings'), 'tap the sun on the map — concordia'
@@ -1148,7 +1148,44 @@ async def sc_oceanus(p):                           # Oceanus: город поё�
     await p.shot('map-ocean')
 
 
-SCENARIOS = {'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_horologium(p):                        # Horologium: штифт на зубце, маятник — пуск и темп, молоточки бьют, шестерня — нота, плашка, FX, кубик, корзина, отмена, солнце — карта
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(9)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 9], 'the card left of Laboratorium opens Horologium'
+    a = await p.js('()=>t2d.horo.tooth(0, 1)'); n0 = await p.js('()=>t2d.horo.gears[0].pins.size')
+    await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.horo.gears[0].pins.has(1)') and await p.js('()=>t2d.horo.gears[0].pins.size') == n0 + 1, 'tap a tooth — a pin'
+    await p.shot('horologium-still')
+    b = await p.js('()=>t2d.horo.bob()'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(1600)
+    b = await p.js('()=>t2d.horo.bob()')
+    assert await p.js('()=>t2d.horo.seq.playing'), 'tap the pendulum — the clock runs'
+    lv = await p.js('()=>T2D.level'); print('  horologium level, running:', round(lv, 3)); assert lv > 0.02, f'hammers strike: {lv}'
+    await p.shot('horologium-run')
+    pid = await p.hold(b['x'], b['y'], ms=60); await p.drag(pid, b['x'], b['y'], b['x'] + 60, b['y'], steps=6); await p.up(); await p.pg.wait_for_timeout(100)
+    bpm = await p.js('()=>t2d.horo.seq.bpm'); assert bpm > 120, f'drag the pendulum — tempo up: {bpm}'
+    assert await p.js('()=>t2d.horo.seq.playing'), 'dragging the pendulum does not stop it'
+    G = await p.js('()=>t2d.horo.geo()'); g1 = G['pos'][1]; s0 = await p.js('()=>t2d.horo.gears[1].semi')
+    pid = await p.hold(g1[0], g1[1], ms=60); await p.drag(pid, g1[0], g1[1], g1[0], g1[1] - 45, steps=6); await p.shot('horologium-note'); await p.up(); await p.pg.wait_for_timeout(100)
+    s1 = await p.js('()=>t2d.horo.gears[1].semi'); assert s1 == s0 + 5, f'drag a wheel up — note up: {s0} -> {s1}'
+    await p.hold(g1[0], g1[1], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a wheel — its sheet'
+    await p.shot('horologium-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    await p.js("()=>{t2d.horo.setFx('sol', 0.9); t2d.horo.setFx('fortuna', 0.6)}"); await p.pg.wait_for_timeout(1200)
+    print('  horologium level, sol + fortuna:', round(await p.js('()=>T2D.level'), 3))
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
+    assert await p.js('()=>t2d.horo.gears.every(g=>g.pins.size>0)'), 'dice — every wheel has pins'
+    await p.shot('horologium')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(2500)
+    assert await p.js('()=>t2d.horo.gears.every(g=>g.pins.size==0)'), 'trash — no pins'
+    lv = await p.js('()=>T2D.level'); assert lv < 0.01, f'after trash it is silent: {lv}'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.horo.gears.every(g=>g.pins.size>0)'), 'undo brings the pins back'
+    await p.js('()=>t2d.horo.play(false)')
+    S = await p.js('()=>t2d.horo.geo().sun'); await p.tap(S['x'] - 20, S['y'] + 20); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
+
+
+SCENARIOS = {'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
