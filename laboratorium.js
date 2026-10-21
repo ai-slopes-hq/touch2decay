@@ -384,6 +384,11 @@
   const VIAL = { solve: [200, 206, 216], coagula: [217, 182, 74] };
   const arcAng = (k, v) => deg(ARC[k][0] + (ARC[k][1] - ARC[k][0]) * v);
   const knobAt = (G, k) => { const a = arcAng(k, 0.5); return { x: G.cx + Math.cos(a) * (G.R + 4), y: G.cy + Math.sin(a) * (G.R + 4), R: 14 }; };
+  // значение — по углу пальца на кольце: палец идёт по окружности, дуга заливается до него (как длина кольца в Cymatica)
+  function arcValue(G, k, x, y) {
+    const a = ((Math.atan2(y - G.cy, x - G.cx) * 180) / Math.PI + 360) % 360, [a0, a1] = ARC[k];
+    return clamp((a - a0) / (a1 - a0));
+  }
   function knobHit(G, k, x, y) {
     const d = Math.hypot(x - G.cx, y - G.cy), a = ((Math.atan2(y - G.cy, x - G.cx) * 180) / Math.PI + 360) % 360, [a0, a1] = ARC[k];
     return Math.abs(d - G.R - 4) < 20 && a > Math.min(a0, a1) - 5 && a < Math.max(a0, a1) + 5;
@@ -715,7 +720,7 @@
   }
   function down(f) {
     const G = geo();
-    for (const k of KNOBS) if (knobHit(G, k, f.x, f.y)) { touches.set(f.id, { kind: 'knob', k, v0: fx[k] }); return; }
+    for (const k of KNOBS) if (knobHit(G, k, f.x, f.y)) { touches.set(f.id, { kind: 'knob', k }); fxw.set(k, arcValue(G, k, f.x, f.y)); return; }
     const j = hitJar(G, f.x, f.y);
     if (j >= 0) {
       const now = performance.now(), dbl = lastJarTap && lastJarTap.j === j && now - lastJarTap.t < T.DTAP_MS;
@@ -738,7 +743,7 @@
     if (!t) return;
     t.x = f.x; t.y = f.y;
     const dx = f.x - f.x0, dy = f.y - f.y0;
-    if (t.kind === 'knob') { fxw.set(t.k, clamp(t.v0 + (dx - dy) / 160)); return; }   // вверх или вправо — больше
+    if (t.kind === 'knob') { fxw.set(t.k, arcValue(geo(), t.k, f.x, f.y)); return; }   // палец идёт по кольцу — значение по углу
     if (t.kind === 'jar') {                          // банку вверх-вниз — её нота (6 px на полутон, с ладом — по ступеням)
       if (!t.drag && Math.abs(dy) > 10) t.drag = true;
       if (!t.drag) return;
@@ -907,6 +912,7 @@
     jar: (i) => { const b = jarBox(geo(), i); return { x: b.X, y: b.cy }; },
     at: (i) => { const q = flaskGeo(geo(), i); return { x: q.p.x, y: (q.yTop + q.yBot) / 2, neckY: q.neckTop + 4 }; },
     knob: (k) => { const q = knobAt(geo(), k); return { x: q.x, y: q.y }; },
+    arcPt: (k, v) => { const G = geo(), a = arcAng(k, v); return { x: G.cx + Math.cos(a) * (G.R + 4), y: G.cy + Math.sin(a) * (G.R + 4) }; },
     furnace: () => { const b = lampBox(geo()); return { x: b.x, y: b.y - 14 }; },
     tubeAt: (s, d) => { const t = tubes.find((q) => q.s === s && q.d === d), G = geo(); if (!t) return null; const p = t.pts.find((q, k) => k > 3 && !hitFlask(G, q[0], q[1])) || t.pts[8]; return { x: p[0], y: p[1] }; },   // точка трубки не над колбой
   };

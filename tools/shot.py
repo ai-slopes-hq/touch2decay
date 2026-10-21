@@ -751,9 +751,10 @@ async def sc_lab(p):                              # Laboratorium: огонь —
     await p.shot('lab-jug'); await p.pg.wait_for_timeout(300)
     assert not await p.js('()=>t2d.lab.fire') and not any(v['latched'] for v in await p.js('()=>t2d.lab.voices')), 'tap the egg while burning — fire out, kept jars quiet'
     await p.js("()=>{t2d.lab.setFx('solve', 0.2); t2d.lab.setFx('coagula', 0)}")
-    for k, d in (('solve', 96), ('coagula', 112)):                        # склянки на атаноре: вверх — больше
-        q = await p.js(f"()=>t2d.lab.knob('{k}')"); pid = await p.hold(q['x'], q['y'], ms=60)
-        await p.drag(pid, q['x'], q['y'], q['x'], q['y'] - d, steps=8)
+    for k, v in (('solve', 0.8), ('coagula', 0.7)):                       # дуги на кольце: палец идёт по окружности
+        q = await p.js(f"()=>t2d.lab.arcPt('{k}', 0.1)"); pid = await p.hold(q['x'], q['y'], ms=60)
+        for j in range(1, 9):
+            r = await p.js(f"()=>t2d.lab.arcPt('{k}', {0.1 + (v - 0.1) * j / 8})"); await p.drag(pid, q['x'], q['y'], r['x'], r['y'], steps=1); q = r
         if k == 'coagula': await p.shot('lab-knob')
         await p.up(); await p.pg.wait_for_timeout(100)
     v = await p.js('()=>t2d.lab.fx')
