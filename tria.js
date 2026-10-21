@@ -20,7 +20,7 @@
   const rest = () => [0, 1, 2].map((i) => { const a = -Math.PI / 2 + (i * TAU) / 3; return { x: Math.cos(a) * 0.5, y: Math.sin(a) * 0.5 }; });
   const bodies = rest().map((p, i) => ({ ...p, vx: 0, vy: 0, m: 1, fixed: false, semi: [0, 7, 12][i], level: 0.8, trail: [], amp: 0, hz: 110 }));
   const fx = { gravitas: 0.5, flux: 0.5, nexus: 0.35, hall: 0.35 };
-  let still = true, lux = false, encounters = 0;
+  let still = true, lux = false, cadit = false, encounters = 0;   // cadit — тяга выключена: всё падает на дно блюда
   const Gc = () => 0.25 + 0.75 * fx.gravitas;
   const tonic = () => (T.scaleOn ? T.scaleRoot : 0);
   function hzOf(b) {                                     // ближе к земле в середине — выше; с ладом — по ступеням
@@ -34,14 +34,16 @@
   // ---------- геометрия ----------
   function geo() {
     const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, Ws = Math.min(W, (H - T.safeBot) * 0.62), cx = W / 2, cy = (top + bot) / 2 + 10;
-    const R = Math.min(Ws / 2 - 16, (bot - top) / 2 - 24);
-    return { W, H, top, bot, cx, cy, R, Ws, sun: { x: 0, y: T.topY + 2, r: Math.min(56, Ws * 0.15) } };
+    const ay = bot - 30, cy2 = (top + ay - 40) / 2 + 8, R = Math.min(Ws / 2 - 16, (ay - 40 - top) / 2 - 18);   // внизу — аватары трёх тел и отвес
+    const step = Math.min(70, Ws / 4.6), av = [-1.5, -0.5, 0.5].map((k) => ({ x: cx + k * step, y: ay, r: 19 }));
+    return { W, H, top, bot, cx, cy: cy2, R, Ws, av, plumb: { x: cx + 1.5 * step, y: ay, r: 19 }, sun: { x: 0, y: T.topY + 2, r: Math.min(56, Ws * 0.15) } };
   }
   const px = (G, b) => ({ x: G.cx + b.x * G.R, y: G.cy + b.y * G.R });
 
   // ---------- физика ----------
   function accel(i, P) {
     const b = P[i];
+    if (cadit) return [0, 1.4];                           // тяга выключена — всё падает вниз
     let ax = -KC * b.x * (lux ? 0 : 1), ay = -KC * b.y * (lux ? 0 : 1);
     const eps2 = lux ? 1e-6 : EPS * EPS, g = Gc();
     for (let j = 0; j < 3; j++) {
@@ -58,9 +60,18 @@
       for (let i = 0; i < 3; i++) { const b = bodies[i]; if (b.fixed || b.held) continue; const [ax, ay] = accel(i, bodies); b.vx += ax * h / 2; b.vy += ay * h / 2; }
       for (const b of bodies) { if (b.fixed || b.held) continue; b.x += b.vx * h; b.y += b.vy * h; }
       for (let i = 0; i < 3; i++) { const b = bodies[i]; if (b.fixed || b.held) continue; const [ax, ay] = accel(i, bodies); b.vx += ax * h / 2; b.vy += ay * h / 2; }
+      if (cadit) for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) {   // на дне тела не проходят друг сквозь друга
+        const a = bodies[i], b = bodies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1e-4, m = 0.19;
+        if (d < m) { const push = (m - d) / 2, ux = dx / d, uy = dy / d; if (!a.fixed && !a.held) { a.x -= ux * push; a.y -= uy * push; } if (!b.fixed && !b.held) { b.x += ux * push; b.y += uy * push; } const rv = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy; if (rv < 0) { a.vx += rv * ux * 0.5; a.vy += rv * uy * 0.5; b.vx -= rv * ux * 0.5; b.vy -= rv * uy * 0.5; } }
+      }
       for (const b of bodies) {                           // край блюда: отскок с потерей; слишком быстрые — притормаживают
         const r = Math.hypot(b.x, b.y);
-        if (r > 0.97) { const nx = b.x / r, ny = b.y / r, vn = b.vx * nx + b.vy * ny; if (vn > 0) { b.vx -= 1.8 * vn * nx; b.vy -= 1.8 * vn * ny; } b.x = nx * 0.97; b.y = ny * 0.97; }
+        if (r > 0.97) {
+          const nx = b.x / r, ny = b.y / r, vn = b.vx * nx + b.vy * ny, k = cadit ? 1.35 : 1.8;
+          if (vn > 0) { b.vx -= k * vn * nx; b.vy -= k * vn * ny; }
+          if (cadit) { b.vx *= 0.985; b.vy *= 0.985; }   // на дне — трение: тела скатываются и замирают
+          b.x = nx * 0.97; b.y = ny * 0.97;
+        }
         const v = Math.hypot(b.vx, b.vy); if (v > 4) { b.vx *= 4 / v; b.vy *= 4 / v; }
       }
     }
@@ -69,7 +80,7 @@
     const s = 0.55, g = Gc(), k = Math.sqrt(g / s), x1 = [-0.97000436, 0.24308753], v3 = [-0.93240737, -0.86473146];
     const P = [[x1[0], x1[1]], [-x1[0], -x1[1]], [0, 0]], V = [[-v3[0] / 2, -v3[1] / 2], [-v3[0] / 2, -v3[1] / 2], v3];
     bodies.forEach((b, i) => { b.x = P[i][0] * s; b.y = P[i][1] * s; b.vx = V[i][0] * k; b.vy = V[i][1] * k; b.m = 1; b.fixed = false; b.trail = []; });
-    lux = true; still = false; start(); luxAt = performance.now();
+    lux = true; cadit = false; still = false; start(); luxAt = performance.now();
   }
   let luxAt = 0;
 
@@ -161,7 +172,13 @@
   let lastTap = null;
   function bodyAt(G, x, y) { let best = -1, bd = 30; bodies.forEach((b, i) => { const p = px(G, b), d = Math.hypot(x - p.x, y - p.y); if (d < bd) { bd = d; best = i; } }); return best; }
   function down(f) {
-    const G = geo(), now = performance.now(), i = bodyAt(G, f.x, f.y);
+    const G = geo(), now = performance.now();
+    const ai = G.av.findIndex((a) => Math.hypot(f.x - a.x, f.y - a.y) < a.r + 10);
+    if (ai >= 0) { bodySheet(ai); touches.set(f.id, { kind: 'none' }); return; }   // аватар — плашка тела
+    if (Math.hypot(f.x - G.plumb.x, f.y - G.plumb.y) < G.plumb.r + 10) {   // отвес: тяга выкл — всё падает на дно; ещё раз — тяга снова
+      cadit = !cadit; lux = false; if (still) { still = false; start(); } touches.set(f.id, { kind: 'none' }); return;
+    }
+    const i = bodyAt(G, f.x, f.y);
     if (i >= 0) {
       const b = bodies[i];
       if (lastTap && lastTap.i === i && now - lastTap.t < T.DTAP_MS) { lastTap = null; b.fixed = !b.fixed; b.vx = b.vy = 0; touches.set(f.id, { kind: 'none' }); return; }   // двойной тап — якорь
@@ -199,10 +216,10 @@
     const b = bodies[i];
     T.openSheet({
       title: NAMES[i], hint: 'body — tap outside to close',
-      rows: [{ key: 'm', label: 'mass' }, { key: 'semi', label: 'note' }, { key: 'level', label: 'level' }],
-      get: (k) => (k === 'm' ? (b.m - 0.3) / 2.7 : k === 'semi' ? (b.semi + 12) / 36 : b.level),
-      set: (k, v) => { if (k === 'm') b.m = 0.3 + v * 2.7; else if (k === 'semi') b.semi = Math.round(v * 36) - 12; else b.level = v; },
-      text: (k) => (k === 'm' ? b.m.toFixed(1) : k === 'semi' ? noteName(110 * 2 ** ((b.semi + tonic()) / 12)) : `${Math.round(b.level * 100)}%`),
+      rows: [{ key: 'm', label: 'mass' }, { key: 'semi', label: 'note' }, { key: 'level', label: 'level' }, { key: 'fixed', label: 'anchor' }],
+      get: (k) => (k === 'm' ? (b.m - 0.3) / 2.7 : k === 'semi' ? (b.semi + 12) / 36 : k === 'fixed' ? (b.fixed ? 1 : 0) : b.level),
+      set: (k, v) => { if (k === 'm') b.m = 0.3 + v * 2.7; else if (k === 'semi') b.semi = Math.round(v * 36) - 12; else if (k === 'fixed') { b.fixed = v >= 0.5; if (b.fixed) b.vx = b.vy = 0; } else b.level = v; },
+      text: (k) => (k === 'm' ? b.m.toFixed(1) : k === 'semi' ? noteName(110 * 2 ** ((b.semi + tonic()) / 12)) : k === 'fixed' ? (b.fixed ? 'anchored' : 'free') : `${Math.round(b.level * 100)}%`),
     });
   }
 
@@ -228,10 +245,10 @@
     x.strokeStyle = ink(0.4); x.beginPath(); for (let k = 0; k < 72; k++) { const a = (k / 72) * TAU, l = k % 6 ? 3 : 6; x.moveTo(cx + Math.cos(a) * (R + 8), cy + Math.sin(a) * (R + 8)); x.lineTo(cx + Math.cos(a) * (R + 8 + l), cy + Math.sin(a) * (R + 8 + l)); } x.stroke();
     x.strokeStyle = ink(0.1); x.setLineDash([2, 5]); for (const k of [0.25, 0.5, 0.75]) { x.beginPath(); x.arc(cx, cy, R * k, 0, TAU); x.stroke(); } x.setLineDash([]);   // круги — ближе к середине выше
     x.strokeStyle = ink(0.5);                                                                                 // стихии: огонь сверху, воздух справа, вода снизу, земля слева
-    const S = 7, o = R + 28, dx = Math.min(70, R * 0.45);   // огонь и воздух — над блюдом (лёгкие), вода и земля — под ним (тяжёлые)
-    elem(x, cx - dx, cy - o, S, true, false); elem(x, cx + dx, cy - o, S, true, true); elem(x, cx - dx, cy + o, S, false, false); elem(x, cx + dx, cy + o, S, false, true);
+    const S = 7, o = (R + 26) * Math.SQRT1_2;               // стихии по диагоналям: огонь и воздух — над блюдом (лёгкие), вода и земля — под ним
+    elem(x, cx - o, cy - o, S, true, false); elem(x, cx + o, cy - o, S, true, true); elem(x, cx - o, cy + o, S, false, false); elem(x, cx + o, cy + o, S, false, true);
     x.font = `italic 10px ${T.MAP}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = ink(0.35);
-    x.fillText('ignis', cx - dx, cy - o - 16); x.fillText('aer', cx + dx, cy - o - 16); x.fillText('aqua', cx - dx, cy + o + 16); x.fillText('terra', cx + dx, cy + o + 16);
+    x.fillText('ignis', cx - o, cy - o - 16); x.fillText('aer', cx + o, cy - o - 16); x.fillText('aqua', cx - o, cy + o + 16); x.fillText('terra', cx + o, cy + o + 16);
     return wallC;
   }
   function glyph(c, i, x, y, r) {                          // знаки трёх начал: соль ⊖, сера — треугольник над крестом, ртуть — круг с рогами и крестом
@@ -273,6 +290,19 @@
       c.lineWidth = 1.2; glyph(c, i, p.x, p.y - (i === 2 ? 2 : 0), r * 0.55);
       if (held.has(i)) { T.mapText(NAMES[i], p.x, p.y - r - 26, 14, 0.95, 'center'); T.mapText(`${noteName(b.hz)} · ${Math.round(b.hz)} Hz`, p.x, p.y - r - 11, 11, 0.65, 'center'); }
     });
+    G.av.forEach((a, i) => {                                // аватары внизу: знак тела, яркость — громкость, двойной обвод — на якоре
+      const b = bodies[i];
+      if (b.amp > 0.05) T.glowAt(a.x, a.y, 30, b.amp * 0.3);
+      c.fillStyle = BGC; c.beginPath(); c.arc(a.x, a.y, a.r, 0, TAU); c.fill();
+      c.strokeStyle = rgba(TINT[i], 0.45 + 0.55 * clamp(b.amp * 1.5)); c.lineWidth = 1; c.beginPath(); c.arc(a.x, a.y, a.r, 0, TAU); c.stroke();
+      if (b.fixed) { c.beginPath(); c.arc(a.x, a.y, a.r + 3.5, 0, TAU); c.stroke(); }
+      c.lineWidth = 1.2; glyph(c, i, a.x, a.y - (i === 2 ? 2 : 0), 7);
+    });
+    const P = G.plumb;                                      // отвес: тяга выключена — грузик внизу, светится
+    c.lineWidth = 1; c.fillStyle = BGC; c.strokeStyle = ink(cadit ? 0.95 : 0.55); c.beginPath(); c.arc(P.x, P.y, P.r, 0, TAU); c.fill(); c.stroke();
+    if (cadit) { c.beginPath(); c.arc(P.x, P.y, P.r + 3.5, 0, TAU); c.stroke(); }
+    c.beginPath(); c.moveTo(P.x, P.y - 12); c.lineTo(P.x, P.y + 1); c.stroke();
+    c.fillStyle = ink(cadit ? 0.95 : 0.6); c.beginPath(); c.moveTo(P.x - 5, P.y + 1); c.lineTo(P.x + 5, P.y + 1); c.lineTo(P.x, P.y + 11); c.closePath(); c.fill();
     if (!noSun) T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, 1, now, INK, BGC);
   }
 
@@ -286,29 +316,30 @@
   function dice() {                                       // тела разбросаны и брошены, массы и ноты — аккорд
     const R = Math.random, chords = [[0, 7, 12], [0, 3, 7], [0, 5, 10], [-5, 0, 7], [0, 4, 11]], ch = chords[Math.floor(R() * chords.length)];
     bodies.forEach((b, i) => { const a = R() * TAU, r = 0.25 + R() * 0.55; b.x = Math.cos(a) * r; b.y = Math.sin(a) * r; b.vx = (R() - 0.5) * 1.6; b.vy = (R() - 0.5) * 1.6; b.m = 0.6 + R() * 1.2; b.semi = ch[i]; b.fixed = false; b.trail = []; });
-    lux = false; still = false; start();
+    lux = false; cadit = false; still = false; start();
   }
   const tria = {
     n: 'XI', title: 'Tria corpora', sub: 'sal · sulphur · mercurius', theme: { ink: INK, bg: BGC, paper: PAPER },
     corner: { hit: (f) => { const G = geo(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце — карта
     fx: fxw,
     legend: [['throw', 'grab a body and throw it', 'the three pull each other — chaos'], ['double', 'double tap a body', 'anchor it · again — let go'],
-      ['hold', 'hold a body', 'its sheet: mass, note, level'], ['tap', 'tap the sign of earth', 'Fiat lux: the figure eight'],
+      ['hold', 'hold a body or tap its medallion below', 'its sheet: mass, note, level, anchor'], ['tap', 'tap the sign of earth', 'Fiat lux: the figure eight'],
+      ['tap', 'tap the plumb line', 'gravity off — all falls to the bottom · again — on'],
       ['tap', 'tap the sun', 'map of worlds']],
     build, tick, draw, down, move, up, dice,
-    clear() { still = true; lux = false; bodies.forEach((b) => { b.vx = b.vy = 0; b.trail = []; }); },
-    snapshot: () => JSON.stringify({ b: bodies.map(({ x, y, vx, vy, m, fixed, semi, level }) => ({ x, y, vx, vy, m, fixed, semi, level })), fx, still, lux }),
+    clear() { still = true; lux = false; cadit = false; bodies.forEach((b) => { b.vx = b.vy = 0; b.trail = []; }); },
+    snapshot: () => JSON.stringify({ b: bodies.map(({ x, y, vx, vy, m, fixed, semi, level }) => ({ x, y, vx, vy, m, fixed, semi, level })), fx, still, lux, cadit }),
     restore(js) {
       const st = JSON.parse(js);
       st.b.forEach((q, i) => Object.assign(bodies[i], q, { trail: [] }));
-      Object.assign(fx, st.fx); still = st.still; lux = st.lux; applyFx();
+      Object.assign(fx, st.fx); still = st.still; lux = st.lux; cadit = !!st.cadit; applyFx();
       if (!still) start();
     },
     sounding, mapShot(on) { noSun = on; },
   };
   T.registerWorld(11, tria);
   window.t2d.tria = {
-    bodies, fx, geo, setFx: (k, v) => fxw.set(k, v), get still() { return still; }, get lux() { return lux; }, get encounters() { return encounters; }, fiatLux,
+    bodies, fx, geo, setFx: (k, v) => fxw.set(k, v), get still() { return still; }, get lux() { return lux; }, get cadit() { return cadit; }, get encounters() { return encounters; }, fiatLux,
     at: (i) => px(geo(), bodies[i]),
   };
 })();

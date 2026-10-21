@@ -1270,6 +1270,15 @@ async def sc_tria(p):                              # Tria corpora: тела мо
     await p.pg.wait_for_timeout(300); await p.hold(b2['x'], b2['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold a body — its sheet'
     await p.shot('tria-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    av = await p.js('()=>t2d.tria.geo().av[1]'); await p.tap(av['x'], av['y']); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'tap a medallion below — that body\'s sheet'
+    await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    await p.js('()=>{t2d.tria.bodies[0].fixed=false}')
+    pl = await p.js('()=>t2d.tria.geo().plumb'); await p.tap(pl['x'], pl['y']); await p.pg.wait_for_timeout(4000)
+    assert await p.js('()=>t2d.tria.cadit'), 'tap the plumb line — gravity off'
+    ys = await p.js('()=>t2d.tria.bodies.map(b=>b.y)'); print('  fallen', [round(y, 2) for y in ys]); assert min(ys) > 0.45, f'everything falls to the bottom: {ys}'
+    await p.shot('tria-fall'); await p.tap(pl['x'], pl['y']); await p.pg.wait_for_timeout(200)
+    assert not await p.js('()=>t2d.tria.cadit'), 'tap again — gravity back'
     G = await p.js('()=>t2d.tria.geo()'); await p.tap(G['cx'], G['cy']); await p.pg.wait_for_timeout(2500)
     assert await p.js('()=>t2d.tria.lux'), 'tap the sign of earth — Fiat lux'
     r = await p.js('()=>Math.max(...t2d.tria.bodies.map(b=>Math.hypot(b.x,b.y)))'); assert r < 0.8, f'the figure eight holds: {r}'
