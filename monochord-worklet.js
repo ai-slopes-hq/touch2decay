@@ -12,7 +12,7 @@ class Mono extends AudioWorkletProcessor {
       ex: null, exi: 0, bow: 0, bowS: 0, sus: 0, en: 0, nz: 0, f: 110, y: 0, e2: 0,
       h: { buf: new Float32Array(2048), w: 0, len: 100, lp: 0, g: 0.99, n: 2, ex: null, exi: 0, en: 0, e2: 0 },   // флажолет: своя короткая петля
     }));
-    this.cpl = 0.0004;                                     // общая подставка: струны слышат друг друга (симпатический резонанс)
+    this.cpl = 0.0004; this.pend = [];                                     // общая подставка: струны слышат друг друга (симпатический резонанс)
     this.wind = 0; this.count = 0; this.every = Math.round(this.fs / 30);
     this.port.onmessage = (e) => this.msg(e.data);
   }
@@ -44,7 +44,7 @@ class Mono extends AudioWorkletProcessor {
   }
   msg(d) {
     if (d.t === 'tune') { this.tune(this.s[d.i], d); return; }
-    if (d.t === 'pluck') { this.pluck(this.s[d.i], d.pos, d.vel); return; }
+    if (d.t === 'pluck') { if (d.at && d.at > currentTime) this.pend.push(d); else this.pluck(this.s[d.i], d.pos, d.vel); return; }   // по времени — для автострама: ложится в такт
     if (d.t === 'bow') { this.s[d.i].bow = Math.max(0, Math.min(1, d.amp)); return; }
     if (d.t === 'sus') { this.s[d.i].sus = d.on ? 1 : 0; return; }
     if (d.t === 'wind') { this.wind = d.amt; return; }
@@ -54,6 +54,7 @@ class Mono extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const out = outputs[0], L = out[0], R = out[1] || out[0], n = L.length;
     for (let k = 0; k < n; k++) { L[k] = 0; if (R !== L) R[k] = 0; }
+    if (this.pend.length) { const t1 = currentTime + n / sampleRate; this.pend = this.pend.filter((d) => { if (d.at > t1) return true; this.pluck(this.s[d.i], d.pos, d.vel); return false; }); }
     if (!this.wind && this.s.every((s) => s.en < 1e-9 && s.h.en < 1e-9 && !s.ex && !s.h.ex && !s.bow && !s.bowS && !s.sus)) {   // всё молчит — не считаем
       this.count += n;
       if (this.count >= this.every) { this.count = 0; this.port.postMessage({ t: 'energy', e: [0, 0, 0, 0], h: [0, 0, 0, 0] }); }

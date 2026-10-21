@@ -310,6 +310,7 @@
     sectors: [{ key: 'sol', label: 'sol', ang: deg(190) }, { key: 'fortuna', label: 'fortuna', ang: deg(160) }, { key: 'fmode', label: 'fortuna mode', ang: deg(140) }, { key: 'fto', label: 'fortuna to', ang: deg(120) }, { key: 'decay', label: 'decay', ang: deg(100) }, { key: 'hall', label: 'hall', ang: deg(80) }],
     get: (k) => (k === 'fto' ? fx.fto / 3 : fx[k]), set: (k, v) => { if (k === 'fmode') fx.fmode = v >= 0.5 ? 1 : 0; else if (k === 'fto') fx.fto = Math.round(v * 3); else fx[k] = v; applyFx(); },
     text: (k) => (k === 'fmode' ? (fx.fmode ? 'smooth' : 'stepped') : k === 'fto' ? TARGETS[fx.fto] : `${Math.round(fx[k] * 100)}%`),
+    lfo: { keys: ['sol', 'fortuna', 'decay', 'hall'], shapes: 'random' },   // West Coast: рампы и случайность
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // зубцы — вразброс (полиритм), штифты по Евклиду, ноты — ступени, тембры — случайно; часы идут

@@ -311,6 +311,7 @@
   const fxw = {
     sectors: [{ key: 'gravitas', label: 'gravitas', ang: deg(190) }, { key: 'flux', label: 'flux', ang: deg(150) }, { key: 'nexus', label: 'nexus', ang: deg(115) }, { key: 'hall', label: 'hall', ang: deg(80) }],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
+    lfo: { keys: ['gravitas', 'flux', 'nexus', 'hall'], shapes: 'random' },   // gravitas с рампой — земля дышит
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // тела разбросаны и брошены, массы и ноты — аккорд

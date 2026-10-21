@@ -983,6 +983,14 @@ async def sc_inferno(p):                           # Inferno: удар, тлен
     a = await p.js('()=>t2d.inf.at(6, 0.4)'); await p.hold(a['x'], a['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'long hold on a burning circle — its sheet'
     await p.shot('inferno-sheet')
+    s = await p.js('()=>t2d.fxGeo()'); r = [q for q in s['rows'] if q['k'] == 'pos'][0]
+    await p.tap(s['lfoX'], r['y'] + r['h'] / 2); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.slOpen()') == 'pos', 'tap ~ on the pitch row — its LFO panel'
+    s = await p.js('()=>t2d.fxGeo()'); pid = await p.hold(s['x'] + s['w'] * 0.7, s['bottom'] - 40, ms=60); await p.drag(pid, s['x'] + s['w'] * 0.7, s['bottom'] - 40, s['x'] + s['w'] * 0.75, s['bottom'] - 90, steps=4); await p.up()
+    L = await p.js('()=>t2d.sl()'); print('  circle LFO', L); assert any(e['key'] == 'pos' and e['depth'] > 0.1 for e in L), f'drag the pad — rate and depth: {L}'
+    p0 = await p.js('()=>t2d.inf.circ[6].pos'); await p.pg.wait_for_timeout(400); p1 = await p.js('()=>t2d.inf.circ[6].pos')
+    assert abs(p1 - p0) > 0.001, f'the circle pitch moves with its LFO: {p0} {p1}'
+    await p.shot('inferno-sheet-lfo')
     await p.tap(200, 140); await p.pg.wait_for_timeout(100)
     await p.js("()=>{t2d.inf.setFx('ice', 0.7); t2d.inf.setFx('smoke', 0.7)}"); await p.pg.wait_for_timeout(600)
     i1 = await p.js('()=>t2d.inf.ice'); assert 0.02 < i1 < 0.4, f'ice grows slowly, not at once: {i1}'
@@ -995,10 +1003,6 @@ async def sc_inferno(p):                           # Inferno: удар, тлен
     await p.js("()=>t2d.inf.setFx('storm', 0)"); await p.pg.wait_for_timeout(1200)
     st = await p.js('()=>t2d.inf.storm'); assert abs(st) < 0.05, f'storm = 0 — the storm is off: {st}'
     await p.js("()=>t2d.inf.setFx('storm', 0.6)")
-    await p.js("()=>{const l=t2d.inf.circ[1].lfo; l.depth=0.8; l.rate=0.9; l.shape=3; l.to=0}"); vs = []
-    for _ in range(5): vs.append(await p.js('()=>t2d.inf.circ[1].lfo.v')); await p.pg.wait_for_timeout(150)
-    assert len(set(round(v, 3) for v in vs)) > 2, f'circle LFO runs (random steps): {vs}'
-    await p.js("()=>{t2d.inf.circ[1].lfo.depth=0}")
     await p.pin(a['x'], a['y'])
     await p.js("()=>{t2d.inf.setFx('ice', 0)}")
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(300)
@@ -1127,9 +1131,20 @@ async def sc_monochord(p):                         # Monochordum: щипок, с
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.mono.wind') > 0.6, 'undo brings the wind back'
     await p.js("()=>t2d.mono.setWind(0)")
+    E = await p.js('()=>t2d.mono.earth()'); await p.tap(E['x'], E['y'] - E['r'] + 6); await p.pg.wait_for_timeout(1600)
+    assert await p.js('()=>t2d.mono.auto.on'), 'tap the earth — it strums by itself'
+    en = await p.js('()=>t2d.mono.str.map(s=>s.en)'); print('  auto strum energies', [round(x, 4) for x in en]); assert sum(1 for x in en if x > 0.002) >= 3, f'the earth strums the strings: {en}'
+    await p.shot('monochord-earth')
+    await p.hold(E['x'], E['y'] - E['r'] + 6, ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold the earth — its sheet'
+    await p.shot('monochord-earth-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    A = await p.js('()=>t2d.mono.geo().aeolus'); await p.hold(A['x'], A['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold the wind rose — wind sheet'
+    await p.tap(200, 120); await p.pg.wait_for_timeout(150)
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(400)
     c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
     assert not await p.js('()=>t2d.mono.str.some(s=>s.sus)'), 'trash — no string sings by itself'
+    assert not await p.js('()=>t2d.mono.auto.on'), 'trash — the earth stops'
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
     await p.shot('monochord')
     h = await p.js('()=>t2d.mono.geo().hand'); await p.tap(h['x'] - h['r'] * 0.5, h['y'] + h['r'] * 0.5); await p.pg.wait_for_timeout(900)
@@ -1295,6 +1310,16 @@ async def sc_tria(p):                              # Tria corpora: тела мо
     assert await p.js('()=>t2d.tria.lux'), 'tap the sign of earth — Fiat lux'
     r = await p.js('()=>Math.max(...t2d.tria.bodies.map(b=>Math.hypot(b.x,b.y)))'); assert r < 0.8, f'the figure eight holds: {r}'
     await p.shot('tria-lux')
+    r = await p.js("()=>t2d.btnPos('rev')"); await p.tap(r['x'], r['y']); await p.pg.wait_for_timeout(150)
+    s = await p.js('()=>t2d.fxGeo()'); row = [q for q in s['rows'] if q['k'] == 'gravitas'][0]
+    await p.tap(s['lfoX'], row['y'] + row['h'] / 2); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.slOpen()') == 'gravitas', 'FX: ~ on gravitas — LFO panel'
+    s = await p.js('()=>t2d.fxGeo()'); await p.tap(s['x'] + s['w'] * 0.6, s['lfoTop'] + 50); await p.pg.wait_for_timeout(100)   # форма: рампа вниз … плавная
+    pid = await p.hold(s['x'] + s['w'] * 0.4, s['bottom'] - 40, ms=60); await p.drag(pid, s['x'] + s['w'] * 0.4, s['bottom'] - 40, s['x'] + s['w'] * 0.45, s['bottom'] - 100, steps=4); await p.up()
+    await p.shot('tria-fx-lfo')
+    g0 = await p.js("()=>t2d.tria.fx.gravitas"); await p.pg.wait_for_timeout(1200); g1 = await p.js("()=>t2d.tria.fx.gravitas")
+    assert abs(g1 - g0) > 0.005, f'gravitas breathes with its LFO: {g0} {g1}'
+    await p.tap(r['x'], r['y']); await p.pg.wait_for_timeout(150)
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(2000)
     print('  tria level, dice:', round(await p.js('()=>T2D.level'), 3), 'encounters', await p.js('()=>t2d.tria.encounters')); await p.shot('tria')
     c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(2500)

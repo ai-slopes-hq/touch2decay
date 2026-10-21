@@ -312,6 +312,7 @@
       { key: 'wind', label: 'wind', ang: deg(110) }, { key: 'hall', label: 'hall', ang: deg(80) },
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
+    lfo: { keys: ['tension', 'damping', 'tide', 'wind', 'hall'], shapes: 'classic' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // два-три города на ступенях лада, натяжение и затухание — вразброс, всплеск

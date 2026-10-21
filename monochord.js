@@ -130,7 +130,44 @@
     send({ t: 'wind', amt: wind });
     if (wind > 0.01) { start(); setLive(true); lastSound = performance.now(); }
   }
-  const sounding = () => wind > 0.01 || str.some((s) => s.sus || s.bow > 0);
+  const sounding = () => wind > 0.01 || auto.on || str.some((s) => s.sus || s.bow > 0);
+  // ---------- автострам: Земля вращается в темпе, её горы задевают струны ----------
+  const DIVS = [[1, '1/4'], [2, '1/8'], [3, '1/8T'], [4, '1/16']], PATTERNS = ['down', 'down-up', 'arpeggio', 'random'];
+  const auto = { on: false, bpm: 90, div: 1, pattern: 1, strength: 0.6, swing: 0, next: 0, step: 0, rot: 0, hitAt: 0 };
+  const stepSec = () => 60 / auto.bpm / DIVS[auto.div][0];
+  function strumAt(t, step) {                             // одно касание Земли: струны по очереди, с промежутком
+    const p = auto.pattern, up = p === 1 && step % 2 === 1, acc = step % (DIVS[auto.div][0] * 4) === 0 ? 1.15 : 1, vel = clamp(auto.strength * acc, 0.15, 1);
+    let order = up ? [3, 2, 1, 0] : [0, 1, 2, 3];
+    if (p === 2) order = [step % 4];
+    if (p === 3) order = [0, 1, 2, 3].filter(() => Math.random() < 0.55);
+    const gap = 0.006 + 0.018 * (1 - auto.strength);
+    order.forEach((i, k) => send({ t: 'pluck', i, pos: 0.12 + 0.1 * Math.random(), vel: vel * (0.85 + 0.15 * Math.random()), at: t + k * gap }));
+    setTimeout(() => { auto.hitAt = performance.now(); }, Math.max(0, (t - actx.currentTime) * 1000));
+  }
+  function autoSchedule() {
+    if (!auto.on || !actx || !ready) return;
+    const now = actx.currentTime, ahead = now + 0.2;
+    if (!auto.next) auto.next = now + 0.05;
+    while (auto.next < ahead) {
+      if (auto.next > now + 0.003) strumAt(auto.next, auto.step);
+      const sw = auto.step % 2 === 0 ? 1 + auto.swing * 0.5 : 1 - auto.swing * 0.5;   // swing: чётные длиннее
+      auto.step++; auto.next += stepSec() * sw;
+    }
+  }
+  setInterval(autoSchedule, 25);
+  function setAuto(on) { auto.on = on; auto.next = 0; auto.step = 0; if (on) { start(); setLive(true); lastSound = performance.now(); } }
+  function earthSheet() {
+    T.openSheet({
+      title: 'terra', hint: 'the earth strums — tap outside to close',
+      rows: [{ key: 'bpm', label: 'tempo' }, { key: 'div', label: 'rate' }, { key: 'pattern', label: 'pattern' }, { key: 'strength', label: 'strength' }, { key: 'swing', label: 'swing' }],
+      lfo: { id: 'mono-earth', keys: ['strength', 'swing'], shapes: 'classic' },
+      get: (k) => (k === 'bpm' ? (auto.bpm - 40) / 160 : k === 'div' ? (auto.div + 0.5) / 4 : k === 'pattern' ? (auto.pattern + 0.5) / 4 : auto[k]),
+      set: (k, v) => {
+        if (k === 'bpm') { auto.bpm = Math.round(40 + v * 160); T.tempoFrom(7, auto.bpm); } else if (k === 'div') auto.div = Math.min(3, Math.floor(v * 4)); else if (k === 'pattern') auto.pattern = Math.min(3, Math.floor(v * 4)); else auto[k] = v;
+      },
+      text: (k) => (k === 'bpm' ? `${auto.bpm} bpm` : k === 'div' ? DIVS[auto.div][1] : k === 'pattern' ? PATTERNS[auto.pattern] : `${Math.round(auto[k] * 100)}%`),
+    });
+  }
   function pluck(i, pos, vel = 0.9) { start(); setLive(true); lastSound = performance.now(); send({ t: 'pluck', i, pos, vel }); }
 
   // ---------- касания ----------
@@ -139,8 +176,9 @@
   function down(f) {
     start();
     const A = geo().aeolus;
-    if (Math.hypot(f.x - A.x, f.y - A.y) < A.r * 1.5) { touches.set(f.id, { kind: 'wind', y0: f.y, w0: wind, moved: false }); return; }   // голова ветра: вверх — сильнее, тап — вкл/выкл
-    const G = geo(), i = stringAt(G, f.x, f.y), now = performance.now();
+    if (Math.hypot(f.x - A.x, f.y - A.y) < A.r * 1.5) { touches.set(f.id, { kind: 'wind', y0: f.y, w0: wind, moved: false, t0: performance.now() }); return; }   // голова ветра: вверх — сильнее, тап — вкл/выкл
+    const G = geo(), i = stringAt(G, f.x, f.y), now = performance.now(), E = earthG(G);
+    if (f.y > G.y1 + 16 && Math.abs(f.x - E.x) < E.r + 10 && f.y > E.y - E.r - 16) { touches.set(f.id, { kind: 'earth', t0: now, moved: false }); return; }   // Земля: тап — автострам, держишь — плашка
     const free = () => touches.set(f.id, f.y > G.y0 - 10 && f.y < G.y1 + 14 ? { kind: 'strum', px: f.x, lt: now } : { kind: 'none' });   // мимо струн — можно начать страм
     if (i < 0) { free(); return; }
     const yb = yOfR(G, str[i].r);
@@ -172,7 +210,7 @@
   function move(f) {
     const t = touches.get(f.id);
     if (!t || t.kind === 'none' || t.sheet) return;
-    if (t.kind === 'wind') { if (Math.abs(f.y - t.y0) > 6) t.moved = true; if (t.moved) setWind(t.w0 + (t.y0 - f.y) / 140); return; }
+    if (t.kind === 'wind') { if (t.sheet) return; if (Math.abs(f.y - t.y0) > 6) t.moved = true; if (t.moved) setWind(t.w0 + (t.y0 - f.y) / 140); return; }
     const G = geo();
     if (t.kind === 'bridge') { const s = str[t.i]; s.r = snapR(rOfY(G, f.y)); retune(t.i); t.y = f.y; return; }
     if (t.kind === 'strum') { strum(t, f, G); return; }
@@ -197,10 +235,20 @@
   function up(f) {
     const t = touches.get(f.id);
     touches.delete(f.id);
-    if (t && t.kind === 'wind' && !t.moved) setWind(wind > 0.01 ? 0 : lastWind);
+    if (t && t.kind === 'wind' && !t.moved && !t.sheet) setWind(wind > 0.01 ? 0 : lastWind);
+    if (t && t.kind === 'earth' && !t.sheet) setAuto(!auto.on);
     if (t && t.kind === 'string' && str[t.i].bow > 0) { str[t.i].bow = 0; send({ t: 'bow', i: t.i, amp: 0 }); }
   }
+  function windSheet() {                                  // держишь розу ветров — плашка ветра; «~» со случайной формой — порывы
+    T.openSheet({
+      title: 'ventus', hint: 'wind — tap outside to close', rows: [{ key: 'wind', label: 'wind' }],
+      lfo: { id: 'mono-wind', keys: ['wind'], shapes: 'random' },
+      get: () => wind, set: (k, v) => setWind(v), text: () => (wind > 0.01 ? `${Math.round(wind * 100)}%` : 'calm'),
+    });
+  }
   function tick(now) {
+    for (const t of touches.values()) if (t.kind === 'earth' && !t.sheet && now - t.t0 > T.HOLD_MS) { t.sheet = true; earthSheet(); }
+    for (const t of touches.values()) if (t.kind === 'wind' && !t.moved && !t.sheet && now - t.t0 > T.HOLD_MS) { t.sheet = true; windSheet(); }
     for (const t of touches.values()) {
       if (t.kind !== 'string' || t.moved) continue;
       const s = str[t.i];
@@ -211,8 +259,11 @@
     const s = str[i];
     T.openSheet({
       title: `chorda ${['I', 'II', 'III', 'IV'][i]}`, hint: 'string — tap outside to close',
-      rows: [{ key: 'bright', label: 'brightness' }, { key: 'decay', label: 'decay' }, { key: 'level', label: 'level' }],
-      get: (k) => s[k], set: (k, v) => { s[k] = v; retune(i); }, text: (k) => `${Math.round(s[k] * 100)}%`,
+      rows: [{ key: 'pitch', label: 'pitch' }, { key: 'bright', label: 'brightness' }, { key: 'decay', label: 'decay' }, { key: 'level', label: 'level' }],
+      lfo: { id: `mono-s${i}`, keys: ['pitch', 'bright', 'decay', 'level'], shapes: 'classic' },   // «~» на pitch — вибрато подставки
+      get: (k) => (k === 'pitch' ? Math.log2(1 / s.r) / 2 : s[k]),
+      set: (k, v) => { if (k === 'pitch') s.r = clamp(2 ** (-2 * v), 0.25, 1); else s[k] = v; retune(i); },
+      text: (k) => (k === 'pitch' ? noteOf(hzOf(i)) : `${Math.round(s[k] * 100)}%`),
     });
   }
 
@@ -245,9 +296,6 @@
       x.strokeStyle = ink(0.35); x.beginPath(); x.moveTo(B.x1 + 4, ya); x.quadraticCurveTo(xr + 18, (ya + yb) / 2, B.x1 + 4, yb); x.stroke();
       x.save(); x.translate(xr + 8, (ya + yb) / 2); x.rotate(-Math.PI / 2); x.textAlign = 'center'; x.fillStyle = ink(0.45); x.font = `italic 10px ${T.MAP}`; x.fillText(name, 0, 0); x.restore();
     });
-    const ey = G.y1 + 40;                                 // Земля внизу: полукруг с горами
-    x.strokeStyle = ink(0.55); x.beginPath(); x.arc(G.cx, ey + 30, Math.min(70, G.Ws * 0.2), Math.PI * 1.08, Math.PI * 1.92); x.stroke();
-    x.strokeStyle = ink(0.3); x.beginPath(); for (let k = -3; k <= 3; k++) { const px = G.cx + k * 14; x.moveTo(px - 6, ey + 4); x.lineTo(px, ey - 4 - (k % 2 ? 2 : 0)); x.lineTo(px + 6, ey + 4); } x.stroke();
     return wallC;
   }
   function drawHand(c, G, now) {                          // облако справа от колков, из него — рука Бога, держит колок крайней струны
@@ -300,6 +348,24 @@
     }
     if (held) T.mapText(`ventus · ${Math.round(w * 100)}%`, x, y + r + 14, 12, 0.8, 'center');
   }
+  const earthG = (G) => ({ x: G.cx, y: G.y1 + 96, r: Math.min(70, G.Ws * 0.2) });   // Земля внизу: верх шара с горами
+  let earthT = 0;
+  function drawEarth(c, G, now) {                         // автострам вкл — Земля вращается, горы бегут; удар — вспыхивает горизонт
+    const E = earthG(G), dt = earthT ? Math.min(0.1, (now - earthT) / 1000) : 0;
+    earthT = now;
+    if (auto.on) auto.rot += dt * (auto.bpm / 60) * 0.6;
+    const hit = clamp(1 - (now - auto.hitAt) / 220);
+    c.lineWidth = 1; c.strokeStyle = T.ink(auto.on ? 0.75 + 0.25 * hit : 0.5); c.beginPath(); c.arc(E.x, E.y, E.r, Math.PI * 1.08, Math.PI * 1.92); c.stroke();
+    if (auto.on) { c.strokeStyle = T.ink(0.25); c.beginPath(); c.arc(E.x, E.y, E.r + 4, Math.PI * 1.08, Math.PI * 1.92); c.stroke(); }
+    c.strokeStyle = T.ink(auto.on ? 0.6 : 0.3); c.beginPath();
+    for (let k = 0; k < 14; k++) {                         // горы на шаре: при вращении ползут слева направо
+      const a = Math.PI * 1.1 + ((((k / 14 + auto.rot * 0.15) % 1) + 1) % 1) * Math.PI * 0.8, px = E.x + Math.cos(a) * E.r, py = E.y + Math.sin(a) * E.r, h = 5 + (k % 3) * 2;
+      const nx = Math.cos(a), ny = Math.sin(a), tx = -ny, ty = nx;
+      c.moveTo(px - tx * 5, py - ty * 5); c.lineTo(px + nx * h, py + ny * h); c.lineTo(px + tx * 5, py + ty * 5);
+    }
+    c.stroke();
+    if (hit > 0) T.glowAt(E.x, E.y - E.r, 30, hit * 0.25);
+  }
   function draw(now) {
     const c = T.g, G = geo();
     c.drawImage(wall(G), 0, 0, T.W, T.H);
@@ -342,6 +408,7 @@
       T.mapText(`${noteOf(f)} · ${Math.round(f)} Hz`, rx, ry, 15, 0.95, 'right');
       if (nm) T.mapText(nm, rx, ry + 18, 11, 0.6, 'right');
     }
+    drawEarth(c, G, now);
     drawHand(c, G, now);
     drawAeolus(c, G, now, [...touches.values()].some((t) => t.kind === 'wind'));
     for (const t of touches.values()) if (t.kind === 'string' && !t.moved && !t.sheet && now - t.t0 > T.HOLD_MS) { t.sheet = true; stringSheet(t.i); }   // держишь струну — плашка
@@ -355,6 +422,7 @@
       { key: 'sympathy', label: 'sympathy', ang: deg(125) }, { key: 'chorus', label: 'chorus', ang: deg(110) }, { key: 'hall', label: 'hall', ang: deg(80) },
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
+    lfo: { keys: ['decay', 'bright', 'body', 'sympathy', 'chorus', 'hall'], shapes: 'classic' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // подставки — на пифагоровы лады, одна-две струны поют сами
@@ -369,20 +437,21 @@
     fx: fxw,
     legend: [['tap', 'tap a string above its bridge', 'pluck · near the end — bright'], ['drag', 'stroke back and forth on a string', 'bow it · speed — pressure'], ['draw', 'sweep across the strings', 'strum · speed — strength'],
       ['up', 'drag a bridge', 'pitch · sticks to Pythagorean frets'], ['tap', 'tap a dot on a string', 'harmonic (flageolet) · 1/2, 1/3, 1/4'], ['double', 'double tap a string', 'it sings by itself, like an Aeolian harp'],
-      ['hold', 'hold a string', 'its sheet: brightness, decay, level'], ['up', 'drag the wind rose up', 'wind · every string sings · tap — on / off'], ['tap', 'tap the cloud', 'map of worlds']],
+      ['hold', 'hold a string', 'its sheet: pitch, brightness, decay, level · ~ — LFO, vibrato'], ['up', 'drag the wind rose up', 'wind · every string sings · tap — on / off · hold — gusts'], ['tap', 'tap the earth', 'it strums by itself in tempo · hold — rate, pattern'], ['tap', 'tap the cloud', 'map of worlds']],
     build, tick, draw, down, move, up, dice, enter: start,
-    clear() { str.forEach((s, i) => { s.sus = false; s.bow = 0; send({ t: 'sus', i, on: false }); send({ t: 'bow', i, amp: 0 }); }); setWind(0); },
-    snapshot: () => JSON.stringify({ str: str.map((s) => ({ r: s.r, sus: s.sus, bright: s.bright, decay: s.decay, level: s.level })), fx, wind }),
+    clear() { str.forEach((s, i) => { s.sus = false; s.bow = 0; send({ t: 'sus', i, on: false }); send({ t: 'bow', i, amp: 0 }); }); T.lfoClear('mono-wind'); setWind(0); setAuto(false); },   // корзина: и порывы ветра снимаются
+    snapshot: () => JSON.stringify({ str: str.map((s) => ({ r: s.r, sus: s.sus, bright: s.bright, decay: s.decay, level: s.level })), fx, wind, auto: { on: auto.on, bpm: auto.bpm, div: auto.div, pattern: auto.pattern, strength: auto.strength, swing: auto.swing } }),
     restore(js) {
       const st = JSON.parse(js);
       st.str.forEach((q, i) => { Object.assign(str[i], q); send({ t: 'sus', i, on: q.sus }); });
       Object.assign(fx, st.fx); applyFx(); setWind(st.wind || 0);
+      if (st.auto) { const on = st.auto.on; Object.assign(auto, st.auto); setAuto(on); }
     },
-    sounding,
+    sounding, tempo: { set: (bpm) => { auto.bpm = bpm; } },
   };
   T.registerWorld(7, mono);
   window.t2d.mono = {
-    str, fx, geo, setFx: (k, v) => fxw.set(k, v), setWind, get wind() { return wind; }, get chorus() { return !!(bus && bus.ch && bus.ch.on); }, get ready() { return ready; }, get live() { return !!(bus && bus.live); },
+    str, fx, geo, setFx: (k, v) => fxw.set(k, v), setWind, auto, earth: () => earthG(geo()), get wind() { return wind; }, get chorus() { return !!(bus && bus.ch && bus.ch.on); }, get ready() { return ready; }, get live() { return !!(bus && bus.live); },
     at: (i, r) => { const G = geo(); return { x: G.xs[i], y: yOfR(G, r) }; }, hz: (i) => hzOf(i),
   };
 })();

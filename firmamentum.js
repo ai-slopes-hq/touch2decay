@@ -103,7 +103,7 @@
     stars.push(s); sendStar(s);
     return s;
   }
-  function closeStar(s) { sendStar(s, false); stars.splice(stars.indexOf(s), 1); }
+  function closeStar(s) { T.lfoClear(`firm-s${s.slot}-${s.born}`); sendStar(s, false); stars.splice(stars.indexOf(s), 1); }
   const sounding = () => stars.length > 0;
   let driftAt = 0;
   function tick(now, dt) {
@@ -142,10 +142,11 @@
   function starSheet(s) {
     T.openSheet({
       title: 'stella', hint: 'star — tap outside to close',
-      rows: [{ key: 'cyc', label: 'cycles' }, { key: 'win', label: 'window' }, { key: 'mask', label: 'mask' }, { key: 'lvl', label: 'level' }],
-      get: (k) => (k === 'cyc' ? (s.cyc - 1) / 7 : s[k]),
-      set: (k, v) => { if (k === 'cyc') s.cyc = 1 + Math.round(v * 7); else s[k] = v; sendStar(s); },
-      text: (k) => (k === 'cyc' ? `${s.cyc}` : k === 'win' ? (s.win < 0.33 ? 'bell' : s.win < 0.66 ? 'strike' : 'square') : `${Math.round(s[k] * 100)}%`),
+      rows: [{ key: 'h', label: 'pulse' }, { key: 'u', label: 'formant' }, { key: 'cyc', label: 'cycles' }, { key: 'win', label: 'window' }, { key: 'mask', label: 'mask' }, { key: 'lvl', label: 'level' }],
+      lfo: { id: `firm-s${s.slot}-${s.born}`, keys: ['h', 'u', 'win', 'mask', 'lvl'], shapes: 'random' },   // «~» на formant — звезда мерцает
+      get: (k) => (k === 'cyc' ? (s.cyc - 1) / 7 : k === 'u' ? (s.u + 1) / 2 : s[k]),
+      set: (k, v) => { if (!stars.includes(s)) return; if (k === 'cyc') s.cyc = 1 + Math.round(v * 7); else if (k === 'u') s.u = v * 2 - 1; else if (k === 'h') s.h = clamp(v, 0.02, 0.97); else s[k] = v; sendStar(s); },
+      text: (k) => { if (k === 'h') { const f = fpOf(s); return f >= 20 ? `${Math.round(f)} Hz` : `${f.toFixed(1)} / s`; } if (k === 'u') return `${Math.round(ffOf(s))} Hz`; return k === 'cyc' ? `${s.cyc}` : k === 'win' ? (s.win < 0.33 ? 'bell' : s.win < 0.66 ? 'strike' : 'square') : `${Math.round(s[k] * 100)}%`; },
     });
   }
 
@@ -233,6 +234,7 @@
   const fxw = {
     sectors: [{ key: 'scintilla', label: 'scintilla', ang: deg(190) }, { key: 'drift', label: 'drift', ang: deg(150) }, { key: 'spread', label: 'spread', ang: deg(115) }, { key: 'hall', label: 'hall', ang: deg(80) }],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
+    lfo: { keys: ['scintilla', 'drift', 'spread', 'hall'], shapes: 'random' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // одна звезда — ритм у горизонта, две-три — тоны выше; окна и циклы вразброс

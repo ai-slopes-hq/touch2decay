@@ -404,6 +404,7 @@
       { key: 'orbits', label: 'orbits', ang: deg(80) },
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => (k === 'orbits' && fx.orbits <= 0.01 ? 'off' : `${Math.round(fx[k] * 100)}%`),
+    lfo: { keys: ['shimmer', 'gloria', 'vibrato', 'orbits'], shapes: 'classic' },   // aether — без LFO: пересчёт отзвука собора тяжёлый
     arc: () => fx.aether, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function clearAll() { for (const a of angels.splice(0)) voiceOff(a, 0.4); }
