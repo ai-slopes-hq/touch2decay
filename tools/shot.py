@@ -1078,9 +1078,23 @@ async def sc_monochord(p):                         # Monochordum: щипок, с
     assert await p.js('()=>T2D.sheetOpen'), 'hold a string — its sheet'
     await p.shot('monochord-sheet')
     await p.tap(200, 120); await p.pg.wait_for_timeout(150)
-    await p.js("()=>t2d.mono.setFx('wind', 0.7)"); await p.pg.wait_for_timeout(1500)
+    A = await p.js('()=>t2d.mono.geo().aeolus'); pid = await p.hold(A['x'], A['y'], ms=60); await p.drag(pid, A['x'], A['y'], A['x'], A['y'] - 100, steps=8)
+    await p.pg.wait_for_timeout(1200); await p.shot('monochord-wind'); await p.up()
+    w = await p.js('()=>t2d.mono.wind'); assert w > 0.6, f'drag the wind head up — wind: {w}'
     print('  monochord level, wind:', round(await p.js('()=>T2D.level'), 3))
-    await p.shot('monochord-wind'); await p.js("()=>t2d.mono.setFx('wind', 0)")
+    await p.tap(A['x'], A['y']); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.mono.wind') == 0, 'tap the wind head — calm'
+    await p.pg.wait_for_timeout(300); await p.tap(A['x'], A['y']); await p.pg.wait_for_timeout(100)
+    assert abs(await p.js('()=>t2d.mono.wind') - w) < 0.01, 'tap again — the same wind is back'
+    await p.js("()=>t2d.mono.setFx('chorus', 0.7)"); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.mono.chorus'), 'chorus in FX'
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.mono.wind') == 0, 'trash — the wind is part of the patch, it calms down'
+    await p.pg.wait_for_timeout(6000)
+    lv = await p.js('()=>T2D.level'); print('  monochord level after trash:', round(lv, 4)); assert lv < 0.01, f'after trash it is silent: {lv}'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.mono.wind') > 0.6, 'undo brings the wind back'
+    await p.js("()=>t2d.mono.setWind(0)")
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(400)
     c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
     assert not await p.js('()=>t2d.mono.str.some(s=>s.sus)'), 'trash — no string sings by itself'

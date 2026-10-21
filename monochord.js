@@ -23,7 +23,8 @@
 
   // ---------- состояние ----------
   const str = F_OPEN.map((f, i) => ({ r: [1, 2 / 3, 1 / 2, 1 / 3][i], sus: false, bright: 0.55, decay: 0.55, level: 0.8, en: 0, bow: 0 }));
-  const fx = { wind: 0, decay: 0.55, bright: 0.55, body: 0.4, hall: 0.35 };
+  const fx = { decay: 0.55, bright: 0.55, body: 0.4, chorus: 0, hall: 0.35 };
+  let wind = 0, lastWind = 0.5;                            // ветер — часть патча (корзина глушит), не FX: голова ветра слева
   const tonic = () => (T.scaleOn ? 2 ** (T.scaleRoot / 12) : 1);
   const hzOf = (i) => (F_OPEN[i] * tonic()) / str[i].r;
   const noteOf = (f) => { const m = Math.round(12 * Math.log2(f / 55)); return `${NOTES[((m % 12) + 12) % 12]}${Math.floor((m + 9) / 12) + 1}`; };
@@ -35,7 +36,8 @@
     const xs = Array.from({ length: N }, (_, i) => cx + (i - (N - 1) / 2) * sp);
     const box = { x0: xs[0] - sp * 0.7, x1: xs[N - 1] + sp * 0.7 }, ye = y0 + 0.25 * (y1 - y0);   // ye — Эмпирей, верхний лад
     const r = Math.max(28, Math.min(60, (W - box.x1) * 0.36)), hx = Math.min(box.x1 + (W - box.x1) / 2, box.x1 + r * 1.7);
-    return { W, H, Ws, top, bot, cx, y0, y1, xs, sp, box, hand: { x: hx, y: y0 + (ye - y0) * 0.45, r } };   // облако — справа над дугами интервалов
+    const ar = Math.max(16, Math.min(26, box.x0 * 0.26)), aeolus = { x: Math.max(ar * 1.3, box.x0 - ar * 2.4), y: y0 + (ye - y0) * 0.55, r: ar };   // голова ветра — слева над Эмпиреем
+    return { W, H, Ws, top, bot, cx, y0, y1, xs, sp, box, hand: { x: hx, y: y0 + (ye - y0) * 0.45, r }, aeolus };   // облако — справа над дугами интервалов
   }
   const yOfR = (G, r) => G.y0 + r * (G.y1 - G.y0);       // подставка: звучит от колков (y0) до неё
   const rOfY = (G, y) => clamp((y - G.y0) / (G.y1 - G.y0), 0.25, 1);
@@ -63,8 +65,9 @@
     const pre = g(1), mix = g(1), out = g(2.2), body = g(0), hallSend = g(0), h = T.hall();   // струны → (сухо + дека) → mix → выход; mix → зал → выход
     pre.connect(mix);
     const bands = [[190, 3], [420, 4], [1100, 5]].map(([f, q]) => { const b = ctx.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = f; b.Q.value = q; pre.connect(b).connect(body); return b; });
-    body.connect(mix); mix.connect(out); mix.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-    bus = { pre, out, body, hallSend, hall: h, input, live: false, bands };
+    const post = g(1);                                    // mix → (сухо + хор) → post → выход и зал
+    body.connect(mix); mix.connect(post); post.connect(out); post.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
+    bus = { pre, mix, post, out, body, hallSend, hall: h, input, live: false, bands, ch: null };
     ready = false; node = null; started = false;
     applyFx();
   }
@@ -80,7 +83,7 @@
       node.port.onmessage = (e) => { if (e.data.t === 'energy') e.data.e.forEach((v, i) => { str[i].en = v; }); };
       ready = true;
       for (let i = 0; i < N; i++) { retune(i); if (str[i].sus) send({ t: 'sus', i, on: true }); }
-      send({ t: 'wind', amt: fx.wind });
+      send({ t: 'wind', amt: wind });
       while (queue.length) node.port.postMessage(queue.shift());
     }).catch(() => { started = false; });
   }
@@ -94,17 +97,38 @@
     if (sounding() || str.some((s) => s.en > 0.002)) lastSound = performance.now();
     else if (performance.now() - lastSound > 8000) setLive(false);
   }, 1000);
+  function chorusNodes() {                               // хор — по требованию: две плавающие задержки 12–19 мс, разведены по стерео
+    if (bus.ch) return bus.ch;
+    const ctx = actx, g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; }, wet = g(0), lines = [];
+    [[0.012, 0.31, -0.7], [0.019, 0.47, 0.7]].forEach(([d0, rate, pan]) => {
+      const d = ctx.createDelay(0.05), o = ctx.createOscillator(), lg = g(0.002), p = ctx.createStereoPanner();
+      d.delayTime.value = d0; o.frequency.value = rate; p.pan.value = pan;
+      o.connect(lg).connect(d.delayTime); o.start();
+      d.connect(p).connect(wet); lines.push({ d, lg });
+    });
+    wet.connect(bus.post);
+    return (bus.ch = { wet, lines, on: false });
+  }
   function applyFx() {
     if (!bus) return;
     const t = actx.currentTime;
+    if (fx.chorus > 0.01 || bus.ch) {
+      const C = chorusNodes(), on = fx.chorus > 0.01;
+      if (on !== C.on) { C.on = on; for (const l of C.lines) { if (on) bus.mix.connect(l.d); else bus.mix.disconnect(l.d); } }
+      C.wet.gain.setTargetAtTime(fx.chorus * 0.9, t, 0.05);
+      for (const l of C.lines) l.lg.gain.setTargetAtTime(0.001 + 0.004 * fx.chorus, t, 0.05);
+    }
     bus.body.gain.setTargetAtTime(fx.body * 2.5, t, 0.05);
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.4, t, 0.05);
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4)), t, 0.05);
-    send({ t: 'wind', amt: fx.wind });
-    if (fx.wind > 0.01) { setLive(true); lastSound = performance.now(); }
     for (let i = 0; i < N; i++) retune(i);
   }
-  const sounding = () => fx.wind > 0.01 || str.some((s) => s.sus || s.bow > 0);
+  function setWind(v) {
+    wind = clamp(v); if (wind > 0.01) lastWind = wind;
+    send({ t: 'wind', amt: wind });
+    if (wind > 0.01) { start(); setLive(true); lastSound = performance.now(); }
+  }
+  const sounding = () => wind > 0.01 || str.some((s) => s.sus || s.bow > 0);
   function pluck(i, pos, vel = 0.9) { start(); setLive(true); lastSound = performance.now(); send({ t: 'pluck', i, pos, vel }); }
 
   // ---------- касания ----------
@@ -112,6 +136,8 @@
   let lastTap = null;
   function down(f) {
     start();
+    const A = geo().aeolus;
+    if (Math.hypot(f.x - A.x, f.y - A.y) < A.r * 1.5) { touches.set(f.id, { kind: 'wind', y0: f.y, w0: wind, moved: false }); return; }   // голова ветра: вверх — сильнее, тап — вкл/выкл
     const G = geo(), i = stringAt(G, f.x, f.y), now = performance.now();
     const free = () => touches.set(f.id, f.y > G.y0 - 10 && f.y < G.y1 + 14 ? { kind: 'strum', px: f.x, lt: now } : { kind: 'none' });   // мимо струн — можно начать страм
     if (i < 0) { free(); return; }
@@ -142,6 +168,7 @@
   function move(f) {
     const t = touches.get(f.id);
     if (!t || t.kind === 'none' || t.sheet) return;
+    if (t.kind === 'wind') { if (Math.abs(f.y - t.y0) > 6) t.moved = true; if (t.moved) setWind(t.w0 + (t.y0 - f.y) / 140); return; }
     const G = geo();
     if (t.kind === 'bridge') { const s = str[t.i]; s.r = snapR(rOfY(G, f.y)); retune(t.i); t.y = f.y; return; }
     if (t.kind === 'strum') { strum(t, f, G); return; }
@@ -166,6 +193,7 @@
   function up(f) {
     const t = touches.get(f.id);
     touches.delete(f.id);
+    if (t && t.kind === 'wind' && !t.moved) setWind(wind > 0.01 ? 0 : lastWind);
     if (t && t.kind === 'string' && str[t.i].bow > 0) { str[t.i].bow = 0; send({ t: 'bow', i: t.i, amp: 0 }); }
   }
   function tick(now) {
@@ -235,11 +263,29 @@
     c.stroke();
     c.strokeStyle = T.ink(0.8); c.fillStyle = T.BG; scallop(pts, 1.55); c.fill(); c.stroke();
     c.strokeStyle = T.ink(0.18); scallop(pts.map(([x, y]) => [hx + (x - hx) * 0.6, hy + (y - hy) * 0.6 + r * 0.1]), 1.4); c.stroke();
-    if (fx.wind > 0.01) {                                 // ветер из облака — струны поют сами
-      c.strokeStyle = T.ink(0.15 + 0.4 * fx.wind); c.beginPath();
-      for (let k = 0; k < 4; k++) { const ph = (now * 0.0003 * (1 + fx.wind * 3) + k / 4) % 1, y = hy + r * 0.7 + k * 60, x0 = hx - ph * (hx - G.box.x0 + 20); c.moveTo(x0, y); c.bezierCurveTo(x0 - 20, y - 8, x0 - 30, y + 8, x0 - 50, y); }
+  }
+  function drawAeolus(c, G, now, held) {                  // голова ветра, как на старых картах: щёки надуты, дует на струны; сильнее ветер — длиннее и ярче струи
+    const { x, y, r } = G.aeolus, w = wind, puff = 1 + 0.1 * w;
+    c.lineWidth = 1; c.fillStyle = T.BG; c.strokeStyle = T.ink(held ? 1 : 0.8);
+    c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); c.stroke();                                         // лицо
+    c.strokeStyle = T.ink(0.45); c.beginPath();                                                          // кудри ветра — с затылка
+    for (let k = 0; k < 6; k++) { const a = Math.PI * (0.62 + k * 0.15), px = x + Math.cos(a) * r, py = y + Math.sin(a) * r; c.moveTo(px, py); c.quadraticCurveTo(px + Math.cos(a) * r * 0.5 - 4, py + Math.sin(a) * r * 0.4, px + Math.cos(a) * r * 0.35 - 7, py + Math.sin(a) * r * 0.55); }
+    c.stroke();
+    c.strokeStyle = T.ink(0.7); c.beginPath(); c.arc(x + r * 0.3, y + r * 0.2, r * 0.3 * puff, 0, TAU); c.stroke();   // надутая щека
+    c.beginPath(); c.arc(x + r * 0.15, y - r * 0.28, r * 0.13, 0.15 * Math.PI, 0.85 * Math.PI); c.stroke();          // закрытый глаз
+    c.beginPath(); c.moveTo(x - r * 0.2, y - r * 0.5); c.quadraticCurveTo(x + r * 0.15, y - r * 0.62, x + r * 0.42, y - r * 0.45); c.stroke();   // бровь
+    const mx = x + r * 0.92, my = y + r * 0.22;                                                          // губы трубочкой
+    c.beginPath(); c.ellipse(mx, my, r * 0.12, r * 0.09 * (0.6 + w), 0, 0, TAU); c.stroke();
+    if (w > 0.01) {                                       // струи ветра — к струнам, бегут быстрее с силой
+      const len = (G.box.x1 - mx) * (0.35 + 0.65 * w);
+      c.strokeStyle = T.ink(0.12 + 0.45 * w); c.beginPath();
+      for (let k = -2; k <= 2; k++) {
+        const ph = (now * 0.0004 * (1 + w * 3) + (k + 2) * 0.23) % 1, a = k * 0.09, x0 = mx + 6 + ph * len * 0.6, y0 = my + k * 5 + Math.tan(a) * (x0 - mx);
+        c.moveTo(x0, y0); c.bezierCurveTo(x0 + 14, y0 - 4, x0 + 22, y0 + 4, x0 + 30 + 20 * w, y0 + Math.tan(a) * 30);
+      }
       c.stroke();
     }
+    if (held) T.mapText(`ventus · ${Math.round(w * 100)}%`, x, y + r + 14, 12, 0.8, 'center');
   }
   function draw(now) {
     const c = T.g, G = geo();
@@ -268,6 +314,7 @@
       if (nm) T.mapText(nm, rx, ry + 18, 11, 0.6, 'right');
     }
     drawHand(c, G, now);
+    drawAeolus(c, G, now, [...touches.values()].some((t) => t.kind === 'wind'));
     for (const t of touches.values()) if (t.kind === 'string' && !t.moved && !t.sheet && now - t.t0 > T.HOLD_MS) { t.sheet = true; stringSheet(t.i); }   // держишь струну — плашка
   }
 
@@ -275,8 +322,8 @@
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
     sectors: [
-      { key: 'wind', label: 'wind', ang: deg(200) }, { key: 'decay', label: 'decay', ang: deg(170) }, { key: 'bright', label: 'brightness', ang: deg(140) },
-      { key: 'body', label: 'body', ang: deg(110) }, { key: 'hall', label: 'hall', ang: deg(80) },
+      { key: 'decay', label: 'decay', ang: deg(200) }, { key: 'bright', label: 'brightness', ang: deg(170) }, { key: 'body', label: 'body', ang: deg(140) },
+      { key: 'chorus', label: 'chorus', ang: deg(110) }, { key: 'hall', label: 'hall', ang: deg(80) },
     ],
     get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
@@ -284,6 +331,7 @@
   function dice() {                                       // подставки — на пифагоровы лады, одна-две струны поют сами
     const R = Math.random, pick = [1, 3 / 4, 2 / 3, 1 / 2, 4 / 9, 3 / 8, 1 / 3, 8 / 9];
     str.forEach((s, i) => { s.r = T.scaleOn ? snapR(pick[Math.floor(R() * pick.length)]) : pick[Math.floor(R() * pick.length)]; s.sus = R() < 0.4; retune(i); send({ t: 'sus', i, on: s.sus }); });
+    setWind(R() < 0.3 ? 0.15 + 0.35 * R() : 0);
     if (str.some((s) => s.sus)) setLive(true);
   }
   const mono = {
@@ -292,20 +340,20 @@
     fx: fxw,
     legend: [['tap', 'tap a string above its bridge', 'pluck · near the end — bright'], ['drag', 'stroke back and forth on a string', 'bow it · speed — pressure'], ['draw', 'sweep across the strings', 'strum · speed — strength'],
       ['up', 'drag a bridge', 'pitch · sticks to Pythagorean frets'], ['double', 'double tap a string', 'it sings by itself, like an Aeolian harp'],
-      ['hold', 'hold a string', 'its sheet: brightness, decay, level'], ['tap', 'tap the cloud', 'map of worlds']],
+      ['hold', 'hold a string', 'its sheet: brightness, decay, level'], ['up', 'drag the wind head up', 'wind · every string sings · tap — on / off'], ['tap', 'tap the cloud', 'map of worlds']],
     build, tick, draw, down, move, up, dice, enter: start,
-    clear() { str.forEach((s, i) => { s.sus = false; s.bow = 0; send({ t: 'sus', i, on: false }); send({ t: 'bow', i, amp: 0 }); }); },
-    snapshot: () => JSON.stringify({ str: str.map((s) => ({ r: s.r, sus: s.sus, bright: s.bright, decay: s.decay, level: s.level })), fx }),
+    clear() { str.forEach((s, i) => { s.sus = false; s.bow = 0; send({ t: 'sus', i, on: false }); send({ t: 'bow', i, amp: 0 }); }); setWind(0); },
+    snapshot: () => JSON.stringify({ str: str.map((s) => ({ r: s.r, sus: s.sus, bright: s.bright, decay: s.decay, level: s.level })), fx, wind }),
     restore(js) {
       const st = JSON.parse(js);
       st.str.forEach((q, i) => { Object.assign(str[i], q); send({ t: 'sus', i, on: q.sus }); });
-      Object.assign(fx, st.fx); applyFx();
+      Object.assign(fx, st.fx); applyFx(); setWind(st.wind || 0);
     },
     sounding,
   };
   T.registerWorld(7, mono);
   window.t2d.mono = {
-    str, fx, geo, setFx: (k, v) => fxw.set(k, v), get ready() { return ready; }, get live() { return !!(bus && bus.live); },
+    str, fx, geo, setFx: (k, v) => fxw.set(k, v), setWind, get wind() { return wind; }, get chorus() { return !!(bus && bus.ch && bus.ch.on); }, get ready() { return ready; }, get live() { return !!(bus && bus.live); },
     at: (i, r) => { const G = geo(); return { x: G.xs[i], y: yOfR(G, r) }; }, hz: (i) => hzOf(i),
   };
 })();
