@@ -1199,7 +1199,11 @@ async def sc_horologium(p):                        # Horologium: штифт на
     await p.hold(g1[0], g1[1], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold a wheel — its sheet'
     await p.shot('horologium-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
-    await p.js("()=>{t2d.horo.setFx('sol', 0.9); t2d.horo.setFx('fortuna', 0.6)}"); await p.pg.wait_for_timeout(1200)
+    await p.js("()=>{t2d.horo.setFx('sol', 0.9); t2d.horo.setFx('fortuna', 0.6); t2d.horo.setFx('fto', 1/3); t2d.horo.gears.forEach(g=>{g.ramp=0.8; g.rampTo=3})}"); await p.pg.wait_for_timeout(1200)
+    await p.shot('horologium-ramp')
+    r = await p.js("()=>{t2d.horo.setFx('fmode', 1); return t2d.worlds[9].fx.text('fmode') + ' ' + t2d.worlds[9].fx.text('fto')}"); assert r == 'smooth index', f'fortuna mode and target: {r}'
+    r = await p.js("()=>t2d.worlds[9].fx.sectors.length"); assert r == 6, 'FX: sol, fortuna, mode, to, decay, hall'
+    await p.js("()=>t2d.horo.gears.forEach(g=>{g.ramp=0})")
     print('  horologium level, sol + fortuna:', round(await p.js('()=>T2D.level'), 3))
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
     assert await p.js('()=>t2d.horo.gears.every(g=>g.pins.size>0)'), 'dice — every wheel has pins'

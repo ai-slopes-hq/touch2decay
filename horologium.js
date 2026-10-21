@@ -19,13 +19,16 @@
   const SUN_STEPS = 64;                                   // солнце обходит циферблат за 64 такта маятника
 
   // ---------- состояние ----------
-  const gear = (teeth, pins, semi, o = {}) => ({ teeth, pins: new Set(pins), semi, fold: 0.35, ratio: 1.5, index: 0.4, decay: 0.4, level: 0.8, hit: 0, ...o });
+  const gear = (teeth, pins, semi, o = {}) => ({ teeth, pins: new Set(pins), semi, fold: 0.35, ratio: 1.5, index: 0.4, decay: 0.4, level: 0.8, ramp: 0, rampTo: 0, hit: 0, ...o });
   const gears = [gear(4, [0, 2], 0), gear(6, [0, 3, 4], 7, { ratio: 2, fold: 0.5 }), gear(5, [1], 12, { ratio: 2.76, decay: 0.25 }), gear(7, [0, 5], -5, { ratio: 1, fold: 0.2, decay: 0.6 })];
-  const fx = { sol: 0.4, fortuna: 0.15, decay: 0.5, hall: 0.35 };
+  const fx = { sol: 0.4, fortuna: 0.15, fmode: 0, fto: 0, decay: 0.5, hall: 0.35 };
+  const TARGETS = ['fold', 'index', 'decay', 'pitch'];    // куда идут рампа шестерни и fortuna
+  let chance = 0, smoothV = 0, smoothT = 0;               // fortuna — источник случайности: ступень на каждый удар или плавное блуждание
   const seq = { playing: false, bpm: 100, next: 0, step: 0 };
   const stepSec = () => 60 / seq.bpm / 2;                 // такт маятника — восьмая
   let moonA = 0.3, moonHit = 0;
-  const hzOf = (g) => 110 * 2 ** ((T.scaleOn ? T.snapSemi(g.semi + 24) - 24 : g.semi) / 12);   // от A2; с ладом — ближайшая ступень
+  const hzSemi = (s) => 110 * 2 ** ((T.scaleOn ? T.snapSemi(Math.round(s) + 24) - 24 : s) / 12);   // от A2; с ладом — ближайшая ступень
+  const hzOf = (g) => hzSemi(g.semi);
   const noteName = (f) => { const m = Math.round(12 * Math.log2(f / 55)); return `${NOTES[((m % 12) + 12) % 12]}${Math.floor((m + 9) / 12) + 1}`; };
 
   // ---------- геометрия: циферблат сверху, шестерни 2 × 2 под ним, маятник между ними ----------
@@ -80,21 +83,22 @@
   const PAN = [-0.45, 0.45, -0.25, 0.25];
   // удар: FM-пара → складки → low pass gate (срез, громкость и индекс FM — по одной нелинейной огибающей вактрола)
   function strike(gi, t, step, vel = 0.85) {
-    const g = gears[gi], ctx = actx, f0 = hzOf(g);
-    let fold = clamp(g.fold + fx.sol * 0.6 * sunHeight(step)), f = f0;
-    if (fx.fortuna > 0) {                                  // fortuna: пропуск, лишняя складка, прыжок на октаву, разная сила
-      if (Math.random() < fx.fortuna * 0.35) return;
-      fold = clamp(fold + (Math.random() - 0.5) * fx.fortuna);
-      if (Math.random() < fx.fortuna * 0.2) f *= Math.random() < 0.5 ? 2 : 0.5;
-      vel = clamp(vel * (1 - fx.fortuna * 0.4 * Math.random()), 0.2, 1);
+    const g = gears[gi], ctx = actx;
+    const mods = [0, 0, 0, 0];                             // fold, index, decay, pitch
+    if (g.ramp > 0) mods[g.rampTo] += g.ramp * ((step % g.teeth) / Math.max(1, g.teeth - 1));   // рампа за оборот шестерни: от нуля к вершине, на новом обороте — сброс
+    if (fx.fortuna > 0) {                                  // fortuna: изредка пропуск, разная сила и случайное напряжение в цель
+      if (Math.random() < fx.fortuna * 0.15) return;
+      vel = clamp(vel * (1 - fx.fortuna * 0.3 * Math.random()), 0.2, 1);
+      mods[fx.fto] += fx.fortuna * (fx.fmode ? smoothV : chance);
     }
+    const fold = clamp(g.fold + fx.sol * 0.6 * sunHeight(step) + mods[0]), f = hzSemi(g.semi + Math.round(mods[3] * 12)), idxK = Math.max(0, 1 + 2 * mods[1]), decK = Math.max(0.2, 1 + 2 * mods[2]);
     const car = ctx.createOscillator(), mod = ctx.createOscillator(), mg = ctx.createGain(), drive = ctx.createGain(), sh = ctx.createWaveShaper(), lp = ctx.createBiquadFilter(), vca = ctx.createGain(), pan = ctx.createStereoPanner();
     car.frequency.value = f; mod.frequency.value = f * g.ratio; mod.type = 'triangle';
     mod.connect(mg).connect(car.frequency);
     drive.gain.value = (1 + fold * 5) / 6; sh.curve = foldCurve; sh.oversample = '2x';
     lp.type = 'lowpass'; lp.Q.value = 1.6; pan.pan.value = PAN[gi];
-    const dec = 0.04 + (g.decay * 0.7 + fx.decay * 0.3) ** 1.7 * 1.3, tau = dec / 3, { e, D } = vactrol(tau), A = 0.0025, peak = 0.34 * g.level * (0.55 + 0.45 * vel);
-    const fmax = 1800 + 12000 * vel ** 1.5, fmin = 70, M = e.length, cut = new Float32Array(M), amp = new Float32Array(M), idx = new Float32Array(M), ix = g.index * f * 3;
+    const dec = (0.04 + (g.decay * 0.7 + fx.decay * 0.3) ** 1.7 * 1.3) * decK, tau = dec / 3, { e, D } = vactrol(tau), A = 0.0025, peak = 0.34 * g.level * (0.55 + 0.45 * vel);
+    const fmax = 1800 + 12000 * vel ** 1.5, fmin = 70, M = e.length, cut = new Float32Array(M), amp = new Float32Array(M), idx = new Float32Array(M), ix = g.index * f * 3 * idxK;
     for (let k = 0; k < M; k++) { const x = e[k]; cut[k] = fmin * (fmax / fmin) ** (x ** 0.7); amp[k] = peak * x ** 1.5; idx[k] = ix * (0.25 + 0.75 * x); }
     amp[M - 1] = 0;
     lp.frequency.setValueAtTime(fmax, t); lp.frequency.setValueCurveAtTime(cut, t + A, D);
@@ -113,8 +117,11 @@
     if (!seq.next) seq.next = now + 0.05;
     while (seq.next < ahead) {
       if (seq.next > now + 0.003) {                       // опоздавший удар пропускаем — задним числом щёлкает
+        chance = Math.random() * 2 - 1;                    // ступень: новое случайное на каждый такт
+        if (seq.step % 6 === 0) smoothT = Math.random() * 2 - 1;   // плавное: новая цель раз в шесть тактов, к ней — скольжением
+        smoothV += (smoothT - smoothV) * 0.18;
         gears.forEach((g, i) => { const j = seq.step % g.teeth; if (g.pins.has(j)) strike(i, seq.next, seq.step, j === Math.min(...g.pins) ? 1 : 0.78); });   // первый штифт оборота — акцент
-        if (fx.fortuna > 0 && Math.random() < fx.fortuna * 0.25) setTimeout(() => { moonA = Math.random(); moonHit = performance.now(); }, Math.max(0, (seq.next - now) * 1000));
+        if (fx.fortuna > 0) { const v = fx.fmode ? smoothV : chance; setTimeout(() => { moonA = 0.5 + 0.42 * v; if (!fx.fmode) moonHit = performance.now(); }, Math.max(0, (seq.next - now) * 1000)); }   // луна показывает случайное напряжение
       }
       lastSteps.push([seq.next, seq.step]); if (lastSteps.length > 16) lastSteps.shift();
       seq.step++; seq.next += stepSec();
@@ -175,14 +182,15 @@
     const g = gears[i], ti = () => TEETH.indexOf(g.teeth), ri = () => RATIOS.indexOf(g.ratio);
     T.openSheet({
       title: `rota ${ROMAN[i]}`, hint: 'wheel — tap outside to close',
-      rows: [{ key: 'teeth', label: 'teeth' }, { key: 'fold', label: 'fold' }, { key: 'ratio', label: 'ratio' }, { key: 'index', label: 'index' }, { key: 'decay', label: 'decay' }, { key: 'level', label: 'level' }],
-      get: (k) => (k === 'teeth' ? ti() / (TEETH.length - 1) : k === 'ratio' ? ri() / (RATIOS.length - 1) : g[k]),
+      rows: [{ key: 'teeth', label: 'teeth' }, { key: 'fold', label: 'fold' }, { key: 'ratio', label: 'ratio' }, { key: 'index', label: 'index' }, { key: 'decay', label: 'decay' }, { key: 'level', label: 'level' }, { key: 'ramp', label: 'ramp' }, { key: 'rampTo', label: 'ramp to' }],
+      get: (k) => (k === 'teeth' ? ti() / (TEETH.length - 1) : k === 'ratio' ? ri() / (RATIOS.length - 1) : k === 'rampTo' ? g.rampTo / 3 : g[k]),
       set: (k, v) => {
         if (k === 'teeth') { g.teeth = TEETH[Math.round(v * (TEETH.length - 1))]; g.pins = new Set([...g.pins].filter((p) => p < g.teeth)); }
         else if (k === 'ratio') g.ratio = RATIOS[Math.round(v * (RATIOS.length - 1))];
+        else if (k === 'rampTo') g.rampTo = Math.round(v * 3);
         else g[k] = v;
       },
-      text: (k) => (k === 'teeth' ? `${g.teeth}` : k === 'ratio' ? `${g.ratio} : 1` : `${Math.round(g[k] * 100)}%`),
+      text: (k) => (k === 'teeth' ? `${g.teeth}` : k === 'ratio' ? `${g.ratio} : 1` : k === 'rampTo' ? TARGETS[g.rampTo] : k === 'ramp' && g.ramp < 0.01 ? 'off' : `${Math.round(g[k] * 100)}%`),
     });
   }
   function tick(now) {
@@ -239,10 +247,11 @@
     c.strokeStyle = ink(0.3); c.beginPath(); c.arc(gx, gy, R - 8, 0, TAU); c.stroke();
     c.beginPath(); c.arc(gx, gy, R - 22, 0, TAU); c.stroke();
     const sp = Math.max(3, Math.min(8, Math.round(g.ratio * 2)));   // спицы — отношение FM
-    c.strokeStyle = ink(0.45); c.beginPath();
+    const rv = g.ramp > 0 ? g.ramp * (((cs.s % n) + n) % n) / Math.max(1, n - 1) : 0;   // рампа: спицы светлеют за оборот
+    c.strokeStyle = ink(0.45 + 0.5 * rv); c.lineWidth = 1 + rv; c.beginPath();
     for (let k = 0; k < sp; k++) { const a = rot + (k / sp) * TAU + 0.2; c.moveTo(gx + Math.sin(a) * R * 0.17, gy - Math.cos(a) * R * 0.17); c.lineTo(gx + Math.sin(a) * (R - 22), gy - Math.cos(a) * (R - 22)); }
     c.stroke();
-    c.strokeStyle = ink(0.7); c.beginPath(); c.arc(gx, gy, R * 0.17, 0, TAU); c.stroke();
+    c.lineWidth = 1; c.strokeStyle = ink(0.7); c.beginPath(); c.arc(gx, gy, R * 0.17, 0, TAU); c.stroke();
     c.beginPath(); c.arc(gx, gy, 2.5, 0, TAU); c.stroke();
     for (let j = 0; j < n; j++) {                         // гнёзда шагов; штифт — залитое
       const a = rot + (j / n) * TAU, px = gx + Math.sin(a) * (R - 15), py = gy - Math.cos(a) * (R - 15), aa = ((a % TAU) + TAU) % TAU, top = aa < 0.15 || aa > TAU - 0.15;
@@ -298,8 +307,9 @@
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
-    sectors: [{ key: 'sol', label: 'sol', ang: deg(190) }, { key: 'fortuna', label: 'fortuna', ang: deg(150) }, { key: 'decay', label: 'decay', ang: deg(115) }, { key: 'hall', label: 'hall', ang: deg(80) }],
-    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
+    sectors: [{ key: 'sol', label: 'sol', ang: deg(190) }, { key: 'fortuna', label: 'fortuna', ang: deg(160) }, { key: 'fmode', label: 'fortuna mode', ang: deg(140) }, { key: 'fto', label: 'fortuna to', ang: deg(120) }, { key: 'decay', label: 'decay', ang: deg(100) }, { key: 'hall', label: 'hall', ang: deg(80) }],
+    get: (k) => (k === 'fto' ? fx.fto / 3 : fx[k]), set: (k, v) => { if (k === 'fmode') fx.fmode = v >= 0.5 ? 1 : 0; else if (k === 'fto') fx.fto = Math.round(v * 3); else fx[k] = v; applyFx(); },
+    text: (k) => (k === 'fmode' ? (fx.fmode ? 'smooth' : 'stepped') : k === 'fto' ? TARGETS[fx.fto] : `${Math.round(fx[k] * 100)}%`),
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // зубцы — вразброс (полиритм), штифты по Евклиду, ноты — ступени, тембры — случайно; часы идут
@@ -307,7 +317,7 @@
     gears.forEach((g) => {
       g.teeth = TEETH[Math.floor(R() * 10)]; const k = 1 + Math.floor(R() * Math.max(1, g.teeth / 2)), rot = Math.floor(R() * g.teeth);
       g.pins = new Set(euclid(k, g.teeth).map((p) => (p + rot) % g.teeth));
-      g.semi = [-12, -5, 0, 3, 7, 10, 12, 15][Math.floor(R() * 8)]; g.fold = R() * 0.8; g.ratio = RATIOS[Math.floor(R() * RATIOS.length)]; g.index = R() * 0.8; g.decay = 0.1 + R() * 0.7;
+      g.semi = [-12, -5, 0, 3, 7, 10, 12, 15][Math.floor(R() * 8)]; g.fold = R() * 0.8; g.ratio = RATIOS[Math.floor(R() * RATIOS.length)]; g.index = R() * 0.8; g.decay = 0.1 + R() * 0.7; g.ramp = R() < 0.4 ? 0.3 + R() * 0.5 : 0; g.rampTo = Math.floor(R() * 4);
     });
     if (!seq.playing) play(true);
   }
@@ -317,7 +327,7 @@
     fx: fxw,
     legend: [['tap', 'tap the pendulum', 'clock runs / stops'], ['drag', 'drag the pendulum sideways', 'tempo'],
       ['tap', 'tap a tooth', 'a pin · at the top the hammer strikes'], ['up', 'drag a wheel up or down', 'its note'],
-      ['hold', 'hold a wheel', 'its sheet: teeth, fold, ratio, index, decay, level'], ['tap', 'tap the sun', 'map of worlds']],
+      ['hold', 'hold a wheel', 'its sheet: teeth, fold, ratio, index, decay, level, ramp'], ['tap', 'tap the sun', 'map of worlds']],
     build, tick, draw, down, move, up, dice,
     clear() { for (const g of gears) g.pins.clear(); },
     snapshot: () => JSON.stringify({ g: gears.map((g) => ({ ...g, pins: [...g.pins], hit: 0 })), fx, bpm: seq.bpm }),
