@@ -1356,7 +1356,91 @@ async def sc_audio(p):                             # перезапуск зву
     assert await p.js('()=>t2d.ctxId') != id1, 'tap restart audio — rebuilt'
 
 
-SCENARIOS = {'audio': sc_audio, 'tria': sc_tria, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_arcadia(p):                           # Arcadia: странник — петля по рельефу звучит, север — выше, край петли — шире, тап — уходит, плашка, FX, кубик — новая страна, корзина, отмена, солнце — карта
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(12)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 12], 'the card left of Monochordum opens Arcadia'
+    for _ in range(30):
+        if await p.js('()=>t2d.arc.ready'): break
+        await p.pg.wait_for_timeout(100)
+    await p.shot('arcadia-land')
+    a = await p.js('()=>t2d.arc.at(-0.3, -0.5)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(1500)
+    assert await p.js('()=>t2d.arc.travellers.length') == 1, 'tap the land — a wanderer'
+    lv = await p.js('()=>T2D.level'); print('  arcadia level, one wanderer:', round(lv, 3)); assert lv > 0.02, f'the wanderer is heard: {lv}'
+    f0 = await p.js('()=>t2d.arc.hz(t2d.arc.travellers[0])')
+    b = await p.js('()=>t2d.arc.at(-0.3, 0.4)'); pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], b['x'], b['y'], steps=8)
+    f1 = await p.js('()=>t2d.arc.hz(t2d.arc.travellers[0])'); assert f1 > f0 * 1.4, f'drag north — higher: {f0} -> {f1}'
+    await p.shot('arcadia-held'); await p.up(); await p.pg.wait_for_timeout(600)
+    r0 = await p.js('()=>t2d.arc.travellers[0].r'); e = await p.js('()=>t2d.arc.loop(0)[0]')   # восточная точка петли
+    pid = await p.hold(e['x'], e['y'], ms=40); await p.drag(pid, e['x'], e['y'], e['x'] + 45, e['y'], steps=6); await p.up()
+    r1 = await p.js('()=>t2d.arc.travellers[0].r'); assert r1 > r0 + 0.08, f'drag the rim — a wider orbit: {r0} -> {r1}'
+    await p.pg.wait_for_timeout(300)
+    s = await p.js('()=>t2d.arc.at(t2d.arc.travellers[0].u, t2d.arc.travellers[0].v)'); await p.hold(s['x'], s['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a wanderer — its sheet'
+    await p.shot('arcadia-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    await p.tap(s['x'], s['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.arc.travellers.length') == 0, 'tap a wanderer — it leaves'
+    seed0 = await p.js('()=>t2d.arc.land.seed')
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(2500)
+    n = await p.js('()=>t2d.arc.travellers.length'); assert 2 <= n <= 3, f'dice — wanderers: {n}'
+    assert await p.js('()=>t2d.arc.land.seed') != seed0, 'dice — a new land'
+    await p.js("()=>{t2d.arc.setFx('wind', 0.6); t2d.arc.setFx('pace', 0.8)}"); await p.pg.wait_for_timeout(2500)
+    print('  arcadia level, dice:', round(await p.js('()=>T2D.level'), 3)); await p.shot('arcadia')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(2500)
+    assert await p.js('()=>t2d.arc.travellers.length') == 0, 'trash — the land is empty'
+    lv = await p.js('()=>T2D.level'); assert lv < 0.01, f'after trash it is silent: {lv}'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.arc.travellers.length') == n, 'undo brings the wanderers back'
+    S = await p.js('()=>t2d.arc.geo().sun'); await p.tap(S['x'] - 20, S['y'] + 30); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
+    await p.shot('arcadia-map')
+
+
+async def sc_portus(p):                            # Portus: остров — аккорд, фонарь — удар, маяк — пуск, луна — фильтр, буй — эхо, туман — ревер, плашки, кубик, корзина, отмена, солнце — карта
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(13)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 13], 'the card right of Oceanus opens Portus'
+    await p.shot('portus-empty')
+    a = await p.js('()=>t2d.portus.sea(-0.4, 0.3)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(300)
+    b = await p.js('()=>t2d.portus.sea(0.5, 0.75)'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.portus.isles.length') == 2, 'tap the sea — islands'
+    n0, n1 = await p.js('()=>t2d.portus.isles.map(i=>t2d.portus.name(i))')
+    print('  chords:', n0, n1); assert n0.endswith('sus') and n1.endswith('m9'), f'further out — deeper chord: {n0} {n1}'
+    L = await p.js('()=>t2d.portus.lantern(0)'); await p.tap(L['x'], L['y']); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.portus.steps.has(0)'), 'tap a lantern — a stab there'
+    ph = await p.js('()=>t2d.portus.geo().ph'); await p.tap(ph['x'], ph['y'] - 30); await p.pg.wait_for_timeout(2500)
+    assert await p.js('()=>t2d.portus.seq.playing'), 'tap the lighthouse — it plays'
+    lv = await p.js('()=>T2D.level'); print('  portus level, playing:', round(lv, 3)); assert lv > 0.02, f'chords are heard: {lv}'
+    await p.shot('portus-play')
+    M = await p.js('()=>t2d.portus.geo().moon'); c0 = await p.js('()=>t2d.portus.luna.cut'); mx = M['x'] + M['r'] * 0.5
+    pid = await p.hold(mx, M['y'], ms=60); await p.drag(pid, mx, M['y'], mx + 30, M['y'] - 60, steps=8)
+    c1 = await p.js('()=>t2d.portus.luna.cut'); assert c1 > c0 + 0.15, f'drag the moon up — the filter opens: {c0} -> {c1}'
+    await p.shot('portus-moon'); await p.up()
+    B = await p.js('()=>t2d.portus.buoyAt()'); f0 = await p.js('()=>t2d.portus.fb()')
+    pid = await p.hold(B['x'], B['y'], ms=60); s2 = await p.js('()=>t2d.portus.sea(-0.6, 0.85)'); await p.drag(pid, B['x'], B['y'], s2['x'], s2['y'], steps=8); await p.up()
+    f1, tm = await p.js('()=>[t2d.portus.fb(), t2d.portus.echo.time]'); assert f1 > f0 and tm <= 1, f'buoy out to sea and left — longer, shorter echo: {f0} -> {f1}, time {tm}'
+    G = await p.js('()=>t2d.portus.geo()'); a0 = await p.js('()=>t2d.portus.fog.amt')
+    pid = await p.hold(G['cx'] - 60, G['fogTop'], ms=60); await p.drag(pid, G['cx'] - 60, G['fogTop'], G['cx'] - 60, G['fogTop'] - 50, steps=6); await p.up()
+    a1 = await p.js('()=>t2d.portus.fog.amt'); assert a1 > a0 + 0.1, f'drag the fog up — more reverb: {a0} -> {a1}'
+    await p.pg.wait_for_timeout(1500); await p.shot('portus-fog')
+    M = await p.js('()=>t2d.portus.geo().moon'); await p.hold(M['x'] + M['r'] * 0.5, M['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold the moon — its sheet'
+    await p.shot('portus-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    a = await p.js('()=>t2d.portus.sea(t2d.portus.isles[0].u, t2d.portus.isles[0].d)'); await p.tap(a['x'], a['y'] - 4); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.portus.isles.length') == 1, 'tap an island — it sinks'
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(3000)
+    n = await p.js('()=>t2d.portus.isles.length'); assert 2 <= n <= 4, f'dice — islands: {n}'
+    print('  portus level, dice:', round(await p.js('()=>T2D.level'), 3)); await p.shot('portus')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.portus.isles.length') == 0, 'trash — the bay is empty'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.portus.isles.length') == n, 'undo brings the islands back'
+    M = await p.js('()=>t2d.portus.geo().moon'); await p.tap(M['x'] + M['r'] * 0.5, M['y']); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the moon — map'
+    await p.shot('portus-map')
+
+
+SCENARIOS = {'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

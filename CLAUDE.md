@@ -38,6 +38,8 @@
 | IX | Horologium — West Coast, шестерни, LPG | `horologium.js` | `docs/worlds/horologium.md` |
 | X | Firmamentum — пульсарный синтез, свод | `firmamentum.js`, `pulsar-worklet.js` | `docs/worlds/firmamentum.md` |
 | XI | Tria corpora — задача трёх тел, FM по кругу | `tria.js` | `docs/worlds/tria.md` |
+| XII | Arcadia — wave terrain, страна в псевдоперспективе, кубик — новая страна | `arcadia.js`, `terrain-worklet.js` | `docs/worlds/arcadia.md` |
+| XIII | Portus — dub techno: острова-аккорды, луна-фильтр, буй-эхо, туман-ревер | `portus.js` | `docs/worlds/portus.md` |
 
 Карта Universum (поле 6 × 6, `CELL`, эмблемы `emblemFor`, concordia — общий лад и темп) — `docs/worlds/map.md`. Миры I–IV автор считает законченными.
 
@@ -49,7 +51,7 @@
 - Новый мир: файл `.js` с `T2D.registerWorld`, `<script>` в `index.html`, файл в `SHELL` в `sw.js`, клетка в `CELL` и `EMB_LINE`, эмблема — ветка в `emblemFor`, сценарий в `tools/shot.py`, заметки — `docs/worlds/<мир>.md`, строка в таблице выше.
 - Плашки: `T2D.openSheet({title, hint, rows, get, set, text, lfo?})`; FX мира — `world.fx` (плашка FX — `fxSheet`).
 - **Портретная сцена на широком экране:** Natura (`stage()`, `sh(f)` — сдвиг касаний, рисование с `translate(ox)`, по бокам бумага), Inferno и Paradisus (ширина `Ws = min(W, 0.62·H)`, всё по центру `cx`) — на iPad и компьютере не растягиваются. Проверять: Playwright 1280×800 и 820×1180. `tools/render.py --world 3…6` — касание мимо всего включает звук, дальше js (например `t2d.par.dice()`).
-- Отладка из консоли: `window.t2d` — `go(n)` (в мир без касаний), у миров свои: `t2d.cym`, `t2d.lab`, `t2d.nat`, `t2d.inf`, `t2d.par`, `t2d.mono`, `t2d.ocean`, `t2d.horo`, `t2d.firm`, `t2d.tria`.
+- Отладка из консоли: `window.t2d` — `go(n)` (в мир без касаний), у миров свои: `t2d.cym`, `t2d.lab`, `t2d.nat`, `t2d.inf`, `t2d.par`, `t2d.mono`, `t2d.ocean`, `t2d.horo`, `t2d.firm`, `t2d.tria`, `t2d.arc`, `t2d.portus`.
 
 ## LFO в плашках миров (хост, `app.js`)
 
@@ -82,7 +84,7 @@
 
 `python3 -m http.server 8765` в корне, затем:
 
-- `python3 tools/shot.py <сценарий>` (solniger, vol, planets, ring, worlds, sun, hole, legenda, startmap, audio и по сценарию на мир — см. `docs/worlds/`) — сценарии касаний (CDP touch, 390×844) с проверками (провал или ошибка на странице — код выхода 1), скриншоты в `.shots/` — **смотреть их глазами** (Read на png).
+- `python3 tools/shot.py <сценарий>` (solniger, vol, planets, ring, worlds, sun, hole, legenda, startmap, audio и по сценарию на мир, в том числе arcadia и portus — см. `docs/worlds/`) — сценарии касаний (CDP touch, 390×844) с проверками (провал или ошибка на странице — код выхода 1), скриншоты в `.shots/` — **смотреть их глазами** (Read на png).
 - `python3 tools/render.py ["()=>{…}"] [--world 2] [--onsets]` — офлайн-рендер звука (Tenebrae или удар по пластине Cymatica), RMS и время расчёта; `--onsets` — узор из 4 ударов на 120 BPM, интервалы между ударами и разброс (было 0.68 мс).
 - `node --test tools/test-seq.mjs` — тесты помощников секвенсера (через `vm`).
 - `node --test tools/test-plate.mjs` — тесты звука пластины в Node (через `vm`, без зависимостей).
@@ -99,6 +101,7 @@
 - Волны-строки на фоне как оси — некрасиво; теперь орбиты, звёзды, подписи при перетаскивании.
 - HUD с частотой и надписи на поле в покое — нет.
 - Cymatica: одна длина на ритм и мелодию (нота = место удара) — убило полиритм; ритм и мелодия-места снова раздельной длины.
+- Arcadia: рельеф изолиниями сверху, как топокарта, — «инфузория под микроскопом»; теперь гравюра в псевдоперспективе, как Natura. Portus: солнца ночью нет — луна в углу.
 - Защита нагрузки по частоте кадров — путала энергосбережение (30 к/с) с перегрузкой, урезала голоса; убрана.
 
 ## Гравюры (сделано)
