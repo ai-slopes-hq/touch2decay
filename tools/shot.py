@@ -129,7 +129,7 @@ async def sc_worlds(p):                            # карта, Cymatica в ч�
     await p.pg.set_viewport_size({'width': 430, 'height': 900}); await p.pg.wait_for_timeout(300)
     await p.pg.set_viewport_size({'width': W, 'height': H}); await p.pg.wait_for_timeout(300)
     await p.shot('map')
-    await p.tap(300, 200); await p.pg.wait_for_timeout(800)              # четверть I
+    q = await p.js('()=>t2d.mapPanel(1)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(800)   # карта I
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 1], 'I -> Tenebrae'
 
 
@@ -196,12 +196,12 @@ async def sc_hold(p):                              # держишь планет
 async def sc_undo(p):                              # лад общий: переключён в Cymatica — откатывается отменой Cymatica, не Tenebrae
     await p.pin(150, 600)
     await p.tap(10, H - 8); await p.pg.wait_for_timeout(800)
-    await p.tap(100, 200); await p.pg.wait_for_timeout(800)              # Cymatica
+    q = await p.js('()=>t2d.mapPanel(2)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(800)              # Cymatica
     s = await p.js("()=>t2d.btnPos('scl')"); await p.tap(s['x'], s['y']); await p.pg.wait_for_timeout(300)   # тап — лад вкл/выкл
     on = await p.js('()=>t2d.scl.on')
     assert await p.js('()=>t2d.hist(2)') == 1, 'scale change is a Cymatica undo step'
     await p.tap(W - 10, H - 8); await p.pg.wait_for_timeout(800)
-    await p.tap(300, 200); await p.pg.wait_for_timeout(800)              # обратно в Tenebrae
+    q = await p.js('()=>t2d.mapPanel(1)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(800)              # обратно в Tenebrae
     assert await p.js('()=>t2d.hist(1)') == 1, 'Tenebrae history untouched'
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
     assert await p.js('()=>t2d.scl.on') == on, 'undo in Tenebrae keeps the scale set in Cymatica'
@@ -680,7 +680,7 @@ async def sc_sketches(p):                         # эскизы миров III 
     assert await p.js('()=>t2d.view') == 'play', 'Natura tombstone does nothing yet'
     s = await p.js('()=>t2d.nat.geo().sun'); await p.tap(s['x'] + 25, s['y'] + 25); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>t2d.view') == 'map', 'Natura sun -> map'
-    await p.tap(100, 600); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(3)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 3], 'III opens'
     await p.tap(W - 38, H - 40); await p.pg.wait_for_timeout(300)        # древо в углу — пока ни к чему не ведёт
     assert await p.js('()=>t2d.view') == 'play', 'corner tree does nothing yet'
@@ -915,13 +915,18 @@ async def sc_cymx(p):                              # Cymatica: запись по
 async def sc_startmap(p):                          # карта — стартовая; солнце — concordia: общие часы и лад
     assert await p.js('()=>t2d.view') == 'map', 'the app opens on the map'
     await p.shot('startmap')
+    q = await p.js('()=>t2d.mapCell(0, 0)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.view') == 'map' and await p.js('()=>t2d.mapPeek()'), 'a face-down card only shivers — nondum'
+    await p.shot('map-peek'); await p.pg.wait_for_timeout(300)
+    for w in (1, 2, 3, 4, 5, 6, 7):
+        q = await p.js(f'()=>t2d.mapPanel({w})'); assert q[0] >= 0 and q[0] + q[2] <= W and q[1] > 0 and q[1] + q[3] < H, f'card {w} on screen {q}'
     sun = await p.js('()=>t2d.mapSun()'); await p.tap(sun['x'], sun['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.nav.settings'), 'tap the sun on the map — concordia'
     c0 = await p.js('()=>t2d.link.clock')
-    await p.tap(sun['x'], sun['y'] + 70 + 46); await p.pg.wait_for_timeout(100)
+    await p.tap(sun['x'], sun['y'] + 30 + 46); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.link.clock') != c0, 'tap a row — toggled'
     await p.shot('concordia')
-    if not await p.js('()=>t2d.link.clock'): await p.tap(sun['x'], sun['y'] + 70 + 46); await p.pg.wait_for_timeout(100)
+    if not await p.js('()=>t2d.link.clock'): await p.tap(sun['x'], sun['y'] + 30 + 46); await p.pg.wait_for_timeout(100)
     await p.tap(20, sun['y'] - 40); await p.pg.wait_for_timeout(100)
     assert not await p.js('()=>t2d.nav.settings'), 'tap outside — closed'
     q = await p.js('()=>t2d.mapPanel(2)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)   # II — Cymatica
@@ -948,7 +953,7 @@ async def sc_legenda(p):                           # тап по заголов�
         await p.tap(W / 2, H / 2); await p.pg.wait_for_timeout(100)
         assert not await p.js('()=>t2d.legenda()'), f'world {w}: tap anywhere — legenda closed'
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
-    sun = await p.js('()=>t2d.mapSun()'); await p.tap(sun['x'], sun['y'] + 62); await p.pg.wait_for_timeout(150)
+    sun = await p.js('()=>t2d.mapSun()'); await p.tap(sun['lx'], sun['ly']); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>t2d.nav.settings'), 'tap the concordia label — settings'
 
 
@@ -1031,7 +1036,49 @@ async def sc_paradisus(p):                         # Paradisus: ангел по�
     await p.shot('map-heaven')
 
 
-SCENARIOS = {'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_monochord(p):                         # Monochordum: щипок, смычок, подставка — высота, Эолова струна, плашка, ветер, кубик, корзина, отмена, облако — карта
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(7)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 7], 'the card under Laboratorium opens Monochordum'
+    for _ in range(30):
+        if await p.js('()=>t2d.mono.ready'): break
+        await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.mono.ready'), 'string worklet is up'
+    a = await p.js('()=>t2d.mono.at(1, 0.3)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(250)
+    e = await p.js('()=>t2d.mono.str[1].en'); lv = await p.js('()=>T2D.level'); print('  monochord pluck: energy', round(e, 4), 'level', round(lv, 3))
+    assert e > 0.003, f'tap — the string is plucked: {e}'
+    await p.shot('monochord-pluck')
+    b = await p.js('()=>t2d.mono.at(0, t2d.mono.str[0].r)'); h0 = await p.js('()=>t2d.mono.hz(0)')
+    pid = await p.hold(b['x'], b['y'], ms=80); c = await p.js('()=>t2d.mono.at(0, 0.5)'); await p.drag(pid, b['x'], b['y'], c['x'], c['y'] + 2, steps=10)
+    await p.shot('monochord-bridge'); await p.up(); await p.pg.wait_for_timeout(100)
+    r = await p.js('()=>t2d.mono.str[0].r'); h1 = await p.js('()=>t2d.mono.hz(0)')
+    assert r == 0.5 and abs(h1 / h0 - 2) < 0.01, f'drag the bridge up to the middle — it sticks to 1/2, an octave: {r} {h0}->{h1}'
+    a = await p.js('()=>t2d.mono.at(2, 0.25)'); pid = await p.hold(a['x'], a['y'], ms=60)
+    for k in range(6):
+        x0 = a['x'] + (14 if k % 2 else -14); await p.drag(pid, a['x'] + (-14 if k % 2 else 14), a['y'], x0, a['y'], steps=5)
+    bow = await p.js('()=>t2d.mono.str[2].bow'); assert bow > 0.05, f'stroke across — bowing: {bow}'
+    await p.up(); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.mono.str[2].bow') == 0, 'finger up — the bow lifts'
+    a = await p.js('()=>t2d.mono.at(3, 0.15)'); await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(1200)
+    assert await p.js('()=>t2d.mono.str[3].sus'), 'double tap — the string sings by itself'
+    e = await p.js('()=>t2d.mono.str[3].en'); assert e > 0.001, f'Aeolian string sounds: {e}'
+    await p.pg.wait_for_timeout(300); a = await p.js('()=>t2d.mono.at(1, 0.2)'); await p.hold(a['x'], a['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a string — its sheet'
+    await p.shot('monochord-sheet')
+    await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    await p.js("()=>t2d.mono.setFx('wind', 0.7)"); await p.pg.wait_for_timeout(1500)
+    print('  monochord level, wind:', round(await p.js('()=>T2D.level'), 3))
+    await p.shot('monochord-wind'); await p.js("()=>t2d.mono.setFx('wind', 0)")
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(400)
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
+    assert not await p.js('()=>t2d.mono.str.some(s=>s.sus)'), 'trash — no string sings by itself'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    await p.shot('monochord')
+    h = await p.js('()=>t2d.mono.geo().hand'); await p.tap(h['x'] - h['r'] * 0.5, h['y'] + h['r'] * 0.5); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the cloud — map'
+
+
+SCENARIOS = {'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
