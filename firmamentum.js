@@ -3,7 +3,7 @@
 // поток пульсаретов. Высота над горизонтом — частота пульсаций: у горизонта звезда мигает ритмом, выше мерцание сливается в тон
 // (граница — пунктир limen, около 20 Гц); вбок по своду — формант (окраска). Под звездой — луч: его форма — форма пульсарета.
 // Тап по звезде — закрыть дыру; тянешь — двигаешь; держишь — плашка (cycles, window, mask, level). FX: scintilla (пульсы
-// сбиваются и пропадают), drift (форманты плывут), spread (стерео), hall. Солнце Эмпирея — четвертью в левом верхнем углу: тап — карта.
+// сбиваются и пропадают), drift (форманты плывут), spread (стерео), hall. Солнце — под землёй в левом нижнем углу: тап — карта.
 (() => {
   'use strict';
   const T = window.T2D;
@@ -32,7 +32,7 @@
   function geo() {
     const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, Ws = Math.min(W, (H - T.safeBot) * 0.62), cx = W / 2;
     const hy = bot - Math.min(90, (bot - top) * 0.13), RX = Ws / 2 - 8, RY = Math.min(hy - top - 150, RX * 1.75);   // свод — высокий купол; над ним — Эмпирей
-    return { W, H, top, bot, cx, Ws, hy, RX, RY, sun: { x: 0, y: T.topY + 2, r: Math.min(56, Ws * 0.15) } };
+    return { W, H, top, bot, cx, Ws, hy, RX, RY, sun: { x: 0, y: bot + 8, r: 58 } };   // солнце — под землёй в левом нижнем углу (к центру карты): ночью оно ходит под землёй
   }
   function toSky(G, x, y) {                               // точка → (h, u): высота над горизонтом и место по своду
     const dy = G.hy - y, h = dy / G.RY, e = Math.hypot((x - G.cx) / G.RX, h);
@@ -225,7 +225,7 @@
     c.drawImage(wall(G), 0, 0, T.W, T.H);
     const held = new Set([...touches.values()].filter((t) => t.kind === 'star').map((t) => t.s));
     for (const s of stars) drawStar(c, G, s, now, held.has(s));
-    if (!noSun) T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, 1, now, INK, BGC);
+    if (!noSun) { c.save(); c.beginPath(); c.rect(0, 0, G.W, G.sun.y); c.clip(); T.sunGlyph(c, G.sun.x, G.sun.y, -Math.PI / 2, 0, 1.2, now, INK, BGC); c.restore(); }
   }
 
   // ---------- мир ----------
@@ -244,7 +244,7 @@
   }
   const firm = {
     n: 'X', title: 'Firmamentum', sub: 'stellae · pulsar', theme: { ink: INK, bg: BGC, paper: PAPER },
-    corner: { hit: (f) => { const G = geo(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце Эмпирея — карта
+    corner: { hit: (f) => { const G = geo(); return f.y > G.hy + 6 && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце под землёй — карта
     fx: fxw,
     legend: [['tap', 'tap the sky', 'pierce the firmament — a star pulses'], ['up', 'drag a star up', 'faster: low — rhythm, high — a tone'],
       ['drag', 'drag a star sideways', 'formant · colour'], ['tap', 'tap a star', 'close the hole'],

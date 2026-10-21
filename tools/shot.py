@@ -918,7 +918,7 @@ async def sc_startmap(p):                          # карта — старто
     q = await p.js('()=>t2d.mapCell(0, 0)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.view') == 'map' and await p.js('()=>t2d.mapPeek()'), 'a face-down card only shivers — nondum'
     await p.shot('map-peek'); await p.pg.wait_for_timeout(300)
-    for w in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+    for w in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11):
         q = await p.js(f'()=>t2d.mapPanel({w})'); assert q[0] >= 0 and q[0] + q[2] <= W and q[1] > 0 and q[1] + q[3] < H, f'card {w} on screen {q}'
     sun = await p.js('()=>t2d.mapSun()'); await p.tap(sun['x'], sun['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.nav.settings'), 'tap the sun on the map — concordia'
@@ -1217,7 +1217,7 @@ async def sc_horologium(p):                        # Horologium: штифт на
 async def sc_firmamentum(p):                       # Firmamentum: прокол — звезда пульсирует, вверх — тон, вбок — формант, тап — закрыть, плашка, FX, кубик, корзина, отмена, солнце — карта
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(10)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
-    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 10], 'the card right of Natura opens Firmamentum'
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 10], 'the card right of Tenebrae opens Firmamentum'
     for _ in range(30):
         if await p.js('()=>t2d.firm.ready'): break
         await p.pg.wait_for_timeout(100)
@@ -1247,11 +1247,45 @@ async def sc_firmamentum(p):                       # Firmamentum: прокол �
     lv = await p.js('()=>T2D.level'); assert lv < 0.01, f'after trash it is silent: {lv}'
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.firm.stars.length') == n, 'undo brings the stars back'
-    S = await p.js('()=>t2d.firm.geo().sun'); await p.tap(S['x'] + 20, S['y'] + 20); await p.pg.wait_for_timeout(900)
+    S = await p.js('()=>t2d.firm.geo().sun'); await p.tap(S['x'] + 20, S['y'] - 30); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
 
 
-SCENARIOS = {'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+async def sc_tria(p):                              # Tria corpora: тела молчат, брошенное — хаос и звук, якорь, плашка, Fiat lux, FX, кубик, корзина, отмена, солнце — карта
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(11)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 11], 'the card right of Natura opens Tria corpora'
+    assert await p.js('()=>t2d.tria.still'), 'the bodies rest at first'
+    await p.shot('tria-still')
+    a = await p.js('()=>t2d.tria.at(1)'); pid = await p.hold(a['x'], a['y'], ms=40)
+    for k in range(1, 7): await p.T('touchMove', [{'x': a['x'] + 14 * k, 'y': a['y'] + 6 * k, 'id': pid}]); await p.pg.wait_for_timeout(16)
+    await p.up(); await p.pg.wait_for_timeout(1500)
+    assert not await p.js('()=>t2d.tria.still'), 'throw a body — they move'
+    lv = await p.js('()=>T2D.level'); print('  tria level, thrown:', round(lv, 3)); assert lv > 0.02, f'moving bodies sound: {lv}'
+    await p.pg.wait_for_timeout(2500); await p.shot('tria-chaos')
+    b = await p.js('()=>t2d.tria.at(0)'); await p.pin(b['x'], b['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.tria.bodies[0].fixed'), 'double tap — anchored'
+    b2 = await p.js('()=>t2d.tria.at(0)'); await p.pg.wait_for_timeout(500); b3 = await p.js('()=>t2d.tria.at(0)')
+    assert abs(b3['x'] - b2['x']) < 1 and abs(b3['y'] - b2['y']) < 1, 'an anchored body stays'
+    await p.pg.wait_for_timeout(300); await p.hold(b2['x'], b2['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a body — its sheet'
+    await p.shot('tria-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    G = await p.js('()=>t2d.tria.geo()'); await p.tap(G['cx'], G['cy']); await p.pg.wait_for_timeout(2500)
+    assert await p.js('()=>t2d.tria.lux'), 'tap the sign of earth — Fiat lux'
+    r = await p.js('()=>Math.max(...t2d.tria.bodies.map(b=>Math.hypot(b.x,b.y)))'); assert r < 0.8, f'the figure eight holds: {r}'
+    await p.shot('tria-lux')
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(2000)
+    print('  tria level, dice:', round(await p.js('()=>T2D.level'), 3), 'encounters', await p.js('()=>t2d.tria.encounters')); await p.shot('tria')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(2500)
+    assert await p.js('()=>t2d.tria.still'), 'trash — the bodies freeze'
+    lv = await p.js('()=>T2D.level'); assert lv < 0.01, f'after trash it is silent: {lv}'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
+    assert not await p.js('()=>t2d.tria.still'), 'undo sets them moving again'
+    S = await p.js('()=>t2d.tria.geo().sun'); await p.tap(S['x'] + 20, S['y'] + 20); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
+
+
+SCENARIOS = {'tria': sc_tria, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
