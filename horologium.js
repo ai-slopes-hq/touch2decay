@@ -266,7 +266,20 @@
       c.fillStyle = ink(on ? 0.9 : 0.32); c.fillText(lab, lx, ly);
     });
   }
+  function drawHour(c, G, P) {                            // часовая стрелка — считает такты: деление за такт, круг — 12 тактов
+    const Fh = Fm / 12, R = G.R * 0.58;
+    const bar = ((Math.floor(P) % 12) + 12) % 12, na = ((bar + 1) / 12) * TAU, rr = G.R + 11;   // цифра такта, к которому идёт стрелка, — ярче
+    T.glowAt(G.cx + Math.sin(na) * rr, G.cy - Math.cos(na) * rr, 16, 0.25);
+    c.save(); c.translate(G.cx + Math.sin(na) * rr, G.cy - Math.cos(na) * rr); c.rotate(na);
+    c.font = `${Math.max(9, Math.min(12, G.R * 0.07))}px ${T.MAP}`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = ink(1); c.fillText(ROMAN[bar + 1], 0, 0); c.restore();
+    if (Fh > 4) { c.strokeStyle = ink(0.05); c.beginPath(); for (let j = 0; j < 60; j++) { const a = (j / 60) * TAU; c.moveTo(G.cx, G.cy); c.lineTo(G.cx + Math.sin(a) * R, G.cy - Math.cos(a) * R); } c.stroke(); return; }
+    const a = (((P / 12) % 1 + 1) % 1) * TAU, sx = Math.sin(a), cy = -Math.cos(a), px = cy, py = -sx;   // ромб-наконечник, широкая игла
+    const tip = [G.cx + sx * R, G.cy + cy * R], mid = [G.cx + sx * R * 0.78, G.cy + cy * R * 0.78], w = 5;
+    c.fillStyle = BGC; c.strokeStyle = ink(0.8); c.lineWidth = 1;
+    c.beginPath(); c.moveTo(G.cx + px * 2.5, G.cy + py * 2.5); c.lineTo(mid[0] + px * 1.2, mid[1] + py * 1.2); c.lineTo(mid[0] + sx * 4 + px * w, mid[1] + cy * 4 + py * w); c.lineTo(tip[0], tip[1]); c.lineTo(mid[0] + sx * 4 - px * w, mid[1] + cy * 4 - py * w); c.lineTo(mid[0] - px * 1.2, mid[1] - py * 1.2); c.lineTo(G.cx - px * 2.5, G.cy - py * 2.5); c.closePath(); c.fill(); c.stroke();
+  }
   function drawHand(c, G, now, P) {
+    drawHour(c, G, P);
     const R = G.R - 14;
     if (Fm > 4) {                                         // быстро — стрелка слилась в диск
       const k = clamp((Fm - 4) / 12);
