@@ -1,0 +1,27 @@
+# ПРОБА (одноразовая), фаза 0б docs/native-plan.md: звучит ли веб-приложение в WKWebView в фоне. Проект — xcodegen generate.
+name: Shell
+options:
+  bundleIdPrefix: dev.uvarov
+  deploymentTarget: { iOS: "17.0" }
+settings:
+  base:
+    DEVELOPMENT_TEAM: 8N8KQ5985C
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+targets:
+  Shell:
+    type: application
+    platform: iOS
+    sources: [Shell]
+    info:
+      path: Shell/Info.plist
+      properties:
+        CFBundleDisplayName: t2d shell
+        UIBackgroundModes: [audio]
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.uvarov.t2dshell
+        TARGETED_DEVICE_FAMILY: "1"
