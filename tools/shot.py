@@ -1301,6 +1301,11 @@ async def sc_triaenergy(p):                        # Tria: энергия бро
         print(f'  dice {k}: energy {e0:.2f} -> {e1:.2f}, closest pair over 20 s', ' '.join(f'{x:.2f}' for x in dm[::4]), f'· in a tight pair {close:.0%}')
         assert abs(e1 - e0) < 0.05 * abs(e0) + 0.05, f'energy is kept: {e0} -> {e1}'
         assert close < 0.5, f'no pair stays stuck: {dm}'
+    st0 = await p.js('()=>t2d.tria.strikes'); await p.pg.wait_for_timeout(5000); st1 = await p.js('()=>t2d.tria.strikes')
+    print('  aspects: bells in 5 s', st1 - st0); assert 3 <= st1 - st0 <= 120, f'bodies strike notes on circles and rays: {st1 - st0}'
+    await p.js("()=>t2d.tria.setFx('aspectus', 0)"); st0 = await p.js('()=>t2d.tria.strikes'); await p.pg.wait_for_timeout(3000); st1 = await p.js('()=>t2d.tria.strikes')
+    print('  aspectus 0: bells in 3 s', st1 - st0); await p.js("()=>t2d.tria.setFx('aspectus', 0.6)")
+    await p.shot('tria-aspects')
     await p.js("()=>t2d.tria.setFx('decay', 1)"); await p.pg.wait_for_timeout(25000)
     sp = await p.js('()=>t2d.tria.spread()'); print('  decay 100 %, after 25 s spread', round(sp, 3)); assert sp < 0.2, f'decay — they settle: {sp}'
     await p.js("()=>t2d.tria.setFx('decay', 0)")

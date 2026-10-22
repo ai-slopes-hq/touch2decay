@@ -1,7 +1,9 @@
 // Tria corpora — мир XI: задача трёх тел на земле. Три начала Парацельса — Sal, Sulphur, Mercurius — на алхимическом блюде:
 // тянут друг друга и кружат хаотически, а земля в середине тянет всех к себе (чтобы не разлетелись). Каждое тело — генератор:
-// ближе к середине — выше (flux), быстрее движется — громче, тела модулируют друг друга по кругу (FM), сила — чем ближе, тем больше
-// (nexus); близкий пролёт — всплеск. Тело можно схватить и бросить (щелчок — скорость); двойной тап — тело встаёт на якорь;
+// Harmonices mundi: тело бьёт свою ноту (соль — дерево, сера — колокол, ртуть — стекло), когда пересекает круг блюда или луч
+// стихий (aspectus); высота — угловая скорость вокруг земли, как у Кеплера (flux — сколько октав), всегда по ступеням; удар о край —
+// низкий тимпан; близкий пролёт — обе ноты разом; тело в тесной паре гудит своим тоном и пульсирует с оборотом пары (FM по кругу — nexus).
+// Тело можно схватить и бросить (щелчок — скорость); двойной тап — тело встаёт на якорь;
 // держишь — плашка (mass, note, level). Тап по знаку земли в середине — «Fiat lux»: тела встают на восьмёрку (устойчивая орбита
 // Шенсине — Монтгомери) и звучат периодом; тронул тело — снова хаос. Корзина — тела замирают и молчат. Солнце — в левом верхнем углу: карта.
 (() => {
@@ -19,16 +21,23 @@
   // ---------- состояние ----------
   const rest = () => [0, 1, 2].map((i) => { const a = -Math.PI / 2 + (i * TAU) / 3; return { x: Math.cos(a) * 0.5, y: Math.sin(a) * 0.5 }; });
   const bodies = rest().map((p, i) => ({ ...p, vx: 0, vy: 0, m: 1, fixed: false, semi: [0, 7, 12][i], level: 0.8, trail: [], amp: 0, hz: 110 }));
-  const fx = { gravitas: 0.5, flux: 0.5, nexus: 0.35, decay: 0, hall: 0.35 };
+  const fx = { gravitas: 0.5, flux: 0.5, nexus: 0.35, aspectus: 0.6, decay: 0, hall: 0.35 };
   let still = true, lux = false, cadit = false, encounters = 0;   // cadit — тяга выключена: всё падает на дно блюда
   const Gc = () => 0.25 + 0.75 * fx.gravitas;
   const tonic = () => (T.scaleOn ? T.scaleRoot : 0);
-  function hzOf(b) {                                     // ближе к земле в середине — выше; с ладом — по ступеням
-    const r = Math.hypot(b.x, b.y);
-    let s = b.semi + tonic() + fx.flux * 12 * (0.55 - r) * 1.6;
-    if (T.scaleOn) s = T.snapSemi(Math.round(s) + 24) - 24;
-    return 110 * 2 ** (s / 12);
+  const PENTA = [0, 2, 4, 7, 9];                         // без лада — пентатоника от тоники
+  function snap(s) {
+    if (T.scaleOn) return T.snapSemi(Math.round(s) + 24) - 24;
+    const r = Math.round(s), o = Math.floor(r / 12), pc = r - 12 * o;
+    let best = 0; for (const q of [...PENTA, 12]) if (Math.abs(q - pc) < Math.abs(best - pc)) best = q;
+    return 12 * o + best;
   }
+  const omega = (b) => { const r2 = Math.max(0.01, b.x * b.x + b.y * b.y); return Math.abs(b.x * b.vy - b.y * b.vx) / r2; };   // угловая скорость вокруг земли
+  function hzOf(b) {                                     // Кеплер, Harmonices mundi: быстрее обходит землю — выше (flux — сколько октав); всегда по ступеням
+    const w = clamp(omega(b), 0.15, 40), s = b.semi + tonic() + 12 + clamp(12 * Math.log2(w / 3) * (0.4 + 1.2 * fx.flux), -24, 24);
+    return 110 * 2 ** (snap(s) / 12);
+  }
+  const baseHz = (b) => 110 * 2 ** (snap(b.semi + tonic() - 12) / 12);   // дрон пары — основной тон тела, октавой ниже
   const noteName = (f) => { const m = Math.round(12 * Math.log2(f / 55)); return `${NOTES[((m % 12) + 12) % 12]}${Math.floor((m + 9) / 12) + 1}`; };
 
   // ---------- геометрия ----------
@@ -81,6 +90,7 @@
     const Kt = E0 - U;
     if (K > 1e-6) { const k = Math.min(1.04, Math.max(0.97, Math.sqrt(Math.max(0, Kt) / K))); for (const b of bodies) if (!b.fixed) { b.vx *= k; b.vy *= k; } }
   }
+  const rims = [0, 0, 0];                                // удары о край за кадр: нормальная скорость
   function physics(dt) {                                  // перешагивание (leapfrog), 8…64 подшага за кадр; блюдо держит тела
     if (still) return;
     let dmin = 9, vmax = 0;
@@ -98,6 +108,7 @@
         const r = Math.hypot(b.x, b.y);
         if (r > 0.97) {
           const nx = b.x / r, ny = b.y / r, vn = b.vx * nx + b.vy * ny, k = cadit ? 1.35 : 2;   // без cadit — упруго
+          if (vn > 0.25) rims[bodies.indexOf(b)] = Math.max(rims[bodies.indexOf(b)], vn);
           if (vn > 0) { b.vx -= k * vn * nx; b.vy -= k * vn * ny; }
           if (cadit) { b.vx *= 0.985; b.vy *= 0.985; }   // на дне — трение: тела скатываются и замирают
           b.x = nx * 0.97; b.y = ny * 0.97;
@@ -160,39 +171,97 @@
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.4, t, 0.05);
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4)), t, 0.05);
   }
-  function burst(f, pan) {                                // близкий пролёт — всплеск: шум сквозь узкую полосу на средней высоте пары
+  function burst(f, pan, k = 1) {                       // близкий пролёт — шорох: шум сквозь узкую полосу
     if (!bus) return;
     const ctx = actx, t = ctx.currentTime, s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), gg = ctx.createGain(), p = ctx.createStereoPanner();
-    s.buffer = noiseBuf; bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 18; p.pan.value = pan;
-    gg.gain.setValueAtTime(0, t); gg.gain.linearRampToValueAtTime(0.9, t + 0.004); gg.gain.exponentialRampToValueAtTime(0.0005, t + 0.35); gg.gain.linearRampToValueAtTime(0, t + 0.36);
-    s.connect(bp).connect(gg).connect(p).connect(bus.pre); s.start(t, Math.random() * 0.5); s.stop(t + 0.38);
+    s.buffer = noiseBuf; bp.type = 'bandpass'; bp.frequency.value = Math.min(9000, f); bp.Q.value = 14; p.pan.value = pan;
+    gg.gain.setValueAtTime(0, t); gg.gain.linearRampToValueAtTime(0.45 * k, t + 0.004); gg.gain.exponentialRampToValueAtTime(0.0005, t + 0.3); gg.gain.linearRampToValueAtTime(0, t + 0.31);
+    s.connect(bp).connect(gg).connect(p).connect(bus.pre); s.start(t, Math.random() * 0.5); s.stop(t + 0.33);
     s.onended = () => { s.disconnect(); bp.disconnect(); gg.disconnect(); p.disconnect(); };
     encounters++;
   }
-  const near = [false, false, false];
-  function voice(dt) {                                    // перевод движения в звук: высота, громкость по скорости, FM по близости, панорама
-    bodies.forEach((b) => {
-      const v = Math.hypot(b.vx, b.vy), target = still ? 0 : b.level * clamp(0.12 + v * 0.55);
+  // колокол тела: FM-пара с огибающей; у каждого начала свой металл: соль — дерево, сера — колокол, ртуть — стекло
+  const BELL = [{ ratio: 1, idx: 1.2, dec: 0.45, amp: 0.5 }, { ratio: 3.5, idx: 2.2, dec: 1.4, amp: 0.32 }, { ratio: 2.01, idx: 1.6, dec: 2.2, amp: 0.26 }];
+  let liveNotes = 0, strikes = 0;
+  function bell(i, f, vel, pan) {
+    if (!bus || liveNotes > 18) return;
+    const ctx = actx, t = ctx.currentTime + 0.005, B = BELL[i], b = bodies[i];
+    const car = ctx.createOscillator(), mod = ctx.createOscillator(), mg = ctx.createGain(), vca = ctx.createGain(), p = ctx.createStereoPanner();
+    const dec = B.dec * (0.7 + 0.6 * vel), ix = f * B.ratio * B.idx * (0.3 + 1.4 * fx.nexus) * vel, pk = B.amp * b.level * (0.35 + 0.65 * vel);
+    car.frequency.value = f; mod.frequency.value = f * B.ratio; p.pan.value = pan;
+    mg.gain.setValueAtTime(ix, t); mg.gain.exponentialRampToValueAtTime(Math.max(1, ix * 0.04), t + dec * 0.6);
+    vca.gain.setValueAtTime(0, t); vca.gain.linearRampToValueAtTime(pk, t + 0.003); vca.gain.exponentialRampToValueAtTime(0.0004, t + dec); vca.gain.linearRampToValueAtTime(0, t + dec + 0.01);
+    mod.connect(mg).connect(car.frequency); car.connect(vca).connect(p).connect(bus.pre);
+    car.start(t); mod.start(t); car.stop(t + dec + 0.03); mod.stop(t + dec + 0.03);
+    liveNotes++; strikes++;
+    car.onended = () => { liveNotes--; for (const n of [car, mod, mg, vca, p]) n.disconnect(); };
+    setLive(true); lastSound = performance.now();
+  }
+  function thud(i, vn) {                                  // удар о край блюда — низкий тимпан: основной тон тела октавой ниже, высота падает
+    if (!bus || liveNotes > 18) return;
+    const ctx = actx, t = ctx.currentTime + 0.005, f = baseHz(bodies[i]), o = ctx.createOscillator(), vca = ctx.createGain(), p = ctx.createStereoPanner(), k = clamp(vn / 2.5);
+    o.type = 'triangle'; o.frequency.setValueAtTime(f * 2, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.06); p.pan.value = clamp(bodies[i].x, -1, 1) * 0.7;
+    vca.gain.setValueAtTime(0, t); vca.gain.linearRampToValueAtTime(0.5 * k * bodies[i].level, t + 0.002); vca.gain.exponentialRampToValueAtTime(0.0004, t + 0.35); vca.gain.linearRampToValueAtTime(0, t + 0.36);
+    o.connect(vca).connect(p).connect(bus.pre); o.start(t); o.stop(t + 0.38);
+    liveNotes++; o.onended = () => { liveNotes--; o.disconnect(); vca.disconnect(); p.disconnect(); };
+  }
+  // аспекты: тело бьёт свою ноту, когда пересекает круг блюда или луч стихий (aspectus — сколько линий звучит)
+  const RINGS = [0.25, 0.5, 0.75];
+  const rays = () => (fx.aspectus < 0.34 ? 0 : fx.aspectus < 0.67 ? 4 : 8);
+  const rings = () => (fx.aspectus < 0.01 ? [] : fx.aspectus < 0.34 ? [0.5] : RINGS);
+  const prevP = bodies.map(() => null), lastHit = [0, 0, 0], flashes = [];   // flashes: {x, y, i, t, kind}
+  function aspects(now) {
+    bodies.forEach((b, i) => {
+      const r = Math.hypot(b.x, b.y), a = Math.atan2(b.y, b.x), pv = prevP[i];
+      prevP[i] = { r, a };
+      if (!pv || still || b.held || b.fixed || now - lastHit[i] < 120) return;
+      let hit = null;
+      for (const q of rings()) if ((pv.r - q) * (r - q) < 0) { hit = { kind: 'ring', q }; break; }
+      const n = rays();
+      if (!hit && n) { const k0 = Math.floor((pv.a + Math.PI / 4) / (TAU / n)), k1 = Math.floor((a + Math.PI / 4) / (TAU / n)); if (k0 !== k1 && Math.abs(a - pv.a) < Math.PI) hit = { kind: 'ray', q: Math.round((a + Math.PI / 4) / (TAU / n)) * (TAU / n) - Math.PI / 4 }; }
+      if (!hit) return;
+      lastHit[i] = now;
+      const v = Math.hypot(b.vx, b.vy);
+      bell(i, hzOf(b), clamp(0.25 + v * 0.3), clamp(b.x, -1, 1) * 0.8);
+      flashes.push({ x: b.x, y: b.y, i, t: now, kind: hit.kind, q: hit.q });
+    });
+    rims.forEach((vn, i) => { if (vn > 0 && !still) { thud(i, vn); flashes.push({ x: bodies[i].x, y: bodies[i].y, i, t: now, kind: 'rim' }); } rims[i] = 0; });
+    if (flashes.length > 30) flashes.splice(0, flashes.length - 30);
+  }
+  const near = [false, false, false], conjAt = [0, 0, 0], pairK = [0, 0, 0], trem = [0, 0, 0];
+  function voice(dt, now) {                               // дрон пары: тело в тесной паре гудит своим тоном, пульсирует с частотой оборота пары
+    aspects(now);
+    const rate = [0, 0, 0];
+    bodies.forEach((b, i) => {
+      let dm = 9, jm = -1;
+      for (let j = 0; j < 3; j++) if (j !== i) { const d = Math.hypot(b.x - bodies[j].x, b.y - bodies[j].y); if (d < dm) { dm = d; jm = j; } }
+      const q = bodies[jm], rx = q.x - b.x, ry = q.y - b.y, w = Math.abs(rx * (q.vy - b.vy) - ry * (q.vx - b.vx)) / Math.max(0.004, dm * dm);   // угловая скорость пары
+      rate[i] = clamp(w / TAU, 0.3, 9);
+      const pk = still ? 0 : clamp((0.32 - dm) / 0.22);
+      pairK[i] += (pk - pairK[i]) * (1 - Math.exp(-dt / 0.4));
+      trem[i] += rate[i] * dt * TAU;
+      const v = Math.hypot(b.vx, b.vy), target = still ? 0 : b.level * (0.05 + 0.55 * pairK[i]) * clamp(0.3 + v * 0.4);
       b.amp += (target - b.amp) * (1 - Math.exp(-dt / 0.08)); b.hz = hzOf(b);
     });
-    for (let i = 0; i < 3; i++) {                         // близкий пролёт пары — всплеск
-      const a = bodies[i], b = bodies[(i + 1) % 3], d = Math.hypot(a.x - b.x, a.y - b.y), cl = d < 0.1;
-      if (cl && !near[i] && !still) burst(Math.sqrt(a.hz * b.hz) * 2, clamp((a.x + b.x) / 2, -1, 1));
+    for (let i = 0; i < 3; i++) {                         // близкий пролёт пары — соединение: обе ноты разом и шорох
+      const a = bodies[i], j = (i + 1) % 3, b = bodies[j], d = Math.hypot(a.x - b.x, a.y - b.y), cl = d < 0.1;
+      if (cl && !near[i] && !still && now - conjAt[i] > 400) { conjAt[i] = now; const pan = clamp((a.x + b.x) / 2, -1, 1); bell(i, a.hz, 1, pan); bell(j, b.hz, 1, pan); burst(Math.sqrt(a.hz * b.hz) * 2, pan, 0.6); flashes.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, i, t: now, kind: 'conj' }); }
       near[i] = cl;
     }
     if (!vo) return;
     const t = actx.currentTime;
     bodies.forEach((b, i) => {
-      const n = vo[i], src = bodies[(i + 2) % 3], d = Math.hypot(b.x - src.x, b.y - src.y), idx = fx.nexus * b.hz * 2.5 * clamp(0.12 / Math.max(0.03, d), 0, 3);
-      if (T.scaleOn) n.o.frequency.setValueAtTime(b.hz, t); else n.o.frequency.setTargetAtTime(b.hz, t, 0.03);
-      n.vca.gain.setTargetAtTime(b.amp * 0.22, t, 0.03);
+      const n = vo[i], src = bodies[(i + 2) % 3], d = Math.hypot(b.x - src.x, b.y - src.y), f = baseHz(b), idx = fx.nexus * f * 2 * clamp(0.12 / Math.max(0.03, d), 0, 3);
+      n.o.frequency.setTargetAtTime(f, t, 0.05);
+      const tr = 1 - 0.7 * pairK[i] * (0.5 + 0.5 * Math.sin(trem[i]));   // пульс — оборот пары
+      n.vca.gain.setTargetAtTime(b.amp * 0.2 * tr, t, 0.012);
       n.pan.pan.setTargetAtTime(clamp(b.x, -1, 1) * 0.8, t, 0.05);
-      vo[(i + 2) % 3].mg.gain.setTargetAtTime(idx, t, 0.04);   // источник модулирует следующего
+      vo[(i + 2) % 3].mg.gain.setTargetAtTime(idx, t, 0.04);
     });
   }
   function tick(now, dt) {
     physics(dt);
-    voice(dt);
+    voice(dt, now);
     if (!still) for (const b of bodies) { b.trail.push(b.x, b.y); if (b.trail.length > 360) b.trail.splice(0, 2); }
     for (const t of touches.values()) if (t.kind === 'body' && !t.moved && !t.sheet && now - t.t0 > T.HOLD_MS) { t.sheet = true; const b = bodies[t.i]; b.held = false; bodySheet(t.i); }
   }
@@ -297,6 +366,19 @@
     c.strokeStyle = lux ? rgba([236, 204, 120], 0.6 + 0.4 * L) : ink(0.6); c.lineWidth = 1.1;
     elem(c, G.cx, G.cy, 9, false, true);
     if (lux) { c.strokeStyle = rgba([236, 204, 120], 0.25 * L); c.beginPath(); for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU; c.moveTo(G.cx + Math.cos(a) * 14, G.cy + Math.sin(a) * 14); c.lineTo(G.cx + Math.cos(a) * 24, G.cy + Math.sin(a) * 24); } c.stroke(); }
+    const nr = rays();                                      // лучи аспектов — бледно, вспыхивают, когда тело их пересекает
+    if (nr) { c.strokeStyle = ink(0.07); c.setLineDash([1, 6]); c.beginPath(); for (let k = 0; k < nr; k++) { const a = (k * TAU) / nr - Math.PI / 4; c.moveTo(G.cx + Math.cos(a) * G.R * 0.12, G.cy + Math.sin(a) * G.R * 0.12); c.lineTo(G.cx + Math.cos(a) * G.R, G.cy + Math.sin(a) * G.R); } c.stroke(); c.setLineDash([]); }
+    for (const f of flashes) {
+      const k = (now - f.t) / (f.kind === 'conj' ? 700 : 450); if (k > 1 || k < 0) continue;
+      const al = (1 - k) ** 2, col = TINT[f.i], X = G.cx + f.x * G.R, Y = G.cy + f.y * G.R;
+      c.strokeStyle = rgba(col, 0.55 * al); c.lineWidth = 1; c.beginPath();
+      if (f.kind === 'ring') { const a = Math.atan2(f.y, f.x); c.arc(G.cx, G.cy, f.q * G.R, a - 0.35, a + 0.35); }
+      else if (f.kind === 'ray') { c.moveTo(G.cx + Math.cos(f.q) * G.R * 0.12, G.cy + Math.sin(f.q) * G.R * 0.12); c.lineTo(G.cx + Math.cos(f.q) * G.R, G.cy + Math.sin(f.q) * G.R); }
+      else if (f.kind === 'rim') { const a = Math.atan2(f.y, f.x); c.arc(G.cx, G.cy, G.R + 3, a - 0.25, a + 0.25); }
+      else { c.arc(X, Y, 8 + 30 * k, 0, TAU); }
+      c.stroke();
+      if (f.kind !== 'conj') { c.beginPath(); c.arc(X, Y, 3 + 14 * k, 0, TAU); c.stroke(); }
+    }
     bodies.forEach((b, i) => {                              // следы — аттрактор, который они рисуют
       const tr = b.trail, n = tr.length / 2;
       if (n < 2) return;
@@ -314,7 +396,7 @@
     const held = new Set([...touches.values()].filter((t) => t.kind === 'body').map((t) => t.i));
     bodies.forEach((b, i) => {
       const p = px(G, b), r = 8 + 4 * Math.sqrt(b.m);
-      if (b.amp > 0.05) T.glowAt(p.x, p.y, r * 2.4, b.amp * 0.35);
+      if (b.amp > 0.05) T.glowAt(p.x, p.y, r * 2.4, b.amp * 0.35 * (1 - 0.6 * pairK[i] * (0.5 + 0.5 * Math.sin(trem[i]))));   // в паре — пульсирует с её оборотом
       c.fillStyle = BGC; c.beginPath(); c.arc(p.x, p.y, r + 4, 0, TAU); c.fill();
       c.strokeStyle = rgba(TINT[i], 0.5 + 0.5 * clamp(b.amp * 1.5)); c.lineWidth = 1; c.beginPath(); c.arc(p.x, p.y, r + 4, 0, TAU); c.stroke();
       if (b.fixed) { c.beginPath(); c.arc(p.x, p.y, r + 7.5, 0, TAU); c.stroke(); }   // на якоре — двойной обвод
@@ -340,9 +422,9 @@
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
-    sectors: [{ key: 'gravitas', label: 'gravitas', ang: deg(190) }, { key: 'flux', label: 'flux', ang: deg(150) }, { key: 'nexus', label: 'nexus', ang: deg(125) }, { key: 'decay', label: 'decay', ang: deg(100) }, { key: 'hall', label: 'hall', ang: deg(80) }],
-    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => (k === 'decay' && fx.decay <= 0.005 ? 'off' : `${Math.round(fx[k] * 100)}%`),
-    lfo: { keys: ['gravitas', 'flux', 'nexus', 'decay', 'hall'], shapes: 'random' },   // gravitas с рампой — земля дышит
+    sectors: [{ key: 'gravitas', label: 'gravitas', ang: deg(190) }, { key: 'flux', label: 'flux', ang: deg(150) }, { key: 'nexus', label: 'nexus', ang: deg(135) }, { key: 'aspectus', label: 'aspectus', ang: deg(115) }, { key: 'decay', label: 'decay', ang: deg(100) }, { key: 'hall', label: 'hall', ang: deg(80) }],
+    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); }, text: (k) => (k === 'decay' && fx.decay <= 0.005 ? 'off' : k === 'aspectus' ? (fx.aspectus < 0.01 ? 'rim only' : fx.aspectus < 0.34 ? 'one circle' : fx.aspectus < 0.67 ? 'circles · 4 rays' : 'circles · 8 rays') : `${Math.round(fx[k] * 100)}%`),
+    lfo: { keys: ['gravitas', 'flux', 'nexus', 'aspectus', 'decay', 'hall'], shapes: 'random' },   // gravitas с рампой — земля дышит
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
   function dice() {                                       // тела разбросаны и брошены, массы и ноты — аккорд
@@ -371,7 +453,7 @@
   };
   T.registerWorld(11, tria);
   window.t2d.tria = {
-    bodies, fx, geo, setFx: (k, v) => fxw.set(k, v), get still() { return still; }, get lux() { return lux; }, get cadit() { return cadit; }, get encounters() { return encounters; }, fiatLux, energy: () => { const e = energy(); return e.K + e.U; }, spread: () => { const B = bodies, d = (i, j) => Math.hypot(B[i].x - B[j].x, B[i].y - B[j].y); return (d(0, 1) + d(1, 2) + d(0, 2)) / 3; }, dmin: () => { const B = bodies, d = (i, j) => Math.hypot(B[i].x - B[j].x, B[i].y - B[j].y); return Math.min(d(0, 1), d(1, 2), d(0, 2)); },
+    bodies, fx, geo, setFx: (k, v) => fxw.set(k, v), get still() { return still; }, get lux() { return lux; }, get cadit() { return cadit; }, get encounters() { return encounters; }, get strikes() { return strikes; }, get pair() { return [...pairK]; }, fiatLux, energy: () => { const e = energy(); return e.K + e.U; }, spread: () => { const B = bodies, d = (i, j) => Math.hypot(B[i].x - B[j].x, B[i].y - B[j].y); return (d(0, 1) + d(1, 2) + d(0, 2)) / 3; }, dmin: () => { const B = bodies, d = (i, j) => Math.hypot(B[i].x - B[j].x, B[i].y - B[j].y); return Math.min(d(0, 1), d(1, 2), d(0, 2)); },
     at: (i) => px(geo(), bodies[i]),
   };
 })();

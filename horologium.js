@@ -14,13 +14,13 @@
   const INK = '214,180,110', BGC = '#0c0a07', PAPER = '12,10,7';
   const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
   const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-  const RATIOS = [0.5, 1, 1.5, 2, 2.76, 3.5, 4, 5.4];
+  const RATIOS = [0.5, 1, 1.5, 2, 3, 4, 2.76, 5.4];   // модулятор гнёт тембр; дробные — звон
   const TEETH = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
   const SUN_STEPS = 64;                                   // солнце обходит циферблат за 64 такта маятника
 
   // ---------- состояние ----------
   const gear = (teeth, pins, semi, o = {}) => ({ teeth, pins: new Set(pins), semi, fold: 0.5, ratio: 1.5, index: 0.2, decay: 0.4, level: 0.8, ramp: 0, rampTo: 0, hit: 0, ...o });
-  const gears = [gear(4, [0, 2], 0), gear(6, [0, 3, 4], 7, { ratio: 2, fold: 0.7, index: 0.1 }), gear(5, [1], 12, { ratio: 2.76, decay: 0.25, index: 0.35 }), gear(7, [0, 5], -5, { ratio: 1, fold: 0.3, decay: 0.6 })];
+  const gears = [gear(4, [0, 2], 0), gear(6, [0, 3, 4], 7, { ratio: 2, fold: 0.7, index: 0.1 }), gear(5, [1], 12, { ratio: 3, decay: 0.25, index: 0.35 }), gear(7, [0, 5], -5, { ratio: 1, fold: 0.3, decay: 0.6 })];
   const fx = { sol: 0.4, fortuna: 0.15, fmode: 0, fto: 0, decay: 0.5, chance: 1, hall: 0.35 };
   const TARGETS = ['fold', 'index', 'decay', 'pitch'];    // куда идут рампа шестерни и fortuna
   let chance = 0, smoothV = 0, smoothT = 0;               // fortuna — источник случайности: ступень на каждый удар или плавное блуждание
@@ -98,7 +98,7 @@
     }
     const fold = clamp(g.fold + fx.sol * 0.6 * sunHeight(step) + mods[0]), f = hzSemi(g.semi + Math.round(mods[3] * 12)), idx = g.index * Math.max(0, 1 + 2 * mods[1]), decK = Math.max(0.2, 1 + 2 * mods[2]);
     const dec = (0.04 + (g.decay * 0.7 + fx.decay * 0.3) ** 1.7 * 1.3) * decK;
-    send({ t: 'hit', i: gi, at: t, f, ratio: g.ratio, idx, fold, dec, vel, peak: 0.38 * g.level * (0.55 + 0.45 * vel), fmax: 2500 + 15000 * vel ** 1.5, pan: PAN[gi] });
+    send({ t: 'hit', i: gi, at: t, f, ratio: g.ratio, idx, fold, dec, vel, peak: 0.46 * g.level * (0.55 + 0.45 * vel), fmax: 2500 + 15000 * vel ** 1.5, pan: PAN[gi] });
     setTimeout(() => { g.hit = performance.now(); }, Math.max(0, (t - actx.currentTime) * 1000));
     lastSound = performance.now(); setLive(true);
   }
@@ -313,7 +313,7 @@
     gears.forEach((g) => {
       g.teeth = TEETH[Math.floor(R() * 10)]; const k = 1 + Math.floor(R() * Math.max(1, g.teeth / 2)), rot = Math.floor(R() * g.teeth);
       g.pins = new Set(euclid(k, g.teeth).map((p) => (p + rot) % g.teeth));
-      g.semi = [-12, -5, 0, 3, 7, 10, 12, 15][Math.floor(R() * 8)]; g.fold = 0.2 + R() * 0.7; g.ratio = RATIOS[Math.floor(R() * RATIOS.length)]; g.index = R() * 0.5; g.decay = 0.1 + R() * 0.7; g.ramp = R() < 0.4 ? 0.3 + R() * 0.5 : 0; g.rampTo = Math.floor(R() * 4);
+      g.semi = [-12, -5, 0, 3, 7, 10, 12, 15][Math.floor(R() * 8)]; g.fold = 0.2 + R() * 0.7; g.ratio = RATIOS[Math.floor(R() * (R() < 0.8 ? 6 : RATIOS.length))]; g.index = R() * 0.7; g.decay = 0.1 + R() * 0.7; g.ramp = R() < 0.4 ? 0.3 + R() * 0.5 : 0; g.rampTo = Math.floor(R() * 4);
     });
     if (!seq.playing) play(true);
   }

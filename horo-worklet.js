@@ -1,5 +1,6 @@
 // Horologium — голос West Coast (Buchla 259 + 292), по сэмплам. На каждую шестерню — свой голос.
-// Сложный генератор: модулятор (треугольник, f·ratio) → линейная FM несущей-синуса; глубина FM идёт за вактролом.
+// Сложный генератор: модулятор (треугольник, f·ratio) модулирует не высоту, а тембр — глубину складок (timbre mod, как у 259:
+// так звучит Букла, а не DX); FM — едва-едва, чтобы оживить. idx — глубина этой модуляции.
 // Складыватель (259 timbre): синус × A (1…10) с небольшим сдвигом (symmetry) отражается от ±1 — острые перегибы, жёсткие
 // нечётные гармоники; A тоже идёт за вактролом: удар — звенящие складки, хвост — почти чистый синус. Считается с 2× запасом.
 // Low pass gate (292, режим combo): вактрол — светодиод + фоторезистор: заряд за ~1 мс, спад сначала быстрый, потом всё
@@ -16,7 +17,7 @@ class Horo extends AudioWorkletProcessor {
   }
   trig(d) {
     const o = this.vo[d.i], sr = sampleRate;
-    o.f = d.f; o.ratio = d.ratio; o.idx = d.idx; o.fold = d.fold; o.tau = d.dec * 0.45; o.fmax = Math.min(d.fmax, sr * 0.45); o.peak = d.peak;
+    o.f = d.f; o.ratio = d.ratio; o.idx = d.idx; o.fold = d.fold; o.tau = d.dec * 0.32; o.fmax = Math.min(d.fmax, sr * 0.45); o.peak = d.peak;
     const p = (d.pan + 1) * Math.PI / 4; o.gl = Math.cos(p); o.gr = Math.sin(p);
     o.tgt = 0.6 + 0.4 * d.vel; o.gate = Math.round(0.004 * sr); o.live = true;
   }
@@ -31,13 +32,14 @@ class Horo extends AudioWorkletProcessor {
       for (const o of this.vo) {
         if (!o.live) continue;
         if (o.gate > 0) { o.v += (o.tgt - o.v) * aA; o.gate--; }            // вактрол: заряд
-        else { const u = 1 - o.v; o.v -= o.v / (o.tau * sr * (0.45 + 2.2 * u * u)); if (o.v < 2e-5) { o.v = 0; o.live = false; o.c1 = o.c2 = 0; continue; } }   // спад всё медленнее
-        const v = o.v, dev = o.idx * o.f * 2.5 * (0.2 + 0.8 * v), A = 1 + o.fold * 9 * (0.15 + 0.85 * v), sym = 0.12 * o.fold;
+        else { const u = 1 - o.v; o.v -= o.v / (o.tau * sr * (0.4 + 1.1 * u * u)); if (o.v < 2e-5) { o.v = 0; o.live = false; o.c1 = o.c2 = 0; continue; } }   // спад всё медленнее
+        const v = o.v, dev = o.idx * o.f * 0.25 * v, A0 = 1 + o.fold * 7 * (0.1 + 0.9 * v * v), sym = 0.15 * o.fold;
         let y = 0;
         for (let s = 0; s < 2; s++) {                       // 2× запас: складки дают много гармоник
           o.mph += o.f * o.ratio * ins; o.mph -= Math.floor(o.mph);
           const tri = 1 - 4 * Math.abs(o.mph - 0.5);
           o.cph += (o.f + dev * tri) * ins; o.cph -= Math.floor(o.cph);
+          const A = A0 * (1 + o.idx * 1.4 * v * (0.5 + 0.5 * tri));   // модулятор гнёт складки
           let x = (Math.sin(TAU * o.cph) + sym) * A;
           if (x > 1 || x < -1) { let u = (x + 1) % 4; if (u < 0) u += 4; x = u < 2 ? u - 1 : 3 - u; }   // отражение от ±1
           y += x * (1.5 - 0.5 * x * x);                     // чуть скруглить вершины
