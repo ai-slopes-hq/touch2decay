@@ -2,10 +2,10 @@
 //   core/build.sh && node --test tools/test-goetia-core.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SCENARIOS, BLOCK, toScript, loadRef, play } from './goetia-scenarios.mjs';
+import { SCENARIOS, BLOCK, SR, WASM, toScript, loadRef, loadWasm, play } from './goetia-scenarios.mjs';
 
 const EPS = 1e-6;
 const CLI = fileURLToPath(new URL('../core/build/render-cli', import.meta.url));
@@ -36,3 +36,46 @@ for (const name of Object.keys(SCENARIOS)) {
     same(c.L, r.L, `${name} L`); same(c.R, r.R, `${name} R`);
   });
 }
+
+// ---------- WASM: goetia-worklet.js (обёртка) + goetia.wasm ----------
+
+const sameMeters = (a, b, what) => {
+  assert.equal(a.length, b.length, `${what}: meter count`);
+  a.forEach((m, k) => { same(m.tt, b[k].tt, `${what} tt #${k}`); same(m.g, b[k].g, `${what} g #${k}`); });
+};
+async function wasm(steps) { const w = loadWasm(); await w.ready; return play(w.proc, steps, w.posted); }
+
+for (const name of Object.keys(SCENARIOS)) {
+  test(`wasm matches the JS worklet: ${name}`, async () => {
+    const r = ref(name), w = await wasm(SCENARIOS[name]);
+    same(w.L, r.L, `${name} L`); same(w.R, r.R, `${name} R`); sameMeters(w.meters, r.meters, name);
+  });
+}
+
+test('wasm has no imports', () => {
+  assert.deepEqual(WebAssembly.Module.imports(new WebAssembly.Module(readFileSync(WASM))), []);
+});
+
+test('messages before ready keep their order', async () => {
+  const steps = SCENARIOS.ops, first = steps.findIndex((s) => s.run);
+  const w = loadWasm();
+  for (const s of steps.slice(0, first)) w.proc.port.onmessage({ data: s });   // ещё не готов — в очередь
+  await w.ready;
+  const got = play(w.proc, steps.slice(first), w.posted), r = ref('ops');
+  same(got.L, r.L, 'ops L'); same(got.R, r.R, 'ops R');
+});
+
+test('a partial voice message keeps the other fields', async () => {
+  const steps = [...SCENARIOS.drone, { t: 'voice', i: 0, rate: 9000 }, { run: 100 }];
+  const { proc, posted } = loadRef(), r = play(proc, steps, posted), w = await wasm(steps);
+  same(w.L, r.L, 'partial L'); same(w.R, r.R, 'partial R');
+});
+
+test('speed: 60 s, three spirits, legion 4', async () => {
+  const blocks = Math.round((60 * SR) / BLOCK);
+  const steps = [...SCENARIOS.three.filter((s) => !s.run).map((s) => (s.t === 'voice' ? { ...s, legio: 4 } : s)), { run: blocks }];
+  const time = (proc) => { const t0 = performance.now(); play(proc, steps); return performance.now() - t0; };
+  const js = time(loadRef().proc), w = loadWasm(); await w.ready;
+  const ms = time(w.proc);
+  console.log(`  speed, 60 s of sound: JS ${js.toFixed(0)} ms, WASM ${ms.toFixed(0)} ms (×${(js / ms).toFixed(2)})`);
+});

@@ -70,3 +70,15 @@ export function play(proc, steps, posted) {             // прогнать сц
   const meters = posted ? posted.slice(from).filter((m) => m.t === 'p').map(({ tt, g }) => ({ tt: [...tt], g: [...g] })) : [];
   return { L: cat(L), R: cat(R), meters };
 }
+
+export const WASM = new URL('../goetia.wasm', import.meta.url);
+export function loadWasm() {                            // обёртка goetia-worklet.js над goetia.wasm; ready — когда пришло {t:'ready'}
+  const { reg, posted } = sandbox('../goetia-worklet.js');
+  const bytes = readFileSync(WASM);
+  const proc = new reg.goetia({ processorOptions: { wasm: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) } });
+  const ready = new Promise((res, rej) => {
+    const post = proc.port.postMessage;
+    proc.port.postMessage = (m) => { post(m); if (m.t === 'ready') res(); else if (m.t === 'err') rej(new Error(m.msg)); };
+  });
+  return { proc, posted, ready };
+}

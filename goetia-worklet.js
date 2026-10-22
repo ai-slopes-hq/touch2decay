@@ -5,71 +5,55 @@
 // tone — однополюсный lowpass на голос (bytebeat без него режет уши). release — удар ↔ дрон: каждый подъём бита самого медленного
 // члена печати (trig = его сдвиг) — удар, дальше затухание 4 мс … 2 с; rel ≥ 0.97 — без затухания, ровный дрон. У каждого легиона
 // свой t — и свой удар (с legio удары расходятся во флэм). Наверх ~30 раз в секунду: t и громкость голоса (с огибающей) — для картинки.
-const VMAX = 3, LMAX = 4;
-const OPS = {                                             // знак узла → действие; аргументы — 32-битные целые
-  '|': (a, b) => a | b,
-  '&': (a, b) => a & b,
-  '^': (a, b) => a ^ b,
-  '+': (a, b) => (a + b) | 0,
-  '-': (a, b) => (a - b) | 0,
-  '*': (a, b) => Math.imul(a, b),
-  '%': (a, b) => a % ((b & 15) + 1),
-  '>': (a, b) => a >> (b & 7),
-};
+// DSP — ядро core/worlds/goetia (C++ → goetia.wasm, байты приходят в processorOptions.wasm); здесь только сообщения и копия буфера.
+// Пока модуль не готов — тишина, сообщения ждут в очереди; готов — {t:'ready'}, не загрузился — {t:'err'} и дальше тишина.
+const VMAX = 3, PMAX = 8;
+const OPS = ['|', '&', '^', '+', '*', '-', '%', '>'];   // знак → код ядра; неизвестный — '|'
+const FIELDS = ['on', 'rate', 'lp', 'lvl', 'legio', 'pan', 'rel', 'trig'];
 class Goetia extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
-    this.vo = Array.from({ length: VMAX }, () => ({ on: false, prog: [], rate: 8000, rateS: 8000, lp: 0.3, lvl: 0.7, legio: 1, pan: 0, rel: 1, trig: 8, g: 0, gv: 0, t: new Float64Array(LMAX), y: new Float64Array(LMAX), env: new Float64Array(LMAX).fill(1), envS: new Float64Array(LMAX).fill(1), lb: new Uint8Array(LMAX), dc: 0, dx: 0 }));
-    this.spread = 0.6; this.wide = 0.3; this.count = 0; this.every = Math.round(sampleRate / 30);
-    this.port.onmessage = (e) => {
-      const d = e.data;
-      if (d.t === 'voice') {
-        const o = this.vo[d.i];
-        if (d.prog) o.prog = d.prog.map(([op, s]) => [OPS[op] || OPS['|'], s]);
-        for (const k of ['on', 'rate', 'lp', 'lvl', 'legio', 'pan', 'rel', 'trig']) if (d[k] != null) o[k] = d[k];
-        if (d.on && o.g < 1e-4) { o.rateS = o.rate; o.t.fill(0); for (let j = 1; j < LMAX; j++) o.t[j] = j * 1777; }   // новый дух — с начала; легионы чуть вразнобой
-      } else if (d.t === 'fx') { this.spread = d.spread; this.wide = d.wide; }
-    };
+    this.vo = Array.from({ length: VMAX }, () => ({ on: false, rate: 8000, lp: 0.3, lvl: 0.7, legio: 1, pan: 0, rel: 1, trig: 8 }));   // последние поля — для неполных сообщений
+    this.x = null; this.queue = []; this.count = 0; this.every = Math.round(sampleRate / 30);
+    this.port.onmessage = (e) => { if (this.x) this.apply(e.data); else this.queue.push(e.data); };
+    WebAssembly.instantiate(options.processorOptions.wasm, {}).then(({ instance }) => {
+      const x = instance.exports;
+      if (x._initialize) x._initialize();
+      x.gt_init(sampleRate);
+      this.x = x;
+      for (const d of this.queue) this.apply(d);
+      this.queue = [];
+      this.port.postMessage({ t: 'ready' });
+    }).catch((err) => this.port.postMessage({ t: 'err', msg: String(err) }));
+  }
+  apply(d) {
+    const x = this.x;
+    if (d.t === 'voice') {
+      const o = this.vo[d.i];
+      if (d.prog) {                                       // программа — раньше полей голоса, как в прежнем worklet
+        const n = Math.min(PMAX, d.prog.length), buf = new Int32Array(x.memory.buffer, x.gt_prog_buf(), 2 * PMAX);
+        for (let q = 0; q < n; q++) { buf[2 * q] = Math.max(0, OPS.indexOf(d.prog[q][0])); buf[2 * q + 1] = d.prog[q][1]; }
+        x.gt_prog(d.i, n);
+      }
+      for (const k of FIELDS) if (d[k] != null) o[k] = d[k];
+      x.gt_voice(d.i, o.on ? 1 : 0, o.rate, o.lp, o.lvl, o.legio | 0, o.pan, o.rel, o.trig);
+    } else if (d.t === 'fx') x.gt_fx(d.spread, d.wide);
+    else if (d.t === 'sett') x.gt_set_t(d.i, d.t0);       // только тесты: стартовое t
   }
   process(inputs, outputs) {
-    const out = outputs[0], L = out[0], R = out[1] || out[0], n = L.length, sr = sampleRate;
-    for (let k = 0; k < n; k++) { L[k] = 0; if (R !== L) R[k] = 0; }
-    for (const o of this.vo) {
-      if ((!o.on && o.g < 1e-5) || !o.prog.length) { if (!o.on) o.g = 0; continue; }
-      const P = o.prog, np = P.length, nl = Math.max(1, Math.min(LMAX, o.legio | 0)), norm = 1 / Math.sqrt(nl);
-      const drone = o.rel >= 0.97, dec = drone ? 1 : Math.exp(-1 / (0.004 * 500 ** o.rel * sr));
-      const pans = [], dets = [];
-      for (let j = 0; j < nl; j++) {
-        const u = nl === 1 ? 0 : (j / (nl - 1)) * 2 - 1;
-        dets.push(1 + u * this.wide * 0.006);              // легион: скорость ±0.6 % при legio 100 %
-        const p = Math.max(-1, Math.min(1, o.pan * this.spread + u * 0.6 * this.spread));
-        pans.push([(1 - p) * 0.5, (1 + p) * 0.5]);
-      }
-      for (let k = 0; k < n; k++) {
-        o.g += ((o.on ? o.lvl : 0) - o.g) * (o.on ? 0.0015 : 0.0006);
-        o.rateS += (o.rate - o.rateS) * 0.0015;
-        let sl = 0, sr2 = 0;
-        for (let j = 0; j < nl; j++) {
-          const tf = (o.t[j] += (o.rateS * dets[j]) / sr), ti = tf | 0;
-          let acc = ti >> P[0][1];
-          for (let q = 1; q < np; q++) acc = P[q][0](acc, ti >> P[q][1]);
-          const v = (Math.imul(ti, acc) & 255) / 127.5 - 1;
-          const y = (o.y[j] += (v - o.y[j]) * o.lp);
-          const b = (ti >> o.trig) & 1;
-          if (drone) o.env[j] = 1; else { if (b && !o.lb[j]) o.env[j] = 1; else o.env[j] *= dec; }   // подъём бита — удар
-          o.lb[j] = b;
-          const e = (o.envS[j] += (o.env[j] - o.envS[j]) * 0.06);   // фронт ~0.3 мс — без щелчка
-          sl += y * e * pans[j][0]; sr2 += y * e * pans[j][1];
-        }
-        const m = (sl + sr2) * 0.5, dcy = m - o.dx + 0.997 * o.dc; o.dx = m; o.dc = dcy;   // постоянную составляющую — вон (общая на оба канала)
-        const off = dcy - m, gg = o.g * norm;
-        o.gv = o.g * o.envS[0];
-        L[k] += (sl + off) * gg; if (R !== L) R[k] += (sr2 + off) * gg;
-      }
-    }
-    for (let k = 0; k < n; k++) { L[k] = Math.tanh(L[k] * 0.8); if (R !== L) R[k] = Math.tanh(R[k] * 0.8); }
+    const out = outputs[0], L = out[0], R = out[1], n = L.length, x = this.x;
+    if (!x) return true;                                  // выход уже нулевой
+    const p = x.gt_process(n);
+    if (!this.mem || this.mem.buffer !== x.memory.buffer) this.mem = new Float32Array(x.memory.buffer);
+    L.set(this.mem.subarray(p >> 2, (p >> 2) + n));
+    if (R) R.set(this.mem.subarray((p >> 2) + n, (p >> 2) + 2 * n));
     this.count += n;
-    if (this.count >= this.every) { this.count = 0; this.port.postMessage({ t: 'p', tt: this.vo.map((o) => o.t[0]), g: this.vo.map((o) => o.gv) }); }
+    if (this.count >= this.every) {
+      this.count = 0;
+      const tt = [], g = [];
+      for (let i = 0; i < VMAX; i++) { tt.push(x.gt_t0(i)); g.push(x.gt_gv(i)); }
+      this.port.postMessage({ t: 'p', tt, g });
+    }
     return true;
   }
 }
