@@ -4,6 +4,8 @@
 // (центр спектра), вверх-вниз: веер раскрывается — гармоники растягиваются в негармонику (колокол). Тап по лучу — заслонка, гармоника
 // гаснет. Держишь отверстие или призму — плашка. FX: scintilla (гармоники мерцают), impar (только нечётные — к квадрату), spread, hall.
 // Яркость луча — громкость его гармоники; пятна на стене справа — спектр. Солнце — карта.
+// Моторчик: тап по призме — она сама качается, веер метёт по стене вверх-вниз. На стене висят хрустальные подвески (тап у стены —
+// повесить/снять): луч задел подвеску — она звенит его гармоникой (яркие лучи — громче, заслонённые и тёмные молчат). Свет — ритм.
 (() => {
   'use strict';
   const T = window.T2D;
@@ -16,8 +18,11 @@
   const noteName = (st) => { const m = Math.round(st); return `${NOTES[((m % 12) + 12) % 12]}${Math.floor((m + 9) / 12) + 1}`; };
 
   // ---------- состояние ----------
-  const st = { on: false, semi: 12, rot: 0, stretch: 0, width: 0.9, lvl: 0.8 };    // semi — от 55 Гц; rot −1…1 — центр спектра; stretch 0…1
+  const st = { on: false, semi: 12, rot: 0, stretch: 0, width: 0.9, lvl: 0.8, motor: false, speed: 0.35, ph: 0 };   // motor — призма качается сама; speed 0…1 — период 25…1 с    // semi — от 55 Гц; rot −1…1 — центр спектра; stretch 0…1
   const blocked = new Array(NH).fill(false);
+  const pend = [];                                      // подвески: {u (−1…1 по высоте полосы), last [время удара по каждому лучу], flash, k}
+  const PMAX = 8;
+  const motorHz = () => 0.04 * 25 ** st.speed;
   const fx = { scintilla: 0.15, impar: 0, spread: 0.5, hall: 0.4 };
   const semiOf = () => (T.scaleOn ? T.snapSemi(st.semi + 24) - 24 : st.semi);
   const f0 = () => 55 * 2 ** (semiOf() / 12);
@@ -41,10 +46,11 @@
     const wallX = cx - Ws / 2 + 64, railT = top + 70, railB = bot - 70, screenX = cx + Ws / 2 - 14;
     const holeY = railB - ((st.semi + 12) / 36) * (railB - railT);                // выше — выше
     const px = cx - Ws * 0.08, py = (top + bot) / 2 + 10, ps = Math.min(48, Ws * 0.13);
-    return { W, H, top, bot, cx, Ws, wallX, railT, railB, screenX, holeY, px, py, ps, sun: { x: 0, y: top - 4, r: 58 } };
+    const band = Math.min((bot - top) / 2 - 60, (screenX - px) * Math.tan(0.62));   // полоса стены, по которой метёт веер
+    return { band, W, H, top, bot, cx, Ws, wallX, railT, railB, screenX, holeY, px, py, ps, sun: { x: 0, y: top - 4, r: 58 } };
   }
   function rays(G) {                                    // концы лучей на стене: веер вокруг направления, которое задаёт поворот
-    const out = [], ax = G.px + G.ps * 0.35, ay = G.py, L = G.screenX - ax, spread = 0.05 + 0.05 * st.stretch, dir = st.rot * 0.35;
+    const out = [], ax = G.px + G.ps * 0.35, ay = G.py, L = G.screenX - ax, spread = 0.05 + 0.05 * st.stretch, dir = st.rot * 0.6;
     for (let k = 0; k < NH; k++) { const a = dir + (k - (NH - 1) / 2) * spread * 0.32; out.push({ x0: ax, y0: ay, x1: G.screenX, y1: ay + Math.tan(a) * L }); }
     return out;
   }
@@ -67,7 +73,7 @@
     bus.live = on;
     if (on) bus.out.connect(bus.input); else bus.out.disconnect();
   }
-  setInterval(() => { if (!bus) return; if (st.on) lastSound = performance.now(); else if (performance.now() - lastSound > 9000) { setLive(false); stopOsc(); } }, 1000);
+  setInterval(() => { if (!bus) return; if (st.on || performance.now() - lastRing < 2500) lastSound = performance.now(); else if (performance.now() - lastSound > 9000) { setLive(false); stopOsc(); } }, 1000);
   function startOsc() {
     if (osc || !actx) return;
     osc = [];
@@ -95,6 +101,35 @@
       gainsNow[k] = st.on ? v.a * shimmer[k] : 0;
     }
   }
+  let lastRing = 0;
+  function ring(k, p, v) {                              // подвеска звенит гармоникой луча: синус и стеклянный призвук 2.76, звон ~1.6 с
+    if (!actx || !bus) return;
+    setLive(true); lastRing = lastSound = performance.now();
+    const t = actx.currentTime, f = Math.min(9000, fk(k) * 2), env = actx.createGain(), pn = actx.createStereoPanner(), a = (0.05 + 0.1 * v) * st.lvl;
+    pn.pan.value = clamp(p.u * 0.6 * fx.spread, -1, 1);
+    env.gain.setValueAtTime(0, t); env.gain.linearRampToValueAtTime(a, t + 0.003); env.gain.exponentialRampToValueAtTime(0.0005, t + 1.6); env.gain.linearRampToValueAtTime(0, t + 1.65);
+    env.connect(pn).connect(bus.pre);
+    for (const [m, g] of [[1, 1], [2.76, 0.22]]) { if (f * m > actx.sampleRate * 0.45) continue; const o = actx.createOscillator(), gg = actx.createGain(); o.frequency.value = f * m; gg.gain.value = g; o.connect(gg).connect(env); o.start(t); o.stop(t + 1.7); }
+    setTimeout(() => pn.disconnect(), 1900);
+    p.flash = performance.now(); p.k = k; rings++;
+  }
+  let rings = 0, prevY = null;
+  function sweep(now) {                                 // луч пересёк подвеску — звон; только лучи, которые видно (громкость > 12 % от самого яркого)
+    const G = geo(), R = rays(G), ys = R.map((r) => r.y1);
+    if (prevY && st.on && pend.length) {
+      const a = gainsNow, amax = Math.max(1e-6, ...a);
+      for (const p of pend) {
+        const y = G.py + p.u * G.band;
+        for (let k = 0; k < NH; k++) {
+          const v = a[k] / amax;
+          if (blocked[k] || v < 0.12 || prevY[k] === ys[k] || (prevY[k] - y) * (ys[k] - y) > 0) continue;
+          if (now - (p.lastAny || 0) < 220) continue;      // одна подвеска — одна нота за проход веера, не глиссандо
+          p.last[k] = now; p.lastAny = now; ring(k, p, v);
+        }
+      }
+    }
+    prevY = ys;
+  }
   function applyFx() {
     if (!bus) return;
     const t = actx.currentTime;
@@ -102,7 +137,11 @@
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 5)), t, 0.05);
     update();
   }
+  let tickAt = 0;
   function tick(now) {
+    const dt = tickAt ? Math.min(0.1, (now - tickAt) / 1000) : 0; tickAt = now;
+    if (st.motor && st.on) { st.ph = (st.ph + dt * motorHz()) % 1; st.rot = Math.sin(st.ph * TAU) * 0.95; update(); }   // моторчик качает призму
+    sweep(now);
     if (now - shAt > 70) {                              // scintilla: каждая гармоника случайно приседает, плавно
       shAt = now;
       for (let k = 0; k < NH; k++) shimmer[k] += ((1 - fx.scintilla * Math.random() ** 1.5) - shimmer[k]) * 0.5;
@@ -110,7 +149,7 @@
     }
     for (const t of touches.values()) if ((t.kind === 'hole' || t.kind === 'prism') && !t.moved && !t.sheet && now - t.t0 > T.HOLD_MS) { t.sheet = true; t.kind === 'hole' ? holeSheet() : prismSheet(); }
   }
-  const sounding = () => st.on;
+  const sounding = () => st.on || performance.now() - lastRing < 2000;
 
   // ---------- касания ----------
   const touches = new Map();
@@ -123,7 +162,12 @@
   function down(f) {
     const G = geo(), now = performance.now();
     if (Math.abs(f.x - G.wallX) < 30 && f.y > G.railT - 30 && f.y < G.railB + 30) { touches.set(f.id, { kind: 'hole', y0: f.y, semi0: st.semi, t0: now, moved: false }); return; }
-    if (Math.hypot(f.x - G.px, f.y - G.py) < G.ps * 1.1) { touches.set(f.id, { kind: 'prism', x0: f.x, y0: f.y, rot0: st.rot, str0: st.stretch, t0: now, moved: false, axis: null }); return; }
+    if (Math.hypot(f.x - G.px, f.y - G.py) < G.ps * 1.1) { touches.set(f.id, { kind: 'prism', x0: f.x, y0: f.y, rot0: st.rot, str0: st.stretch, sp0: st.speed, t0: now, moved: false, axis: null }); return; }
+    if (f.x > G.screenX - 34 && f.x < G.screenX + 12 && Math.abs(f.y - G.py) < G.band + 12) {   // у стены: повесить подвеску или снять
+      const u = clamp((f.y - G.py) / G.band, -1, 1), near = pend.find((p) => Math.abs((p.u - u) * G.band) < 14);
+      if (near) pend.splice(pend.indexOf(near), 1); else if (pend.length < PMAX) pend.push({ u, last: [], flash: 0, k: 0 });
+      touches.set(f.id, { kind: 'none' }); return;
+    }
     const k = rayAt(G, f.x, f.y);
     if (k >= 0 && st.on) { blocked[k] = !blocked[k]; update(true); touches.set(f.id, { kind: 'none' }); return; }   // заслонка
     touches.set(f.id, { kind: 'none' });
@@ -140,14 +184,15 @@
       const dx = f.x - t.x0, dy = f.y - t.y0;
       if (!t.moved && Math.hypot(dx, dy) > 8) { t.moved = true; t.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'; }
       if (!t.moved) return;
-      if (t.axis === 'x') st.rot = clamp(t.rot0 + dx / 140, -1, 1); else st.stretch = clamp(t.str0 + dy / 160);
+      if (t.axis === 'x') { if (st.motor) st.speed = clamp(t.sp0 + dx / 200); else st.rot = clamp(t.rot0 + dx / 140, -1, 1); } else st.stretch = clamp(t.str0 + dy / 160);   // с моторчиком вбок — скорость
       update();
     }
   }
   function up(f) {
     const t = touches.get(f.id);
     touches.delete(f.id);
-    if (t && t.kind === 'hole' && !t.moved && !t.sheet && performance.now() - t.t0 < 300) (st.on ? lightOff : lightOn)();   // тап — ставень открыть/закрыть
+    if (t && t.kind === 'hole' && !t.moved && !t.sheet && performance.now() - t.t0 < 300) (st.on ? lightOff : lightOn)();
+    if (t && t.kind === 'prism' && !t.moved && !t.sheet && performance.now() - t.t0 < 300) { st.motor = !st.motor; if (st.motor) { st.ph = Math.asin(clamp(st.rot / 0.95, -1, 1)) / TAU; if (!st.on) lightOn(); } }   // тап — моторчик   // тап — ставень открыть/закрыть
   }
   function holeSheet() {
     T.openSheet({
@@ -162,11 +207,11 @@
   function prismSheet() {
     T.openSheet({
       title: 'prisma', hint: 'tap outside to close',
-      rows: [{ key: 'rot', label: 'colour' }, { key: 'stretch', label: 'stretch' }, { key: 'width', label: 'width' }],
-      lfo: { id: 'prisma-prism', keys: ['rot', 'stretch', 'width'], shapes: 'random' },
+      rows: [{ key: 'rot', label: 'colour' }, { key: 'stretch', label: 'stretch' }, { key: 'width', label: 'width' }, { key: 'speed', label: 'motor' }],
+      lfo: { id: 'prisma-prism', keys: ['rot', 'stretch', 'width', 'speed'], shapes: 'random' },
       get: (k) => (k === 'rot' ? (st.rot + 1) / 2 : st[k]),
       set: (k, v) => { if (k === 'rot') st.rot = v * 2 - 1; else st[k] = v; update(); },
-      text: (k) => (k === 'rot' ? `harmonic ${Math.round(2 ** center())}` : k === 'stretch' ? (st.stretch < 0.02 ? 'harmonic' : `${Math.round(st.stretch * 100)}%`) : `${(0.25 + st.width * 1.6).toFixed(1)} oct`),
+      text: (k) => (k === 'speed' ? `${st.motor ? '' : 'off · '}${(1 / motorHz()).toFixed(1)} s` : k === 'rot' ? `harmonic ${Math.round(2 ** center())}` : k === 'stretch' ? (st.stretch < 0.02 ? 'harmonic' : `${Math.round(st.stretch * 100)}%`) : `${(0.25 + st.width * 1.6).toFixed(1)} oct`),
     });
   }
 
@@ -225,7 +270,16 @@
     c.strokeStyle = ink(0.25); c.beginPath(); for (let k = 0; k < 3; k++) { const ang = -Math.PI / 2 + (k / 3) * TAU; k ? c.lineTo(Math.cos(ang) * (G.ps - 6), Math.sin(ang) * (G.ps - 6)) : c.moveTo(Math.cos(ang) * (G.ps - 6), Math.sin(ang) * (G.ps - 6)); } c.closePath(); c.stroke();
     c.restore();
     if (held && held.kind === 'hole') T.mapText(`${noteName(semiOf())} · ${Math.round(f0())} Hz`, hx + 16, hy - 16, 13, 0.9, 'left');
-    if (held && held.kind === 'prism') { T.mapText(`harmonic ${Math.round(2 ** center())}`, G.px, G.py - G.ps - 26, 13, 0.9, 'center'); T.mapText(st.stretch < 0.02 ? 'harmonia' : `stretch ${Math.round(st.stretch * 100)}%`, G.px, G.py - G.ps - 11, 11, 0.6, 'center'); }
+    if (held && held.kind === 'prism' && st.motor) T.mapText(`motor ${(1 / motorHz()).toFixed(1)} s`, G.px, G.py - G.ps - 26, 13, 0.9, 'center');
+    else if (held && held.kind === 'prism') { T.mapText(`harmonic ${Math.round(2 ** center())}`, G.px, G.py - G.ps - 26, 13, 0.9, 'center'); T.mapText(st.stretch < 0.02 ? 'harmonia' : `stretch ${Math.round(st.stretch * 100)}%`, G.px, G.py - G.ps - 11, 11, 0.6, 'center'); }
+    for (const p of pend) {                             // подвески: нить с потолка, хрусталь-ромб; вспыхивают цветом луча
+      const x = G.screenX - 12, y = G.py + p.u * G.band, fl = Math.max(0, 1 - (now - p.flash) / 900);
+      c.strokeStyle = ink(0.2); c.beginPath(); c.moveTo(x, G.top + 40); c.lineTo(x, y - 7); c.stroke();
+      if (fl > 0) T.glowAt(x, y, 22, 0.35 * fl);
+      c.fillStyle = fl > 0 ? `${hue(p.k)}${0.35 + 0.6 * fl})` : BGC; c.strokeStyle = fl > 0 ? `${hue(p.k)}0.95)` : ink(0.75);
+      c.beginPath(); c.moveTo(x, y - 7); c.lineTo(x + 4, y); c.lineTo(x, y + 9); c.lineTo(x - 4, y); c.closePath(); c.fill(); c.stroke();
+    }
+    if (st.motor && st.on) { c.strokeStyle = ink(0.35); c.setLineDash([2, 4]); c.beginPath(); c.arc(G.px, G.py, G.ps + 12, -0.6, 0.6); c.stroke(); c.setLineDash([]); }   // моторчик — дуга хода
     if (!noSun) { c.save(); c.beginPath(); c.rect(0, 0, G.wallX - 6, G.H); c.clip(); T.sunGlyph(c, G.sun.x, G.sun.y, 0, Math.PI / 2, 1.2, now, INK, BGC); c.restore(); }
   }
 
@@ -241,6 +295,8 @@
     const R = Math.random;
     st.semi = [-5, 0, 3, 5, 7, 12][Math.floor(R() * 6)]; st.rot = R() * 1.6 - 0.8; st.stretch = R() < 0.6 ? 0 : R() * 0.7; st.width = 0.3 + R() * 0.7;
     for (let k = 0; k < NH; k++) blocked[k] = k > 0 && R() < 0.2;
+    pend.length = 0; const n = 3 + Math.floor(R() * 3); for (let i = 0; i < n; i++) pend.push({ u: R() * 1.8 - 0.9, last: [], flash: 0, k: 0 });
+    st.motor = true; st.speed = 0.25 + R() * 0.4;
     lightOn();
   }
   const prisma = {
@@ -249,13 +305,14 @@
     fx: fxw,
     legend: [['tap', 'tap the hole in the shutter', 'light on / off — the beam sounds'], ['up', 'drag the hole up or down', 'pitch'],
       ['drag', 'drag the prism sideways', 'which harmonics are bright'], ['up', 'drag the prism up or down', 'the fan opens — a bell'],
-      ['tap', 'tap a ray', 'a shutter — that harmonic goes dark'], ['hold', 'hold the hole or the prism', 'its sheet'], ['tap', 'tap the sun', 'map of worlds']],
+      ['tap', 'tap a ray', 'a shutter — that harmonic goes dark'], ['tap', 'tap the prism', 'motor: it rocks by itself, the fan sweeps the wall'],
+      ['tap', 'tap by the right wall', 'hang a crystal — a ray rings it with its harmonic'], ['hold', 'hold the hole or the prism', 'its sheet'], ['tap', 'tap the sun', 'map of worlds']],
     build, tick, draw, down, move, up, dice,
-    clear() { blocked.fill(false); lightOff(); },
-    snapshot: () => JSON.stringify({ st, b: blocked, fx }),
-    restore(js) { const s = JSON.parse(js); Object.assign(st, s.st); s.b.forEach((v, k) => (blocked[k] = v)); Object.assign(fx, s.fx); applyFx(); (st.on ? lightOn : lightOff)(); },
+    clear() { blocked.fill(false); pend.length = 0; st.motor = false; lightOff(); },
+    snapshot: () => JSON.stringify({ st, b: blocked, p: pend.map((q) => q.u), fx }),
+    restore(js) { const s = JSON.parse(js); Object.assign(st, s.st); s.b.forEach((v, k) => (blocked[k] = v)); pend.length = 0; for (const u of s.p || []) pend.push({ u, last: [], flash: 0, k: 0 }); Object.assign(fx, s.fx); applyFx(); (st.on ? lightOn : lightOff)(); },
     sounding, mapShot(on) { noSun = on; },
   };
   T.registerWorld(17, prisma);
-  window.t2d.prisma = { st, blocked, fx, geo, rays: () => rays(geo()), amps, f0, fk, setFx: (k, v) => fxw.set(k, v), get gains() { return gainsNow; }, get osc() { return !!osc; } };
+  window.t2d.prisma = { st, blocked, pend, get rings() { return rings; }, fx, geo, rays: () => rays(geo()), amps, f0, fk, setFx: (k, v) => fxw.set(k, v), get gains() { return gainsNow; }, get osc() { return !!osc; } };
 })();

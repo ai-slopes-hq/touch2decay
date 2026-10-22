@@ -1522,6 +1522,17 @@ async def sc_prisma(p):                            # Prisma: отверстие 
     r = await p.js('()=>t2d.prisma.rays()[4]'); x = r['x0'] + (r['x1'] - r['x0']) * 0.75; y = r['y0'] + (r['y1'] - r['y0']) * 0.75
     await p.tap(x, y); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>t2d.prisma.blocked[4]'), 'tap a ray — its shutter'
+    await p.js("()=>t2d.prisma.blocked.fill(false)")
+    G = await p.js('()=>t2d.prisma.geo()')
+    for u in (-0.5, 0.2, 0.6): await p.tap(G['screenX'] - 12, G['py'] + u * G['band']); await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.prisma.pend.length') == 3, 'tap by the wall — crystals hang'
+    await p.tap(G['px'], G['py']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.prisma.st.motor'), 'tap the prism — motor'
+    await p.js("()=>{t2d.prisma.st.speed=0.8}"); await p.pg.wait_for_timeout(5000)
+    rn = await p.js('()=>t2d.prisma.rings'); print('  crystals rung:', rn); assert rn >= 3, f'the sweeping fan rings the crystals: {rn}'
+    await p.shot('prisma-motor')
+    await p.tap(G['px'], G['py']); await p.pg.wait_for_timeout(200)
+    assert not await p.js('()=>t2d.prisma.st.motor'), 'tap again — motor stops'
     await p.hold(G['px'], G['py'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold the prism — its sheet'
     await p.shot('prisma-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
@@ -1556,6 +1567,20 @@ async def sc_vitrea(p):                            # Harmonica vitrea: трёш�
     assert await p.js('()=>t2d.vitrea.glasses[4].pin'), 'double-tap a rim — it sings by itself'
     lv = await p.js('()=>T2D.level'); print('  vitrea level, one glass by itself:', round(lv, 3)); assert lv > 0.01, f'pinned glass is heard: {lv}'
     await p.shot('vitrea')
+    await p.tap(x4, ry); await p.pg.wait_for_timeout(90); await p.tap(x4, ry); await p.pg.wait_for_timeout(300)
+    xs = [G['gl'][k]['x'] for k in (0, 1, 2)]
+    pid = await p.hold(xs[0], ry, ms=40)
+    for i in range(3):
+        for j in range(6): await p.drag(pid, xs[i] - 8 if j % 2 else xs[i] + 8, ry, xs[i] + 8 if j % 2 else xs[i] - 8, ry, steps=3)
+        if i < 2: await p.drag(pid, xs[i], ry, xs[i + 1], ry, steps=5)
+    await p.up(); await p.pg.wait_for_timeout(200)
+    lp = await p.js('()=>t2d.vitrea.loop && t2d.vitrea.loop.seq.map(q=>q.k)'); print('  finger path:', lp); assert lp == [0, 1, 2], f'rub rim to rim — a path loops: {lp}'
+    await p.pg.wait_for_timeout(1500); en = await p.js('()=>Math.max(...t2d.vitrea.glasses.slice(0,3).map(g=>g.en))'); assert en > 0.2, f'the ghost rubs the path: {en}'
+    await p.tap(195, G['rimY'] - 150); await p.pg.wait_for_timeout(3500)
+    dn = await p.js('()=>t2d.vitrea.drops'); print('  raindrops landed:', dn); assert dn >= 2 and await p.js('()=>t2d.vitrea.fx.pluvia') > 0, f'tap the sky — rain: {dn}'
+    await p.shot('vitrea-rain')
+    await p.tap(195, G['rimY'] - 150); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.vitrea.fx.pluvia') == 0, 'tap the sky again — rain stops'
     await p.hold(G['gl'][1]['x'], G['rimY'] + G['bh'] * 0.5, ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold a glass — its sheet'
     await p.shot('vitrea-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)

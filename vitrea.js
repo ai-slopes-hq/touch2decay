@@ -4,6 +4,9 @@
 // по ободу бежит огонёк), ещё раз — отпустить. Тап по бокалу — звон. Тянешь в бокале вверх-вниз — вода: больше воды — ниже (с ладом —
 // по ступеням). Держишь бокал — плашка (water, decay, level). FX: crystal (верхние моды), tremor (биения), spread, hall. Луна — карта.
 // Картинка: обод светится громкостью, на воде — рябь (стоячие волны), пока бокал поёт.
+// Дождь (тап по небу, сила — FX pluvia): капли падают в бокалы — звон, вода прибывает, бокалы медленно опускаются по высоте.
+// Путь пальца: ведёшь по ободу и переходишь на другие бокалы, не отрывая, — отпустил: призрак повторяет этот путь по кругу, с теми же
+// длительностями (мелодия трением). Новый путь заменяет старый, корзина — стирает.
 (() => {
   'use strict';
   const T = window.T2D;
@@ -18,7 +21,11 @@
 
   // ---------- состояние ----------
   const glasses = Array.from({ length: NG }, (_, k) => ({ k, w: 0.15 + 0.1 * (k % 3), dec: 0.55, lvl: 0.8, pin: false, exc: 0, en: 0, sp: 0, ph: Math.random() * TAU }));
-  const fx = { crystal: 0.4, tremor: 0.3, spread: 0.5, hall: 0.5 };
+  const fx = { crystal: 0.4, tremor: 0.3, pluvia: 0, spread: 0.5, hall: 0.5 };
+  const drops = [];                                     // капли в полёте {k, x, t0, dur}; брызги — {x, y, t}
+  const splashes = [];
+  let rainLast = 0.35, dropAt = 0, dropsN = 0;
+  let loop = null;                                      // путь пальца: {seq [{k, d}], total, t0, cur}
   const semiOf = (g) => { const s = DRY[g.k] - 8 * g.w ** 1.3; return T.scaleOn ? T.snapSemi(s) : s; };
   const freqOf = (g) => 55 * 2 ** (semiOf(g) / 12);
   const t60 = (g) => 0.6 + 6 * g.dec ** 1.5;                                   // звон, с
@@ -114,9 +121,10 @@
   }
   function down(f) {
     const G = geo(), now = performance.now(), hit = glassAt(G, f.x, f.y);
+    if (!hit && f.y < G.rimY - 30 && f.y > G.top + 30) { wake(); setRain(fx.pluvia > 0.01 ? 0 : rainLast); touches.set(f.id, { kind: 'none' }); return; }   // тап по небу — дождь
     if (!hit) { touches.set(f.id, { kind: 'none' }); return; }
     wake();
-    touches.set(f.id, { kind: hit.zone, g: hit.g, x0: f.x, y0: f.y, x: f.x, y: f.y, t: now, t0: now, moved: false, dist: 0 });
+    touches.set(f.id, { kind: hit.zone, g: hit.g, x0: f.x, y0: f.y, x: f.x, y: f.y, t: now, t0: now, moved: false, dist: 0, seq: [], segT: now });
   }
   function move(f) {
     const t = touches.get(f.id);
@@ -124,6 +132,13 @@
     const now = performance.now(), d = Math.hypot(f.x - t.x, f.y - t.y), dt = Math.max(8, now - t.t);
     t.dist += d; t.x = f.x; t.y = f.y; t.t = now;
     if (t.dist > 8) t.moved = true;
+    if (t.kind === 'rim') {                             // перешёл на обод другого бокала — путь пальца продолжается
+      const G = geo(), h = glassAt(G, f.x, f.y);
+      if (h && h.zone === 'rim' && h.g !== t.g) {
+        if (!t.g.pin) excite(t.g, 0);
+        t.seq.push({ k: t.g.k, d: clamp(now - t.segT, 120, 3000) }); t.segT = now; t.g = h.g;
+      }
+    }
     if (t.kind === 'rim') { const v = (d / dt) * 1000; t.g.sp = Math.max(t.g.sp * 0.6, clamp(v / 700) ** 0.7); if (!t.g.pin) excite(t.g, 0.15 + 0.85 * t.g.sp); }   // быстрее ведёшь — громче
     else if (t.kind === 'body' && t.moved) {
       const G = geo(), w = clamp((G.rimY + G.bh - f.y) / G.bh, 0, WMAX);
@@ -135,6 +150,11 @@
     touches.delete(f.id);
     if (!t || t.kind === 'none' || t.sheet) return;
     const now = performance.now(), quick = !t.moved && now - t.t0 < 300;
+    if (t.kind === 'rim' && t.seq.length) {             // путь через несколько бокалов — призрак повторяет его по кругу
+      t.seq.push({ k: t.g.k, d: clamp(now - t.segT, 120, 3000) });
+      if (!t.g.pin) excite(t.g, 0);
+      setLoop(t.seq); return;
+    }
     if (t.kind === 'rim') {
       if (!t.g.pin) excite(t.g, 0);
       if (quick) {
@@ -143,15 +163,50 @@
       }
     } else if (quick) ping(t.g, 0.7);
   }
+  function setLoop(seq) {
+    if (loop) for (const g of glasses) if (!g.pin) excite(g, 0);
+    loop = seq && seq.length > 1 ? { seq: seq.map((q) => ({ ...q })), total: seq.reduce((a, q) => a + q.d, 0), t0: performance.now(), cur: -1 } : null;
+    if (loop) wake();
+  }
+  function setRain(v) { if (v > 0.01) rainLast = v; fx.pluvia = v; if (v > 0.01) wake(); }
+  function rainTick(now, G) {                           // капли: чаще с pluvia; долетела — звон и вода прибыла
+    if (fx.pluvia > 0.01 && now > dropAt) {
+      dropAt = now + (1000 / (0.4 + 7 * fx.pluvia ** 2)) * (0.3 + 1.4 * Math.random());
+      const k = Math.floor(Math.random() * NG), x = G.gl[k].x + (Math.random() - 0.5) * G.bw * 0.5;
+      drops.push({ k, x, t0: now, dur: 650 + Math.random() * 250 });
+    }
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const d = drops[i];
+      if (now - d.t0 < d.dur) continue;
+      drops.splice(i, 1); dropsN++;
+      const g = glasses[d.k]; ping(g, 0.2 + 0.3 * Math.random());
+      g.w = Math.min(WMAX, g.w + 0.004 * (1 + fx.pluvia)); applyGlass(g);
+      splashes.push({ x: d.x, y: waterY(G, g), t: now });
+    }
+    if (splashes.length > 20) splashes.splice(0, splashes.length - 20);
+  }
+  function loopTick(now) {                              // призрак идёт по пути: трёт нужный бокал столько же, сколько ты
+    if (!loop) return;
+    let e = (now - loop.t0) % loop.total, i = 0;
+    while (e > loop.seq[i].d) { e -= loop.seq[i].d; i++; }
+    if (i === loop.cur) return;
+    const prev = loop.cur >= 0 ? glasses[loop.seq[loop.cur].k] : null, g = glasses[loop.seq[i].k];
+    if (prev && prev !== g && !prev.pin && !isHeld(prev)) excite(prev, 0);
+    if (!g.pin) excite(g, 0.6);
+    loop.cur = i;
+  }
+  const isHeld = (g) => [...touches.values()].some((t) => t.kind === 'rim' && t.g === g);
   function togglePin(g) { g.pin = !g.pin; wake(); excite(g, g.pin ? 0.55 : 0); }
   function tick(now, dt) {
     const d = Math.min(0.1, dt || 0.016);                  // dt хоста — в секундах
+    const G0 = geo(); rainTick(now, G0); loopTick(now);
     for (const g of glasses) {
       g.sp *= Math.exp(-d / 0.08);                      // палец встал — трение гаснет
       const held = [...touches.values()].some((t) => t.kind === 'rim' && t.g === g);
       if (!g.pin && held && g.exc > 0.01) excite(g, 0.1 + 0.9 * g.sp);
+      const ghost = loop && loop.cur >= 0 && loop.seq[loop.cur].k === g.k;
       if (g.pin) { const v = 0.5 + 0.08 * Math.sin(now * 0.0009 + g.ph); if (Math.abs(v - g.exc) > 0.02) excite(g, v); }   // палец-призрак
-      const target = g.exc > 0.02 ? 0.25 + 0.75 * g.exc : 0;
+      const target = g.exc > 0.02 || ghost ? 0.25 + 0.75 * g.exc : 0;
       g.en = target > g.en ? g.en + (target - g.en) * Math.min(1, d / 0.25) : g.en * Math.exp(-d / (t60(g) / 6.9));
     }
     for (const t of touches.values()) if ((t.kind === 'body' || t.kind === 'rim') && !t.moved && !t.sheet && now - t.t0 > T.HOLD_MS) { t.sheet = true; if (!t.g.pin) excite(t.g, 0); glassSheet(t.g); }
@@ -166,7 +221,7 @@
       text: (k) => (k === 'w' ? `${noteName(semiOf(g))} · ${Math.round(freqOf(g))} Hz` : k === 'dec' ? `${t60(g).toFixed(1)} s` : `${Math.round(g.lvl * 100)}%`),
     });
   }
-  const sounding = () => glasses.some((g) => g.pin || g.en > 0.01 || g.exc > 0.01);
+  const sounding = () => !!loop || fx.pluvia > 0.01 || glasses.some((g) => g.pin || g.en > 0.01 || g.exc > 0.01);
 
   // ---------- рисование ----------
   const ink = (a) => `rgba(${INK},${a})`;
@@ -218,21 +273,32 @@
     drawMoon(c, G);
     const held = new Set([...touches.values()].filter((t) => t.kind === 'body' && t.moved).map((t) => t.g));
     for (const g of glasses) drawGlass(c, G, g, now, held.has(g));
+    c.strokeStyle = rgba(WATER, 0.9); c.lineWidth = 1.2;   // капли — короткие штрихи, брызги — кружки на воде
+    for (const d of drops) { const k = (now - d.t0) / d.dur, y = G.top + 30 + (waterY(G, glasses[d.k]) - G.top - 30) * k * k; c.beginPath(); c.moveTo(d.x, y - 14); c.lineTo(d.x, y); c.stroke(); }
+    for (const q of splashes) { const k = (now - q.t) / 600; if (k > 1) continue; c.strokeStyle = rgba(WATER, 0.6 * (1 - k)); c.beginPath(); c.ellipse(q.x, q.y, 3 + 10 * k, 1 + 2 * k, 0, 0, TAU); c.stroke(); }
+    if (loop) {                                         // путь пальца — нить между ободами; огонёк — где сейчас призрак
+      c.strokeStyle = rgba(MOON, 0.25); c.setLineDash([2, 4]); c.beginPath();
+      loop.seq.forEach((q, i) => { const x = G.gl[q.k].x, y = G.rimY - 6; if (i) { const px = G.gl[loop.seq[i - 1].k].x; c.quadraticCurveTo((px + x) / 2, G.rimY - 40, x, y); } else c.moveTo(x, y); });
+      c.stroke(); c.setLineDash([]);
+      if (loop.cur >= 0) { const q = loop.seq[loop.cur], a = now * 0.006; c.fillStyle = rgba(MOON, 0.95); c.beginPath(); c.arc(G.gl[q.k].x + Math.cos(a) * G.bw / 2, G.rimY + Math.sin(a) * 3.5, 2.8, 0, TAU); c.fill(); }
+    }
   }
 
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
-    sectors: [{ key: 'crystal', label: 'crystal', ang: deg(170) }, { key: 'tremor', label: 'tremor', ang: deg(140) }, { key: 'spread', label: 'spread', ang: deg(110) }, { key: 'hall', label: 'hall', ang: deg(80) }],
-    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyAll(); }, text: (k) => `${Math.round(fx[k] * 100)}%`,
-    lfo: { keys: ['crystal', 'tremor', 'spread', 'hall'], shapes: 'random' },
+    sectors: [{ key: 'crystal', label: 'crystal', ang: deg(180) }, { key: 'tremor', label: 'tremor', ang: deg(155) }, { key: 'pluvia', label: 'pluvia', ang: deg(130) }, { key: 'spread', label: 'spread', ang: deg(105) }, { key: 'hall', label: 'hall', ang: deg(80) }],
+    get: (k) => fx[k], set: (k, v) => { if (k === 'pluvia') setRain(v); else fx[k] = v; applyAll(); }, text: (k) => (k === 'pluvia' && fx.pluvia <= 0.01 ? 'off' : `${Math.round(fx[k] * 100)}%`),
+    lfo: { keys: ['crystal', 'tremor', 'pluvia', 'spread', 'hall'], shapes: 'random' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyAll(); },
   };
   function dice() {                                     // вода вразброс, один-два бокала поют сами, ещё один звенит
     const R = Math.random;
     for (const g of glasses) { g.w = R() * WMAX; g.pin = false; excite(g, 0); g.dec = 0.4 + R() * 0.5; applyGlass(g); }
     const a = Math.floor(R() * NG), b = (a + 2 + Math.floor(R() * 3)) % NG;
-    togglePin(glasses[a]); if (R() < 0.7) togglePin(glasses[b]);
+    setLoop(null); togglePin(glasses[a]); if (R() < 0.7) togglePin(glasses[b]);
+    if (R() < 0.6) { const seq = []; let k = Math.floor(R() * NG); for (let i = 0; i < 3 + Math.floor(R() * 3); i++) { seq.push({ k, d: 300 + Math.floor(R() * 4) * 250 }); k = (k + 1 + Math.floor(R() * (NG - 1))) % NG; } setLoop(seq); }
+    setRain(R() < 0.5 ? 0.15 + R() * 0.3 : 0);
     ping(glasses[(b + 1) % NG], 0.8);
   }
   const vitrea = {
@@ -240,17 +306,17 @@
     corner: { hit: (f) => { const m = geo().moon; return Math.hypot(f.x - m.x, f.y - m.y) < m.r; }, draw: () => {} },   // луна — карта
     fx: fxw,
     legend: [['drag', 'rub a rim', 'the glass sings — faster, louder'], ['tap', 'double-tap a rim', 'the finger stays: it sings by itself · again — let go'],
-      ['tap', 'tap a glass', 'it rings'], ['up', 'drag inside a glass', 'water: more — lower'], ['hold', 'hold a glass', 'its sheet: water, decay, level'], ['tap', 'tap the moon', 'map of worlds']],
+      ['tap', 'tap a glass', 'it rings'], ['drag', 'rub from rim to rim', 'a path — a ghost finger repeats it round and round'], ['tap', 'tap the sky', 'rain: drops ring the glasses, water rises'], ['up', 'drag inside a glass', 'water: more — lower'], ['hold', 'hold a glass', 'its sheet: water, decay, level'], ['tap', 'tap the moon', 'map of worlds']],
     build, tick, draw, down, move, up, dice, enter: () => {},
-    clear() { for (const g of glasses) { g.pin = false; excite(g, 0); } },
-    snapshot: () => JSON.stringify({ g: glasses.map(({ w, dec, lvl, pin }) => ({ w, dec, lvl, pin })), fx }),
+    clear() { setLoop(null); setRain(0); drops.length = 0; for (const g of glasses) { g.pin = false; excite(g, 0); } },
+    snapshot: () => JSON.stringify({ g: glasses.map(({ w, dec, lvl, pin }) => ({ w, dec, lvl, pin })), fx, loop: loop ? loop.seq : null }),
     restore(js) {
       const s = JSON.parse(js);
       s.g.forEach((q, k) => { const g = glasses[k]; Object.assign(g, { w: q.w, dec: q.dec, lvl: q.lvl, pin: false }); excite(g, 0); if (q.pin) togglePin(g); });
-      Object.assign(fx, s.fx); applyAll();
+      Object.assign(fx, s.fx); applyAll(); setLoop(s.loop || null); setRain(fx.pluvia);
     },
     sounding,
   };
   T.registerWorld(18, vitrea);
-  window.t2d.vitrea = { glasses, fx, geo, freq: freqOf, setFx: (k, v) => fxw.set(k, v), ping: (k) => ping(glasses[k]), pin: (k) => togglePin(glasses[k]), get noise() { return !!noise; } };
+  window.t2d.vitrea = { glasses, get loop() { return loop; }, get drops() { return dropsN; }, setRain, fx, geo, freq: freqOf, setFx: (k, v) => fxw.set(k, v), ping: (k) => ping(glasses[k]), pin: (k) => togglePin(glasses[k]), get noise() { return !!noise; } };
 })();
