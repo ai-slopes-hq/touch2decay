@@ -23,7 +23,7 @@ core/
   render-cli/main.cpp               сценарий сообщений (текст, stdin) → float32 L,R (stdout)
 goetia.wasm                         собранный модуль, в репозитории, рядом с worklet
 goetia-worklet.js                   тонкая обёртка над goetia.wasm, протокол сообщений прежний
-tools/ref/goetia-worklet.js         прежний JS-worklet без изменений — эталон
+tools/ref/goetia-worklet.js         прежний JS-worklet — эталон (плюс только приём тестового `sett`)
 tools/test-goetia-core.mjs          сверка эталон ↔ WASM ↔ render-cli, замер скорости
 ```
 
@@ -67,7 +67,7 @@ void   gt_set_t(int i, double t)                       // только для т
 ## Обёртка `goetia-worklet.js`
 
 - `processorOptions.wasm` — `ArrayBuffer` с байтами модуля. В конструкторе — `WebAssembly.instantiate(bytes)` (асинхронно); до готовности `process` пишет тишину, сообщения порта копятся в очереди и применяются после `gt_init(sampleRate)`.
-- Сообщения порта прежние: `{t:'voice', i, on, prog, rate, lp, lvl, legio, pan, rel, trig}`, `{t:'fx', spread, wide}`; плюс для тестов `{t:'sett', i, t}` → `gt_set_t`.
+- Сообщения порта прежние: `{t:'voice', i, on, prog, rate, lp, lvl, legio, pan, rel, trig}`, `{t:'fx', spread, wide}`; плюс для тестов `{t:'sett', i, t0}` → `gt_set_t` (поле `t0`: `t` занято типом сообщения); наружу — `{t:'ready'}` после `gt_init`.
 - `process`: `gt_process(n)` → копия из памяти WASM в `outputs[0]` (L, R; моно-выход — только L). Вид на память (`Float32Array`) пересоздаётся, если `memory.buffer` сменился.
 - Каждые `round(sampleRate / 30)` сэмплов — `{t:'p', tt:[gt_t0(i)…], g:[gt_gv(i)…]}`, как раньше.
 - Ошибка загрузки — `{t:'err', msg}` в порт, дальше тишина.
@@ -81,7 +81,7 @@ void   gt_set_t(int i, double t)                       // только для т
 **Сверка в Node** — `node --test tools/test-goetia-core.mjs`:
 
 - эталон `tools/ref/goetia-worklet.js` и новая обёртка с `goetia.wasm` грузятся в `vm` с заглушками AudioWorklet (как `tools/test-plate.mjs`); оба получают одинаковые сообщения, блоки по 128, 48 кГц;
-- сценарии: удар (`rel` 0.2) и дрон (`rel` 1); все восемь знаков, в том числе `%` и `>`; легион 1 и 4 с `spread`/`wide`; изгнание и повторный призыв (сброс `t`); смена `rate` на ходу (сглаживание); три духа сразу; `t` около 2³¹ (через `sett`, в эталон — прямой записью `o.t[j] = t + j·1777`);
+- сценарии: удар (`rel` 0.2) и дрон (`rel` 1); все восемь знаков, в том числе `%` и `>`; легион 1 и 4 с `spread`/`wide`; изгнание и повторный призыв (сброс `t`); смена `rate` на ходу (сглаживание); три духа сразу; `t` около 2³¹ (через `sett` — и в эталон, и в WASM);
 - критерий: каждый сэмпл L и R отличается не больше чем на 1e-6; метры `tt`, `g` — тоже;
 - модуль без импортов (или только с известными заглушками);
 - **render-cli**: те же сценарии текстом (`init`, `prog`, `voice`, `fx`, `sett`, `run <блоков>`) → вывод сравнивается с эталоном тем же критерием; если `core/build/render-cli` не собран — тест пропускается с пометкой;
