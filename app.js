@@ -2587,7 +2587,7 @@ const solNiger = {
 };
 registerWorld(1, solNiger);
 
-// общее для миров из других файлов (cymatica.js): регистрация и помощники рисования
+// общее для миров из других файлов (worlds/<мир>/): регистрация и помощники рисования
 // lfoClear(prefix) — снять LFO строк мира (корзина, закрытая звезда) без возврата базы
 window.T2D = {
   registerWorld, tempoFrom, transportFrom, openSheet: (spec) => { setFxSheet({ w: nav.world, spec }); }, lfoBase: (id, key) => { const e = SL.find((q) => q.id === id && q.key === key); return e ? e.base : null; }, lfoClear: (prefix) => { for (const e of [...SL]) if (e.id.startsWith(prefix)) SL.splice(SL.indexOf(e), 1); }, closeSheet: () => { setFxSheet(null); }, get sheetOpen() { return !!fxSheet; }, get link() { return { ...link }; }, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,

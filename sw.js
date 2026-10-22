@@ -1,7 +1,7 @@
 // Офлайн без залипания старой версии.
 // Код и страница — сначала из сети (мимо HTTP-кеша), кеш — только запасной вариант без сети.
 // Шрифты, иконки и гравюры не меняются — сразу из кеша.
-const CACHE = 't2d-v164';   // при выкладке менять вместе с ?v= у модулей в index.html
+const CACHE = 't2d-v165';   // при выкладке менять вместе с ?v= у модулей в index.html
 const PAGE = ['./', './index.html', './manifest.webmanifest'];
 // ES-модули — те же, что <script type="module"> в index.html, в том же порядке; host/ — их импортирует app.js
 const HOST = ['./host/util.js', './host/fonts.js', './host/draw.js', './host/scale.js', './host/registry.js', './host/undo.js', './host/audio.js',

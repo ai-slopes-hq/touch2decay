@@ -15,7 +15,7 @@ import { clamp } from './util.js';
 const WORLDS = [
   null,
   { n: 'I', title: 'Tenebrae', sub: 'orbes · strepitus' },
-  null,                                                   // II — подпись из мира cymatica.js; Cabbala снята с карты
+  null,                                                   // II — подпись из мира Cymatica (worlds/cymatica/); Cabbala снята с карты
   { n: 'III', title: 'Rosarium', sub: 'operatores quattuor' },
   { n: 'IV', title: 'Regnum', sub: 'echo et reverberatio' },
   null,                                                   // V — Inferno, подпись из inferno.js
