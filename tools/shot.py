@@ -1484,7 +1484,7 @@ async def sc_portus(p):                            # Portus: остров на �
     assert await p.js('()=>t2d.view') == 'map', 'tap the moon — map'
 
 
-async def sc_goetia(p):                            # Goetia: печать от знака к знаку — дух звучит и встаёт в треугольник; треугольник вверх — выше; плашка; тап — изгнать; четвёртый гонит старого; кубик; корзина; отмена; сосуд — карта
+async def sc_goetia(p):                            # Goetia: печать от знака к знаку — дух звучит и встаёт в треугольник; треугольник вверх — выше, влево — удары (release); плашка; тап — изгнать; четвёртый гонит старого; кубик; корзина; отмена; сосуд — карта
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(15)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 15], 'the card opens Goetia'
@@ -1504,6 +1504,12 @@ async def sc_goetia(p):                            # Goetia: печать от �
     r0 = await p.js('()=>t2d.goe.rate(t2d.goe.spirits[0])'); t = await p.js('()=>t2d.goe.tri(0)')
     pid = await p.hold(t['x'], t['y'], ms=60); await p.drag(pid, t['x'], t['y'], t['x'], t['y'] - 64, steps=8); await p.up(); await p.pg.wait_for_timeout(200)
     r1 = await p.js('()=>t2d.goe.rate(t2d.goe.spirits[0])'); assert r1 > r0 * 1.2, f'drag the triangle up — higher: {r0} -> {r1}'
+    pid = await p.hold(t['x'], t['y'], ms=60); await p.drag(pid, t['x'], t['y'], t['x'] - 130, t['y'], steps=8); await p.up(); await p.pg.wait_for_timeout(400)
+    rel = await p.js('()=>t2d.goe.spirits[0].rel'); assert rel < 0.25, f'drag the triangle left — short release: {rel}'
+    gs = []
+    for _ in range(14): gs.append(await p.js('()=>t2d.goe.gains[t2d.goe.spirits[0].slot]')); await p.pg.wait_for_timeout(45)
+    print('  strikes, voice level min/max:', round(min(gs), 3), round(max(gs), 3)); assert max(gs) > 0.05 and min(gs) < max(gs) * 0.5, f'short release — strikes, not a drone: {gs}'
+    await p.shot('goetia-strikes')
     await p.hold(t['x'], t['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold a triangle — its sheet'
     await p.shot('goetia-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)

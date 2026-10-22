@@ -3,7 +3,8 @@
 // к узлу — чертишь печать; со второго узла дух уже звучит, каждый новый узел дописывает в формулу член (t >> сдвиг) через свой знак.
 // Печать сама называет духа (один из 72), он встаёт в треугольник над кругом. Духов — до трёх, у каждого свой цвет; четвёртый
 // изгоняет самого старого. Тап по треугольнику — изгнать; тянешь вверх-вниз — выше/ниже (и тон, и ритм); держишь — плашка
-// (pitch, tone, legio, level). Узлы печати мигают своими битами: медленный сдвиг — ритм, быстрый — ровный свет; по печати бежит
+// (pitch, tone, release, legio, level); вбок — release: влево — треск и удары (на подъёме бита самого медленного узла, не чаще бита IX; четыре на круг огонька), вправо —
+// дольше, до ровного дрона. Узлы печати мигают своими битами: медленный сдвиг — ритм, быстрый — ровный свет; по печати бежит
 // огонёк — цикл самого медленного члена. FX: legio (хор расходится по фазе), echo, spread, hall. Медный сосуд в углу — карта.
 (() => {
   'use strict';
@@ -29,7 +30,7 @@
     'Andrealphus M,Cimejes M,Amdusias D,Belial R,Decarabia M,Seere P,Dantalion D,Andromalius C').split(',').map((q) => { const [n, r] = q.split(' '); return { name: n, rank: RANK[r] }; });
 
   // ---------- состояние ----------
-  const spirits = [];                                     // {slot, path [узлы], semi, tone, legio, lvl, born, t0, tAt, g}
+  const spirits = [];                                     // {slot, path [узлы], semi, tone, rel, legio, lvl, born, t0, tAt, g}
   const fx = { legio: 0.35, echo: 0.2, spread: 0.6, hall: 0.4 };
   let gains = new Array(SMAX).fill(0);
   const numOf = (path) => 1 + (path.reduce((h, k) => (h * 8 + k + 1) % 7919, path.length * 13) % 72);   // печать сама называет духа
@@ -37,6 +38,8 @@
   const semiOf = (s) => (T.scaleOn ? T.snapSemi(s.semi + 24) - 24 : s.semi);
   const rateOf = (s) => 128 * 55 * 2 ** (semiOf(s) / 12);                  // semi 0 — 7 040 отсчётов t в секунду
   const fcOf = (s) => 250 * (12000 / 250) ** s.tone;
+  const relText = (s) => { if (s.rel >= 0.97) return 'drone'; const t = 0.004 * 500 ** s.rel; return t < 1 ? `${Math.round(t * 1000)} ms` : `${t.toFixed(1)} s`; };
+  const trigOf = (s) => Math.max(9, ...s.path.map((k) => NODES[k].s));   // удар — по самому медленному члену (не чаще, чем бит IX): четыре удара на круг огонька
   const noteName = (st) => { const m = Math.round(st); return `${NOTES[((m % 12) + 12) % 12]}${Math.floor((m + 9) / 12) + 1}`; };
   function formula(path) {                                // как её читать: свёртка слева, t·(…) & 255
     if (!path.length) return '';
@@ -48,7 +51,7 @@
   // ---------- геометрия: треугольники вызова наверху, круг под ними, сосуд в углу ----------
   function geo() {
     const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, Ws = Math.min(W, (H - T.safeBot) * 0.62), cx = W / 2;
-    const ts = Math.min(Ws * 0.11, 40), triB = ts * 1.5 + 44, gap = 34;          // блок: треугольники с именами, зазор, круг, строка формулы
+    const ts = Math.min(Ws * 0.11, 40), triB = ts * 1.5 + 50, gap = 34;          // блок: треугольники с именами, зазор, круг, строка формулы
     const R = Math.max(80, Math.min(Ws / 2 - 12, (bot - 70 - top - triB - gap - 34) / 2));
     const y0 = top + Math.max(4, (bot - 70 - top - (triB + gap + 2 * R + 34)) / 2), triY = y0 + ts, cy = y0 + triB + gap + R;
     const Rn = R * 0.64;
@@ -114,7 +117,7 @@
   }
   function sendSpirit(s, on = true) {
     const sr = actx ? actx.sampleRate : 48000;
-    send({ t: 'voice', i: s.slot, on, prog: s.path.map((k) => [NODES[k].op, NODES[k].s]), rate: rateOf(s), lp: 1 - Math.exp((-TAU * fcOf(s)) / sr), lvl: s.lvl * 0.3, legio: s.legio, pan: [-0.6, 0, 0.6][s.slot] });
+    send({ t: 'voice', i: s.slot, on, prog: s.path.map((k) => [NODES[k].op, NODES[k].s]), rate: rateOf(s), lp: 1 - Math.exp((-TAU * fcOf(s)) / sr), lvl: s.lvl * 0.3, legio: s.legio, rel: s.rel, trig: trigOf(s), pan: [-0.6, 0, 0.6][s.slot] });
     if (on) { setLive(true); lastSound = performance.now(); }
   }
   function summon(path, opt = {}) {                        // дух в свободный треугольник; все заняты — уходит самый старый
@@ -122,11 +125,12 @@
     const used = new Set(spirits.map((s) => s.slot));
     let slot = [...Array(SMAX).keys()].find((k) => !used.has(k));
     if (slot == null) { const old = spirits.reduce((a, b) => (a.born < b.born ? a : b)); slot = old.slot; banish(old); }
-    const s = { slot, path: [...path], semi: 0, tone: 0.45, legio: 1, lvl: 0.8, born: performance.now() + Math.random(), t0: 0, tAt: performance.now(), ...opt };
+    const s = { slot, path: [...path], semi: 0, tone: 0.45, rel: 1, legio: 1, lvl: 0.8, born: performance.now() + ++bornSeq * 1e-3, t0: 0, tAt: performance.now(), ...opt };
     spirits.push(s); sendSpirit(s);
     return s;
   }
   function banish(s) { T.lfoClear(`goe-s${s.slot}-${s.born}`); sendSpirit(s, false); spirits.splice(spirits.indexOf(s), 1); }
+  let bornSeq = 0;                                         // порядок призыва — кто старше (born растёт строго)
   const sounding = () => spirits.length > 0;
   const tNow = (s, now) => s.t0 + (rateOf(s) * (now - s.tAt)) / 1000;
 
@@ -136,7 +140,7 @@
   function down(f) {
     start();
     const G = geo(), now = performance.now(), tri = triAt(G, f.x, f.y);
-    if (tri) { touches.set(f.id, { kind: 'tri', s: tri, y0: f.y, semi0: tri.semi, t0: now, moved: false }); return; }
+    if (tri) { touches.set(f.id, { kind: 'tri', s: tri, x0: f.x, y0: f.y, semi0: tri.semi, rel0: tri.rel, t0: now, moved: false, axis: null }); return; }
     const k = nodeAt(G, f.x, f.y);
     if (k >= 0 && !drawing) { drawing = { s: null, path: [k], x: f.x, y: f.y }; touches.set(f.id, { kind: 'seal' }); return; }
     touches.set(f.id, { kind: 'none' });
@@ -155,9 +159,11 @@
       return;
     }
     if (t.kind === 'tri' && !t.sheet) {
-      if (Math.abs(f.y - t.y0) > 8) t.moved = true;
+      const dx = f.x - t.x0, dy = f.y - t.y0;
+      if (!t.moved && Math.hypot(dx, dy) > 8) { t.moved = true; t.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'; }   // ось — по первому движению
       if (!t.moved || !spirits.includes(t.s)) return;
-      const semi = clamp(t.semi0 + Math.round((t.y0 - f.y) / 12), -12, 24);
+      if (t.axis === 'x') { const rel = clamp(t.rel0 + dx / 160); if (Math.abs(rel - t.s.rel) > 0.004) { t.s.rel = rel; sendSpirit(t.s); } return; }   // вбок — release
+      const semi = clamp(t.semi0 + Math.round(-dy / 12), -12, 24);
       if (semi !== t.s.semi) { t.s.semi = semi; sendSpirit(t.s); }
     }
   }
@@ -175,11 +181,11 @@
     const sp = spiritOf(s);
     T.openSheet({
       title: sp.name.toLowerCase(), hint: `${sp.rank} — tap outside to close`,
-      rows: [{ key: 'semi', label: 'pitch' }, { key: 'tone', label: 'tone' }, { key: 'legio', label: 'legio' }, { key: 'lvl', label: 'level' }],
-      lfo: { id: `goe-s${s.slot}-${s.born}`, keys: ['semi', 'tone', 'lvl'], shapes: 'random' },
+      rows: [{ key: 'semi', label: 'pitch' }, { key: 'tone', label: 'tone' }, { key: 'rel', label: 'release' }, { key: 'legio', label: 'legio' }, { key: 'lvl', label: 'level' }],
+      lfo: { id: `goe-s${s.slot}-${s.born}`, keys: ['semi', 'tone', 'rel', 'lvl'], shapes: 'random' },
       get: (k) => (k === 'semi' ? (s.semi + 12) / 36 : k === 'legio' ? (s.legio - 1) / 3 : s[k]),
       set: (k, v) => { if (!spirits.includes(s)) return; if (k === 'semi') s.semi = Math.round(v * 36) - 12; else if (k === 'legio') s.legio = 1 + Math.round(v * 3); else s[k] = v; sendSpirit(s); },
-      text: (k) => (k === 'semi' ? `${noteName(semiOf(s))} · ${(rateOf(s) / 1000).toFixed(1)} kHz` : k === 'tone' ? `${Math.round(fcOf(s))} Hz` : k === 'legio' ? `${s.legio}` : `${Math.round(s.lvl * 100)}%`),
+      text: (k) => (k === 'semi' ? `${noteName(semiOf(s))} · ${(rateOf(s) / 1000).toFixed(1)} kHz` : k === 'tone' ? `${Math.round(fcOf(s))} Hz` : k === 'rel' ? relText(s) : k === 'legio' ? `${s.legio}` : `${Math.round(s.lvl * 100)}%`),
     });
   }
 
@@ -264,14 +270,19 @@
     if (g > 0.05) T.glowAt(p.x, p.y, ts * 1.2, 0.18 * g);
     c.lineWidth = 1; c.strokeStyle = rgba(col, 0.55 + 0.4 * g); triPath(c, p.x, p.y, ts); c.stroke();
     c.strokeStyle = rgba(col, 0.25); triPath(c, p.x, p.y, ts + 4); c.stroke();
+    if (s.rel < 0.97) {                                  // не дрон — у основания треугольника огибающая удара: короче хвост — суше удар
+      const bx = p.x - ts * 0.87, bw = ts * 1.74, by = p.y + ts * 0.5 + 4, k = 1.5 + 22 * (1 - s.rel) ** 2;
+      c.strokeStyle = rgba(col, 0.6); c.beginPath(); c.moveTo(bx, by + 5);
+      for (let i = 0; i <= 24; i++) { const u = i / 24; c.lineTo(bx + u * bw, by + 5 - 5 * Math.exp(-k * u)); } c.stroke();
+    }
     const mr = ts * 0.4, my = p.y + ts * 0.08;
     c.strokeStyle = ink(0.3); c.beginPath(); c.arc(p.x, my, mr, 0, TAU); c.stroke();
     const mini = s.path.map((k) => { const a = -Math.PI / 2 + (k / 8) * TAU; return { x: p.x + Math.cos(a) * mr * 0.8, y: my + Math.sin(a) * mr * 0.8 }; });
     sealLine(c, mini, col, 0.85, 1);
     const sp = spiritOf(s);
-    T.mapText(sp.name, p.x, p.y + ts * 0.5 + 14, 12, 0.85, 'center');
-    T.mapText(sp.rank, p.x, p.y + ts * 0.5 + 28, 10, 0.4, 'center');
-    if (held) { c.strokeStyle = ink(0.6); c.beginPath(); c.arc(p.x, my, ts * 1.15, 0, TAU); c.stroke(); T.mapText(`${noteName(semiOf(s))} · ${(rateOf(s) / 1000).toFixed(1)} kHz`, p.x, p.y - ts - 12, 12, 0.9, 'center'); }
+    T.mapText(sp.name, p.x, p.y + ts * 0.5 + 20, 12, 0.85, 'center');
+    T.mapText(sp.rank, p.x, p.y + ts * 0.5 + 34, 10, 0.4, 'center');
+    if (held) { c.strokeStyle = ink(0.6); c.beginPath(); c.arc(p.x, my, ts * 1.15, 0, TAU); c.stroke(); T.mapText(`${noteName(semiOf(s))} · ${(rateOf(s) / 1000).toFixed(1)} kHz · ${relText(s)}`, p.x, p.y - ts - 12, 12, 0.9, 'center'); }
   }
   function drawVessel(c, G) {                             // медный сосуд Соломона — в нём держали духов; тап — карта
     const v = G.vessel, x = v.x, y = v.y;
@@ -319,26 +330,27 @@
     while (p.length < n) { const k = Math.floor(R() * 8); if (k !== p[p.length - 1] && !p.includes(k)) p.push(k); }
     return p;
   }
-  function dice() {                                       // два-три духа: случайные печати, высоты — кварта/квинта/октава от тоники
+  function dice() {                                       // два-три духа: случайные печати, высоты — кварта/квинта/октава от тоники; половина — удары
     const R = Math.random;
     while (spirits.length) banish(spirits[0]);
     const n = 2 + (R() < 0.4 ? 1 : 0), SEMIS = [-12, -5, 0, 0, 7, 12];
-    for (let k = 0; k < n; k++) summon(randPath(R), { semi: SEMIS[Math.floor(R() * SEMIS.length)], tone: 0.3 + R() * 0.3, legio: R() < 0.5 ? 1 : 2, lvl: 0.7 });
+    for (let k = 0; k < n; k++) summon(randPath(R), { semi: SEMIS[Math.floor(R() * SEMIS.length)], tone: 0.3 + R() * 0.3, rel: R() < 0.5 ? 1 : 0.1 + R() * 0.55, legio: R() < 0.5 ? 1 : 2, lvl: 0.7 });
   }
   const goe = {
     n: 'XV', title: 'Goetia', sub: 'sigilla · bytebeat', theme: { ink: INK, bg: BGC, paper: PAPER },
     corner: { hit: (f) => { const v = geo().vessel; return Math.hypot(f.x - v.x, f.y - v.y) < v.r; }, draw: () => {} },   // медный сосуд — карта
     fx: fxw,
     legend: [['drag', 'draw from sign to sign', 'a seal — each sign adds to the formula; a spirit answers'], ['tap', 'tap a triangle', 'banish the spirit'],
-      ['up', 'drag a triangle up or down', 'higher, lower — pitch and rhythm together'], ['hold', 'hold a triangle', 'its sheet: pitch, tone, legio, level'],
+      ['up', 'drag a triangle up or down', 'higher, lower — pitch and rhythm together'], ['drag', 'drag a triangle sideways', 'release: left — crackle and strikes, right — drone'],
+      ['hold', 'hold a triangle', 'its sheet: pitch, tone, release, legio, level'],
       ['tap', 'tap the brass vessel', 'map of worlds']],
     build, tick, draw, down, move, up, dice, enter: start,
     clear() { drawing = null; while (spirits.length) banish(spirits[0]); },
-    snapshot: () => JSON.stringify({ s: spirits.map(({ slot, path, semi, tone, legio, lvl }) => ({ slot, path, semi, tone, legio, lvl })), fx }),
+    snapshot: () => JSON.stringify({ s: spirits.map(({ slot, path, semi, tone, rel, legio, lvl }) => ({ slot, path, semi, tone, rel, legio, lvl })), fx }),
     restore(js) {
       const st = JSON.parse(js);
       drawing = null; while (spirits.length) banish(spirits[0]);
-      for (const q of st.s) summon(q.path, { semi: q.semi, tone: q.tone, legio: q.legio, lvl: q.lvl });
+      for (const q of st.s) summon(q.path, { semi: q.semi, tone: q.tone, rel: q.rel != null ? q.rel : 1, legio: q.legio, lvl: q.lvl });
       Object.assign(fx, st.fx); applyFx();
     },
     sounding,
