@@ -36,7 +36,7 @@
     const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, Ws = Math.min(W, (H - T.safeBot) * 0.62), cx = W / 2;
     const R = Math.min(Ws * 0.44, (bot - top) * 0.23), cy = top + 26 + R;
     const r0 = R * 0.17, dr = (R - 22 - r0) / (NR - 1);
-    const ty = cy + R + 34, sy = ty + 58, L = Math.max(50, Math.min(100, (bot - sy - 40) / 2 - 12)), py = Math.max(sy + 30 + L, bot - L - 26);   // маятнику есть место перекинуться через верх, не задевая шкалу
+    const ty = cy + R + 46, sy = ty + 56, L = Math.max(50, Math.min(100, (bot - sy - 40) / 2 - 12)), py = Math.max(sy + 30 + L, bot - L - 26);   // маятнику есть место перекинуться через верх, не задевая шкалу
     return { W, H, top, bot, cx, cy, R, r0, dr, Ws, ty, strip: { x0: cx - Ws * 0.4, x1: cx + Ws * 0.4, y: sy }, piv: { x: cx, y: py }, L, bob: 13, sun: { x: W, y: T.topY + 2, r: Math.min(42, W * 0.11) } };
   }
   const ringR = (G, i) => G.r0 + i * G.dr;
@@ -225,7 +225,8 @@
     x.strokeStyle = ink(0.45); x.beginPath();
     for (let k = 0; k < 96; k++) { const a = (k / 96) * TAU, l = k % 4 ? 3 : 7; x.moveTo(cx + Math.sin(a) * (R - 4), cy - Math.cos(a) * (R - 4)); x.lineTo(cx + Math.sin(a) * (R - 4 - l), cy - Math.cos(a) * (R - 4 - l)); }
     x.stroke();
-    x.font = `italic 11px ${T.MAP}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = ink(0.6); x.fillText('unitas', cx, cy - R - 9);
+    x.font = `${Math.max(9, Math.min(12, R * 0.07))}px ${T.MAP}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = ink(0.75);   // цифры, как на часах: XII наверху
+    for (let k = 1; k <= 12; k++) { const a = (k / 12) * TAU, rr = R + 11; x.save(); x.translate(cx + Math.sin(a) * rr, cy - Math.cos(a) * rr); x.rotate(a); x.fillText(ROMAN[k], 0, 0); x.restore(); }
     x.strokeStyle = ink(0.12); x.setLineDash([1, 3]); x.beginPath(); x.moveTo(cx, cy - G.r0 + 4); x.lineTo(cx, cy - R + 10); x.stroke(); x.setLineDash([]);   // «раз»: здесь все кольца сходятся
     const S = G.strip;                                    // шкала tempus: от ритма к тону
     x.strokeStyle = ink(0.5); x.beginPath(); x.moveTo(S.x0, S.y); x.lineTo(S.x1, S.y); x.stroke();
