@@ -1485,6 +1485,7 @@ async def sc_portus(p):                            # Portus: остров на �
 
 
 async def sc_dlc(p):                               # DLC vol. I: 7 тапов по UNIVERSUM — другая колода (Prisma, Harmonica vitrea), свой микшер; ещё 7 — назад
+    if await p.js('()=>t2d.hidden.includes(17)'): print('  DLC vol. I closed — skipped'); return
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>t2d.deck') == 'main', 'starts on the main deck'
     y = await p.js('()=>t2d.scopeY()') + 11
@@ -1504,6 +1505,7 @@ async def sc_dlc(p):                               # DLC vol. I: 7 тапов п
 
 
 async def sc_prisma(p):                            # Prisma: отверстие — свет и звук, вверх — выше; призма вбок — цвет, вниз — веер (растяжка); тап по лучу — заслонка; плашка; кубик; корзина; отмена; солнце — карта
+    if await p.js('()=>t2d.hidden.includes(17)'): print('  DLC vol. I closed — skipped'); return
     await p.js("()=>t2d.setDeck('dlc1')"); await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(17)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 17], 'the card opens Prisma'
@@ -1549,6 +1551,7 @@ async def sc_prisma(p):                            # Prisma: отверстие 
 
 
 async def sc_vitrea(p):                            # Harmonica vitrea: трёшь обод — поёт; вода — ниже; тап — звон; двойной тап — поёт сам; плашка; кубик; корзина; отмена; луна — карта
+    if await p.js('()=>t2d.hidden.includes(17)'): print('  DLC vol. I closed — skipped'); return
     await p.js("()=>t2d.setDeck('dlc1')"); await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(18)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 18], 'the card opens Vitrea'

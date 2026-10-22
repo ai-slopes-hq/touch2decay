@@ -7,7 +7,10 @@
 
 Настоящие гравюры в мирах II–IV: файлы в `art/` (источники — `art/CREDITS.md`), обработка — `python3 tools/ink.py` (Pillow; исходники качает с Commons в `.art-src/`). Чёрно-белые — слой чернил (альфа = линия), красятся в цвет мира в `inked()`; у льва отдельная отмывка. В `app.js`: `ART_SRC` / `loadArt` (грузятся при первом `goMap`, ключ кеша `artFor` включает `artReady`), центры сфирот на гравюре — `KIRCHER`, солнце льва — `LEO_SUN` → `leoSun` (тап по нему — карта; дублирует `SUN` в `tools/ink.py`). Новые картинки — в `STATIC` в `sw.js`.
 
-## Колоды: Universum и DLC vol. I (v154)
+## Колоды: Universum и DLC vol. I (v154; закрыто в v156)
+
+**Сейчас закрыто (22.10, автор: «скучные миры»):** `DLC_ON = false` — 7 тапов не переключают, колода всегда main (сохранённое `t2d-deck` игнорируется); XVII и XVIII — в `HIDDEN`. Вернуть — `DLC_ON = true` и убрать 17, 18 из `HIDDEN`; сценарии `dlc`, `prisma`, `vitrea` сами пропускаются, пока закрыто.
+
 
 - `DECKS { main, dlc1 }` — у каждой колоды своё поле (`CELL` = `DECKS[deck]`); `deck` в localStorage `t2d-deck`. **7 тапов подряд по надписи UNIVERSUM** (паузы < 0.7 с, `titleTaps`) — `setDeck`: main ↔ dlc1; надпись вспыхивает рамкой (`nav.deckAt`). У DLC к надписи — *vol. I*.
 - DLC vol. I: XVII · Prisma `[1, 1]`, XVIII · Vitrea `[2, 1]`, остальное — рубашки. Миры зарегистрированы все и звучат независимо от колоды; на карте и в микшере — только миры текущей колоды (`mapWorlds()`, `mixGeo`), мастер общий. Тест — `t2d.deck`, `t2d.setDeck(d)`, `t2d.mixRows()`, сценарий `shot.py dlc`.

@@ -3472,8 +3472,9 @@
     main: { 6: [1, 0], 5: [2, 0], 2: [1, 1], 1: [2, 1], 3: [1, 2], 4: [2, 2], 7: [1, 3], 8: [3, 2], 9: [0, 2], 10: [3, 1], 11: [3, 0], 12: [0, 3], 13: [3, 3], 15: [2, 3] },   // поле 4 × 4: 14 миров (III — рубашка, выключен)
     dlc1: { 17: [1, 1], 18: [2, 1] },
   };
+  const DLC_ON = false;                                   // вход в DLC закрыт (22.10): 7 тапов ничего не делают, колода всегда main
   let deck = 'main';
-  try { const d = localStorage.getItem('t2d-deck'); if (DECKS[d]) deck = d; } catch (_) { /* приватный режим */ }
+  try { const d = localStorage.getItem('t2d-deck'); if (DLC_ON && DECKS[d]) deck = d; } catch (_) { /* приватный режим */ }
   let CELL = DECKS[deck];
   function setDeck(d) { if (!DECKS[d]) return; deck = d; CELL = DECKS[d]; nav.peek = null; nav.deckAt = performance.now(); try { localStorage.setItem('t2d-deck', d); } catch (_) { /* приватный режим */ } }
   const titleTaps = { n: 0, t: 0 };
@@ -3534,7 +3535,7 @@
         }
         nav.settings = false; return;
       }
-      if (Math.abs(f.x - W / 2) < 115 && f.y > scopeY - 14 && f.y < scopeY + 34) {   // надпись UNIVERSUM: 7 тапов подряд — другая колода (main ↔ DLC vol. I)
+      if (DLC_ON && Math.abs(f.x - W / 2) < 115 && f.y > scopeY - 14 && f.y < scopeY + 34) {   // надпись UNIVERSUM: 7 тапов подряд — другая колода (main ↔ DLC vol. I)
         const now = performance.now();
         titleTaps.n = now - titleTaps.t < 700 ? titleTaps.n + 1 : 1; titleTaps.t = now;
         if (titleTaps.n >= 7) { titleTaps.n = 0; setDeck(deck === 'main' ? 'dlc1' : 'main'); }
@@ -4223,7 +4224,7 @@
   // ---------- миры: реестр; Tenebrae — мир I поверх своих функций ----------
   // выключенные миры (автор, 22.10): номера за ними, код на месте — не регистрируются: нет на карте (рубашка), в микшере, звуке, легенде.
   // Вернуть мир — убрать его номер отсюда.
-  const HIDDEN = new Set([3]), hiddenW = {};
+  const HIDDEN = new Set([3, 17, 18]), hiddenW = {};   // 17, 18 — DLC vol. I в бэклоге (22.10: «скучные»)
   function registerWorld(n, w) {
     if (HIDDEN.has(n)) { hiddenW[n] = w; return; }
     if (n > 2) ENTER.add(n);                     // III и IV — модули-эскизы: пока без звука, но в них можно влететь

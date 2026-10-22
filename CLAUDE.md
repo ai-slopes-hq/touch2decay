@@ -41,14 +41,14 @@
 | XII | Arcadia — wave terrain, страна в псевдоперспективе, кубик — новая страна | `arcadia.js`, `terrain-worklet.js` | `docs/worlds/arcadia.md` |
 | XIII | Portus — dub techno: одна дорожка-фарватер на 16 шагов (кораблик — удар, поперёк — нота), аккорд и октава −2…+2 у маяка, луна-фильтр, буй-эхо, туман-ревер, небо гасит эхо | `portus.js` | `docs/worlds/portus.md` |
 | XV | Goetia — bytebeat: печать от знака к знаку — формула, дух встаёт в треугольник (до трёх), медный сосуд — карта | `goetia.js`, `goetia-worklet.js` | `docs/worlds/goetia.md` |
-| XVII | Prisma (**DLC vol. I**) — аддитивный: луч сквозь призму, 16 лучей-гармоник | `prisma.js` | `docs/worlds/prisma.md` |
-| XVIII | Vitrea — Harmonica vitrea (**DLC vol. I**): трение по ободу бокалов, вода — высота | `vitrea.js` | `docs/worlds/vitrea.md` |
+| XVII | **в бэклоге** (`HIDDEN`, вход в DLC закрыт `DLC_ON = false`) · Prisma (**DLC vol. I**) — аддитивный: луч сквозь призму, 16 лучей-гармоник | `prisma.js` | `docs/worlds/prisma.md` |
+| XVIII | **в бэклоге** (`HIDDEN`) · Vitrea — Harmonica vitrea (**DLC vol. I**): трение по ободу бокалов, вода — высота | `vitrea.js` | `docs/worlds/vitrea.md` |
 
-Карта Universum (поле 4 × 4, 14 миров и две рубашки; **вторая колода — DLC vol. I** (XVII, XVIII), переключение — 7 тапов по UNIVERSUM, свой микшер, `CELL`, эмблемы `emblemFor`, звучащие карты в лучах, concordia — общий лад, темп и микшер), выход стрелкой и свайпом от левого края — `docs/worlds/map.md`. Миры I–IV автор считает законченными.
+Карта Universum (поле 4 × 4, 14 миров и две рубашки; **вторая колода — DLC vol. I** (XVII, XVIII; сейчас закрыта: `DLC_ON = false`, миры в `HIDDEN`), переключение — 7 тапов по UNIVERSUM, свой микшер, `CELL`, эмблемы `emblemFor`, звучащие карты в лучах, concordia — общий лад, темп и микшер), выход стрелкой и свайпом от левого края — `docs/worlds/map.md`. Миры I–IV автор считает законченными.
 
 ## Устройство (общее)
 
-- **Выключенные миры** — `HIDDEN` (сейчас III, 22.10; IX вернулся как Horologium Nova): `registerWorld` их не регистрирует (`hiddenW`), на карте рубашки, нет в микшере, звуке, легенде; `t2d.go(n)` для них — `false`, сценарии `lab` и `horologium` пропускаются (`t2d.hidden`). Номера не отдавать. Вернуть — убрать номер из `HIDDEN`.
+- **Выключенные миры** — `HIDDEN` (сейчас III, XVII, XVIII — 22.10; IX вернулся как Horologium Nova): `registerWorld` их не регистрирует (`hiddenW`), на карте рубашки, нет в микшере, звуке, легенде; `t2d.go(n)` для них — `false`, сценарии `lab` и `horologium` пропускаются (`t2d.hidden`). Номера не отдавать. Вернуть — убрать номер из `HIDDEN`.
 
 - `app.js` — хост и мир I: аудиоконтекст, мастер, лад, общий зал `hall`, верхняя строка (громкость, лад, FX, кубик, отмена, корзина), плашки `openSheet`, LFO плашек `SL`, легенда, карта и concordia, нагрузка, рисование. Секции помечены `// ---------- … ----------`.
 - **Реестр миров:** `worlds`, `registerWorld(n, w)`, `cur()`; интерфейс мира — `title, sub, corner {hit, draw}, fx | null {sectors, get, set, text, arc, save, load}, tick?, draw, down, move, up, wheel?, dice, clear, snapshot, restore, sounding, enter?, leave?`. Tenebrae — объект `solNiger` поверх своих функций (`solTick`, `solDraw`, `solDown/Move/Up`). Касание принадлежит миру, где началось (`f.world`). У каждого мира своя отмена (`hists`, `lasts`). Миры из других файлов получают `window.T2D` (регистрация, `g`, `W/H/DPR`, `topY`, `safeBot`, `level`, `ink`, `ring`, `dot`, `text`, `glowAt`, `hairBox`). Карта: снимок мира при уходе (`snaps`); у мира с `mapShot(on)` (III, IV) снимок перерисовывается без солнца — на карте солнце одно, в центре. **Предмет в углу каждого мира — участник сцены, не ярлык** (солнце, резонатор Гельмгольца).
