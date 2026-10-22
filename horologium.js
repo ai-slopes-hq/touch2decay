@@ -385,7 +385,7 @@ const horo = {
     st.r.forEach((q, i) => Object.assign(rings[i], q));
     Object.assign(fx, st.fx); clock.bpm = st.bpm; clock.run = st.run; clock.u = st.u || 0; clock.uT = st.uT || 0; applyFx(); sendAll();
   },
-  sounding, tempo: { set: (bpm) => { clock.bpm = bpm; } }, mapShot(on) { noSun = on; },
+  sounding, tempo: { get: () => clock.bpm, set: (bpm) => { clock.bpm = bpm; }, play: (on) => { if (on) setRun(true); else clock.run = false; }, playing: () => clock.run }, mapShot(on) { noSun = on; },
 };
 T.registerWorld(9, horo);
 window.t2d.horo = {

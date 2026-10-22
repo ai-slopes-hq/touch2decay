@@ -9,6 +9,8 @@ export const link = { clock: false, scale: true };
 try { Object.assign(link, JSON.parse(localStorage.getItem('t2d-link') || '{}')); } catch (_) { /* приватный режим */ }
 const saveLink = () => { try { localStorage.setItem('t2d-link', JSON.stringify(link)); } catch (_) { /* приватный режим */ } };
 export const perScl = {};                                      // свой лад у каждого мира, когда лад не общий
+// stable audio — больший буфер (latencyHint playback); звук перезапускается
+export function toggleStable() { audioPref.stable = !audioPref.stable; try { localStorage.setItem('t2d-audio', JSON.stringify(audioPref)); } catch (_) { /* приватный режим */ } if (ctx) restartAudio(); }
 export function tempoFrom(n, bpm) { if (link.clock) for (const [k, w] of Object.entries(worlds)) if (+k !== n && w.tempo) w.tempo.set(bpm); }
 export function transportFrom() { /* общие часы — только темп: пуск и стоп у каждого мира свои (автор) */ }
 
@@ -53,7 +55,7 @@ export function settingsDown(f) {
     const k = S.rows[row].key;
     if (k === 'restart') { if (ctx) restartAudio(); return; }
     if (k === 'mixer') { nav.settings = 'mix'; return; }
-    if (k === 'stable') { audioPref.stable = !audioPref.stable; try { localStorage.setItem('t2d-audio', JSON.stringify(audioPref)); } catch (_) { /* приватный режим */ } if (ctx) restartAudio(); return; }
+    if (k === 'stable') { toggleStable(); return; }
     link[k] = !link[k]; saveLink(); return;
   }
   nav.settings = false;

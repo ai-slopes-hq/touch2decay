@@ -984,7 +984,7 @@ const cymatica = {
   corner: { hit: (f) => Math.hypot(f.x - T.W, f.y - (T.H - T.safeBot)) < 46, draw: drawResonator },
   fx: fxw,
   build, tick,
-  tempo: { set: (bpm) => { seq.bpm = bpm; sendSeq(); }, play: (on) => { if (on !== seq.playing) play(on); } },   // общие часы (карта → concordia)
+  tempo: { get: () => seq.bpm, set: (bpm) => { seq.bpm = bpm; sendSeq(); }, play: (on) => { if (on !== seq.playing) play(on); }, playing: () => seq.playing },   // общие часы (карта → concordia)
   enter() { entered = true; start(); },
   draw(now, dt) {
     const c = T.g, g = plateGeo();

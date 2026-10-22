@@ -1299,7 +1299,7 @@ const natura = {
     c.restore();
   },
   build, tick, down: (f) => down(sh(f)), move: (f) => move(sh(f)), up: (f) => up(sh(f)),
-  tempo: { set: (bpm) => { seq.bpm = bpm; applyFx(); }, play: (on) => { if (on !== seq.playing) play(on); } },   // общие часы (карта → concordia)
+  tempo: { get: () => seq.bpm, set: (bpm) => { seq.bpm = bpm; applyFx(); }, play: (on) => { if (on !== seq.playing) play(on); }, playing: () => seq.playing },   // общие часы (карта → concordia)
   mapShot(on) { noSun = on; },
   dice() {                                        // кувшинки по Евклиду, ноты — блуждание по ступеням, цветы — случайно; лодочка плывёт
     const R = Math.random, n = 8 + Math.floor(R() * 9), k = 3 + Math.floor(R() * (n - 4));

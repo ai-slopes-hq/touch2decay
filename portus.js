@@ -554,7 +554,7 @@ const portus = {
     Object.assign(luna, st.luna); Object.assign(echo, st.echo); Object.assign(buoy, st.buoy); Object.assign(fog, st.fog); Object.assign(pharos, st.pharos); Object.assign(fx, st.fx); seq.bpm = st.bpm;
     applyAll();
   },
-  sounding, tempo: { set: (bpm) => { seq.bpm = bpm; applyAll(); } }, mapShot(on) { noSun = on; },
+  sounding, tempo: { get: () => seq.bpm, set: (bpm) => { seq.bpm = bpm; applyAll(); }, play: (on) => play(on), playing: () => seq.playing, min: 60, max: 180 }, mapShot(on) { noSun = on; },
 };
 T.registerWorld(13, portus);
 window.t2d.portus = {

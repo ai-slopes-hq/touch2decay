@@ -157,6 +157,45 @@ async def sc_hole(p):                              # касание в чёрн�
     print('hole released (eaten one dies):', await p.js("()=>t2d.voices.filter(v=>v.active).map(v=>+v.holeT.toFixed(2))"))
 
 
+async def sc_audiopanel(p):                         # тап по громкости — панель audio: tempo, stop, restart, stable; тянуть громкость — как было
+    await p.js('()=>t2d.go(13)'); await p.pg.wait_for_timeout(300)
+    b = await p.js("()=>t2d.btnPos('vol')")
+    v0 = await p.js('()=>t2d.vol')
+    await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.audioPanel'), 'tap the volume — the audio panel'
+    assert abs(await p.js('()=>t2d.vol') - v0) < 1e-6, 'a tap does not change the volume'
+    P = await p.js('()=>t2d.panelGeo()'); row = {r['k']: r['y'] for r in P['rows']}; cx = P['x'] + P['w'] / 2
+    bpm0 = await p.js('()=>t2d.worlds[13].tempo.get()')
+    pid = await p.hold(cx, row['tempo'], ms=60); await p.drag(pid, cx, row['tempo'], cx + 40, row['tempo'], steps=6)
+    await p.shot('audiopanel'); await p.up(); await p.pg.wait_for_timeout(100)
+    bpm1 = await p.js('()=>t2d.worlds[13].tempo.get()'); print('  portus tempo:', bpm0, '->', bpm1)
+    assert bpm1 == min(180, bpm0 + 20), f'drag tempo sideways: {bpm0} -> {bpm1}'
+    on0 = await p.js('()=>t2d.worlds[13].tempo.playing()')
+    await p.tap(cx, row['stop']); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.worlds[13].tempo.playing()') != on0, 'stop / play toggles the clock'
+    await p.tap(cx, row['stop']); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.worlds[13].tempo.playing()') == on0
+    await p.js('()=>{ t2d.link.clock = true }')          # общий темп: у всех миров
+    pid = await p.hold(cx, row['tempo'], ms=60); await p.drag(pid, cx, row['tempo'], cx - 40, row['tempo'], steps=6); await p.up(); await p.pg.wait_for_timeout(100)
+    b13, b4 = await p.js('()=>[t2d.worlds[13].tempo.get(), t2d.worlds[4].tempo.get()]')
+    assert b13 == b4, f'shared tempo — every world: {b13} {b4}'
+    await p.js('()=>{ t2d.link.clock = false }')
+    await p.tap(30, 500); await p.pg.wait_for_timeout(150)
+    assert not await p.js('()=>t2d.audioPanel'), 'tap outside — the panel closes'
+    pid = await p.hold(b['x'], b['y'], ms=60); await p.drag(pid, b['x'], b['y'], b['x'], b['y'] + 60, steps=8); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.vol') < v0 - 0.05 and not await p.js('()=>t2d.audioPanel'), 'drag the volume — the volume, no panel'
+    await p.js('()=>t2d.go(10)'); await p.pg.wait_for_timeout(300)   # мир без часов: stop — заглушить, отмена вернёт
+    a = await p.js('()=>t2d.firm.at(0.6, 0.2)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.firm.stars.length') == 1
+    await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(200)
+    await p.shot('audiopanel-firm')
+    await p.tap(cx, row['stop']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.firm.stars.length') == 0, 'stop without a clock — the world goes silent'
+    await p.tap(30, 500); await p.pg.wait_for_timeout(150)
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.firm.stars.length') == 1, 'undo brings the world back'
+
+
 async def sc_vol(p):                               # фейдер громкости: зажал — длинная шкала, повёл вниз — тише
     await p.pin(200, 520)
     b = await p.js("()=>t2d.btnPos('vol')")
@@ -1682,7 +1721,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

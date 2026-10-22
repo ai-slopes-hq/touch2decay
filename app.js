@@ -1,6 +1,7 @@
 // touch2decay — дрон / нойз на 1–2 пальца. Web Audio + canvas, без зависимостей.
 // хост: сервисы, примитивы и экраны — в host/ (шаги 2–3 docs/refactor-plan.md); здесь роутер касаний, кадр и мир I · Tenebrae
 import { an, asym, chanLvl, chans, ctx, filter, gainNode, hall, lfo, mix, noiseBuffer, restartAudio, saveMix, scopeBuf, setVol, soft, unlock, vol, VOL_TRAVEL } from './host/audio.js';
+import { audioPanel, drawAudioPanel, panelDown, panelGeo, panelHit, panelMove, setAudioPanel, volTap } from './host/audio-panel.js';
 import { link, tempoFrom, transportFrom } from './host/concordia.js';
 import { cellRect, deck, field, panel, setDeck } from './host/deck.js';
 import { BG, cv, diamond, dot, DPR, drawCurve, fitCanvas, g, glowAt, H, hairBox, INK, ink, mapText, paper, quarterSun, ring, safeBot, scopeY, setTheme, sunGlyph, text, W } from './host/draw.js';
@@ -734,6 +735,7 @@ function lfoHit(f) {
 function uiHit(f) {
   if (legenda) return { k: 'legclose' };              // легенда открыта: любое касание закрывает
   if (fxSheet) return sheetHit(f);                     // открыта плашка FX — sheet.js
+  if (audioPanel) { const h = panelHit(f); if (h) return h; }   // панель audio: строки, мимо — закрыть; громкость — как всегда
   { const h = headHit(f); if (h) return h; }        // стрелка, заголовок, угол, край — ui-top.js
   if (nav.world === 1 && ghost) {                              // любое касание гасит призрак; по булавке — закрепляет
     const gh = ghost, p = pinPos(gh.menu.cx, gh.menu.cy);
@@ -848,6 +850,7 @@ function uiDown(f) {
   if (f.ui === 'rev') { setFxSheet({ w: nav.world }); return; }   // FX — плашка снизу
   if (f.ui === 'fxclose') { setFxSheet(null); return; }
   if (sheetDown(f)) return;                // строки плашки и LFO строки — sheet.js
+  if (panelDown(f)) return;                // панель audio — audio-panel.js
   if (f.ui === 'none') return;
   if (f.ui === 'swave') { sheetWave(f); return; }
   if (f.ui === 'srow') {
@@ -941,6 +944,7 @@ function uiMove(f) {
     return;
   }
   if (sheetMove(f)) return;
+  if (panelMove(f)) return;
   if (f.ui === 'lfo') { lfoStrip(f); return; }
   if (f.ui === 'amp') { ampSet(f); return; }
   if (f.ui === 'ring') { ringTouch(f, false); return; }
@@ -976,7 +980,7 @@ function uiUp(f) {
     m.auto = false; A.dirty = true; focus = A;
     return;
   }
-  if (f.ui === 'vol') { try { localStorage.setItem('t2d-vol', vol.toFixed(3)); } catch (_) { /* приватный режим */ } return; }
+  if (f.ui === 'vol') { volTap(f); try { localStorage.setItem('t2d-vol', vol.toFixed(3)); } catch (_) { /* приватный режим */ } return; }   // тап — панель audio
   if (sheetUp(f)) return;
   if (f.menu && !f.menu.fx) leaveMenu(f.menu);
   if (f.ui === 'lfo') {
@@ -2339,10 +2343,12 @@ function frame(now) {
   for (const w of Object.values(worlds)) if (w.tick) w.tick(now, dt);
   slTick(dt);
   readLevel();
+  if (audioPanel && (nav.view !== 'play' || audioPanel.w !== nav.world || fxSheet || legenda)) setAudioPanel(null);
   if ((nav.view !== 'play' || nav.anim) && drawNav(now)) { measureStrain(now, performance.now() - t0); return; }
   setTheme(cur().theme);
   cur().draw(now, dt);
   drawUI();
+  if (audioPanel && ![...F.values()].some((f) => f.ui === 'vol')) drawAudioPanel();   // зажал громкость — шкала, панель не мешает
   if (fxSheet && fxSheet.w !== nav.world) setFxSheet(null);
   if (fxSheet) drawFxSheet();                  // плашка FX — поверх мира
   if (legenda && legenda.w !== nav.world) setLegenda(null);
@@ -2597,7 +2603,7 @@ window.t2d = {
   worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return strikes; },
   go(w) { if (!worlds[w]) return false; nav.world = w; nav.view = 'play'; nav.anim = null; nav.settings = false; if (worlds[w].enter) worlds[w].enter(); },
   mix, chanLvl, mixGeo: () => mixGeo(), backPos: () => backPos(), get chanGains() { return Object.fromEntries(Object.entries(chans).map(([n, c]) => [n, c.g.gain.value])); },
-  get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, get deck() { return deck; }, setDeck, mixRows: () => mixGeo().rows.map((r) => r.n), restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey, slAdd: (k) => { if (fxSheet && fxSheet.spec.lfo) { const e = slAdd(fxSheet.spec, k); e.spec.depth = 0.8; e.spec.rate = 1; return true; } return false; },   // сразу в мир, без касаний (тесты)
+  get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, get audioPanel() { return !!audioPanel; }, panelGeo: () => panelGeo(), legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, get deck() { return deck; }, setDeck, mixRows: () => mixGeo().rows.map((r) => r.n), restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey, slAdd: (k) => { if (fxSheet && fxSheet.spec.lfo) { const e = slAdd(fxSheet.spec, k); e.spec.depth = 0.8; e.spec.rate = 1; return true; } return false; },   // сразу в мир, без касаний (тесты)
   get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
   hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
   voices: V, fx, scl, freq, cutoff, applyFx, place, unplace, semi,

@@ -446,7 +446,7 @@ const mono = {
     if (st.auto) { const on = st.auto.on; Object.assign(auto, st.auto); setAuto(on); }
     if (str.some((s) => s.sus)) { start(); setLive(true); }
   },
-  sounding, tempo: { set: (bpm) => { auto.bpm = bpm; } },
+  sounding, tempo: { get: () => auto.bpm, set: (bpm) => { auto.bpm = bpm; }, play: (on) => setAuto(on), playing: () => auto.on },
 };
 T.registerWorld(7, mono);
 window.t2d.mono = {
