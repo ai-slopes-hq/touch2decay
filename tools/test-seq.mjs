@@ -1,13 +1,14 @@
-// Тесты помощников секвенсера Cymatica без браузера: cymatica.js грузится в vm с заглушками хозяина.
+// Тесты помощников секвенсера Cymatica без браузера: cymatica.js грузится в vm с заглушками хозяина
+// (это ES-модуль, а vm исполняет скрипт — import.meta.url подменяем адресом).
 //   node --test tools/test-seq.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const SRC = readFileSync(new URL('../cymatica.js', import.meta.url), 'utf8');
+const SRC = readFileSync(new URL('../cymatica.js', import.meta.url), 'utf8').replace(/import\.meta\.url/g, "'http://x/cymatica.js'");
 const window = { t2d: {}, T2D: { registerWorld() {}, snapSemi: (s) => s } };
-const ctx = { window, document: { currentScript: null }, location: { href: 'http://x/' }, Math, Float32Array, Float64Array, Array, Object, JSON, Number, Map, Set };
+const ctx = { window, document: {}, URL, Math, Float32Array, Float64Array, Array, Object, JSON, Number, Map, Set };
 vm.createContext(ctx);
 vm.runInContext(SRC, ctx);
 const C = window.t2d.cym.core;

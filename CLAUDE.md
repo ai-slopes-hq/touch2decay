@@ -50,10 +50,11 @@
 
 - **Выключенные миры** — `HIDDEN` (сейчас III, XVII, XVIII — 22.10; IX вернулся как Horologium Nova): `registerWorld` их не регистрирует (`hiddenW`), на карте рубашки, нет в микшере, звуке, легенде; `t2d.go(n)` для них — `false`, сценарии `lab` и `horologium` пропускаются (`t2d.hidden`). Номера не отдавать. Вернуть — убрать номер из `HIDDEN`.
 
+- **Все файлы миров и `app.js` — ES-модули** (без IIFE, `<script type="module">` в `index.html`; выполняются по порядку тегов, после разбора страницы). `window.T2D` / `window.t2d` пока глобальные. Версия для `addModule` worklet-ов — `VER` из `import.meta.url` (`document.currentScript` в модулях нет). Переход на model / engine / view — `docs/refactor-plan.md`.
 - `app.js` — хост и мир I: аудиоконтекст, мастер, лад, общий зал `hall`, верхняя строка (громкость, лад, FX, кубик, отмена, корзина), плашки `openSheet`, LFO плашек `SL`, легенда, карта и concordia, нагрузка, рисование. Секции помечены `// ---------- … ----------`.
 - **Реестр миров:** `worlds`, `registerWorld(n, w)`, `cur()`; интерфейс мира — `title, sub, corner {hit, draw}, fx | null {sectors, get, set, text, arc, save, load}, tick?, draw, down, move, up, wheel?, dice, clear, snapshot, restore, sounding, enter?, leave?`. Tenebrae — объект `solNiger` поверх своих функций (`solTick`, `solDraw`, `solDown/Move/Up`). Касание принадлежит миру, где началось (`f.world`). У каждого мира своя отмена (`hists`, `lasts`). Миры из других файлов получают `window.T2D` (регистрация, `g`, `W/H/DPR`, `topY`, `safeBot`, `level`, `ink`, `ring`, `dot`, `text`, `glowAt`, `hairBox`). Карта: снимок мира при уходе (`snaps`); у мира с `mapShot(on)` (III, IV) снимок перерисовывается без солнца — на карте солнце одно, в центре. **Предмет в углу каждого мира — участник сцены, не ярлык** (солнце, резонатор Гельмгольца).
 - **Тема мира** — `theme: { ink, bg, paper }` (`setTheme` в `frame`; подложки — `paper()` вместо чёрного), у Natura — сепия. Старые гравюры (`artRosarium`, `artRegnum`, `PALS`, `art/`, `artCabbala`) остались в коде, на карте не используются.
-- Новый мир: файл `.js` с `T2D.registerWorld`, `<script>` в `index.html`, файл в `SHELL` в `sw.js`, клетка в `CELL` и `EMB_LINE`, эмблема — ветка в `emblemFor`, сценарий в `tools/shot.py`, заметки — `docs/worlds/<мир>.md`, строка в таблице выше.
+- Новый мир: файл `.js` с `T2D.registerWorld`, `<script type="module">` в `index.html`, файл в `MODULES` (worklet — в `WORKLETS`) в `sw.js`, клетка в `CELL` и `EMB_LINE`, эмблема — ветка в `emblemFor`, сценарий в `tools/shot.py`, заметки — `docs/worlds/<мир>.md`, строка в таблице выше.
 - Плашки: `T2D.openSheet({title, hint, rows, get, set, text, lfo?})`; FX мира — `world.fx` (плашка FX — `fxSheet`).
 - **Портретная сцена на широком экране:** Natura (`stage()`, `sh(f)` — сдвиг касаний, рисование с `translate(ox)`, по бокам бумага), Inferno и Paradisus (ширина `Ws = min(W, 0.62·H)`, всё по центру `cx`) — на iPad и компьютере не растягиваются. Проверять: Playwright 1280×800 и 820×1180. `tools/render.py --world 3…6` — касание мимо всего включает звук, дальше js (например `t2d.par.dice()`).
 - Отладка из консоли: `window.t2d` — `go(n)` (в мир без касаний), у миров свои: `t2d.cym`, `t2d.lab`, `t2d.nat`, `t2d.inf`, `t2d.par`, `t2d.mono`, `t2d.ocean`, `t2d.horo`, `t2d.firm`, `t2d.tria`, `t2d.arc`, `t2d.portus`, `t2d.goe`, `t2d.prisma`, `t2d.vitrea`.
@@ -80,8 +81,8 @@
 
 ## Выкладка — обязательно
 
-- При каждой выкладке поднимать **вместе** `CACHE` в `sw.js` и `?v=` у `app.js` в `index.html` (одно число). Иначе на телефоне залипнет старая версия. Сервис-воркер: страница и код — сначала из сети, кеш — без сети; новая версия подхватывается при возврате в приложение, страница перезагружается, когда ничего не звучит.
-- Новые файлы, нужные офлайн, — в списки `SHELL` / `STATIC` в `sw.js`.
+- При каждой выкладке поднимать **вместе** `CACHE` в `sw.js` и `?v=` у всех модулей в `index.html` (одно число; у всех тегов — заменой по `?v=`). Иначе на телефоне залипнет старая версия. Сервис-воркер: страница и код — сначала из сети, кеш — без сети; новая версия подхватывается при возврате в приложение, страница перезагружается, когда ничего не звучит.
+- Новые файлы, нужные офлайн, — в списки `MODULES` / `WORKLETS` / `STATIC` в `sw.js`.
 - README обновлять вместе с поведением (по-русски, в духе существующего текста). Коммиты — по-английски, по делу, с телом-списком.
 - `node --check app.js` перед коммитом.
 
@@ -92,8 +93,10 @@
 - `python3 tools/shot.py <сценарий>` (solniger, vol, planets, ring, worlds, sun, hole, legenda, startmap, audio и по сценарию на мир, в том числе arcadia и portus — см. `docs/worlds/`) — сценарии касаний (CDP touch, 390×844) с проверками (провал или ошибка на странице — код выхода 1), скриншоты в `.shots/` — **смотреть их глазами** (Read на png).
 - `python3 tools/render.py ["()=>{…}"] [--world 2] [--onsets]` — офлайн-рендер звука (Tenebrae или удар по пластине Cymatica), RMS и время расчёта; `--onsets` — узор из 4 ударов на 120 BPM, интервалы между ударами и разброс (было 0.68 мс).
 - `node --test tools/test-seq.mjs` — тесты помощников секвенсера (через `vm`).
-- `node --test tools/test-plate.mjs` — тесты звука пластины в Node (через `vm`, без зависимостей).
-- Нужен Playwright: `pip install playwright && playwright install chromium`.
+- `node --test tools/test-plate.mjs` — тесты звука пластины в Node (через `vm`, без зависимостей). `test-seq.mjs` тоже грузит `cymatica.js` в `vm` — `import.meta.url` там подменяется строкой.
+- `node --test tools/test-models.mjs` — тесты моделей миров (пока каркас, наполняется с шага 4 рефакторинга).
+- Нужен Playwright: `pip install playwright && playwright install chromium`. В системном python его нет — временный venv в scratchpad (`/opt/homebrew/bin/python3 -m venv pw && pw/bin/pip install playwright`), браузеры уже в `~/Library/Caches/ms-playwright`.
+- Нестабильно само по себе (и до модулей): сценарий `tria` (хаос трёх тел) падает примерно в половине прогонов; `render.py` для секвенсеров (Portus) и Firmamentum гуляет на ±5–20 % от прогона к прогону — сравнивать по нескольким прогонам, состояние задавать `restore(снимок)`, а не `dice()`.
 
 ## Уже решено и отвергнуто (не возвращать без запроса)
 
