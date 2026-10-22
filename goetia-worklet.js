@@ -28,6 +28,7 @@ class Goetia extends AudioWorkletProcessor {
   }
   apply(d) {
     const x = this.x;
+    if ((d.t === 'voice' || d.t === 'sett') && !(d.i >= 0 && d.i < VMAX)) return;   // чужой номер голоса — мимо, не в память ядра
     if (d.t === 'voice') {
       const o = this.vo[d.i];
       if (d.prog) {                                       // программа — раньше полей голоса, как в прежнем worklet
@@ -43,10 +44,12 @@ class Goetia extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const out = outputs[0], L = out[0], R = out[1], n = L.length, x = this.x;
     if (!x) return true;                                  // выход уже нулевой
-    const p = x.gt_process(n);
-    if (!this.mem || this.mem.buffer !== x.memory.buffer) this.mem = new Float32Array(x.memory.buffer);
-    L.set(this.mem.subarray(p >> 2, (p >> 2) + n));
-    if (R) R.set(this.mem.subarray((p >> 2) + n, (p >> 2) + 2 * n));
+    for (let k = 0; k < n; k += 128) {                    // ядро считает не больше 128 за раз
+      const m = Math.min(128, n - k), p = x.gt_process(m) >> 2;
+      if (!this.mem || this.mem.buffer !== x.memory.buffer) this.mem = new Float32Array(x.memory.buffer);
+      L.set(this.mem.subarray(p, p + m), k);
+      if (R) R.set(this.mem.subarray(p + m, p + 2 * m), k);
+    }
     this.count += n;
     if (this.count >= this.every) {
       this.count = 0;

@@ -27,8 +27,10 @@ export function createEngine(T, model, ver) {
     if (started || !actx) return;
     started = true;
     if (!bytes) bytes = fetch(`goetia.wasm?v=${ver}`).then((r) => { if (!r.ok) throw new Error(`goetia.wasm ${r.status}`); return r.arrayBuffer(); });
-    Promise.all([actx.audioWorklet.addModule(`goetia-worklet.js?v=${ver}`), bytes]).then(([, buf]) => {
-      node = new AudioWorkletNode(actx, 'goetia', { numberOfInputs: 0, outputChannelCount: [2], processorOptions: { wasm: buf.slice(0) } });
+    const c = actx;                                      // пока грузится, звук могли перезапустить (build на новом контексте) — тогда этот запуск лишний
+    Promise.all([c.audioWorklet.addModule(`goetia-worklet.js?v=${ver}`), bytes]).then(([, buf]) => {
+      if (c !== actx) return;
+      node = new AudioWorkletNode(c, 'goetia', { numberOfInputs: 0, outputChannelCount: [2], processorOptions: { wasm: buf.slice(0) } });
       node.connect(bus.pre);
       node.port.onmessage = (e) => {
         const d = e.data;
@@ -43,7 +45,7 @@ export function createEngine(T, model, ver) {
       applyFx();
       for (const s of spirits) sendSpirit(s);
       while (queue.length) node.port.postMessage(queue.shift());
-    }).catch((err) => { console.error('goetia:', err); started = false; bytes = null; });
+    }).catch((err) => { console.error('goetia:', err); if (c === actx) { started = false; bytes = null; } });
   }
   function setLive(on) {
     if (!bus || bus.live === on) return;

@@ -55,18 +55,18 @@ export function loadRef() {
   return { proc: new reg.goetia({}), posted };
 }
 
-export function play(proc, steps, posted) {             // прогнать сценарий: L, R и метры {tt, g} (сообщения 'p')
+export function play(proc, steps, posted, block = BLOCK) {   // прогнать сценарий: L, R и метры {tt, g} (сообщения 'p'); block — размер блока
   const L = [], R = [];
   const from = posted ? posted.length : 0;
   for (const s of steps) {
     if (!s.run) { proc.port.onmessage({ data: s }); continue; }
     for (let b = 0; b < s.run; b++) {
-      const l = new Float32Array(BLOCK), r = new Float32Array(BLOCK);
+      const l = new Float32Array(block), r = new Float32Array(block);
       proc.process([], [[l, r]], {});
       L.push(l); R.push(r);
     }
   }
-  const cat = (bs) => { const o = new Float32Array(bs.length * BLOCK); bs.forEach((b, k) => o.set(b, k * BLOCK)); return o; };
+  const cat = (bs) => { const o = new Float32Array(bs.length * block); bs.forEach((b, k) => o.set(b, k * block)); return o; };
   const meters = posted ? posted.slice(from).filter((m) => m.t === 'p').map(({ tt, g }) => ({ tt: [...tt], g: [...g] })) : [];
   return { L: cat(L), R: cat(R), meters };
 }

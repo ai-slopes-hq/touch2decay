@@ -79,3 +79,18 @@ test('speed: 60 s, three spirits, legion 4', async () => {
   const ms = time(w.proc);
   console.log(`  speed, 60 s of sound: JS ${js.toFixed(0)} ms, WASM ${ms.toFixed(0)} ms (×${(js / ms).toFixed(2)})`);
 });
+
+test('blocks longer than 128 samples', async () => {
+  const steps = SCENARIOS.three.map((s) => (s.run ? { run: 150 } : s));
+  const { proc, posted } = loadRef(), r = play(proc, steps, posted, 256);
+  const w = loadWasm(); await w.ready;
+  const got = play(w.proc, steps, w.posted, 256);
+  same(got.L, r.L, '256 L'); same(got.R, r.R, '256 R');
+});
+
+test('a voice index out of range is ignored', async () => {
+  const bad = [{ t: 'voice', i: 3, on: true, prog: [['|', 8]], rate: 7040, lp: 0.3, lvl: 0.2, legio: 1, pan: 0, rel: 1, trig: 9 }, { t: 'sett', i: 3, t0: 5 }, { t: 'sett', i: -1, t0: 5 }];
+  const steps = SCENARIOS.drone, w = loadWasm(); await w.ready;
+  const got = play(w.proc, [...steps.slice(0, -1), ...bad, ...steps.slice(-1)], w.posted), r = ref('drone');
+  same(got.L, r.L, 'drone L'); same(got.R, r.R, 'drone R');
+});
