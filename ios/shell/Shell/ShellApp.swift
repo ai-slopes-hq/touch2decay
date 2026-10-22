@@ -23,7 +23,7 @@ struct ShellApp: App {
 
 struct Web: UIViewRepresentable {
   let midi: Midi
-  static let url = "http://192.168.0.2:8765/"           // ПРОБА: страница с Mac по Wi-Fi (python3 -m http.server 8765), без деплоя
+  static let url = "https://touch2decay-git-native-iamthen0ises-projects.vercel.app/"   // ПРОБА: превью ветки native (https — метроном и Wake Lock); вход в Vercel — один раз внутри
   func makeUIView(context: Context) -> WKWebView {
     let c = WKWebViewConfiguration()
     c.allowsInlineMediaPlayback = true
