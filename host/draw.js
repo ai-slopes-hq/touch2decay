@@ -13,11 +13,16 @@ export function setTheme(t) { INK = (t && t.ink) || INK0; BG = (t && t.bg) || BG
 export const cv = $('field');
 export const g = cv.getContext('2d');
 export let W = 0, H = 0, DPR = 1;
+// scopeY — верх строки кнопок (под вырезом), safeBot — полоска «Домой» снизу
+const safeTop = $('safe-top');
+export let scopeY = 120, safeBot = 0;
 export function fitCanvas() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);   // 3× на iPhone — в 2.25 раза больше пикселей, на глаз почти то же
   W = window.innerWidth; H = window.innerHeight;
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  scopeY = safeTop.offsetHeight + 18;
+  safeBot = $('safe-bot').offsetHeight;
 }
 
 export const ink = (a) => `rgba(${INK},${a})`;

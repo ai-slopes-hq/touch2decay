@@ -1,4 +1,4 @@
-// лад: общий для миров (или свой у мира, когда лад не связан — см. perScl в app.js)
+// лад: общий для миров (или свой у мира, когда лад не связан — см. perScl в concordia.js)
 export const SCALES = [                            // ступени от тоники, в полутонах
   { label: 'major', steps: [0, 2, 4, 5, 7, 9, 11] },
   { label: 'minor', steps: [0, 2, 3, 5, 7, 8, 10] },
@@ -8,6 +8,10 @@ export const SCALES = [                            // ступени от тон
   { label: 'mixolydian', steps: [0, 2, 4, 5, 7, 9, 10] },
 ];
 export const scl = { idx: 0, root: 0, on: false, slideUntil: 0 };
+export const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
+// лад сменился — мир I перестраивает высоты планет (app.js ставит allDirty)
+export let retune = () => {};
+export function setRetune(fn) { retune = fn; }
 export const inScale = (n) => SCALES[scl.idx].steps.includes((((n - scl.root) % 12) + 12) % 12);
 // высота в полутонах от 55 Гц → ближайшая нота лада (для других миров); без лада — как есть
 export function snapSemi(s) {
