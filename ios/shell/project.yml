@@ -18,6 +18,9 @@ targets:
       properties:
         CFBundleDisplayName: t2d shell
         UIBackgroundModes: [audio]
+        NSLocalNetworkUsageDescription: MIDI from your computer over the network
+        NSBonjourServices: [_apple-midi._udp]
+        NSAppTransportSecurity: { NSAllowsLocalNetworking: true }
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

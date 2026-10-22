@@ -18,6 +18,7 @@ const engine = createEngine(T, model);                  // worklet нет — о
 const view = createView(T, model, engine);
 model.listen(engine.on);
 engine.listen(view.heard);
+window.t2dMidi = (m) => engine.sync(m);                 // ПРОБА 0б (ветка native): MIDI-часы из оболочки ios/shell
 const S = model.state, { isles, luna, echo, buoy, fog, pharos, fx, seq } = S;
 
 let last = 0;

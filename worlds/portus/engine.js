@@ -116,6 +116,19 @@ export function createEngine(T, model) {
     for (const [tt, s] of lastSteps) if (tt <= t) cur = s;
     return cur;
   }
+  // ПРОБА 0б (ветка native): MIDI-часы из оболочки ios/shell — доля n с начала (start) и когда она была (ago, с); темп и фаза шагов — за ними
+  function sync(m) {
+    if (m.t === 'stop') { if (seq.playing) model.play(false); return; }
+    if (m.t === 'start') { if (!seq.playing) model.play(true); return; }
+    if (!actx || m.t !== 'beat') return;
+    if (m.bpm && Math.abs(m.bpm - seq.bpm) > 0.05) model.setBpm(Math.round(m.bpm * 10) / 10);
+    if (!seq.playing) model.play(true);
+    if (!clock.next) schedule();
+    const s = stepSec(), at = actx.currentTime - m.ago + (m.off || 0);   // когда доля прозвучит у нас
+    let e = at - (clock.next + (4 * m.n - clock.step) * s);              // доля n — шаг 4n; ошибка фазы
+    e -= Math.round(e / (16 * s)) * 16 * s;                              // по модулю такта: номер шага с начала не важен
+    clock.next += Math.abs(e) > 0.05 ? e : e * 0.5;                      // далеко — сразу, близко — мягко
+  }
   let audAt = 0;
   function audition(is) {                                 // часы стоят — услышать аккорд, пока ставишь (не чаще 140 мс)
     if (seq.playing || !actx || performance.now() - audAt < 140) return;
@@ -134,7 +147,7 @@ export function createEngine(T, model) {
   }
 
   return {
-    build, on, poll, apply: applyAll,
+    build, on, poll, apply: applyAll, sync,
     listen(fn) { listeners.push(fn); },
     get step() { return curStep(); }, get live() { return !!(bus && bus.live); },
   };

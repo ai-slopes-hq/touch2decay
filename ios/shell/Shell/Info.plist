@@ -20,6 +20,17 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_apple-midi._udp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>MIDI from your computer over the network</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
