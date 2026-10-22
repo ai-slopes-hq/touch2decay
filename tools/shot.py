@@ -1646,6 +1646,10 @@ async def sc_goetia(p):                            # Goetia: печать от �
         if await p.js('()=>t2d.goe.ready'): break
         await p.pg.wait_for_timeout(100)
     a, b, c = [await p.js(f'()=>t2d.goe.node({k})') for k in (1, 0, 5)]
+    for _ in range(30):
+        if await p.js('()=>t2d.goe.core') == 'wasm': break
+        await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.goe.core') == 'wasm', 'the sound comes from the WASM core'
     pid = await p.hold(a['x'], a['y'], ms=60)
     await p.drag(pid, a['x'], a['y'], b['x'], b['y'], steps=8)
     assert await p.js('()=>t2d.goe.spirits.length') == 1, 'second sign — a spirit answers while you draw'
@@ -1683,6 +1687,14 @@ async def sc_goetia(p):                            # Goetia: печать от �
     v = await p.js('()=>t2d.goe.geo().vessel'); await p.tap(v['x'], v['y']); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>t2d.view') == 'map', 'tap the brass vessel — map'
     await p.shot('goetia-map')
+    await p.js('()=>t2d.restartAudio()'); await p.pg.wait_for_timeout(2500)
+    await p.js('()=>t2d.go(15)'); await p.pg.wait_for_timeout(500)
+    for _ in range(30):
+        if await p.js('()=>t2d.goe.core') == 'wasm': break
+        await p.pg.wait_for_timeout(100)
+    await p.pg.wait_for_timeout(1500)
+    lv = await p.js('()=>T2D.level'); print('  goetia level after restart audio:', round(lv, 3))
+    assert await p.js('()=>t2d.goe.core') == 'wasm' and lv > 0.02, f'after restart audio the core is back: {lv}'
 
 
 async def sc_nav(p):                               # стрелка у названия — карта; свайп от левого края — карта; на карте звучащий мир в лучах; concordia → микшер: фейдер, mute, мастер

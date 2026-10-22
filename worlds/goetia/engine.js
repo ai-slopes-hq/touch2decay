@@ -1,11 +1,12 @@
-// Goetia — звук: bytebeat (goetia-worklet.js), шина с эхом и залом. События модели → сообщения worklet;
+// Goetia — звук: bytebeat — ядро C++ (core/worlds/goetia → goetia.wasm) в goetia-worklet.js, шина с эхом и залом. События модели → сообщения worklet;
 // обратно из worklet ~30/с — уровни голосов (gains) и счётчик t каждого духа (tt и когда пришёл — at, мс): по ним view мигает узлами и ведёт огонёк.
 import { SMAX, progOf, trigOf, fcOf } from './model.js';
 
 const TAU = Math.PI * 2;
 export function createEngine(T, model, ver) {
   const { spirits, fx } = model.state;
-  let actx = null, node = null, bus = null, ready = false, started = false, lastSound = 0;
+  let actx = null, node = null, bus = null, ready = false, started = false, lastSound = 0, core = null;
+  let bytes = null;                                      // байты goetia.wasm — качаются один раз, на каждый новый контекст — копия
   let gains = new Array(SMAX).fill(0);
   const tt = new Array(SMAX).fill(0), at = new Array(SMAX).fill(0);   // t духа по последнему сообщению и его время (performance.now)
   const queue = [];
@@ -19,17 +20,20 @@ export function createEngine(T, model, ver) {
     pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
     pre.connect(echoSend); echoSend.connect(dl); dl.connect(damp); damp.connect(fb); fb.connect(dl); damp.connect(out);
     bus = { pre, out, hallSend, hall: h, echoSend, fb, input, live: false };
-    ready = false; node = null; started = false;
+    ready = false; node = null; started = false; core = null;
     applyFx();
   }
   function start() {                                     // модуль — только когда в мир впервые зашли
     if (started || !actx) return;
     started = true;
-    actx.audioWorklet.addModule(`goetia-worklet.js?v=${ver}`).then(() => {
-      node = new AudioWorkletNode(actx, 'goetia', { numberOfInputs: 0, outputChannelCount: [2] });
+    if (!bytes) bytes = fetch(`goetia.wasm?v=${ver}`).then((r) => { if (!r.ok) throw new Error(`goetia.wasm ${r.status}`); return r.arrayBuffer(); });
+    Promise.all([actx.audioWorklet.addModule(`goetia-worklet.js?v=${ver}`), bytes]).then(([, buf]) => {
+      node = new AudioWorkletNode(actx, 'goetia', { numberOfInputs: 0, outputChannelCount: [2], processorOptions: { wasm: buf.slice(0) } });
       node.connect(bus.pre);
       node.port.onmessage = (e) => {
         const d = e.data;
+        if (d.t === 'ready') { core = 'wasm'; return; }
+        if (d.t === 'err') { console.error('goetia core:', d.msg); return; }
         if (d.t !== 'p') return;
         const now = performance.now();
         for (const s of spirits) { tt[s.slot] = d.tt[s.slot]; at[s.slot] = now; }
@@ -39,7 +43,7 @@ export function createEngine(T, model, ver) {
       applyFx();
       for (const s of spirits) sendSpirit(s);
       while (queue.length) node.port.postMessage(queue.shift());
-    }).catch(() => { started = false; });
+    }).catch((err) => { console.error('goetia:', err); started = false; bytes = null; });
   }
   function setLive(on) {
     if (!bus || bus.live === on) return;
@@ -71,6 +75,6 @@ export function createEngine(T, model, ver) {
 
   return {
     build, start, on,
-    get ready() { return ready; }, get gains() { return gains; }, tt, at,
+    get ready() { return ready; }, get core() { return core; }, get gains() { return gains; }, tt, at,
   };
 }

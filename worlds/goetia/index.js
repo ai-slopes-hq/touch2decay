@@ -28,6 +28,6 @@ T.registerWorld(15, {
 });
 window.t2d.goe = {
   spirits: model.state.spirits, fx: model.state.fx, geo: () => geo(T), NODES, formula, numOf, setFx: (k, v) => view.fx.set(k, v),
-  get ready() { return engine.ready; }, get gains() { return engine.gains; }, get drawing() { return view.drawing; },
+  get ready() { return engine.ready; }, get core() { return engine.core; }, get gains() { return engine.gains; }, get drawing() { return view.drawing; },
   node: (k) => nodeXY(geo(T), k), tri: (slot) => geo(T).tris[slot], name: (s) => spiritOf(s).name, rate: model.rate, seal: (path, opt) => model.summon(path, opt), model,
 };
