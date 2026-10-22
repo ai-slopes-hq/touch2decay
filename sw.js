@@ -6,11 +6,12 @@ const PAGE = ['./', './index.html', './manifest.webmanifest'];
 // ES-модули — те же, что <script type="module"> в index.html, в том же порядке; host/ — их импортирует app.js
 const HOST = ['./host/util.js', './host/fonts.js', './host/draw.js', './host/scale.js', './host/registry.js', './host/undo.js', './host/audio.js',
   './host/touch.js', './host/waves.js', './host/sl.js', './host/sheet.js', './host/ui-top.js', './host/legend.js', './host/strain.js', './host/deck.js', './host/concordia.js', './host/mixer.js', './host/map.js', './host/audio-panel.js'];
-const MODULES = [...HOST, './app.js', './cymatica.js', './laboratorium.js', './natura.js', './worlds/inferno/index.js', './worlds/paradisus/index.js', './worlds/monochord/index.js', './worlds/oceanus/index.js', './worlds/horologium/index.js', './worlds/firmamentum/index.js', './worlds/tria/index.js', './worlds/arcadia/index.js', './worlds/portus/index.js', './worlds/goetia/index.js', './prisma.js', './vitrea.js',
+const MODULES = [...HOST, './app.js', './cymatica.js', './laboratorium.js', './worlds/natura/index.js', './worlds/inferno/index.js', './worlds/paradisus/index.js', './worlds/monochord/index.js', './worlds/oceanus/index.js', './worlds/horologium/index.js', './worlds/firmamentum/index.js', './worlds/tria/index.js', './worlds/arcadia/index.js', './worlds/portus/index.js', './worlds/goetia/index.js', './prisma.js', './vitrea.js',
   './worlds/arcadia/model.js', './worlds/arcadia/engine.js', './worlds/arcadia/view.js', './worlds/firmamentum/model.js', './worlds/firmamentum/engine.js', './worlds/firmamentum/view.js', './worlds/goetia/model.js', './worlds/goetia/engine.js', './worlds/goetia/view.js', './worlds/monochord/model.js', './worlds/monochord/engine.js', './worlds/monochord/view.js', './worlds/oceanus/model.js', './worlds/oceanus/engine.js', './worlds/oceanus/view.js', './worlds/tria/model.js', './worlds/tria/engine.js', './worlds/tria/view.js',
   './worlds/inferno/model.js', './worlds/inferno/engine.js', './worlds/inferno/view.js', './worlds/paradisus/model.js', './worlds/paradisus/engine.js', './worlds/paradisus/view.js',
   './worlds/portus/model.js', './worlds/portus/engine.js', './worlds/portus/view.js',
-  './worlds/horologium/model.js', './worlds/horologium/engine.js', './worlds/horologium/view.js'];   // части миров (worlds/<мир>/) — их импортирует index.js мира
+  './worlds/horologium/model.js', './worlds/horologium/engine.js', './worlds/horologium/view.js',
+  './worlds/natura/model.js', './worlds/natura/engine.js', './worlds/natura/view.js', './worlds/natura/scene.js'];   // части миров (worlds/<мир>/) — их импортирует index.js мира
 // модули AudioWorklet — грузятся из миров через addModule(`…?v=`)
 const WORKLETS = ['./plate-worklet.js', './monochord-worklet.js', './ocean-worklet.js', './horo-worklet.js', './pulsar-worklet.js', './terrain-worklet.js', './goetia-worklet.js'];
 const SHELL = [...PAGE, ...MODULES, ...WORKLETS];
