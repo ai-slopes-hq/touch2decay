@@ -168,7 +168,7 @@ export function createEngine(T, model) {
       clock.step++; clock.next += model.stepSec();
     }
   }
-  setInterval(schedule, 25);
+  T.onTick(schedule);                                  // таймер 25 мс + метроном из звукового потока — в фоне шаги не пропадают
   const phase = () => (seq.playing && actx && clock.next ? Math.max(0, clock.step - (clock.next - actx.currentTime) / model.stepSec()) : null);
 
   function on(e) {                                       // событие модели → узлы
