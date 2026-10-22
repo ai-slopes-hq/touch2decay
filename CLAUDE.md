@@ -40,8 +40,9 @@
 | XI | Tria corpora — задача трёх тел, FM по кругу | `tria.js` | `docs/worlds/tria.md` |
 | XII | Arcadia — wave terrain, страна в псевдоперспективе, кубик — новая страна | `arcadia.js`, `terrain-worklet.js` | `docs/worlds/arcadia.md` |
 | XIII | Portus — dub techno: одна дорожка-фарватер на 16 шагов (кораблик — удар, поперёк — нота), аккорд и октава −2…+2 у маяка, луна-фильтр, буй-эхо, туман-ревер, небо гасит эхо | `portus.js` | `docs/worlds/portus.md` |
+| XV | Goetia — bytebeat: печать от знака к знаку — формула, дух встаёт в треугольник (до трёх), медный сосуд — карта | `goetia.js`, `goetia-worklet.js` | `docs/worlds/goetia.md` |
 
-Карта Universum (поле 4 × 4, `CELL`, эмблемы `emblemFor`, звучащие карты в лучах, concordia — общий лад, темп и микшер), выход стрелкой и свайпом от левого края — `docs/worlds/map.md`. Миры I–IV автор считает законченными.
+Карта Universum (поле 4 × 4, 14 миров и две рубашки, `CELL`, эмблемы `emblemFor`, звучащие карты в лучах, concordia — общий лад, темп и микшер), выход стрелкой и свайпом от левого края — `docs/worlds/map.md`. Миры I–IV автор считает законченными.
 
 ## Устройство (общее)
 
@@ -53,7 +54,7 @@
 - Новый мир: файл `.js` с `T2D.registerWorld`, `<script>` в `index.html`, файл в `SHELL` в `sw.js`, клетка в `CELL` и `EMB_LINE`, эмблема — ветка в `emblemFor`, сценарий в `tools/shot.py`, заметки — `docs/worlds/<мир>.md`, строка в таблице выше.
 - Плашки: `T2D.openSheet({title, hint, rows, get, set, text, lfo?})`; FX мира — `world.fx` (плашка FX — `fxSheet`).
 - **Портретная сцена на широком экране:** Natura (`stage()`, `sh(f)` — сдвиг касаний, рисование с `translate(ox)`, по бокам бумага), Inferno и Paradisus (ширина `Ws = min(W, 0.62·H)`, всё по центру `cx`) — на iPad и компьютере не растягиваются. Проверять: Playwright 1280×800 и 820×1180. `tools/render.py --world 3…6` — касание мимо всего включает звук, дальше js (например `t2d.par.dice()`).
-- Отладка из консоли: `window.t2d` — `go(n)` (в мир без касаний), у миров свои: `t2d.cym`, `t2d.lab`, `t2d.nat`, `t2d.inf`, `t2d.par`, `t2d.mono`, `t2d.ocean`, `t2d.horo`, `t2d.firm`, `t2d.tria`, `t2d.arc`, `t2d.portus`.
+- Отладка из консоли: `window.t2d` — `go(n)` (в мир без касаний), у миров свои: `t2d.cym`, `t2d.lab`, `t2d.nat`, `t2d.inf`, `t2d.par`, `t2d.mono`, `t2d.ocean`, `t2d.horo`, `t2d.firm`, `t2d.tria`, `t2d.arc`, `t2d.portus`, `t2d.goe`.
 
 ## LFO в плашках миров (хост, `app.js`)
 

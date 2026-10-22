@@ -1484,6 +1484,47 @@ async def sc_portus(p):                            # Portus: остров на �
     assert await p.js('()=>t2d.view') == 'map', 'tap the moon — map'
 
 
+async def sc_goetia(p):                            # Goetia: печать от знака к знаку — дух звучит и встаёт в треугольник; треугольник вверх — выше; плашка; тап — изгнать; четвёртый гонит старого; кубик; корзина; отмена; сосуд — карта
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(15)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 15], 'the card opens Goetia'
+    for _ in range(30):
+        if await p.js('()=>t2d.goe.ready'): break
+        await p.pg.wait_for_timeout(100)
+    a, b, c = [await p.js(f'()=>t2d.goe.node({k})') for k in (1, 0, 5)]
+    pid = await p.hold(a['x'], a['y'], ms=60)
+    await p.drag(pid, a['x'], a['y'], b['x'], b['y'], steps=8)
+    assert await p.js('()=>t2d.goe.spirits.length') == 1, 'second sign — a spirit answers while you draw'
+    await p.drag(pid, b['x'], b['y'], c['x'], c['y'], steps=10); await p.pg.wait_for_timeout(300)
+    await p.shot('goetia-drawing'); await p.up(); await p.pg.wait_for_timeout(1200)
+    path = await p.js('()=>t2d.goe.spirits[0].path'); assert path == [1, 0, 5], f'the seal is the path: {path}'
+    f = await p.js('()=>t2d.goe.formula(t2d.goe.spirits[0].path)'); print('  seal', path, f, '—', await p.js('()=>t2d.goe.name(t2d.goe.spirits[0])'))
+    lv = await p.js('()=>T2D.level'); print('  goetia level, one spirit:', round(lv, 3)); assert lv > 0.02, f'the spirit is heard: {lv}'
+    await p.shot('goetia-seal')
+    r0 = await p.js('()=>t2d.goe.rate(t2d.goe.spirits[0])'); t = await p.js('()=>t2d.goe.tri(0)')
+    pid = await p.hold(t['x'], t['y'], ms=60); await p.drag(pid, t['x'], t['y'], t['x'], t['y'] - 64, steps=8); await p.up(); await p.pg.wait_for_timeout(200)
+    r1 = await p.js('()=>t2d.goe.rate(t2d.goe.spirits[0])'); assert r1 > r0 * 1.2, f'drag the triangle up — higher: {r0} -> {r1}'
+    await p.hold(t['x'], t['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a triangle — its sheet'
+    await p.shot('goetia-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    await p.tap(t['x'], t['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.goe.spirits.length') == 0, 'tap the triangle — banished'
+    await p.js('()=>{for (const s of [[0,1],[2,3],[4,5],[6,7]]) t2d.goe.seal(s)}')
+    sl = await p.js('()=>t2d.goe.spirits.map(s=>s.path[0]).sort()'); assert sl == [2, 4, 6], f'a fourth spirit drives out the oldest: {sl}'
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1800)
+    n = await p.js('()=>t2d.goe.spirits.length'); assert 2 <= n <= 3, f'dice — two or three spirits: {n}'
+    assert await p.js("()=>t2d.worlds[15].fx.sectors.length") == 4, 'FX: legio, echo, spread, hall'
+    print('  goetia level, dice:', round(await p.js('()=>T2D.level'), 3)); await p.shot('goetia')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(3000)
+    assert await p.js('()=>t2d.goe.spirits.length') == 0, 'trash — every spirit is banished'
+    lv = await p.js('()=>T2D.level'); assert lv < 0.01, f'after trash it is silent: {lv}'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.goe.spirits.length') == n, 'undo summons them back'
+    v = await p.js('()=>t2d.goe.geo().vessel'); await p.tap(v['x'], v['y']); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the brass vessel — map'
+    await p.shot('goetia-map')
+
+
 async def sc_nav(p):                               # стрелка у названия — карта; свайп от левого края — карта; на карте звучащий мир в лучах; concordia → микшер: фейдер, mute, мастер
     await p.js('()=>t2d.go(10)'); await p.pg.wait_for_timeout(300)
     B = await p.js('()=>t2d.backPos()'); await p.tap(B['x'], B['y']); await p.pg.wait_for_timeout(900)
@@ -1520,7 +1561,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
