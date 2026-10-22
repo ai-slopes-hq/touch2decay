@@ -104,10 +104,7 @@ async def sc_worlds(p):                            # карта, Cymatica в ч�
     await p.T('touchEnd', [b]); await p.pg.wait_for_timeout(800)         # touchEnd перечисляет отпускаемые точки: солнце
     assert await p.js('()=>t2d.view') == 'map', 'sun -> map'
     await p.T('touchEnd', [a]); await p.pg.wait_for_timeout(200)         # палец с планеты отпущен уже на карте — без ошибок
-    q = await p.js('()=>t2d.mapPanel(3)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(800)   # четверть III — Laboratorium
-    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 3], 'III opens (sketch)'
-    s = await p.js('()=>t2d.lab.geo().sun'); await p.tap(s['x'] - 25, s['y'] + 25); await p.pg.wait_for_timeout(800)
-    assert await p.js('()=>t2d.view') == 'map', 'sun -> map'
+    assert await p.js('()=>t2d.hidden.includes(3) ? !t2d.worlds[3] : !!t2d.worlds[3]'), 'III is switched off — not on the map'
     q = await p.js('()=>t2d.mapPanel(2)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(800)   # четверть II — Cymatica
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 2], 'II -> Cymatica'
     assert await p.js('()=>t2d.T2D_ok'), 'T2D helpers for worlds'
@@ -671,8 +668,6 @@ async def sc_handpan(p):                           # нота — от клет�
 
 
 async def sc_sketches(p):                         # эскизы миров III и IV: картинка, FX меняют пейзаж, солнце — на карту
-    await p.js('()=>t2d.go(3)'); await p.pg.wait_for_timeout(900); await p.shot('laboratorium')
-    await p.js('()=>{t2d.lab.fx.athanor=1}'); await p.pg.wait_for_timeout(300); await p.shot('laboratorium-fire')
     await p.js('()=>t2d.go(4)'); await p.pg.wait_for_timeout(900); await p.shot('natura')
     await p.js("()=>Object.assign(t2d.nat.fx,{reverb:1,delay:1,time:1,chorus:1,cutoff:1,env:0.9})"); await p.pg.wait_for_timeout(500); await p.shot('natura-fx')
     await p.js("()=>Object.assign(t2d.nat.fx,{reverb:0,delay:0,time:0,chorus:0,cutoff:0})"); await p.pg.wait_for_timeout(500); await p.shot('natura-clear')
@@ -680,16 +675,11 @@ async def sc_sketches(p):                         # эскизы миров III 
     assert await p.js('()=>t2d.view') == 'play', 'Natura tombstone does nothing yet'
     s = await p.js('()=>t2d.nat.geo().sun'); await p.tap(s['x'] + 25, s['y'] + 25); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>t2d.view') == 'map', 'Natura sun -> map'
-    q = await p.js('()=>t2d.mapPanel(3)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
-    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 3], 'III opens'
-    await p.tap(W - 38, H - 40); await p.pg.wait_for_timeout(300)        # древо в углу — пока ни к чему не ведёт
-    assert await p.js('()=>t2d.view') == 'play', 'corner tree does nothing yet'
-    s = await p.js('()=>t2d.lab.geo().sun'); await p.tap(s['x'] - 25, s['y'] + 25); await p.pg.wait_for_timeout(900)
-    assert await p.js('()=>t2d.view') == 'map', 'Laboratorium sun -> map'
     await p.shot('map-sketches')
 
 
 async def sc_lab(p):                              # Laboratorium: огонь — дрон, колба вбок — высота, вверх — уровень, трубки, пеликан, корзина, отмена, кубик
+    if 3 in await p.js('()=>t2d.hidden'): print('  switched off — skipped'); return
     await p.js('()=>t2d.go(3)'); await p.pg.wait_for_timeout(300)
     fb = await p.js('()=>t2d.lab.furnace()'); await p.tap(fb['x'], fb['y']); await p.pg.wait_for_timeout(1800)
     assert await p.js('()=>t2d.lab.fire && t2d.lab.live'), 'tap the furnace — fire, drone'
@@ -942,7 +932,7 @@ async def sc_startmap(p):                          # карта — старто
 
 
 async def sc_legenda(p):                           # тап по заголовку мира — легенда жестов; любое касание — закрыть
-    for w in (1, 2, 3, 4):
+    for w in (1, 2, 4):
         await p.js(f'()=>t2d.go({w})'); await p.pg.wait_for_timeout(900)
         tw = await p.js('()=>t2d.titleW()')
         await p.tap(46 + tw / 2, await p.js('()=>t2d.scopeY()') + 20); await p.pg.wait_for_timeout(150)
@@ -1205,6 +1195,7 @@ async def sc_oceanus(p):                           # Oceanus: город поё�
 
 
 async def sc_horologium(p):                        # Horologium: штифт на зубце, маятник — пуск и темп, молоточки бьют, шестерня — нота, плашка, FX, кубик, корзина, отмена, солнце — карта
+    if 9 in await p.js('()=>t2d.hidden'): print('  switched off — skipped'); return
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(9)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 9], 'the card left of Laboratorium opens Horologium'

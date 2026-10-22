@@ -1,6 +1,6 @@
 # touch2decay — роадмап
 
-## Бэклог от 22.10 (автор): убрать Laboratorium и Horologium
+## Бэклог от 22.10 (автор): убрать Laboratorium и Horologium (сделано, v147 — `HIDDEN`)
 
 - **Убираем из интерфейса III · Laboratorium (FM-дрон) и IX · Horologium (West Coast).** Из FM-миров остаются VIII · Oceanus и XI · Tria corpora («там и жизнь есть»).
 - **Номера III и IX никому не отдаём** — миры просто выключены из интерфейса: на карте их клетки — рубашки (*nondum*), в микшере и легенде их нет. Код и файлы (`laboratorium.js`, `horologium.js`, `horo-worklet.js`, `docs/worlds/…`) остаются — включить обратно одной строкой.

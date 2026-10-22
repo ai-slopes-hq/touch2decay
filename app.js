@@ -4174,7 +4174,11 @@
   }
 
   // ---------- миры: реестр; Tenebrae — мир I поверх своих функций ----------
+  // выключенные миры (автор, 22.10): номера за ними, код на месте — не регистрируются: нет на карте (рубашка), в микшере, звуке, легенде.
+  // Вернуть мир — убрать его номер отсюда.
+  const HIDDEN = new Set([3, 9]), hiddenW = {};
   function registerWorld(n, w) {
+    if (HIDDEN.has(n)) { hiddenW[n] = w; return; }
     if (n > 2) ENTER.add(n);                     // III и IV — модули-эскизы: пока без звука, но в них можно влететь
     worlds[n] = w; hists[n] = []; lasts[n] = entry(n);
   }
@@ -4201,11 +4205,11 @@
 
   window.t2d = {
     worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return strikes; },
-    go(w) { nav.world = w; nav.view = 'play'; nav.anim = null; nav.settings = false; if (worlds[w].enter) worlds[w].enter(); },
+    go(w) { if (!worlds[w]) return false; nav.world = w; nav.view = 'play'; nav.anim = null; nav.settings = false; if (worlds[w].enter) worlds[w].enter(); },
     mix, chanLvl, mixGeo: () => mixGeo(), backPos: () => backPos(), get chanGains() { return Object.fromEntries(Object.entries(chans).map(([n, c]) => [n, c.g.gain.value])); },
     get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey, slAdd: (k) => { if (fxSheet && fxSheet.spec.lfo) { const e = slAdd(fxSheet.spec, k); e.spec.depth = 0.8; e.spec.rate = 1; return true; } return false; },   // сразу в мир, без касаний (тесты)
     get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
-    hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
+    hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
     get ctx() { return ctx; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
   };   // для отладки из консоли
