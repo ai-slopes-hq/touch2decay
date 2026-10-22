@@ -61,3 +61,9 @@ test('a throwing subscriber does not stop the others', async () => {
   lastNode(ctx).port.onmessage({ data: 1 });
   assert.equal(b.n - b0, 1);
 });
+
+test('a context without AudioWorklet does not throw', () => {
+  const ctx = fakeCtx(); delete ctx.audioWorklet;      // http по IP в сети, старый Safari
+  assert.doesNotThrow(() => startClock(ctx));
+  assert.equal(clockLive(), false);
+});

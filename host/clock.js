@@ -19,6 +19,7 @@ if (timer.unref) timer.unref();                         // Node (тесты): т
 export function startClock(ctx) {                       // на каждом новом контексте (build); старый метроном — отцепить
   if (node) { node.port.onmessage = null; node.disconnect(); node = null; }
   cur = ctx;
+  if (!ctx.audioWorklet) return;                        // нет AudioWorklet (http по IP, старый Safari) — остаётся таймер
   ctx.audioWorklet.addModule(`clock-worklet.js?v=${ver}`).then(() => {
     if (cur !== ctx) return;
     node = new AudioWorkletNode(ctx, 'clock', { numberOfInputs: 0, outputChannelCount: [1] });
