@@ -14,7 +14,7 @@ import { depthY, drawFxSheet, fxGeo, fxSheet, PAD_IN, padDepth, padRate, rateX, 
 import { LFO_RATE_MAX, LFO_RATE_MIN, SL, slAdd, slTick } from './host/sl.js';
 import { drawStrain, measureStrain, setGraphLoad, strain } from './host/strain.js';
 import { DTAP_MS, F, HOLD_MOVE, HOLD_MS, TAP_MOVE, TAP_MS } from './host/touch.js';
-import { backPos, btnHit, btnPos, drawUI, headHit, ITEM_H, markDice, rootAt, sclList, setLassoMarks, titleW } from './host/ui-top.js';
+import { backPos, btnHit, btnPos, drawUI, headHit, ITEM_H, markDice, rootAt, sclList, titleW } from './host/ui-top.js';
 import { commit, hists, undo } from './host/undo.js';
 import { clamp, inBox, invLog, lerpLog } from './host/util.js';
 import { morphFn, morphName, NW, WAVES, weight } from './host/waves.js';
@@ -86,7 +86,6 @@ let focus = V[0];
 let touchedOnce = false;
 let lastTap = null;       // { v, t } — для двойного тапа
 const full = [];          // касания, которым не хватило голоса — для рисования отказа
-const sel = new Set();    // кружки, обведённые лассо: двигаются и правятся вместе
 const rings = [];
 
 // ---------- общие эффекты (кнопка FX): посылы и характер; сухой звук не трогают ----------
@@ -246,8 +245,8 @@ function liveRange(v, key) {
   return { now: normAt(v, key, now), lo: Math.min(a, b), hi: Math.max(a, b) };
 }
 
-// с кем правится кружок: если он выделен — вся выделенная группа
-const groupOf = (v) => (sel.has(v) ? [...sel].filter((u) => u.active) : [v]);
+// с кем правится кружок (кольцо, плашка, LFO) — группа из него одного
+const groupOf = (v) => [v];
 
 function hit(x, y) {
   let v = null, best = GRAB_R;
@@ -275,36 +274,6 @@ function follow(v) {
   v.x = q.p; v.y = q.c; v.holeT = holeDepth(f.x + v.ox, f.y + v.oy);
   v.dirty = true;
   focus = v;
-  if (f.group) for (const m of f.group) {     // выделенные едут следом, сохраняя расстановку
-    if (!m.u.active) continue;
-    m.u.x = clamp(v.x + m.ox); m.u.y = clamp(v.y + m.oy);
-    if (!scl.on) m.u.dx = m.u.x;
-    m.u.holeT = holeDepth(vx(m.u), vy(m.u));
-    m.u.dirty = true;
-  }
-}
-
-function pointIn(poly, x, y) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i], b = poly[j];
-    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
-}
-
-// петля без «подхода» от кнопки: с той точки, где обводка вернулась к себе, до конца
-function loopOf(path) {
-  const n = path.length, e = path[n - 1];
-  for (let i = 0; i < n - 8; i++) if (Math.hypot(path[i].x - e.x, path[i].y - e.y) < 40) return path.slice(i);
-  return path;
-}
-
-function finishLasso(path) {
-  sel.clear();
-  const loop = loopOf(path);
-  if (loop.length < 3) return;
-  for (const v of V) if (v.active && pointIn(loop, vx(v), vy(v))) sel.add(v);
 }
 
 // временных — не больше трёх. Мест нет — уступает только затухающий временный (самый тихий).
@@ -323,7 +292,6 @@ function spawn(f) {
   if (!v) { full.push({ x: f.x, y: f.y, t: performance.now() }); return null; }
   unlinkAll(v);
   clearLfos(v);
-  sel.delete(v);
   const sp = outOfHole(f.x, f.y), q = unplace(sp.x, sp.y);
   v.x = q.p; v.dx = v.x; v.y = q.c; v.hole = v.holeT = holeDepth(sp.x, sp.y);
   v.ox = sp.x - f.x; v.oy = sp.y - f.y;     // вытолкнули из дыры — палец ведёт планету с этим сдвигом
@@ -515,7 +483,6 @@ function deleteVoice(v) {
   if (editor && (editor.v === v || editor.dst === v || (editor.m && editor.m.src === v))) editor = null;
   for (const f of F.values()) if (f.voice === v) { f.voice = null; f.menu = null; }
   v.pinned = false; v.fingers = [];
-  sel.delete(v);
   unlinkAll(v);
   release(v, 0.25);
   burst(v);
@@ -566,7 +533,6 @@ function solDown(f, e) {
     }
     f.caught = true;
     if (!v.pinned) attack(v);
-    if (sel.has(v)) f.group = [...sel].filter((u) => u !== v).map((u) => ({ u, ox: u.x - v.x, oy: u.y - v.y }));
   } else {
     v = spawn(f);                           // пустое место — новый кружок
     f.spawned = true;
@@ -672,14 +638,13 @@ const lfoPanel = () => {
   const x = 16, w = W - 32, bottom = H - safeBot - 16, top = bottom - 214;
   return { x, w, top, bottom, shape: { y: top + 22, h: 44 }, pad: { y: top + 74, h: bottom - top - 74 } };
 };
-// кубик (кнопка вверху): случайный тембр выделенным планетам (или всем) — волна, фильтр, detune, fm, сдвиг;
+// кубик (кнопка вверху): случайный тембр всем планетам — волна, фильтр, detune, fm, сдвиг;
 // заодно связи и LFO; высота и место не трогаются. Планет нет — кубик сам ставит закреплённый тон
 // в случайном месте видимой части карты, с ладом — сразу на ноту лада
 function rollDice() {
   const R = Math.random;
   const live = (v) => v.active && v.envT > 0;   // гаснущие не в счёт
-  let vs = [...sel].filter(live);
-  if (!vs.length) vs = V.filter(live);
+  let vs = V.filter(live);
   if (!vs.length) {
     const pt = place(zoom * (0.08 + 0.75 * R()), 0.1 + 0.6 * R());
     const v = spawn({ x: pt.x, y: pt.y });
@@ -826,7 +791,6 @@ function uiHit(f) {
 function allDirty() { for (const v of V) v.dirty = true; }
 setRetune(allDirty);
 setGraphLoad(() => { const act = V.filter((v) => v.active); return (act.length + 0.15 * act.reduce((n, v) => n + Object.keys(v.lfo).length, 0)) / VOICES; });
-setLassoMarks((lasso) => { const loop = loopOf(lasso); for (const v of V) if (v.active && loop.length > 2 && pointIn(loop, vx(v), vy(v))) ring(vx(v), vy(v), 48, 0.9, 1.5); });
 
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
 function snapshot() {
@@ -844,7 +808,6 @@ function snapshot() {
 function restore(js) {
   const st = JSON.parse(js);
   editor = null; ghost = null;
-  sel.clear();
   const keep = new Set(st.v.map((d) => d.i));
   for (const v of V) if (v.active && v.pinned && !keep.has(v.i)) deleteVoice(v);
   for (const d of st.v) {
@@ -872,7 +835,6 @@ function clearAll() {
   editor = null;
   for (const v of V) if (v.active) deleteVoice(v);
   lastTap = null;
-  sel.clear();
 }
 
 function uiDown(f) {
@@ -984,16 +946,6 @@ function uiMove(f) {
   if (f.ui === 'ring') { ringTouch(f, false); return; }
   if (f.ui !== 'scl') return;
   const L = sclList(), b = L.b;
-  // повёл палец влево вдоль верха — карандаш: обводишь кружки
-  if (nav.world === 1 && !f.lasso && !f.picked && f.x < b.x - 50 && f.y < b.y + 36) {
-    f.lasso = [];
-    if (scl.on !== f.wasOn) { scl.on = f.wasOn; scl.slideUntil = performance.now() + 500; allDirty(); }
-  }
-  if (f.lasso) {
-    const lp = f.lasso[f.lasso.length - 1];
-    if (!lp || Math.hypot(f.x - lp.x, f.y - lp.y) > 4) f.lasso.push({ x: f.x, y: f.y });
-    return;
-  }
   if (f.y < b.y + 40) return;
   f.picked = true;
   let on = scl.on, idx = scl.idx, root = scl.root;
@@ -1040,7 +992,6 @@ function uiUp(f) {
     return;
   }
   if (f.ui !== 'scl') return;
-  if (f.lasso) { finishLasso(f.lasso); return; }
   // короткий тап по уже включённому ладу — выключить; выбор из списка остаётся как есть
   if (!f.picked && f.wasOn && performance.now() - f.t0 < 300) {
     scl.on = false;
@@ -1713,10 +1664,6 @@ function drawPlanet(v, now, dt) {
     const t = v.bph * Math.PI * 2;
     dot(x + Math.cos(t) * 5, y + Math.sin(t) * 5, 1.9, a);
     dot(x - Math.cos(t) * 5, y - Math.sin(t) * 5, 1.9, a * 0.75);
-  }
-  if (sel.has(v)) {                           // выделен лассо — бегущий пунктир
-    g.save(); g.setLineDash([4, 5]); g.lineDashOffset = -now * 0.03;
-    ring(x, y, 44, Math.max(0.5, a), 1); g.restore();
   }
   // спутники: орбита по параметру, размер — глубина, след за спутником — форма LFO
   for (const [key, spec] of Object.entries(v.lfo)) {
@@ -2446,7 +2393,6 @@ function solTick(now, dt) {
     if (v.active && v.holeT > 0.9 && !v.fingers.length && v.envT !== 0) { v.pinned = false; release(v, 0.4); }   // отпущена в глубине дыры — умирает
     if (v.active && !v.pinned && !v.fingers.length && v.envT === 0 && v.env < 0.004) {
       v.active = false;
-      sel.delete(v);
       unlinkAll(v);
       clearLfos(v);
       if (v.nodes && v.nodes.live) { v.nodes.out.disconnect(); v.nodes.vca.disconnect(v.nodes.vscope); v.nodes.live = false; }
@@ -2654,7 +2600,7 @@ window.t2d = {
   get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, get deck() { return deck; }, setDeck, mixRows: () => mixGeo().rows.map((r) => r.n), restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey, slAdd: (k) => { if (fxSheet && fxSheet.spec.lfo) { const e = slAdd(fxSheet.spec, k); e.spec.depth = 0.8; e.spec.rate = 1; return true; } return false; },   // сразу в мир, без касаний (тесты)
   get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
   hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
-  voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,
+  voices: V, fx, scl, freq, cutoff, applyFx, place, unplace, semi,
   get ctx() { return ctx; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
 };   // для отладки из консоли
 

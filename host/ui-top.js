@@ -30,9 +30,6 @@ export const sclList = () => {
 let diceAt = -1e9;                              // бросок кубика — кость крутится
 export const markDice = () => { diceAt = performance.now(); };
 export let titleW = 120;
-// обводка карандашом (лад, влево вдоль верха): что обведено — подсвечивает мир I (app.js)
-let lassoMarks = () => {};
-export function setLassoMarks(fn) { lassoMarks = fn; }
 
 export const rootAt = (L, x, y) => {
   if (x < L.rx || x > L.rx + 2 * L.cw || y < L.top || y > L.top + L.rows * ITEM_H) return -1;
@@ -151,28 +148,9 @@ export function drawUI() {
   g.moveTo(c.x - 1.6, c.y - 1.5); g.lineTo(c.x - 1.4, c.y + 4.5); g.moveTo(c.x + 1.6, c.y - 1.5); g.lineTo(c.x + 1.4, c.y + 4.5);
   g.stroke();
 
-  // лад: лесенка; зажата — список ладов и тоники; вправо — карандаш
+  // лад: лесенка; зажата — список ладов и тоники
   const L = sclList(), b = L.b;
-  if (sclF && sclF.lasso) {                   // обводка карандашом
-    g.save(); g.setLineDash([3, 4]); g.strokeStyle = ink(0.85); g.lineWidth = 1.4;
-    g.beginPath(); sclF.lasso.forEach((pt, i) => (i ? g.lineTo(pt.x, pt.y) : g.moveTo(pt.x, pt.y)));
-    if (sclF.lasso.length > 2) g.closePath();
-    g.stroke(); g.restore();
-    lassoMarks(sclF.lasso);
-  }
-  if (sclF && !sclF.lasso) {
-    // слева от кнопки — карандаш: туда повести палец, чтобы обвести кружки (обводить есть что только в Tenebrae)
-    const px = b.x - 64, py = b.y;
-    if (nav.world === 1) {
-    g.save(); g.translate(px, py); g.rotate((-3 * Math.PI) / 4);
-    g.strokeStyle = ink(0.8); g.lineWidth = 1.4;
-    g.strokeRect(-12, -3.5, 20, 7);
-    g.beginPath(); g.moveTo(8, -3.5); g.lineTo(14, 0); g.lineTo(8, 3.5); g.stroke();
-    g.restore();
-    g.strokeStyle = ink(0.4); g.lineWidth = 1;
-    g.beginPath(); g.moveTo(b.x - BTN_R - 8, py); g.lineTo(px + 18, py); g.stroke();
-    }
-
+  if (sclF) {
     // список: off и лады — строки с тонкими разделителями
     const rows = ['off', ...SCALES.map((sc) => sc.label)];
     g.fillStyle = paper(0.9);
