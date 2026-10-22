@@ -14,6 +14,7 @@ export function createEngine(T, model) {
 
   function build(ctx, input) {
     actx = ctx;
+    rustle = null; skiffV = null;                       // голоса старого контекста (restartAudio) — с ним и умерли; заведутся заново на новом
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const vin = g(1), pre = g(1), out = g(1.2), chOut = g(0), hp = ctx.createBiquadFilter();
     hp.type = 'highpass'; hp.frequency.value = 20; hp.Q.value = 0.9;   // тормошат дерево — срез вверх
