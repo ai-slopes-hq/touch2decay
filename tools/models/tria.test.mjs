@@ -3,9 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createModel, BODY_KEYS, FX_DEF } from '../../worlds/tria/model.js';
+import { seeded } from './util.mjs';
 
-// повторяемая случайность для моделей (mulberry32)
-const seeded = (seed) => () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 const DT = 1 / 60;
 const run = (m, secs) => { for (let k = 0; k < Math.round(secs / DT); k++) m.tick(DT); };
 

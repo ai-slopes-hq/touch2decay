@@ -33,14 +33,14 @@
 | IV | Natura — секвенсер-река, кувшинки | `natura.js` | `docs/worlds/natura.md` |
 | V | Inferno — шумы + резонаторы, девять кругов | `inferno.js` | `docs/worlds/inferno.md` |
 | VI | Paradisus — хор ангелов, форманты, собор | `paradisus.js` | `docs/worlds/paradisus.md` |
-| VII | Monochordum — Карплус — Стронг, страм, ветер, автострам | `monochord.js`, `monochord-worklet.js` | `docs/worlds/monochordum.md` |
-| VIII | Oceanus — сканирующий синтез, карта T-O, луна | `oceanus.js`, `ocean-worklet.js` | `docs/worlds/oceanus.md` |
+| VII | Monochordum — Карплус — Стронг, страм, ветер, автострам | `worlds/monochord/`, `monochord-worklet.js` | `docs/worlds/monochordum.md` |
+| VIII | Oceanus — сканирующий синтез, карта T-O, луна | `worlds/oceanus/`, `ocean-worklet.js` | `docs/worlds/oceanus.md` |
 | IX | Horologium (Nova) — волшебные числа: кольца II…IX, n ударов за оборот на n-й гармонике (Rhythmicon), унтертоны, фаза, маятник руками, ритм → аккорд за limen | `horologium.js`, `horo-worklet.js` | `docs/worlds/horologium.md` |
 | X | Firmamentum — пульсарный синтез, свод (**образец model / engine / view**) | `worlds/firmamentum/`, `pulsar-worklet.js` | `docs/worlds/firmamentum.md` |
-| XI | Tria corpora — задача трёх тел, FM по кругу | `tria.js` | `docs/worlds/tria.md` |
-| XII | Arcadia — wave terrain, страна в псевдоперспективе, кубик — новая страна | `arcadia.js`, `terrain-worklet.js` | `docs/worlds/arcadia.md` |
+| XI | Tria corpora — задача трёх тел, FM по кругу | `worlds/tria/` | `docs/worlds/tria.md` |
+| XII | Arcadia — wave terrain, страна в псевдоперспективе, кубик — новая страна | `worlds/arcadia/`, `terrain-worklet.js` | `docs/worlds/arcadia.md` |
 | XIII | Portus — dub techno: одна дорожка-фарватер на 16 шагов (кораблик — удар, поперёк — нота), аккорд и октава −2…+2 у маяка, луна-фильтр, буй-эхо, туман-ревер, небо гасит эхо | `portus.js` | `docs/worlds/portus.md` |
-| XV | Goetia — bytebeat: печать от знака к знаку — формула, дух встаёт в треугольник (до трёх), медный сосуд — карта | `goetia.js`, `goetia-worklet.js` | `docs/worlds/goetia.md` |
+| XV | Goetia — bytebeat: печать от знака к знаку — формула, дух встаёт в треугольник (до трёх), медный сосуд — карта | `worlds/goetia/`, `goetia-worklet.js` | `docs/worlds/goetia.md` |
 | XVII | **в бэклоге** (`HIDDEN`, вход в DLC закрыт `DLC_ON = false`) · Prisma (**DLC vol. I**) — аддитивный: луч сквозь призму, 16 лучей-гармоник | `prisma.js` | `docs/worlds/prisma.md` |
 | XVIII | **в бэклоге** (`HIDDEN`) · Vitrea — Harmonica vitrea (**DLC vol. I**): трение по ободу бокалов, вода — высота | `vitrea.js` | `docs/worlds/vitrea.md` |
 
@@ -68,7 +68,8 @@
 - **`engine.js`** — `createEngine(T, model, ver)` → `{ build(ctx, chanIn), start(), on(event), listen(fn), ready, …метры }`. Единственное место с Web Audio: шина, зал `T.hall()`, worklet (`addModule('…?v=' + ver)`, `ver` — из `import.meta.url` у `index.js`). `build` хост зовёт на каждом новом `AudioContext` (`restartAudio`), `start` — лениво (первая звезда, вход в мир). `on(event)` — событие модели → узлы / сообщение worklet (без опроса каждый кадр). Обратно — метры (`gains`, `counts`) для чтения и `listen` — что услышано (вспышки, пылинки) для view. `model.state` только читает.
 - **`view.js`** — `createView(T, model, engine)` → `{ theme, corner, fx, legend, down, move, up, tick(now), draw(now), heard(e), mapShot }`; геометрия — чистые функции модуля (`geo(T)`, `fromSky`). Касание → действие модели, **никогда не трогает звук**; от engine — только метры. Плашки (`T.openSheet`), FX-веер, легенда — здесь; `get/set` идут в модель.
 - **`index.js`** — склейка: `model.listen(engine.on)`, `engine.listen(view.heard)`, побочное для хоста (`T.lfoClear` при закрытии звезды — слушатель модели), `T.registerWorld(n, {…})` (методы — замыкания, без `this`), `window.t2d.<мир>` (тот же набор, что был, плюс `model`). В `index.html` — тег на `index.js?v=`, части — без `?v=` (одна строка адреса на модуль), в `MODULES` в `sw.js`. Worklet пока лежит в корне (путь `addModule` — от страницы).
-- **Тесты модели** — `tools/test-models.mjs` (Node, импорт `model.js` как есть, зерно — `seeded(n)`): у Firmamentum — слоты звёзд, fp/ff и limen, лад, комета, drift, снимок и кубик с зерном.
+- **Тесты модели** — `tools/models/<мир>.test.mjs` (Node, импорт `model.js` как есть; `seeded(n)`, `near` — `tools/models/util.mjs`). У каждого мира — его алгоритм (Firmamentum: слоты, fp/ff и limen, лад, комета, drift; Arcadia: одно зерно — одна страна; Goetia: печать → программа; Monochordum: узор автострама; Tria: восьмёрка держится, энергия; Oceanus: слоты, высота, лад), плюс снимок → restore и кубик с зерном.
+- **Отклонения, принятые на шаге 5:** у мира без «услышанного» engine может не иметь `listen` (Goetia, Oceanus — view читает метры); что пришло из worklet и нужно модели (энергия струн Monochordum, центры петель Arcadia), кладёт в модель **склейка** (`engine.listen(h => model.…)`), а не engine; состояние касания (рисуемая печать Goetia) — во view, склейка сбрасывает его в `clear` / `restore`.
 
 ## LFO в плашках миров (хост: модель — `host/sl.js`, плашка и панель — `host/sheet.js`)
 
@@ -105,9 +106,9 @@
 - `python3 tools/render.py ["()=>{…}"] [--world 2] [--onsets]` — офлайн-рендер звука (Tenebrae или удар по пластине Cymatica), RMS и время расчёта; `--onsets` — узор из 4 ударов на 120 BPM, интервалы между ударами и разброс (было 0.68 мс).
 - `node --test tools/test-seq.mjs` — тесты помощников секвенсера (через `vm`).
 - `node --test tools/test-plate.mjs` — тесты звука пластины в Node (через `vm`, без зависимостей). `test-seq.mjs` тоже грузит `cymatica.js` в `vm` — `import.meta.url` там подменяется строкой.
-- `node --test tools/test-models.mjs` — тесты моделей миров (пока каркас, наполняется с шага 4 рефакторинга).
+- `node --test tools/test-models.mjs tools/models/*.test.mjs` — тесты моделей: хоста (LFO строк) и миров из `worlds/` (с шага 4 рефакторинга).
 - Нужен Playwright: `pip install playwright && playwright install chromium`. В системном python его нет — временный venv в scratchpad (`/opt/homebrew/bin/python3 -m venv pw && pw/bin/pip install playwright`), браузеры уже в `~/Library/Caches/ms-playwright`.
-- Нестабильно само по себе (и до модулей): сценарий `tria` (хаос трёх тел) падает примерно в половине прогонов; `render.py` для секвенсеров (Portus) и Firmamentum гуляет на ±5–20 % от прогона к прогону — сравнивать по нескольким прогонам, состояние задавать `restore(снимок)`, а не `dice()`.
+- Нестабильно само по себе (и до модулей): сценарий `tria` проходит лишь в 20–50 % прогонов (двойной тап по летящему телу; LFO *steps* на gravitas — окно 1.2 с против периода ~2.5 с), `triaenergy` изредка (кубик сводит тела в тесную пару) — сравнивать вперемежку со старой версией, по 10 прогонов; `render.py` для секвенсеров (Portus) и Firmamentum гуляет на ±5–20 % от прогона к прогону — сравнивать по нескольким прогонам, состояние задавать `restore(снимок)`, а не `dice()`.
 
 ## Уже решено и отвергнуто (не возвращать без запроса)
 

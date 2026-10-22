@@ -3,10 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createModel, VMAX, FX_DEF, LUNA_DEF } from '../../worlds/oceanus/model.js';
+import { seeded, near } from './util.mjs';
 
-// повторяемая случайность для моделей (mulberry32)
-const seeded = (seed) => () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 const TAU = Math.PI * 2;
 const withLog = (opts) => { const m = createModel(opts), ev = []; m.listen((e) => ev.push(e)); return { m, ev }; };
 
