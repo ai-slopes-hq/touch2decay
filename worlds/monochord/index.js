@@ -13,6 +13,7 @@ const model = createModel({ scale: { get on() { return T.scaleOn; }, get root() 
 const engine = createEngine(T, model, VER);
 const view = createView(T, model);
 model.listen(engine.on);
+engine.listen((h) => { if (h.energy) model.meter(h.energy.e, h.energy.h, h.energy.n); });   // что слышно — в модель, её читают view и t2d.mono
 engine.listen(view.heard);
 const { str, fx, auto } = model.state;
 

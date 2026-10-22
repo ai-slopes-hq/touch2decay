@@ -1,6 +1,6 @@
 // Monochordum — звук: Карплус — Стронг в monochord-worklet.js, шина: струны → (сухо + дека) → mix → (сухо + хор) → post → выход и зал.
-// События модели → сообщения worklet; часы автострама — здесь (ctx.currentTime, запас 200 мс); энергия струн из worklet — в model.meter.
-// Обратно (listen) — что услышано: { hit: true } — удар автострама прозвучал (Земля вспыхивает).
+// События модели → сообщения worklet; часы автострама — здесь (ctx.currentTime, запас 200 мс); энергия струн из worklet — в «услышано» (в модель её кладёт склейка).
+// Обратно (listen) — что услышано: { hit: true } — удар автострама прозвучал (Земля вспыхивает); { energy: { e, h, n } } — энергия струн и флажолетов.
 import { N } from './model.js';
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
@@ -34,7 +34,7 @@ export function createEngine(T, model, ver) {
     ctx.audioWorklet.addModule(`monochord-worklet.js?v=${ver}`).then(() => {
       node = new AudioWorkletNode(ctx, 'monochord', { numberOfInputs: 0, outputChannelCount: [2] });
       node.connect(bus.pre);
-      node.port.onmessage = (e) => { const d = e.data; if (d.t === 'energy') model.meter(d.e, d.h, d.n); };
+      node.port.onmessage = (e) => { const d = e.data; if (d.t === 'energy') heard({ energy: d }); };
       ready = true;
       for (let i = 0; i < N; i++) { retune(i); if (str[i].sus) send({ t: 'sus', i, on: true }); }
       send({ t: 'wind', amt: model.state.wind });

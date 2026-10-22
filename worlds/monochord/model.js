@@ -15,7 +15,7 @@ export const FX_DEF = { decay: 0.55, bright: 0.55, body: 0.4, sympathy: 0.4, cho
 const STR_KEYS = ['r', 'sus', 'bright', 'decay', 'level'], AUTO_KEYS = ['on', 'bpm', 'div', 'pattern', 'strength', 'swing'];   // что в снимке
 
 export function createModel({ scale = { on: false, root: 0, snap: (s) => s }, rng = Math.random } = {}) {
-  // струна: r — доля звучащей длины 1…1/4; en, eh, hn — что слышно (энергия струны, флажолета и его номер; пишет engine через meter)
+  // струна: r — доля звучащей длины 1…1/4; en, eh, hn — что слышно (энергия струны, флажолета и его номер; приходит из worklet через склейку — meter)
   const str = F_OPEN.map((f, i) => ({ r: [1, 2 / 3, 1 / 2, 1 / 3][i], sus: false, bright: 0.55, decay: 0.55, level: 0.8, en: 0, bow: 0, eh: 0, hn: 2 }));
   const fx = { ...FX_DEF };
   const auto = { on: false, bpm: 90, div: 1, pattern: 1, strength: 0.6, swing: 0 };
