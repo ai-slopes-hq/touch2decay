@@ -1,6 +1,6 @@
 # touch2decay — заметки для Claude
 
-Эзотерический дрон/нойз-синтезатор для мобильного Safari (iPhone), одна страница без сборки: `index.html` + `app.js` (Web Audio + canvas 2D, без зависимостей) + `sw.js` (офлайн) + `fonts/`. Референс по духу — SOMA Lyra-8 и Forge TME Vhikk X. Пользовательская документация — `README.md` (по-русски), планы — `ROADMAP.md`.
+Эзотерический дрон/нойз-синтезатор для мобильного Safari (iPhone), одна страница без сборки: `index.html` + `app.js` и `host/` (Web Audio + canvas 2D, без зависимостей) + `sw.js` (офлайн) + `fonts/`. Референс по духу — SOMA Lyra-8 и Forge TME Vhikk X. Пользовательская документация — `README.md` (по-русски), планы — `ROADMAP.md`.
 
 Деплой: GitHub `ai-slopes-hq/touch2decay`, ветка `main` → Vercel выкатывает сам. Статус деплоя: `gh api repos/ai-slopes-hq/touch2decay/commits/$(git rev-parse HEAD)/status --jq .state`.
 
@@ -51,7 +51,8 @@
 - **Выключенные миры** — `HIDDEN` (сейчас III, XVII, XVIII — 22.10; IX вернулся как Horologium Nova): `registerWorld` их не регистрирует (`hiddenW`), на карте рубашки, нет в микшере, звуке, легенде; `t2d.go(n)` для них — `false`, сценарии `lab` и `horologium` пропускаются (`t2d.hidden`). Номера не отдавать. Вернуть — убрать номер из `HIDDEN`.
 
 - **Все файлы миров и `app.js` — ES-модули** (без IIFE, `<script type="module">` в `index.html`; выполняются по порядку тегов, после разбора страницы). `window.T2D` / `window.t2d` пока глобальные. Версия для `addModule` worklet-ов — `VER` из `import.meta.url` (`document.currentScript` в модулях нет). Переход на model / engine / view — `docs/refactor-plan.md`.
-- `app.js` — хост и мир I: аудиоконтекст, мастер, лад, общий зал `hall`, верхняя строка (громкость, лад, FX, кубик, отмена, корзина), плашки `openSheet`, LFO плашек `SL`, легенда, карта и concordia, нагрузка, рисование. Секции помечены `// ---------- … ----------`.
+- `host/` — сервисы хоста (шаг 2 рефакторинга), импортирует их только `app.js`, миры по-прежнему берут всё через `window.T2D`: `util.js` (`clamp`, `lerpLog`, `$`), `fonts.js` (`MAP`, `READ`, `face`, `reading`), `draw.js` (холст `cv`/`g`, `W/H/DPR` и `fitCanvas()`, тема `INK/BG/PAPER` и `setTheme`, `ink`, `ring`, `dot`, `text`, `mapText`, `hairBox`, `glowAt`, `drawCurve`, `sunGlyph`, `quarterSun`), `scale.js` (`SCALES`, `scl`, `inScale`, `snapSemi`, `scalePCs`), `registry.js` (`worlds`, `nav`, `cur`, `registerWorld`, `HIDDEN`, `ENTER`, `onRegister`), `undo.js` (`hists`, `lasts`, `commit`, `undo(retune)`), `audio.js` (контекст `ctx`, `build()` — мастер и каналы `chans`, затем `w.build(ctx, chanIn)` каждого мира, Tenebrae первым — `solBuild`; микшер `mix`, громкость `vol`/`setVol`, `hall`, `restartAudio`, `unlock`, узлы `gainNode`/`filter`/`lfo`). Изменяемые `let` (`ctx`, `W`, `INK`, `face`, `vol`, `undoAt`…) меняет только их модуль — снаружи импорт только читается.
+- `app.js` — экраны хоста и мир I: верхняя строка (громкость, лад, FX, кубик, отмена, корзина), плашки `openSheet`, LFO плашек `SL`, легенда, карта и concordia, нагрузка, рисование. Секции помечены `// ---------- … ----------`.
 - **Реестр миров:** `worlds`, `registerWorld(n, w)`, `cur()`; интерфейс мира — `title, sub, corner {hit, draw}, fx | null {sectors, get, set, text, arc, save, load}, tick?, draw, down, move, up, wheel?, dice, clear, snapshot, restore, sounding, enter?, leave?`. Tenebrae — объект `solNiger` поверх своих функций (`solTick`, `solDraw`, `solDown/Move/Up`). Касание принадлежит миру, где началось (`f.world`). У каждого мира своя отмена (`hists`, `lasts`). Миры из других файлов получают `window.T2D` (регистрация, `g`, `W/H/DPR`, `topY`, `safeBot`, `level`, `ink`, `ring`, `dot`, `text`, `glowAt`, `hairBox`). Карта: снимок мира при уходе (`snaps`); у мира с `mapShot(on)` (III, IV) снимок перерисовывается без солнца — на карте солнце одно, в центре. **Предмет в углу каждого мира — участник сцены, не ярлык** (солнце, резонатор Гельмгольца).
 - **Тема мира** — `theme: { ink, bg, paper }` (`setTheme` в `frame`; подложки — `paper()` вместо чёрного), у Natura — сепия. Старые гравюры (`artRosarium`, `artRegnum`, `PALS`, `art/`, `artCabbala`) остались в коде, на карте не используются.
 - Новый мир: файл `.js` с `T2D.registerWorld`, `<script type="module">` в `index.html`, файл в `MODULES` (worklet — в `WORKLETS`) в `sw.js`, клетка в `CELL` и `EMB_LINE`, эмблема — ветка в `emblemFor`, сценарий в `tools/shot.py`, заметки — `docs/worlds/<мир>.md`, строка в таблице выше.
@@ -82,9 +83,9 @@
 ## Выкладка — обязательно
 
 - При каждой выкладке поднимать **вместе** `CACHE` в `sw.js` и `?v=` у всех модулей в `index.html` (одно число; у всех тегов — заменой по `?v=`). Иначе на телефоне залипнет старая версия. Сервис-воркер: страница и код — сначала из сети, кеш — без сети; новая версия подхватывается при возврате в приложение, страница перезагружается, когда ничего не звучит.
-- Новые файлы, нужные офлайн, — в списки `MODULES` / `WORKLETS` / `STATIC` в `sw.js`.
+- Новые файлы, нужные офлайн, — в списки `HOST` / `MODULES` / `WORKLETS` / `STATIC` в `sw.js`. Импорты `host/` — без `?v=` (одна строка адреса на модуль, иначе два экземпляра состояния); свежесть даёт сервис-воркер (код — из сети мимо HTTP-кеша).
 - README обновлять вместе с поведением (по-русски, в духе существующего текста). Коммиты — по-английски, по делу, с телом-списком.
-- `node --check app.js` перед коммитом.
+- `node --check app.js` и `host/*.js` перед коммитом.
 
 ## Проверка
 

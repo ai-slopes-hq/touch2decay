@@ -1,13 +1,12 @@
 // touch2decay — дрон / нойз на 1–2 пальца. Web Audio + canvas, без зависимостей.
-
-// ---------- палитра: пока ч/б, цвета добавлять здесь ----------
-// чернила и бумага — у мира может быть своя тема (theme: { ink, bg, paper }): Regnum — чёрным по сепии
-const INK0 = '237,237,237', BG0 = '#000', PAPER0 = '0,0,0';
-let INK = INK0;                            // rgb без альфы
-const LINE = 'rgba(237,237,237,0.10)';
-let BG = BG0, PAPER = PAPER0;              // PAPER — rgb подложек под кнопками и панелями
-const paper = (a) => `rgba(${PAPER},${a})`;
-function setTheme(t) { INK = (t && t.ink) || INK0; BG = (t && t.bg) || BG0; PAPER = (t && t.paper) || PAPER0; }
+// хост: сервисы и примитивы — в host/ (шаг 2 docs/refactor-plan.md); здесь экраны хоста и мир I · Tenebrae
+import { $, clamp, invLog, lerpLog } from './host/util.js';
+import { face, MAP, READ, reading } from './host/fonts.js';
+import { BG, BG0, cv, diamond, dot, DPR, drawCurve, fitCanvas, g, glowAt, H, hairBox, INK, ink, INK0, mapText, paper, PAPER0, quarterSun, ring, setTheme, sunGlyph, text, W } from './host/draw.js';
+import { inScale, scalePCs, scaleRoot, SCALES, scl, snapSemi } from './host/scale.js';
+import { cur, ENTER, HIDDEN, nav, registerWorld, worlds } from './host/registry.js';
+import { commit, hists, undo, undoAt } from './host/undo.js';
+import { an, applyMix, asym, audioPref, chanLvl, chans, ctx, FADER_DEF, faderDb, faderOf, filter, gainNode, hall, lfo, mix, MIX_DEF, MIXM, noiseBuffer, pollLevels, restartAt, restartAudio, saveMix, scopeBuf, setVol, soft, unlock, vol, VOL_DEF, VOL_HI, VOL_LO, VOL_TRAVEL, volText } from './host/audio.js';
 
 // ---------- звук ----------
 const F_LO = 55;          // нижняя нота поля (A1)
@@ -82,16 +81,9 @@ const LINK_SECTORS = [                     // кольцо связи: хара�
 ];
 const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
 
-const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
-const lerpLog = (lo, hi, t) => lo * (hi / lo) ** t;
-const invLog = (lo, hi, v) => Math.log(v / lo) / Math.log(hi / lo);
-const $ = (id) => document.getElementById(id);
-
-const cv = $('field');
-const g = cv.getContext('2d');
 const safeTop = $('safe-top');
 
-let W = 0, H = 0, DPR = 1, scopeY = 120, safeBot = 0, scan = null;
+let scopeY = 120, safeBot = 0, scan = null;
 
 // ---------- голоса (кружки) ----------
 const V = Array.from({ length: VOICES }, (_, i) => ({
@@ -110,17 +102,6 @@ const F = new Map();      // pointerId -> палец
 const sel = new Set();    // кружки, обведённые лассо: двигаются и правятся вместе
 const rings = [];
 
-// ---------- лад ----------
-const SCALES = [                            // ступени от тоники, в полутонах
-  { label: 'major', steps: [0, 2, 4, 5, 7, 9, 11] },
-  { label: 'minor', steps: [0, 2, 3, 5, 7, 8, 10] },
-  { label: 'dorian', steps: [0, 2, 3, 5, 7, 9, 10] },
-  { label: 'phrygian', steps: [0, 1, 3, 5, 7, 8, 10] },
-  { label: 'lydian', steps: [0, 2, 4, 6, 7, 9, 11] },
-  { label: 'mixolydian', steps: [0, 2, 4, 5, 7, 9, 10] },
-];
-const scl = { idx: 0, root: 0, on: false, slideUntil: 0 };
-
 // ---------- общие эффекты (кнопка FX): посылы и характер; сухой звук не трогают ----------
 const fx = { rev: 0.3, decay: 3.5, dly: 0.3, chaos: 0, dirt: 0.2 };
 const DECAY_MIN = 0.6, DECAY_MAX = 14, DLY_REPEATS = 0.46;
@@ -135,7 +116,6 @@ const FX_SECTORS = [                        // веер от кнопки вве
 // поле по горизонтали: x 0..1 → полутоны от A1, с растяжкой низа
 const semi = (x) => SEMIS * clamp(x) ** WARP;
 const xOf = (s) => (clamp(s, 0, SEMIS) / SEMIS) ** (1 / WARP);
-const inScale = (n) => SCALES[scl.idx].steps.includes((((n - scl.root) % 12) + 12) % 12);
 
 function quantX(x) {
   const s = semi(x);
@@ -148,16 +128,6 @@ function quantX(x) {
   return xOf(best);
 }
 const soundX = (v) => (scl.on ? quantX(v.x) : v.x);
-// высота в полутонах от 55 Гц → ближайшая нота лада (для других миров); без лада — как есть
-function snapSemi(s) {
-  if (!scl.on) return s;
-  let best = s, bd = 99;
-  for (let n = Math.floor(s) - 7; n <= Math.ceil(s) + 7; n++) {
-    if (n < 0 || !inScale(n)) continue;
-    if (Math.abs(n - s) < bd) { bd = Math.abs(n - s); best = n; }
-  }
-  return best;
-}
 const freq = (v) => F_LO * 2 ** (semi(soundX(v)) / 12);
 // сколько FM на кружке: пока она есть, фильтр приоткрывается — иначе он съедает боковые полосы
 const fmOpen = (v) => Math.min(1, v.fm + v.mods.reduce((s, m) => s + (m.type === 'fm' || m.type === 'tzfm' ? m.depth : 0), 0));
@@ -723,18 +693,6 @@ const btnPos = (k) => {
   if (k === 'vol') return { x: W - 238, y };
   return { x: W - 196, y };
 };
-// громкость — общая на всё приложение, кружок с фейдером перед ладом; зажал — вниз выдвигается длинная шкала,
-// палец ведёт её без скачка. Снизу off, выше нуля — до +6 дБ (сильнее в мягкий лимитер). Запоминается на устройстве
-const VOL_TRAVEL = 220, VOL_LO = -48, VOL_HI = 6, VOL_DEF = -VOL_LO / (VOL_HI - VOL_LO);
-let vol = VOL_DEF, masterG = null;
-try { const sv = parseFloat(localStorage.getItem('t2d-vol')); if (sv >= 0 && sv <= 1) vol = sv; } catch (_) { /* приватный режим */ }
-const volDb = (t) => VOL_LO + (VOL_HI - VOL_LO) * t;
-const volGain = (t) => (t < 0.005 ? 0 : 10 ** (volDb(t) / 20));
-const volText = (t) => (t < 0.005 ? 'off' : `${volDb(t) > 0.5 ? '+' : ''}${Math.round(volDb(t))} dB`);
-function setVol(t) {
-  vol = clamp(t);
-  if (masterG) masterG.gain.setTargetAtTime(0.8 * volGain(vol), ctx.currentTime, 0.03);
-}
 // панель LFO внизу, под большой палец: полоса формы и пад — вправо скорость, вверх глубина
 const lfoPanel = () => {
   if (editor && editor.sheet) { const s = sheetGeo(); return { x: s.x, w: s.w, top: s.lfoTop + 8, bottom: s.bottom, shape: { y: s.lfoTop + 30, h: 40 }, pad: { y: s.lfoTop + 78, h: s.bottom - s.lfoTop - 78 } }; }   // в плашке — внизу, под строками
@@ -981,12 +939,6 @@ function uiHit(f) {
 
 function allDirty() { for (const v of V) v.dirty = true; }
 
-// ---------- отмена: 10 шагов. Шаг — законченный жест, после которого изменилось сохраняемое:
-// закреплённые кружки (место, тембр, LFO, связи между ними), FX и лад. Временные кружки не в счёт ----------
-const UNDO_MAX = 10;
-const hists = {}, lasts = {};               // мир → история и последнее сохранённое
-// состояние мира и общий лад; в истории — мир до шага и лад до и после: лад откатывается в том мире, где его меняли
-const entry = (n) => JSON.stringify({ w: worlds[n].snapshot(), scl: { on: scl.on, idx: scl.idx, root: scl.root } });
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
 function snapshot() {
   const pins = V.filter((v) => v.active && v.pinned);
@@ -999,19 +951,6 @@ function snapshot() {
     })),
     fx: Object.fromEntries(Object.entries(fx).map(([k, x]) => [k, r4(x)])),
   });
-}
-// после каждого жеста: если сохраняемое изменилось — прежнее состояние в историю
-function commit() {
-  if (F.size) return;                         // ждём, пока отпущены все пальцы — один жест, один шаг
-  for (const k of Object.keys(worlds)) {      // шаг — только у мира на экране; изменения других миров «из-за кадра» — без шага
-    const n = +k, now = entry(n), h = hists[n];
-    if (n === nav.world && now !== lasts[n]) {
-      const was = JSON.parse(lasts[n]);
-      h.push({ w: was.w, scl: was.scl, after: JSON.parse(now).scl });   // лад до и после шага
-      if (h.length > UNDO_MAX) h.shift();
-    }
-    lasts[n] = now;
-  }
 }
 function restore(js) {
   const st = JSON.parse(js);
@@ -1038,18 +977,6 @@ function restore(js) {
   }
   Object.assign(fx, st.fx); applyFx();
 }
-function undo() {
-  const n = nav.world, h = hists[n];
-  if (!h.length) return;
-  const st = h.pop(), same = (a, b) => a.on === b.on && a.idx === b.idx && a.root === b.root;
-  worlds[n].restore(st.w);
-  if (!same(st.scl, st.after) && same(scl, st.after)) {   // лад менялся в этом шаге и с тех пор не трогали — вернуть
-    Object.assign(scl, st.scl); scl.slideUntil = performance.now() + 500; allDirty();
-  }
-  for (const k of Object.keys(worlds)) lasts[k] = entry(+k);
-  undoAt = performance.now();
-}
-let undoAt = -1e9;
 
 // все кружки, включая закреплённые, гаснут за полсекунды; связи, LFO и выделение снимаются
 function clearAll() {
@@ -1065,7 +992,7 @@ function uiDown(f) {
   if (f.ui === 'edge') return;
   if (f.ui === 'legenda') { legenda = { w: nav.world }; fxSheet = null; return; }
   if (f.ui === 'legclose') { legenda = null; return; }
-  if (f.ui === 'undo') { undo(); return; }
+  if (f.ui === 'undo') { undo(allDirty); return; }
   if (f.ui === 'dice') { cur().dice(); return; }
   if (f.ui === 'rev') { fxSheet = { w: nav.world }; return; }   // FX — плашка снизу
   if (f.ui === 'fxclose') { fxSheet = null; return; }
@@ -1418,33 +1345,7 @@ function ringTouch(f, first) {
 }
 
 // ---------- аудио ----------
-let ctx = null, an = null, scopeBuf = null, bus = null, fxN = null;
-
-// асимметричный перегруз: смещённый tanh даёт чётные гармоники — ламповая/фузовая грязь, а не просто громче
-function asym(k, bias) {
-  const n = 4096, c = new Float32Array(n), o = Math.tanh(bias);
-  let peak = 0;
-  for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(k * x + bias) - o; peak = Math.max(peak, Math.abs(c[i])); }
-  for (let i = 0; i < n; i++) c[i] /= peak;
-  return c;
-}
-
-// tanh-кривая: normed=true — выход до ±1 (мастер), false — наклон 1 в нуле (петля обратной связи)
-// потолок мастера: до колена (knee) — прямая с усилением k, выше — мягко к потолку top. Тихое и среднее — чисто,
-// без гармоник; раньше тут был сплошной tanh, и удары пластины хрипели — каждый пик шёл в перегруз
-function knee(k, kn, top) {
-  const n = 4096, c = new Float32Array(n), room = top - kn;
-  for (let i = 0; i < n; i++) {
-    const x = (i / (n - 1)) * 2 - 1, y = Math.abs(k * x);
-    c[i] = Math.sign(x) * (y < kn ? y : kn + room * Math.tanh((y - kn) / room));
-  }
-  return c;
-}
-function soft(k, normed) {
-  const n = 4096, c = new Float32Array(n), d = normed ? Math.tanh(k) : k;
-  for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(k * x) / d; }
-  return c;
-}
+let bus = null, fxN = null;
 
 // звук удара солнца: треск (шум в полосе, двумя щелчками) и глухой толчок; через шину голосов — с залом и перегрузом
 function strikeSound(p) {
@@ -1461,13 +1362,6 @@ function strikeSound(p) {
   o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.08);
   og.gain.setValueAtTime(lvl * 1.4, t); og.gain.exponentialRampToValueAtTime(0.0005, t + 0.12);
   o.connect(og).connect(bus); o.start(t); o.stop(t + 0.14);
-}
-
-function noiseBuffer(seconds) {
-  const len = Math.floor(ctx.sampleRate * seconds);
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-  return buf;
 }
 
 // вес таблицы i при позиции морфинга: треугольный, соседние таблицы перетекают
@@ -1532,19 +1426,6 @@ for (const w of WAVES) {
   for (let i = 0; i < N; i++) { smp[i] -= mean; peak = Math.max(peak, Math.abs(smp[i])); }
   for (let i = 0; i < N; i++) smp[i] /= peak;
   w.samp = smp;
-}
-
-const gainNode = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-function filter(type, f, q) {
-  const n = ctx.createBiquadFilter(); n.type = type; n.frequency.value = f;
-  if (q != null) n.Q.value = q;
-  return n;
-}
-function lfo(rate, depth, ...params) {
-  const o = ctx.createOscillator(); o.frequency.value = rate; o.start();
-  const a = gainNode(depth); o.connect(a);
-  for (const p of params) a.connect(p);
-  return { o, a };
 }
 
 // генератор с морфингом: по осциллятору на таблицу, их веса — из позиции (позиция — звуковой сигнал,
@@ -1626,33 +1507,6 @@ function shifterOn(sh, on) {
   }, 150);
 }
 
-// зал: четыре линии задержки с перекрёстной обратной связью (матрица Хаусхолдера).
-// На входе срез низа — иначе бас дрона превращает хвост в кашу — и фазовое размазывание.
-function hall() {
-  const N = 4, SIZE = 2.4, base = [0.0297, 0.0371, 0.0411, 0.0437];
-  const input = gainNode(1);
-  let x = input.connect(filter('highpass', 280, -3)).connect(filter('lowpass', 7500, -3));
-  for (const fr of [430, 1150, 2400, 4300]) { const ap = filter('allpass', fr, 0.7); x.connect(ap); x = ap; }
-  const mix = gainNode(-2 / N);
-  const merge = ctx.createChannelMerger(2);
-  const lines = [];
-  for (let i = 0; i < N; i++) {
-    const len = base[i] * SIZE;
-    const d = ctx.createDelay(1); d.delayTime.value = len;
-    lfo(0.13 + i * 0.07, 0.0009, d.delayTime);          // лёгкое плавание — хвост не звенит металлом
-    const damp = filter('lowpass', 6000 - i * 500, -3);
-    const gn = gainNode(0.7);
-    x.connect(i % 2 ? gainNode(-1) : gainNode(1)).connect(d);
-    d.connect(damp).connect(gn);
-    gn.connect(d);
-    gn.connect(mix);
-    mix.connect(d);
-    d.connect(merge, 0, i % 2);
-    lines.push({ g: gn, len });
-  }
-  return { input, out: merge, lines };
-}
-
 function applyFx() {
   if (!fxN) return;
   const t = ctx.currentTime, T = (p, v) => p.setTargetAtTime(v, t, 0.05);
@@ -1664,60 +1518,8 @@ function applyFx() {
 }
 
 let noiseBuf = null;
-// микшер (concordia → mixer): громкость и mute каждого мира, мастер — срез, компрессор, потолок; запоминается
-let chans = {}, mixN = null;
-const MIX_DEF = { lpf: 1, thr: 0.75, ratio: 0.136, ceil: 1 };
-const mix = { g: {}, mute: {}, ...MIX_DEF };
-try { Object.assign(mix, JSON.parse(localStorage.getItem('t2d-mix') || '{}')); } catch (_) { /* приватный режим */ }
-const saveMix = () => { try { localStorage.setItem('t2d-mix', JSON.stringify(mix)); } catch (_) { /* приватный режим */ } };
-const FADER_DEF = 36 / 42;                                // 0 дБ; шкала −36…+6, в нуле — выкл
-const faderDb = (t) => -36 + 42 * t, faderOf = (n) => (mix.g[n] == null ? FADER_DEF : mix.g[n]);
-const chanGain = (n) => (mix.mute[n] || faderOf(n) < 0.01 ? 0 : 10 ** (faderDb(faderOf(n)) / 20));
-const MIXM = {                                            // мастер: значение 0…1 → величина и подпись
-  lpf: { label: 'low-pass', hz: (t) => 200 * 100 ** t, text: (t) => (t > 0.99 ? 'open' : `${Math.round(200 * 100 ** t)} Hz`) },
-  thr: { label: 'compressor', db: (t) => -40 + 40 * t, text: (t) => `${Math.round(-40 + 40 * t)} dB` },
-  ratio: { label: 'ratio', r: (t) => 1 + 11 * t, text: (t) => `${(1 + 11 * t).toFixed(1)} : 1` },
-  ceil: { label: 'ceiling', db: (t) => -12 + 12 * t, text: (t) => `${(-12 + 12 * t).toFixed(1)} dB` },
-};
-function applyMix() {
-  if (!ctx || !mixN) return;
-  const t = ctx.currentTime;
-  for (const [n, c] of Object.entries(chans)) c.g.gain.setTargetAtTime(chanGain(n), t, 0.03);
-  mixN.lpf.frequency.setTargetAtTime(MIXM.lpf.hz(mix.lpf) > 19000 ? 22000 : MIXM.lpf.hz(mix.lpf), t, 0.03);
-  mixN.comp.threshold.setTargetAtTime(MIXM.thr.db(mix.thr), t, 0.03); mixN.comp.ratio.setTargetAtTime(MIXM.ratio.r(mix.ratio), t, 0.03);
-  mixN.ceil.gain.setTargetAtTime(10 ** (MIXM.ceil.db(mix.ceil) / 20), t, 0.03);
-}
-const chanLvl = {};                                       // уровень каждого мира (для карты и микшера), опрос только пока они на экране
-let lvlBuf = null, lvlAt = 0;
-function pollLevels(now) {
-  if (!ctx || now - lvlAt < 60) return;
-  lvlAt = now; if (!lvlBuf) lvlBuf = new Float32Array(256);
-  for (const [n, c] of Object.entries(chans)) { c.an.getFloatTimeDomainData(lvlBuf); let e = 0; for (let i = 0; i < 256; i++) e += lvlBuf[i] * lvlBuf[i]; const r = Math.sqrt(e / 256); chanLvl[n] = Math.max(r, (chanLvl[n] || 0) * 0.82); }
-}
-const audioPref = { stable: false };
-try { Object.assign(audioPref, JSON.parse(localStorage.getItem('t2d-audio') || '{}')); } catch (_) { /* приватный режим */ }
-let restartAt = 0;
-// перезапуск звука без потери патчей: Safari после смены выхода (USB-интерфейс, другая частота) хрипит, пока контекст не пересоздан.
-// Снимки миров → новый контекст (build пересобирает и голоса Tenebrae) → миры восстанавливаются из снимков
-function restartAudio() {
-  if (!ctx) return;
-  const keep = {};
-  for (const [n, w] of Object.entries(worlds)) if (+n !== 1 && w.snapshot) { try { keep[n] = w.snapshot(); } catch (_) { /* мир без снимка */ } }
-  const old = ctx;
-  build();
-  try { old.close(); } catch (_) { /* уже закрыт */ }
-  for (const [n, js] of Object.entries(keep)) { try { worlds[n].restore(js); } catch (_) { /* ok */ } }
-  for (const [n, w] of Object.entries(worlds)) if (w.enter && (+n === nav.world || w.sounding())) { try { w.enter(); } catch (_) { /* ok */ } }
-  if (ctx.state !== 'running') ctx.resume().catch(() => {});
-  restartAt = performance.now();
-}
-let devT = 0;
-if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {   // подключили наушники или интерфейс — пересобрать звук
-  navigator.mediaDevices.addEventListener('devicechange', () => { clearTimeout(devT); devT = setTimeout(() => { if (ctx) restartAudio(); }, 800); });
-}
-function build() {
-  const AC = window.AudioContext || window.webkitAudioContext;
-  ctx = new AC({ latencyHint: audioPref.stable ? 'playback' : 'interactive' });   // stable — буфер больше: для USB-интерфейсов, где мелкий буфер хрипит
+// звук Tenebrae: таблицы, шум, шина голосов → drive → дилей и зал (FX), голоса; выход — в канал мира I
+function solBuild(_, chanIn) {
   for (const w of WAVES) makeWave(w);
   alignWaves();
   noiseBuf = noiseBuffer(4);
@@ -1757,28 +1559,7 @@ function build() {
 
   fxN = { pre, post, dSend, revSend, hall: h };
   applyFx();
-
-  const hp = filter('highpass', 30), mLpf = filter('lowpass', 20000, 0.5);
-  const comp = ctx.createDynamicsCompressor();
-  comp.threshold.value = -10; comp.knee.value = 10; comp.ratio.value = 2.5;
-  comp.attack.value = 0.01; comp.release.value = 0.4;
-  const mCeil = gainNode(1);
-  const master = gainNode(0.8 * volGain(vol));
-  masterG = master;
-  // мягкий потолок на выходе: вдвое больше запаса по входу, чем по выходу
-  const limitIn = gainNode(0.5);
-  const limit = ctx.createWaveShaper(); limit.curve = knee(2.6 / Math.tanh(2.6), 0.6, 0.98); limit.oversample = '4x';
-  an = ctx.createAnalyser(); an.fftSize = 2048; scopeBuf = new Float32Array(an.fftSize);
-  const masterIn = gainNode(1);               // общий вход мастера: сюда — выходы всех миров
-  masterIn.connect(hp).connect(mLpf).connect(comp).connect(master).connect(limitIn).connect(limit).connect(mCeil);
-  mCeil.connect(ctx.destination);
-  mCeil.connect(an);
-  // микшер: у каждого мира свой канал (громкость, mute, уровень для карты) → общий вход мастера
-  chans = {};
-  for (const n of Object.keys(worlds)) { const i0 = gainNode(1), g0 = gainNode(1), a0 = ctx.createAnalyser(); a0.fftSize = 256; i0.connect(a0); i0.connect(g0).connect(masterIn); chans[n] = { in: i0, g: g0, an: a0 }; }   // уровень — до фейдера: на карте видно и приглушённый мир
-  mixN = { lpf: mLpf, comp, ceil: mCeil };
-  applyMix();
-  out.connect(chans[1].in);
+  out.connect(chanIn);
 
   for (const v of V) {
     v.nodes = voiceNodes(v, noise);
@@ -1787,7 +1568,6 @@ function build() {
     for (const [key, spec] of Object.entries(v.lfo)) setLfo(v, key, spec);
   }
   for (const v of V) for (const m of v.mods) wire(v, m);
-  for (const [n, w] of Object.entries(worlds)) if (w.build) w.build(ctx, chans[n].in);
 }
 
 function voiceNodes(v, noise) {
@@ -1924,29 +1704,6 @@ function apply(v) {
   }
 }
 
-// iOS: звук только после касания; плюс обход переключателя «бесшумно»
-let primed = false, keep = null;
-function silence() {
-  const sr = 8000, n = sr / 2, b = new ArrayBuffer(44 + n * 2), dv = new DataView(b);
-  const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
-  w(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
-  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
-  dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true);
-  dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 2, true);
-  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
-}
-
-function unlock() {
-  if (!primed) {
-    primed = true;
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_) { /* ok */ }
-    try { keep = new Audio(silence()); keep.loop = true; keep.setAttribute('playsinline', ''); } catch (_) { keep = null; }
-  }
-  if (!ctx) build();
-  if (ctx.state !== 'running') ctx.resume().catch(() => {});
-  if (keep && keep.paused) keep.play().catch(() => {});
-}
-
 // экран не гаснет, пока что-то звучит
 let lock = null;
 async function wake() {
@@ -1960,10 +1717,7 @@ async function wake() {
 // нагрузка: если кадры стабильно тормозят — меньше кружков; когда отпустит — постепенно обратно
 // ---------- рисование ----------
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);   // 3× на iPhone — в 2.25 раза больше пикселей, на глаз почти то же
-  W = window.innerWidth; H = window.innerHeight;
-  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
-  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  fitCanvas();
   scopeY = safeTop.offsetHeight + 18;
   safeBot = $('safe-bot').offsetHeight;
   MENU_SPAN = Math.max(90, Math.min(150, Math.min(W, H) / 2 - MENU_DEAD - 34));
@@ -2023,69 +1777,6 @@ function resize() {
   for (let i = 0, py = ft + 12; py < fb - 6; py += 8, i++) { const l = i % 5 ? 2.5 : 4.5; x.moveTo(W - 8.5, Math.round(py) + 0.5); x.lineTo(W - 8.5 - l, Math.round(py) + 0.5); }
   x.stroke();
   scan = c; scanId++;
-}
-
-const ink = (a) => `rgba(${INK},${a})`;
-// мягкое круглое свечение — рисуется один раз, потом только штампуется (солнце, туманности)
-const glowSprite = (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 128;
-  const x = c.getContext('2d'), gr = x.createRadialGradient(64, 64, 0, 64, 64, 64);
-  gr.addColorStop(0, `rgba(${INK},1)`); gr.addColorStop(0.35, `rgba(${INK},0.45)`); gr.addColorStop(1, `rgba(${INK},0)`);
-  x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
-  return c;
-})();
-function glowAt(x, y, r, a) {
-  if (a <= 0.003) return;
-  const ga = g.globalAlpha;
-  g.globalAlpha = ga * Math.min(1, a); g.drawImage(glowSprite, x - r, y - r, 2 * r, 2 * r); g.globalAlpha = ga;
-}
-const MAP = '"IM Fell English", Georgia, "Times New Roman", serif';   // подписи на поле — как на старых звёздных картах
-// где читают (легенда, плашки, concordia, микшер) — EB Garamond: спокойнее и разборчивее; красивое — IM Fell
-const READ = '"EB Garamond", Garamond, Georgia, serif';
-let face = MAP;
-const reading = (fn) => (...a) => { const was = face; face = READ; try { return fn(...a); } finally { face = was; } };
-function mapText(s, x, y, size, a, align = 'left', italic = true) {
-  g.font = `${italic ? 'italic ' : ''}${size}px ${face}`; g.fillStyle = ink(a); g.textAlign = align; g.textBaseline = 'middle';
-  g.fillText(s, x, y);
-}
-function ring(x, y, r, a, w) {
-  g.lineWidth = w; g.strokeStyle = ink(a);
-  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
-}
-function dot(x, y, r, a) {
-  g.fillStyle = ink(a);
-  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
-}
-function diamond(x, y, s, a, filled) {
-  g.save(); g.translate(x, y); g.rotate(Math.PI / 4);
-  g.fillStyle = filled ? ink(a) : BG; g.fillRect(-s, -s, 2 * s, 2 * s);
-  g.strokeStyle = ink(a); g.lineWidth = 1.3; g.strokeRect(-s, -s, 2 * s, 2 * s);
-  g.restore();
-}
-function hairBox(x, y, w, h, a) {           // тонкая рамка: панели из той же графики, что поле
-  g.strokeStyle = ink(a); g.lineWidth = 1;
-  g.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w), Math.round(h));
-}
-// один шрифт на всё — IM Fell English: в интерфейсе прямой, на карте курсив (mapText).
-// У него мельче очко, поэтому кегль чуть больше; жирного начертания нет — акцент яркостью
-function text(s, x, y, size, a, weight = 400, align = 'left') {
-  g.font = `${size + 2}px ${face}`; g.fillStyle = ink(a); g.textAlign = align; g.textBaseline = 'middle';
-  g.fillText(s, x, y);
-}
-
-// кривая по функции одного цикла: формы таблиц и LFO
-function drawCurve(fn, x, y, w, h, a, cycles = 2, lw = 1.6) {
-  g.save();
-  g.strokeStyle = ink(a); g.lineWidth = lw; g.lineJoin = 'round';
-  g.beginPath();
-  const N = 96;
-  for (let i = 0; i <= N; i++) {
-    const t = i / N, v = clamp(fn((t * cycles) % 1), -1.2, 1.2);
-    const px = x - w / 2 + t * w, py = y - (v * h) / 2;
-    if (i) g.lineTo(px, py); else g.moveTo(px, py);
-  }
-  g.stroke();
-  g.restore();
 }
 
 // контур кружка — его собственный звук: два периода сигнала, обёрнутые по кругу.
@@ -3432,8 +3123,6 @@ const WORLDS = [
   { n: 'VI', title: 'Paradisus', sub: 'sphaerae · chorus' },
 ];
 const WORLDS_ON = true;
-const ENTER = new Set([1, 2]);                          // куда можно влететь; III и IV — пока бледные nondum
-const nav = { view: 'map', world: 1, anim: null, settings: false };   // приложение открывается на карте
 // общие настройки (тап по солнцу на карте): связать часы (темп и пуск/стоп) и/или лад всех миров
 const link = { clock: false, scale: true };
 try { Object.assign(link, JSON.parse(localStorage.getItem('t2d-link') || '{}')); } catch (_) { /* приватный режим */ }
@@ -3441,8 +3130,6 @@ const saveLink = () => { try { localStorage.setItem('t2d-link', JSON.stringify(l
 const perScl = {};                                      // свой лад у каждого мира, когда лад не общий
 function tempoFrom(n, bpm) { if (link.clock) for (const [k, w] of Object.entries(worlds)) if (+k !== n && w.tempo) w.tempo.set(bpm); }
 function transportFrom() { /* общие часы — только темп: пуск и стоп у каждого мира свои (автор) */ }
-const worlds = {};                                      // номер четверти → мир
-const cur = () => worlds[nav.world];   // view: play | map; anim: { t0, dir: 'out' | 'in', w }
 const NAV_MS = 520;
 const snaps = {};                                       // мир → его снимок для карты (при уходе на карту)
 const arts = {};                                        // гравюры миров II–IV, рисуются один раз на размер экрана
@@ -3928,77 +3615,6 @@ function drawMapChrome(al, now) {
   g.globalAlpha = 1;
 }
 
-// гравированное солнце для карты и миров: двойной диск, лучи прямые и волнистые через один (в секторе a0..a1).
-// col — цвет линий (rgb), disc — заливка диска
-function sunGlyph(x, ox, oy, a0, a1, scale = 1, now = 0, col = INK, disc = BG) {
-  const rot = now * 0.00004, N = 28;
-  x.lineWidth = 0.9;
-  for (let k = 0; k < N; k++) {
-    const a = (k / N) * Math.PI * 2 + rot;
-    const aa = ((a - a0) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-    if (aa > a1 - a0 + 0.05) continue;
-    const c = Math.cos(a), s = Math.sin(a), px = -s, py = c;
-    if (k % 2) {
-      const l = 50 * scale, w = 2.6;
-      x.strokeStyle = `rgba(${col},0.7)`;
-      x.beginPath(); x.moveTo(ox + c * 17 + px * w, oy + s * 17 + py * w); x.lineTo(ox + c * l, oy + s * l);
-      x.lineTo(ox + c * 17 - px * w, oy + s * 17 - py * w); x.stroke();
-    } else {
-      const l = 38 * scale;
-      x.strokeStyle = `rgba(${col},0.5)`;
-      x.beginPath();
-      for (let i = 0; i <= 14; i++) {
-        const t = i / 14, r = 17 + t * (l - 17), wv = Math.sin(t * Math.PI * 3) * 2.2 * (1 - t * 0.5);
-        const X = ox + c * r + px * wv, Y = oy + s * r + py * wv;
-        if (i) x.lineTo(X, Y); else x.moveTo(X, Y);
-      }
-      x.stroke();
-    }
-  }
-  x.fillStyle = disc; x.beginPath(); x.arc(ox, oy, 14, 0, Math.PI * 2); x.fill();
-  x.strokeStyle = `rgba(${col},0.85)`; x.lineWidth = 1; x.beginPath(); x.arc(ox, oy, 14, 0, Math.PI * 2); x.stroke();
-  x.strokeStyle = `rgba(${col},0.45)`; x.lineWidth = 0.8; x.beginPath(); x.arc(ox, oy, 10.5, 0, Math.PI * 2); x.stroke();
-}
-
-// солнце Таро четвертью из верхнего угла (миры III и IV): выходит из-под верхней строки, лицо смотрит в картинку,
-// лучи прямые и волнистые через один. side: 1 — угол слева (лучи вправо-вниз), −1 — справа. col — rgb линий, disc — заливка
-// top — верх видимой части (по умолчанию oy — ровно четверть); выше — солнце садится, видна и верхняя половина диска с лучами
-function quarterSun(x, ox, oy, r, side, now, col = INK, disc = BG, top = oy) {
-  const ink2 = (a) => `rgba(${col},${a})`, rot = now * 0.00003, N = 28, half = top < oy - 1;
-  x.save(); x.beginPath(); x.rect(side > 0 ? ox : 0, top, side > 0 ? W : ox, H); x.clip();
-  x.translate(ox, oy); x.scale(side, 1);
-  for (let k = 0; k < N; k++) {
-    const a = (k / N) * Math.PI * 2 + rot, aa = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-    if (aa > Math.PI / 2 + 0.1 && !(half && aa > Math.PI * 1.5 - 0.1)) continue;
-    const cs = Math.cos(a), sn = Math.sin(a), px = -sn, py = cs;
-    if (k % 2) {
-      const l = r * 2.05, w = 5;
-      x.strokeStyle = ink2(0.75); x.lineWidth = 1.1; x.fillStyle = disc;
-      x.beginPath(); x.moveTo(cs * r + px * w, sn * r + py * w); x.lineTo(cs * l, sn * l); x.lineTo(cs * r - px * w, sn * r - py * w); x.fill(); x.stroke();
-    } else {
-      const l = r * 1.65;
-      x.strokeStyle = ink2(0.55); x.lineWidth = 1;
-      x.beginPath();
-      for (let i = 0; i <= 18; i++) { const t = i / 18, rr = r + t * (l - r), wv = Math.sin(t * Math.PI * 3) * 3.5 * (1 - t * 0.5), X = cs * rr + px * wv, Y = sn * rr + py * wv; i ? x.lineTo(X, Y) : x.moveTo(X, Y); }
-      x.stroke();
-    }
-  }
-  x.fillStyle = disc; x.beginPath(); x.arc(0, 0, r, 0, Math.PI * 2); x.fill();
-  x.strokeStyle = ink2(0.9); x.lineWidth = 1.6; x.beginPath(); x.arc(0, 0, r, 0, Math.PI * 2); x.stroke();
-  x.strokeStyle = ink2(0.45); x.lineWidth = 0.9; x.beginPath(); x.arc(0, 0, r - 5, 0, Math.PI * 2); x.stroke();
-  const f0 = r * 0.46, k = r / 46;                    // лицо — в видимой четверти
-  x.lineWidth = 1.1; x.strokeStyle = ink2(0.85); x.beginPath();
-  x.moveTo(f0 - 11 * k, f0 - 2 * k); x.quadraticCurveTo(f0 - 8 * k, f0 + 1 * k, f0 - 5 * k, f0 - 2 * k);
-  x.moveTo(f0 + 5 * k, f0 - 2 * k); x.quadraticCurveTo(f0 + 8 * k, f0 + 1 * k, f0 + 11 * k, f0 - 2 * k);
-  x.moveTo(f0 - 12 * k, f0 - 7 * k); x.quadraticCurveTo(f0 - 8 * k, f0 - 10 * k, f0 - 4 * k, f0 - 7 * k);
-  x.moveTo(f0 + 4 * k, f0 - 7 * k); x.quadraticCurveTo(f0 + 8 * k, f0 - 10 * k, f0 + 12 * k, f0 - 7 * k);
-  x.moveTo(f0, f0 - 4 * k); x.lineTo(f0 - 2 * k * side, f0 + 5 * k); x.lineTo(f0 + 1.5 * k * side, f0 + 5.5 * k);
-  x.moveTo(f0 - 7 * k, f0 + 11 * k); x.quadraticCurveTo(f0, f0 + 15 * k, f0 + 7 * k, f0 + 11 * k);
-  x.stroke();
-  if (!half) { x.strokeStyle = ink2(0.8); x.lineWidth = 1.2; x.beginPath(); x.moveTo(0, 0.5); x.lineTo(r * 2.1, 0.5); x.stroke(); }   // кромка
-  x.restore();
-}
-
 // ---------- гравюры миров: у каждого своя палитра ----------
 // Cabbala (II) — ночное небо: индиго, сусальное золото, сфиры в традиционных цветах.
 // Rosarium (III) — раскрашенная алхимическая гравюра: пергамент, сепия, киноварь, охра, лазурь, ярь-медянка, золото.
@@ -4178,8 +3794,8 @@ function artRegnum(x) {
 // ---------- события ----------
 cv.addEventListener('pointerdown', down, { passive: false });
 cv.addEventListener('pointermove', move);
-cv.addEventListener('pointerup', (e) => { up(e); commit(); });
-cv.addEventListener('pointercancel', (e) => { up(e); commit(); });
+cv.addEventListener('pointerup', (e) => { up(e); if (!F.size) commit(); });   // шаг отмены — когда отпущены все пальцы
+cv.addEventListener('pointercancel', (e) => { up(e); if (!F.size) commit(); });
 
 // в iOS звук разрешается на «полноценных» жестах — ловим все
 document.addEventListener('pointerdown', unlock, { capture: true });
@@ -4219,21 +3835,13 @@ if (document.fonts && document.fonts.load) {
   document.fonts.load(`italic 13px ${READ}`).catch(() => {});
 }
 
-// ---------- миры: реестр; Tenebrae — мир I поверх своих функций ----------
-// выключенные миры (автор, 22.10): номера за ними, код на месте — не регистрируются: нет на карте (рубашка), в микшере, звуке, легенде.
-// Вернуть мир — убрать его номер отсюда.
-const HIDDEN = new Set([3, 17, 18]), hiddenW = {};   // 17, 18 — DLC vol. I в бэклоге (22.10: «скучные»)
-function registerWorld(n, w) {
-  if (HIDDEN.has(n)) { hiddenW[n] = w; return; }
-  if (n > 2) ENTER.add(n);                     // III и IV — модули-эскизы: пока без звука, но в них можно влететь
-  worlds[n] = w; hists[n] = []; lasts[n] = entry(n);
-}
+// ---------- миры: Tenebrae — мир I поверх своих функций (реестр — host/registry.js) ----------
 const solNiger = {
   n: 'I', title: 'Tenebrae', sub: 'orbes · strepitus',
   corner: { hit: (f) => WORLDS_ON && !editor && Math.hypot(f.x - geo.ox, f.y - geo.oy) < 46, draw: () => {} },   // солнце рисует drawField
   fx: { sectors: FX_SECTORS, get: fxGet, set: fxSet, text: fxText, arc: () => fx.rev, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); } },
   tick: solTick, draw: solDraw, down: solDown, move: solMove, up: solUp, wheel: wheelZoom,
-  dice: rollDice, clear: clearAll, snapshot, restore, sounding: () => V.some((v) => v.active),
+  dice: rollDice, clear: clearAll, snapshot, restore, sounding: () => V.some((v) => v.active), build: solBuild,
 };
 registerWorld(1, solNiger);
 
@@ -4245,8 +3853,8 @@ window.T2D = {
   get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
   get ctx() { return ctx; }, hall, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,
   MENU_DEAD, get MENU_SPAN() { return MENU_SPAN; }, HOLD_MS, DTAP_MS, PIN_MAX, get scaleOn() { return scl.on; },
-  get scaleRoot() { return scl.on ? scl.root : 0; },                              // тоника — класс высоты от A
-  get scalePCs() { return scl.on ? SCALES[scl.idx].steps.map((s) => (s + scl.root) % 12) : null; },   // классы высот лада
+  get scaleRoot() { return scaleRoot(); },                                        // тоника — класс высоты от A
+  get scalePCs() { return scalePCs(); },                                          // классы высот лада
 };
 
 window.t2d = {
