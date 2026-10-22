@@ -94,7 +94,7 @@ export function createEngine(T, model, ver) {
       clock.next += model.stepDur(clock.step); clock.step++;
     }
   }
-  setInterval(autoSchedule, 25);
+  T.onTick(autoSchedule);                              // таймер 25 мс + метроном из звукового потока — в фоне шаги не пропадают
 
   function on(e) {                                       // событие модели → worklet
     if (e.t === 'tune') retune(e.i);
