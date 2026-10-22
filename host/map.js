@@ -1,5 +1,4 @@
 // ---------- смежные миры: солнце — начало координат, вокруг него четыре четверти ----------
-import { artFor, loadArt } from './art.js';
 import { chanLvl, pollLevels } from './audio.js';
 import { drawSettings, link, perScl, settingsDown } from './concordia.js';
 import { cellRect, cellWorld, deck, DLC_ON, ECL, field, GRID, mapWorlds, panel, setDeck, titleTaps } from './deck.js';
@@ -27,7 +26,7 @@ const NAV_MS = 520;
 const snaps = {};                                       // мир → его снимок для карты (при уходе на карту)
 
 export function goMap() {
-  loadArt(); setFxSheet(null);
+  setFxSheet(null);
   const n = nav.world;
   if (nav.view === 'play') {
     if (worlds[n].mapShot) {                      // у миров III и IV солнце в своём углу двоило бы центральное — снимок без него
@@ -76,7 +75,6 @@ export function navDown(f) {
 }
 
 const easeIO = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
-function worldImage(w) { return ENTER.has(w) ? snaps[w] : artFor(w); }
 // эмблемы звука на карте: гравюрный знак генератора каждого мира и латинская строка; рисуются один раз на размер экрана
 const emblems = {};
 const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'numeri · horae', 'pulsar · stellae', 'chaos · tria corpora', 'terrain · montes', 'concentus · echo', null, 'formula · sigilla', null, 'additio · lux', 'frictio · vitrum'];
