@@ -3467,7 +3467,16 @@
   // карта — поле карт 6 × 6, как расклад Таро: открытые миры — лицом вверх в середине (наверху ад и рай, под ними Cymatica и
   // Tenebrae, под эклиптикой Laboratorium и Natura, под лабораторией — Monochordum), остальные — рубашкой вверх, пока не открыты.
   // Между третьим и четвёртым рядом — эклиптика с солнцем (concordia). Клетка — [столбец, ряд] от левого верхнего угла
-  const CELL = { 6: [1, 0], 5: [2, 0], 2: [1, 1], 1: [2, 1], 3: [1, 2], 4: [2, 2], 7: [1, 3], 8: [3, 2], 9: [0, 2], 10: [3, 1], 11: [3, 0], 12: [0, 3], 13: [3, 3], 15: [2, 3] };   // поле 4 × 4: 14 миров, две рубашки
+  // колоды карт: main — Universum, dlc1 — DLC vol. I (Prisma, Harmonica vitrea). Переключить — 7 тапов по надписи UNIVERSUM на карте.
+  const DECKS = {
+    main: { 6: [1, 0], 5: [2, 0], 2: [1, 1], 1: [2, 1], 3: [1, 2], 4: [2, 2], 7: [1, 3], 8: [3, 2], 9: [0, 2], 10: [3, 1], 11: [3, 0], 12: [0, 3], 13: [3, 3], 15: [2, 3] },   // поле 4 × 4: 14 миров (III — рубашка, выключен)
+    dlc1: { 17: [1, 1], 18: [2, 1] },
+  };
+  let deck = 'main';
+  try { const d = localStorage.getItem('t2d-deck'); if (DECKS[d]) deck = d; } catch (_) { /* приватный режим */ }
+  let CELL = DECKS[deck];
+  function setDeck(d) { if (!DECKS[d]) return; deck = d; CELL = DECKS[d]; nav.peek = null; nav.deckAt = performance.now(); try { localStorage.setItem('t2d-deck', d); } catch (_) { /* приватный режим */ } }
+  const titleTaps = { n: 0, t: 0 };
   const GRID = 4, ECL = 40, HALF = GRID / 2;          // эклиптика — между верхней и нижней половиной
   function field() {
     const top = scopeY + 40, bot = H - safeBot - 10, gap = clamp(W * 0.014, 4, 9);
@@ -3525,6 +3534,12 @@
         }
         nav.settings = false; return;
       }
+      if (Math.abs(f.x - W / 2) < 115 && f.y > scopeY - 14 && f.y < scopeY + 34) {   // надпись UNIVERSUM: 7 тапов подряд — другая колода (main ↔ DLC vol. I)
+        const now = performance.now();
+        titleTaps.n = now - titleTaps.t < 700 ? titleTaps.n + 1 : 1; titleTaps.t = now;
+        if (titleTaps.n >= 7) { titleTaps.n = 0; setDeck(deck === 'main' ? 'dlc1' : 'main'); }
+        return;
+      }
       if (Math.hypot(dx, dy) < 34 || (dx > 26 && dx < 120 && Math.abs(dy) < ECL / 2)) { nav.settings = true; return; }   // солнце или подпись concordia — общие настройки
       for (let c = 0; c < GRID; c++) for (let r = 0; r < GRID; r++) {
         const p = cellRect(c, r, F);
@@ -3541,7 +3556,7 @@
   function worldImage(w) { return ENTER.has(w) ? snaps[w] : artFor(w); }
   // эмблемы звука на карте: гравюрный знак генератора каждого мира и латинская строка; рисуются один раз на размер экрана
   const emblems = {};
-  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'numeri · horae', 'pulsar · stellae', 'chaos · tria corpora', 'terrain · montes', 'concentus · echo', null, 'formula · sigilla'];
+  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'numeri · horae', 'pulsar · stellae', 'chaos · tria corpora', 'terrain · montes', 'concentus · echo', null, 'formula · sigilla', null, 'additio · lux', 'frictio · vitrum'];
   const fontKey = () => (document.fonts ? document.fonts.status : '');
   function emblemFor(w) {                                 // лицо карты мира: подложка мира, двойная рамка, номер сверху, медальон со знаком звука, имя снизу
     const F = field(), pw = F.cw, ph = F.ch, key = `${pw}x${ph}|${DPR}|${fontKey()}`;
@@ -3684,6 +3699,23 @@
       const [ax, ay] = seal[3], [bx, by] = seal[4], d = Math.hypot(bx - ax, by - ay), ux = (bx - ax) / d, uy = (by - ay) / d;
       x.beginPath(); x.moveTo(bx - uy * R * 0.16, by + ux * R * 0.16); x.lineTo(bx + uy * R * 0.16, by - ux * R * 0.16); x.stroke(); x.lineWidth = 1;
     }
+    if (w === 17) {                                         // призма: белый луч слева, веер цветных лучей справа
+      const px = cx - R * 0.15, py = cy, ps = R * 0.42;
+      x.strokeStyle = 'rgba(255,255,255,0.9)'; x.lineWidth = 1.4; x.beginPath(); x.moveTo(cx - R * 1.1, cy - R * 0.25); x.lineTo(px - ps * 0.3, py); x.stroke(); x.lineWidth = 1;
+      for (let k = 0; k < 7; k++) { x.strokeStyle = `hsla(${Math.round((k / 6) * 275)},85%,62%,0.9)`; x.beginPath(); x.moveTo(px + ps * 0.3, py); x.lineTo(cx + R * 1.1, cy - R * 0.45 + k * R * 0.15); x.stroke(); }
+      x.fillStyle = (th && th.bg) || BG0; x.strokeStyle = ink2(0.95); x.beginPath();
+      for (let k = 0; k < 3; k++) { const a = -Math.PI / 2 + (k / 3) * T2; k ? x.lineTo(px + Math.cos(a) * ps, py + Math.sin(a) * ps) : x.moveTo(px + Math.cos(a) * ps, py + Math.sin(a) * ps); }
+      x.closePath(); x.fill(); x.stroke();
+    }
+    if (w === 18) {                                         // бокал с водой, рябь, серп луны
+      const rx = R * 0.5, ry = R * 0.6, rim = cy - R * 0.45, wy = rim + ry * 0.45;
+      x.fillStyle = 'rgba(120,164,210,0.25)'; x.save(); x.beginPath(); x.ellipse(cx, rim, rx, ry, 0, 0, Math.PI); x.clip(); x.fillRect(cx - rx, wy, rx * 2, ry); x.restore();
+      x.strokeStyle = 'rgba(120,164,210,0.9)'; x.beginPath(); for (let i = 0; i <= 20; i++) { const u = i / 20, hw = rx * Math.sqrt(1 - 0.45 * 0.45), px = cx - hw + u * 2 * hw, yy = wy + Math.sin(u * Math.PI * 4) * 1.6; i ? x.lineTo(px, yy) : x.moveTo(px, yy); } x.stroke();
+      x.strokeStyle = ink2(0.9); x.beginPath(); x.ellipse(cx, rim, rx, ry, 0, 0, Math.PI); x.stroke(); x.beginPath(); x.ellipse(cx, rim, rx, 2.5, 0, 0, T2); x.stroke();
+      x.beginPath(); x.moveTo(cx, rim + ry); x.lineTo(cx, cy + R * 0.85); x.stroke(); x.beginPath(); x.ellipse(cx, cy + R * 0.85, rx * 0.55, 2, 0, 0, T2); x.stroke();
+      x.fillStyle = 'rgba(238,226,186,0.9)'; x.beginPath(); x.arc(cx + R * 0.75, cy - R * 0.75, R * 0.16, 0, T2); x.fill();
+      x.fillStyle = (th && th.bg) || BG0; x.beginPath(); x.arc(cx + R * 0.82, cy - R * 0.8, R * 0.14, 0, T2); x.fill();
+    }
     // гравированный медальон: двойной круг, засечки по сторонам света, ромбики на диагоналях
     const M = M0, my = mc;
     x.lineWidth = 1; x.strokeStyle = ink2(0.8); x.beginPath(); x.arc(cx, my, M, 0, T2); x.stroke();
@@ -3764,7 +3796,7 @@
 
   // ---------- микшер: строка на каждый мир (номер и имя, фейдер с уровнем, mute), ниже — мастер ----------
   function mixGeo() {
-    const ws = Object.keys(worlds).map(Number).sort((a, b) => a - b), w = Math.min(420, W - 20), x = W / 2 - w / 2, top = scopeY + 40, bot = H - safeBot - 10;
+    const ws = mapWorlds().sort((a, b) => a - b), w = Math.min(420, W - 20), x = W / 2 - w / 2, top = scopeY + 40, bot = H - safeBot - 10;
     const mrows = Object.keys(MIXM), avail = bot - top - 44 - 30 - 8, rh = clamp(avail / (ws.length + mrows.length), 24, 36);
     const rows = ws.map((n, i) => ({ n, y: top + 44 + i * rh + rh / 2 }));
     const my = top + 44 + ws.length * rh + 22, mr = mrows.map((k, i) => ({ k, y: my + 8 + i * rh + rh / 2 }));
@@ -3777,7 +3809,7 @@
     const M = mixGeo(), { x, w, top, h, tx0, tx1 } = M, L = tx1 - tx0;
     g.fillStyle = paper(0.96); g.fillRect(x, top, w, h);
     hairBox(x, top, w, h, 0.6); hairBox(x + 3, top + 3, w - 6, h - 6, 0.25);
-    mapText('mixer', x + w / 2, top + 20, 16, 0.9, 'center'); mapText('‹ concordia', x + 14, top + 20, 11, 0.5, 'left');
+    mapText(deck === 'main' ? 'mixer' : 'mixer · vol. I', x + w / 2, top + 20, 16, 0.9, 'center'); mapText('‹ concordia', x + 14, top + 20, 11, 0.5, 'left');
     const fader = (y, t, lvl, on) => {                    // дорожка: двойная линия, засечка нуля, уровень — светлая полоса, ручка — черта
       g.strokeStyle = ink(0.3); g.lineWidth = 1; g.beginPath(); g.moveTo(tx0, y - 1.5); g.lineTo(tx1, y - 1.5); g.moveTo(tx0, y + 1.5); g.lineTo(tx1, y + 1.5); g.stroke();
       if (lvl > 0.001) { const k = clamp((20 * Math.log10(lvl) + 48) / 54); g.fillStyle = ink(0.28 + 0.4 * k); g.fillRect(tx0, y - 1, L * k, 2); }
@@ -3887,9 +3919,13 @@
       g.fillStyle = BG; g.fillRect(cx + 34, cy - 9, lw, 18);
       mapText('concordia', cx + 41, cy, 12, 0.65, 'left');
     }
-    g.fillStyle = paper(0.7); g.fillRect(W / 2 - 92, scopeY - 6, 184, 34);   // имя всей карты
+    const dlc = deck !== 'main', tw = dlc ? 250 : 184;
+    g.fillStyle = paper(0.7); g.fillRect(W / 2 - tw / 2, scopeY - 6, tw, 34);   // имя всей карты; у DLC — ещё «vol. I»
     g.font = `20px ${MAP}`; g.fillStyle = ink(0.95); g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText('U N I V E R S U M', W / 2, scopeY + 11);
+    g.fillText('U N I V E R S U M', W / 2 - (dlc ? 30 : 0), scopeY + 11);
+    if (dlc) mapText('vol. I', W / 2 + 70, scopeY + 12, 15, 0.8, 'left');
+    const fl = nav.deckAt ? 1 - (now - nav.deckAt) / 700 : 0;   // колода сменилась — надпись вспыхивает
+    if (fl > 0) hairBox(W / 2 - tw / 2 - 3, scopeY - 9, tw + 6, 40, 0.9 * fl);
     g.globalAlpha = 1;
   }
 
@@ -4218,7 +4254,7 @@
     worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return strikes; },
     go(w) { if (!worlds[w]) return false; nav.world = w; nav.view = 'play'; nav.anim = null; nav.settings = false; if (worlds[w].enter) worlds[w].enter(); },
     mix, chanLvl, mixGeo: () => mixGeo(), backPos: () => backPos(), get chanGains() { return Object.fromEntries(Object.entries(chans).map(([n, c]) => [n, c.g.gain.value])); },
-    get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey, slAdd: (k) => { if (fxSheet && fxSheet.spec.lfo) { const e = slAdd(fxSheet.spec, k); e.spec.depth = 0.8; e.spec.rate = 1; return true; } return false; },   // сразу в мир, без касаний (тесты)
+    get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, get deck() { return deck; }, setDeck, mixRows: () => mixGeo().rows.map((r) => r.n), restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey, slAdd: (k) => { if (fxSheet && fxSheet.spec.lfo) { const e = slAdd(fxSheet.spec, k); e.spec.depth = 0.8; e.spec.rate = 1; return true; } return false; },   // сразу в мир, без касаний (тесты)
     get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
     hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
     voices: V, fx, scl, sel, freq, cutoff, applyFx, place, unplace, semi,

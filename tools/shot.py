@@ -905,7 +905,7 @@ async def sc_cymx(p):                              # Cymatica: запись по
 async def sc_startmap(p):                          # карта — стартовая; солнце — concordia: общие часы и лад
     assert await p.js('()=>t2d.view') == 'map', 'the app opens on the map'
     await p.shot('startmap')
-    q = await p.js('()=>t2d.mapCell(0, 0)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(200)
+    q = await p.js('()=>t2d.mapCell(1, 2)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.view') == 'map' and await p.js('()=>t2d.mapPeek()'), 'a face-down card only shivers — nondum'
     await p.shot('map-peek'); await p.pg.wait_for_timeout(300)
     for w in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11):
@@ -1484,6 +1484,93 @@ async def sc_portus(p):                            # Portus: остров на �
     assert await p.js('()=>t2d.view') == 'map', 'tap the moon — map'
 
 
+async def sc_dlc(p):                               # DLC vol. I: 7 тапов по UNIVERSUM — другая колода (Prisma, Harmonica vitrea), свой микшер; ещё 7 — назад
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.deck') == 'main', 'starts on the main deck'
+    y = await p.js('()=>t2d.scopeY()') + 11
+    for _ in range(6): await p.tap(195, y); await p.pg.wait_for_timeout(120)
+    assert await p.js('()=>t2d.deck') == 'main', 'six taps — nothing yet'
+    await p.tap(195, y); await p.pg.wait_for_timeout(400)
+    assert await p.js('()=>t2d.deck') == 'dlc1', 'seventh tap — DLC vol. I'
+    await p.shot('dlc-map')
+    q = await p.js('()=>t2d.mapCell(2, 1)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.world') == 18, 'the DLC card opens its world'
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    rows = await p.js('()=>t2d.mixRows()'); assert rows == [17, 18], f'the DLC mixer has its own worlds: {rows}'
+    for _ in range(7): await p.tap(195, y); await p.pg.wait_for_timeout(120)
+    await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.deck') == 'main', 'seven taps again — back to Universum'
+    rows = await p.js('()=>t2d.mixRows()'); assert 1 in rows and 17 not in rows, f'the main mixer: {rows}'
+
+
+async def sc_prisma(p):                            # Prisma: отверстие — свет и звук, вверх — выше; призма вбок — цвет, вниз — веер (растяжка); тап по лучу — заслонка; плашка; кубик; корзина; отмена; солнце — карта
+    await p.js("()=>t2d.setDeck('dlc1')"); await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(17)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 17], 'the card opens Prisma'
+    G = await p.js('()=>t2d.prisma.geo()')
+    await p.tap(G['wallX'], G['holeY']); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.prisma.st.on'), 'tap the hole — light'
+    lv = await p.js('()=>T2D.level'); print('  prisma level:', round(lv, 3)); assert lv > 0.02, f'the beam is heard: {lv}'
+    f0 = await p.js('()=>t2d.prisma.f0()'); pid = await p.hold(G['wallX'], G['holeY'], ms=60); await p.drag(pid, G['wallX'], G['holeY'], G['wallX'], G['holeY'] - 90, steps=8); await p.up()
+    f1 = await p.js('()=>t2d.prisma.f0()'); assert f1 > f0 * 1.2, f'hole up — higher: {f0} -> {f1}'
+    a0 = await p.js('()=>t2d.prisma.amps().indexOf(Math.max(...t2d.prisma.amps()))')
+    pid = await p.hold(G['px'], G['py'], ms=60); await p.drag(pid, G['px'], G['py'], G['px'] + 110, G['py'], steps=8); await p.up()
+    a1 = await p.js('()=>t2d.prisma.amps().indexOf(Math.max(...t2d.prisma.amps()))'); assert a1 > a0, f'prism sideways — brighter harmonics move up: {a0} -> {a1}'
+    pid = await p.hold(G['px'], G['py'], ms=60); await p.drag(pid, G['px'], G['py'], G['px'], G['py'] + 110, steps=8); await p.up()
+    sx = await p.js('()=>t2d.prisma.st.stretch'); assert sx > 0.5, f'prism down — the fan opens: {sx}'
+    await p.pg.wait_for_timeout(300); await p.shot('prisma')
+    r = await p.js('()=>t2d.prisma.rays()[4]'); x = r['x0'] + (r['x1'] - r['x0']) * 0.75; y = r['y0'] + (r['y1'] - r['y0']) * 0.75
+    await p.tap(x, y); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.prisma.blocked[4]'), 'tap a ray — its shutter'
+    await p.hold(G['px'], G['py'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold the prism — its sheet'
+    await p.shot('prisma-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1200)
+    assert await p.js('()=>t2d.prisma.st.on'), 'dice — light'
+    await p.shot('prisma-dice')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(3000)
+    assert not await p.js('()=>t2d.prisma.st.on'), 'trash — dark'
+    lv = await p.js('()=>T2D.level'); assert lv < 0.01, f'after trash it is silent: {lv}'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.prisma.st.on'), 'undo — light again'
+    S = await p.js('()=>t2d.prisma.geo().sun'); await p.tap(S['x'] + 18, S['y'] + 22); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
+
+
+async def sc_vitrea(p):                            # Harmonica vitrea: трёшь обод — поёт; вода — ниже; тап — звон; двойной тап — поёт сам; плашка; кубик; корзина; отмена; луна — карта
+    await p.js("()=>t2d.setDeck('dlc1')"); await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(18)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 18], 'the card opens Vitrea'
+    G = await p.js('()=>t2d.vitrea.geo()'); x2 = G['gl'][2]['x']; ry = G['rimY']; hw = G['bw'] / 2 - 4
+    pid = await p.hold(x2, ry, ms=40)
+    for i in range(10): await p.drag(pid, x2 - hw if i % 2 else x2 + hw, ry, x2 + hw if i % 2 else x2 - hw, ry, steps=4)
+    en = await p.js('()=>t2d.vitrea.glasses[2].en'); lv = await p.js('()=>T2D.level'); print('  rubbing: energy', round(en, 2), 'level', round(lv, 3))
+    assert en > 0.3 and lv > 0.01, f'rub the rim — it sings: {en} {lv}'
+    await p.shot('vitrea-rub'); await p.up(); await p.pg.wait_for_timeout(300)
+    x3 = G['gl'][3]['x']; f0 = await p.js('()=>t2d.vitrea.freq(t2d.vitrea.glasses[3])')
+    yb = G['rimY'] + G['bh'] - 8; pid = await p.hold(x3, yb, ms=40); await p.drag(pid, x3, yb, x3, G['rimY'] + 22, steps=8); await p.up()
+    f1 = await p.js('()=>t2d.vitrea.freq(t2d.vitrea.glasses[3])'); assert f1 < f0 * 0.9, f'more water — lower: {f0} -> {f1}'
+    await p.tap(x3, G['rimY'] + G['bh'] * 0.6); await p.pg.wait_for_timeout(120)
+    assert await p.js('()=>t2d.vitrea.glasses[3].en') > 0.3, 'tap a glass — it rings'
+    x4 = G['gl'][4]['x']; await p.tap(x4, ry); await p.pg.wait_for_timeout(90); await p.tap(x4, ry); await p.pg.wait_for_timeout(1500)
+    assert await p.js('()=>t2d.vitrea.glasses[4].pin'), 'double-tap a rim — it sings by itself'
+    lv = await p.js('()=>T2D.level'); print('  vitrea level, one glass by itself:', round(lv, 3)); assert lv > 0.01, f'pinned glass is heard: {lv}'
+    await p.shot('vitrea')
+    await p.hold(G['gl'][1]['x'], G['rimY'] + G['bh'] * 0.5, ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a glass — its sheet'
+    await p.shot('vitrea-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
+    n = await p.js('()=>t2d.vitrea.glasses.filter(g=>g.pin).length'); assert 1 <= n <= 2, f'dice — one or two glasses sing: {n}'
+    print('  vitrea level, dice:', round(await p.js('()=>T2D.level'), 3)); await p.shot('vitrea-dice')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.vitrea.glasses.filter(g=>g.pin).length') == 0, 'trash — fingers off'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.vitrea.glasses.filter(g=>g.pin).length') == n, 'undo — they sing again'
+    m = await p.js('()=>t2d.vitrea.geo().moon'); await p.tap(m['x'], m['y']); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the moon — map'
+    await p.shot('vitrea-map')
+
+
 async def sc_goetia(p):                            # Goetia: печать от знака к знаку — дух звучит и встаёт в треугольник; треугольник вверх — выше, влево — удары (release); плашка; тап — изгнать; четвёртый гонит старого; кубик; корзина; отмена; сосуд — карта
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(15)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
@@ -1567,7 +1654,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):
