@@ -3541,7 +3541,7 @@
   function worldImage(w) { return ENTER.has(w) ? snaps[w] : artFor(w); }
   // эмблемы звука на карте: гравюрный знак генератора каждого мира и латинская строка; рисуются один раз на размер экрана
   const emblems = {};
-  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'plicatio · horae', 'pulsar · stellae', 'chaos · tria corpora', 'terrain · montes', 'concentus · echo'];
+  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'numeri · horae', 'pulsar · stellae', 'chaos · tria corpora', 'terrain · montes', 'concentus · echo'];
   const fontKey = () => (document.fonts ? document.fonts.status : '');
   function emblemFor(w) {                                 // лицо карты мира: подложка мира, двойная рамка, номер сверху, медальон со знаком звука, имя снизу
     const F = field(), pw = F.cw, ph = F.ch, key = `${pw}x${ph}|${DPR}|${fontKey()}`;
@@ -3627,14 +3627,14 @@
       x.fillStyle = ink2(0.85); x.beginPath(); x.arc(cx + R * 1.3, cy - R * 0.55, R * 0.16, 0, T2); x.fill();
       x.fillStyle = (th && th.bg) || BG0; x.beginPath(); x.arc(cx + R * 1.36, cy - R * 0.58, R * 0.14, 0, T2); x.fill();
     }
-    if (w === 9) {                                          // часы: циферблат с делениями, стрелка-солнце; снизу — шестерня
-      x.strokeStyle = ink2(0.85); x.beginPath(); x.arc(cx, cy - R * 0.25, R * 0.7, 0, T2); x.stroke();
-      x.strokeStyle = ink2(0.5); x.beginPath(); for (let k = 0; k < 24; k++) { const a = (k / 24) * T2, l = k % 2 ? 2 : 4; x.moveTo(cx + Math.sin(a) * R * 0.7, cy - R * 0.25 - Math.cos(a) * R * 0.7); x.lineTo(cx + Math.sin(a) * (R * 0.7 - l), cy - R * 0.25 - Math.cos(a) * (R * 0.7 - l)); } x.stroke();
-      x.strokeStyle = ink2(0.9); x.beginPath(); x.moveTo(cx, cy - R * 0.25); x.lineTo(cx + R * 0.4, cy - R * 0.55); x.stroke();
-      x.beginPath(); x.arc(cx + R * 0.44, cy - R * 0.58, R * 0.09, 0, T2); x.stroke();
-      const gy = cy + R * 0.75, gr = R * 0.45; x.strokeStyle = ink2(0.8); x.beginPath();
-      for (let k = 0; k < 10; k++) { const a0 = (k / 10) * T2; for (const [da, rr] of [[-0.12, gr], [0.12, gr], [0.2, gr * 0.8], [T2 / 10 - 0.2, gr * 0.8]]) { const a = a0 + da; x.lineTo(cx + Math.sin(a) * rr, gy - Math.cos(a) * rr); } }
-      x.closePath(); x.stroke(); x.beginPath(); x.arc(cx, gy, gr * 0.25, 0, T2); x.stroke();
+    if (w === 9) {                                          // волшебные числа: кольца IV, V, VI с метками, стрелка-солнце
+      for (const [n, k] of [[4, 0.42], [5, 0.66], [6, 0.9]]) {
+        const rr = R * k; x.strokeStyle = ink2(0.75); x.beginPath(); x.arc(cx, cy, rr, 0, T2); x.stroke();
+        x.fillStyle = ink2(0.9); for (let j = 0; j < n; j++) { const a = (j / n) * T2; x.beginPath(); x.arc(cx + Math.sin(a) * rr, cy - Math.cos(a) * rr, R * 0.06, 0, T2); x.fill(); }
+      }
+      x.strokeStyle = ink2(0.9); x.beginPath(); x.moveTo(cx, cy); x.lineTo(cx + Math.sin(2.4) * R * 1.02, cy - Math.cos(2.4) * R * 1.02); x.stroke();
+      x.beginPath(); x.arc(cx + Math.sin(2.4) * R * 1.1, cy - Math.cos(2.4) * R * 1.1, R * 0.1, 0, T2); x.stroke();
+      x.fillStyle = ink2(0.9); x.beginPath(); x.arc(cx, cy, R * 0.07, 0, T2); x.fill();
     }
     if (w === 10) {                                         // твердь: купол над землёй, звёзды-проколы, под ними — пульсареты
       const by = cy + R * 0.55, rr = R * 1.05;
@@ -4176,7 +4176,7 @@
   // ---------- миры: реестр; Tenebrae — мир I поверх своих функций ----------
   // выключенные миры (автор, 22.10): номера за ними, код на месте — не регистрируются: нет на карте (рубашка), в микшере, звуке, легенде.
   // Вернуть мир — убрать его номер отсюда.
-  const HIDDEN = new Set([3, 9]), hiddenW = {};
+  const HIDDEN = new Set([3]), hiddenW = {};
   function registerWorld(n, w) {
     if (HIDDEN.has(n)) { hiddenW[n] = w; return; }
     if (n > 2) ENTER.add(n);                     // III и IV — модули-эскизы: пока без звука, но в них можно влететь

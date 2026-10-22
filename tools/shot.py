@@ -1194,48 +1194,55 @@ async def sc_oceanus(p):                           # Oceanus: город поё�
     await p.shot('map-ocean')
 
 
-async def sc_horologium(p):                        # Horologium: штифт на зубце, маятник — пуск и темп, молоточки бьют, шестерня — нота, плашка, FX, кубик, корзина, отмена, солнце — карта
+async def sc_horologium(p):                        # Horologium Nova: кольца — волшебные числа, ступица — ход, маятник руками, тон за limen, плашки, FX, кубик, корзина, отмена, солнце — карта
     if 9 in await p.js('()=>t2d.hidden'): print('  switched off — skipped'); return
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(9)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
-    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 9], 'the card left of Laboratorium opens Horologium'
-    a = await p.js('()=>t2d.horo.tooth(0, 1)'); n0 = await p.js('()=>t2d.horo.gears[0].pins.size')
-    await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.horo.gears[0].pins.has(1)') and await p.js('()=>t2d.horo.gears[0].pins.size') == n0 + 1, 'tap a tooth — a pin'
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 9], 'the IX card opens Horologium'
+    for _ in range(30):
+        if await p.js('()=>t2d.horo.ready'): break
+        await p.pg.wait_for_timeout(100)
+    assert await p.js('()=>t2d.horo.ratio().a') == 'IV : V : VI', 'rings IV, V, VI at first'
     await p.shot('horologium-still')
-    b = await p.js('()=>t2d.horo.bob()'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(1600)
-    assert await p.js('()=>t2d.horo.ready'), 'West Coast voices are loaded'
-    b = await p.js('()=>t2d.horo.bob()')
-    assert await p.js('()=>t2d.horo.seq.playing'), 'tap the pendulum — the clock runs'
-    lv = await p.js('()=>T2D.level'); print('  horologium level, running:', round(lv, 3)); assert lv > 0.02, f'hammers strike: {lv}'
+    h = await p.js('()=>t2d.horo.hub()'); await p.tap(h['x'], h['y']); await p.pg.wait_for_timeout(2500)
+    assert await p.js('()=>t2d.horo.clock.run'), 'tap the hub — the clock runs'
+    st = await p.js('()=>t2d.horo.strikes'); lv = await p.js('()=>T2D.level'); print('  strikes in 2.5 s:', st, 'level', round(lv, 3))
+    assert st >= 6 and lv > 0.01, f'rings strike: {st} {lv}'
     await p.shot('horologium-run')
-    pid = await p.hold(b['x'], b['y'], ms=60); await p.drag(pid, b['x'], b['y'], b['x'] + 60, b['y'], steps=6); await p.up(); await p.pg.wait_for_timeout(100)
-    bpm = await p.js('()=>t2d.horo.seq.bpm'); assert bpm > 120, f'drag the pendulum — tempo up: {bpm}'
-    assert await p.js('()=>t2d.horo.seq.playing'), 'dragging the pendulum does not stop it'
-    G = await p.js('()=>t2d.horo.geo()'); g1 = G['pos'][1]; s0 = await p.js('()=>t2d.horo.gears[1].semi')
-    pid = await p.hold(g1[0], g1[1], ms=60); await p.drag(pid, g1[0], g1[1], g1[0], g1[1] - 45, steps=6); await p.shot('horologium-note'); await p.up(); await p.pg.wait_for_timeout(100)
-    s1 = await p.js('()=>t2d.horo.gears[1].semi'); assert s1 == s0 + 5, f'drag a wheel up — note up: {s0} -> {s1}'
-    await p.hold(g1[0], g1[1], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
-    assert await p.js('()=>T2D.sheetOpen'), 'hold a wheel — its sheet'
+    a = await p.js('()=>t2d.horo.ring(0, 1.1)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(400)
+    assert await p.js('()=>t2d.horo.rings[0].on'), 'tap ring II — it joins'
+    a = await p.js('()=>t2d.horo.ring(1, 1.1)'); await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.horo.rings[1].under && t2d.horo.rings[1].on'), 'double tap ring III — undertone'
+    b0 = await p.js('()=>t2d.horo.ring(2, 0.5)'); b1 = await p.js('()=>t2d.horo.ring(2, 0.9)'); pid = await p.hold(b0['x'], b0['y'], ms=60); await p.drag(pid, b0['x'], b0['y'], b1['x'], b1['y'], steps=6); await p.up(); await p.pg.wait_for_timeout(100)
+    ph = await p.js('()=>t2d.horo.rings[2].phi'); assert 0.05 < ph < 0.95, f'drag along ring IV — its phase: {ph}'
+    c = await p.js('()=>t2d.horo.ring(3, 1.1)'); await p.hold(c['x'], c['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a ring — its sheet'
     await p.shot('horologium-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
-    await p.js("()=>{t2d.horo.setFx('sol', 0.9); t2d.horo.setFx('fortuna', 0.6); t2d.horo.setFx('fto', 1/3); t2d.horo.gears.forEach(g=>{g.ramp=0.8; g.rampTo=3})}"); await p.pg.wait_for_timeout(1200)
-    await p.shot('horologium-ramp')
-    r = await p.js("()=>{t2d.horo.setFx('fmode', 1); return t2d.worlds[9].fx.text('fmode') + ' ' + t2d.worlds[9].fx.text('fto')}"); assert r == 'smooth index', f'fortuna mode and target: {r}'
-    r = await p.js("()=>t2d.worlds[9].fx.sectors.length"); assert r == 7, 'FX: sol, fortuna, mode, to, decay, chance, hall'
-    await p.js("()=>t2d.horo.gears.forEach(g=>{g.ramp=0})")
-    print('  horologium level, sol + fortuna:', round(await p.js('()=>T2D.level'), 3))
+    b = await p.js('()=>t2d.horo.bob()'); pid = await p.hold(b['x'], b['y'], ms=500); await p.up(); await p.pg.wait_for_timeout(150)
+    assert not await p.js('()=>t2d.horo.clock.run'), 'catch the pendulum and hold — it stops'
+    G = await p.js('()=>t2d.horo.geo()'); px, py, L = G['piv']['x'], G['piv']['y'], G['L']
+    b = await p.js('()=>t2d.horo.bob()'); pid = await p.hold(b['x'], b['y'], ms=60)
+    for k in range(3):
+        await p.drag(pid, px - 50, py + L * 0.95, px + 50, py + L * 0.95, steps=8); await p.drag(pid, px + 50, py + L * 0.95, px - 50, py + L * 0.95, steps=8)
+    hs = await p.js('()=>t2d.horo.handSteps'); print('  steps by hand:', hs); assert hs >= 4, f'swing it by hand — the escapement steps: {hs}'
+    await p.drag(pid, px - 50, py + L * 0.95, px + 70, py + L * 0.6, steps=3); await p.up(); await p.pg.wait_for_timeout(600)
+    u = await p.js('()=>t2d.horo.clock.u'); print('  thrown: u', round(u, 2)); assert await p.js('()=>t2d.horo.clock.run') and u > 0.5, f'throw the pendulum — faster: {u}'
+    await p.js('()=>t2d.horo.run(true, 7.5)'); await p.pg.wait_for_timeout(1200)
+    F = await p.js('()=>t2d.horo.F'); r = await p.js('()=>t2d.horo.ratio().b'); print('  over the top: F', round(F, 1), '·', r)
+    assert F > 20 and r.startswith('tonus'), f'over the top — a tone: {F} {r}'
+    await p.shot('horologium-tonus')
+    r = await p.js("()=>t2d.worlds[9].fx.sectors.length"); assert r == 5, 'FX: aequalis, materia, concursus, chance, hall'
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
-    assert await p.js('()=>t2d.horo.gears.every(g=>g.pins.size>0)'), 'dice — every wheel has pins'
+    assert await p.js('()=>t2d.horo.rings.some(r=>r.on) && t2d.horo.clock.run'), 'dice — a magic ratio, running'
     await p.shot('horologium')
     c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(2500)
-    assert await p.js('()=>t2d.horo.gears.every(g=>g.pins.size==0)'), 'trash — no pins'
+    assert await p.js('()=>t2d.horo.rings.every(r=>!r.on)'), 'trash — no rings'
     lv = await p.js('()=>T2D.level'); assert lv < 0.01, f'after trash it is silent: {lv}'
     u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.horo.gears.every(g=>g.pins.size>0)'), 'undo brings the pins back'
-    await p.js('()=>t2d.horo.play(false)')
+    assert await p.js('()=>t2d.horo.rings.some(r=>r.on)'), 'undo brings the rings back'
+    await p.js('()=>t2d.horo.run(false)')
     S = await p.js('()=>t2d.horo.geo().sun'); await p.tap(S['x'] - 20, S['y'] + 20); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>t2d.view') == 'map', 'tap the sun — map'
-
 
 async def sc_firmamentum(p):                       # Firmamentum: прокол — звезда пульсирует, вверх — тон, вбок — формант, тап — закрыть, плашка, FX, кубик, корзина, отмена, солнце — карта
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)

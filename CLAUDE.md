@@ -35,7 +35,7 @@
 | VI | Paradisus — хор ангелов, форманты, собор | `paradisus.js` | `docs/worlds/paradisus.md` |
 | VII | Monochordum — Карплус — Стронг, страм, ветер, автострам | `monochord.js`, `monochord-worklet.js` | `docs/worlds/monochordum.md` |
 | VIII | Oceanus — сканирующий синтез, карта T-O, луна | `oceanus.js`, `ocean-worklet.js` | `docs/worlds/oceanus.md` |
-| IX | **выключен** (`HIDDEN`) · Horologium — West Coast, шестерни, LPG | `horologium.js`, `horo-worklet.js` | `docs/worlds/horologium.md` |
+| IX | Horologium (Nova) — волшебные числа: кольца II…IX, n ударов за оборот на n-й гармонике (Rhythmicon), унтертоны, фаза, маятник руками, ритм → аккорд за limen | `horologium.js`, `horo-worklet.js` | `docs/worlds/horologium.md` |
 | X | Firmamentum — пульсарный синтез, свод | `firmamentum.js`, `pulsar-worklet.js` | `docs/worlds/firmamentum.md` |
 | XI | Tria corpora — задача трёх тел, FM по кругу | `tria.js` | `docs/worlds/tria.md` |
 | XII | Arcadia — wave terrain, страна в псевдоперспективе, кубик — новая страна | `arcadia.js`, `terrain-worklet.js` | `docs/worlds/arcadia.md` |
@@ -45,7 +45,7 @@
 
 ## Устройство (общее)
 
-- **Выключенные миры** — `HIDDEN` (сейчас III и IX, 22.10): `registerWorld` их не регистрирует (`hiddenW`), на карте рубашки, нет в микшере, звуке, легенде; `t2d.go(n)` для них — `false`, сценарии `lab` и `horologium` пропускаются (`t2d.hidden`). Номера не отдавать. Вернуть — убрать номер из `HIDDEN`.
+- **Выключенные миры** — `HIDDEN` (сейчас III, 22.10; IX вернулся как Horologium Nova): `registerWorld` их не регистрирует (`hiddenW`), на карте рубашки, нет в микшере, звуке, легенде; `t2d.go(n)` для них — `false`, сценарии `lab` и `horologium` пропускаются (`t2d.hidden`). Номера не отдавать. Вернуть — убрать номер из `HIDDEN`.
 
 - `app.js` — хост и мир I: аудиоконтекст, мастер, лад, общий зал `hall`, верхняя строка (громкость, лад, FX, кубик, отмена, корзина), плашки `openSheet`, LFO плашек `SL`, легенда, карта и concordia, нагрузка, рисование. Секции помечены `// ---------- … ----------`.
 - **Реестр миров:** `worlds`, `registerWorld(n, w)`, `cur()`; интерфейс мира — `title, sub, corner {hit, draw}, fx | null {sectors, get, set, text, arc, save, load}, tick?, draw, down, move, up, wheel?, dice, clear, snapshot, restore, sounding, enter?, leave?`. Tenebrae — объект `solNiger` поверх своих функций (`solTick`, `solDraw`, `solDown/Move/Up`). Касание принадлежит миру, где началось (`f.world`). У каждого мира своя отмена (`hists`, `lasts`). Миры из других файлов получают `window.T2D` (регистрация, `g`, `W/H/DPR`, `topY`, `safeBot`, `level`, `ink`, `ring`, `dot`, `text`, `glowAt`, `hairBox`). Карта: снимок мира при уходе (`snaps`); у мира с `mapShot(on)` (III, IV) снимок перерисовывается без солнца — на карте солнце одно, в центре. **Предмет в углу каждого мира — участник сцены, не ярлык** (солнце, резонатор Гельмгольца).

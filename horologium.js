@@ -1,11 +1,10 @@
-// Horologium — мир IX: астрономические часы, как пражский орлой. Звук — West Coast (Buchla): сложный генератор (FM на
-// отношении зубцов), складывание волны (wavefolder) и low pass gate — деревянный, бонговый удар, который сам гаснет.
-// Сверху — циферблат: 24 часа, горизонт, стрелка-солнце обходит его, и его высота над горизонтом складывает волну сильнее
-// (sol); луна прыгает случайно — fortuna, источник случайности (Source of Uncertainty). Под циферблатом — четыре шестерни:
-// каждая — дорожка секвенсера, зубцов — шагов; маятник качается, и за каждый его такт все шестерни поворачиваются на зубец.
-// Шестерни разного размера — полиритм. Тап по зубцу — штифт; штифт пришёл наверх — молоточек бьёт. Тянешь шестерню вверх-вниз —
-// нота, держишь — плашка (зубцы, складки, отношение, индекс, затухание, громкость). Маятник: тап — пуск/стоп, вбок — темп.
-// Солнце — четвертью в правом верхнем углу (к центру карты): тап — карта.
+// Horologium (Nova) — мир IX: волшебные числа музыки. Астрономические часы: одно колесо-«единица» (стрелка с солнцем) и
+// концентрические кольца II…IX. Кольцо n — n ударов за оборот, каждый — нота n-й гармоники (как Rhythmicon Кауэлла и Термена):
+// 2 : 3, 3 : 4, 4 : 5 : 6 — медленно это полиритм, быстро — интервал и аккорд в чистом строе. Двойной тап по кольцу — унтертон
+// (12/n ударов, ноты вниз: 1/IV : 1/V : 1/VI — минор). Ведёшь пальцем вдоль кольца — его фаза (удары сдвигаются от «раза»).
+// Маятник — как в детстве: хватаешь и качаешь — часы идут от руки (каждый проход через низ — спуск, колесо на четверть оборота);
+// бросил сильно — раскачан, часы разгоняются и медленно успокаиваются к темпу; перекинул через верх — крутится, и ритм за порогом
+// (limen) сливается в тон; поймал — стоп. Звук — horo-worklet.js (щелчок в резонатор). Солнце — четвертью справа сверху: карта.
 (() => {
   'use strict';
   const T = window.T2D;
@@ -13,56 +12,67 @@
   const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
   const INK = '214,180,110', BGC = '#0c0a07', PAPER = '12,10,7';
   const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
-  const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-  const RATIOS = [0.5, 1, 1.5, 2, 3, 4, 2.76, 5.4];   // модулятор гнёт тембр; дробные — звон
-  const TEETH = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-  const SUN_STEPS = 64;                                   // солнце обходит циферблат за 64 такта маятника
+  const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+  const NR = 8, Z = 4;                                    // кольца II…IX; спуск: четыре прохода маятника за оборот
+  const MAGIC = [[2, 3], [3, 4], [4, 5, 6], [3, 4, 5], [2, 3, 5], [4, 5, 6, 7], [5, 7, 9], [6, 7, 8, 9], [8, 9], [2, 3, 4, 5, 6], [5, 6], [4, 5]];
+  const NAMES = [[[1, 2], 'diapason'], [[2, 3], 'diapente'], [[3, 4], 'diatessaron'], [[4, 5], 'ditonus'], [[5, 6], 'semiditonus'], [[8, 9], 'tonus'], [[4, 5, 6], 'trias harmonica'], [[10, 12, 15], 'trias mollis'], [[4, 5, 6, 7], 'septima naturalis'], [[3, 4, 5], 'trias harmonica'], [[2, 3, 4], 'diapente · diapason']];
 
   // ---------- состояние ----------
-  const gear = (teeth, pins, semi, o = {}) => ({ teeth, pins: new Set(pins), semi, fold: 0.5, ratio: 1.5, index: 0.2, decay: 0.4, level: 0.8, ramp: 0, rampTo: 0, hit: 0, ...o });
-  const gears = [gear(4, [0, 2], 0), gear(6, [0, 3, 4], 7, { ratio: 2, fold: 0.7, index: 0.1 }), gear(5, [1], 12, { ratio: 3, decay: 0.25, index: 0.35 }), gear(7, [0, 5], -5, { ratio: 1, fold: 0.3, decay: 0.6 })];
-  const fx = { sol: 0.4, fortuna: 0.15, fmode: 0, fto: 0, decay: 0.5, chance: 1, hall: 0.35 };
-  const TARGETS = ['fold', 'index', 'decay', 'pitch'];    // куда идут рампа шестерни и fortuna
-  let chance = 0, smoothV = 0, smoothT = 0;               // fortuna — источник случайности: ступень на каждый удар или плавное блуждание
-  const seq = { playing: false, bpm: 100, next: 0, step: 0 };
-  const stepSec = () => 60 / seq.bpm / 2;                 // такт маятника — восьмая
-  let moonA = 0.3, moonV = 0.3, moonHit = 0;
-  const hzSemi = (s) => 110 * 2 ** ((T.scaleOn ? T.snapSemi(Math.round(s) + 24) - 24 : s) / 12);   // от A2; с ладом — ближайшая ступень
-  const hzOf = (g) => hzSemi(g.semi);
+  const rings = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: [4, 5, 6].includes(i + 2), under: false, phi: 0, lvl: 0.8 }));
+  const fx = { aequalis: 0, materia: 0.35, concursus: 0.4, chance: 1, hall: 0.35 };
+  const clock = { run: false, u: 0, bpm: 100 };            // u — во сколько октав быстрее темпа (оборот колеса = такт)
+  const pend = { th: 0, ph: 0, spin: false, held: false };
+  const Ft = () => clock.bpm / 240;
+  const Fnow = () => (clock.run && !pend.held ? Ft() * 2 ** clock.u : 0);
+  const mOf = (r) => { const m = r.under ? 12 / r.n : r.n; if (fx.aequalis <= 0) return m; const et = 2 ** (Math.round(12 * Math.log2(m)) / 12); return m * (et / m) ** fx.aequalis; };
+  const baseB = () => 55 * 2 ** ((T.scaleOn ? T.scaleRoot : 0) / 12);
   const noteName = (f) => { const m = Math.round(12 * Math.log2(f / 55)); return `${NOTES[((m % 12) + 12) % 12]}${Math.floor((m + 9) / 12) + 1}`; };
+  const ET = 0.0447, OM0 = TAU * 0.8;                      // энергия маятника на темпе (размах 0.3 рад); его собственная частота
+  const uOfE = (e) => clamp(0.9 * Math.log2(e / ET), -3, 8);
+  const eOfU = (u) => ET * 2 ** (u / 0.9);
 
-  // ---------- геометрия: циферблат сверху, шестерни 2 × 2 под ним, маятник между ними ----------
+  // ---------- геометрия: циферблат сверху, под ним отношение и шкала tempus, ниже маятник ----------
   function geo() {
-    const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, h = bot - top, Ws = Math.min(W, (H - T.safeBot) * 0.62), cx = W / 2;
-    const Rd = Math.min(Ws * 0.29, h * 0.17), dcy = top + 18 + Rd;
-    const free = bot - (dcy + Rd), Rg = Math.min(84, (Ws - 56) / 4, (free - 130) / 4.3), gx = Rg + 22;   // шестерни и маятник — по центру свободного места
-    const blk = 4 * Rg + 2 * 30 + 40, y0 = dcy + Rd + Math.max(0, (free - blk) / 2), gy1 = y0 + 30 + Rg, gy2 = gy1 + 2 * Rg + 30;
-    const pos = [[cx - gx, gy1], [cx + gx, gy1], [cx - gx, gy2], [cx + gx, gy2]];
-    const pivot = { x: cx, y: dcy + Rd + 4 }, bobY = Math.min(bot - 16, gy2 + Rg + 30);
-    return { W, H, top, bot, cx, Ws, dial: { x: cx, y: dcy, r: Rd }, Rg, pos, pivot, bob: { y: bobY, r: 13 }, sun: { x: W, y: T.topY + 2, r: Math.min(42, W * 0.11) } };
+    const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, Ws = Math.min(W, (H - T.safeBot) * 0.62), cx = W / 2;
+    const R = Math.min(Ws * 0.44, (bot - top) * 0.23), cy = top + 26 + R;
+    const r0 = R * 0.17, dr = (R - 22 - r0) / (NR - 1);
+    const ty = cy + R + 34, sy = ty + 58, L = Math.max(50, Math.min(100, (bot - sy - 40) / 2 - 12)), py = Math.max(sy + 30 + L, bot - L - 26);   // маятнику есть место перекинуться через верх, не задевая шкалу
+    return { W, H, top, bot, cx, cy, R, r0, dr, Ws, ty, strip: { x0: cx - Ws * 0.4, x1: cx + Ws * 0.4, y: sy }, piv: { x: cx, y: py }, L, bob: 13, sun: { x: W, y: T.topY + 2, r: Math.min(42, W * 0.11) } };
   }
+  const ringR = (G, i) => G.r0 + i * G.dr;
+  function ringAt(G, x, y) { const d = Math.hypot(x - G.cx, y - G.cy), i = Math.round((d - G.r0) / G.dr); return i >= 0 && i < NR && Math.abs(d - ringR(G, i)) < G.dr * 0.62 ? i : -1; }
+  const bobXY = (G) => ({ x: G.piv.x + Math.sin(pend.th) * G.L, y: G.piv.y + Math.cos(pend.th) * G.L });
 
   // ---------- звук ----------
-  let actx = null, bus = null, node = null, ready = false, started = false, lastSound = 0;
-  const lastSteps = [];                                   // [время, шаг] — что сейчас под молоточками
+  let actx = null, node = null, bus = null, ready = false, started = false, lastSound = 0;
   const queue = [];
-  const send = (m) => { if (node && ready) node.port.postMessage(m); else queue.push(m); };
+  const send = (m) => { if (node && ready) node.port.postMessage(m); else if (m.t !== 'step') queue.push(m); };
   const VER = (document.currentScript && new URL(document.currentScript.src, location.href).searchParams.get('v')) || '0';
+  let Pm = 0, Fm = 0, tP = 0, strikes = 0;                 // зеркало колеса из worklet: положение, скорость, когда пришло
+  const ringHit = new Array(NR).fill(0);
+  let conc = { t: 0, a: 0 };
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const pre = g(1), out = g(1.8), hallSend = g(0), h = T.hall();
+    const pre = g(1), out = g(1.5), hallSend = g(0), h = T.hall();
     pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
     bus = { pre, out, hallSend, hall: h, input, live: false };
     ready = false; node = null; started = false; queue.length = 0;
     applyFx();
   }
-  function start() {                                       // голоса West Coast (horo-worklet.js) — когда в мир впервые зашли
+  function start() {                                       // колесо и кольца (horo-worklet.js) — когда в мир впервые зашли
     if (started || !actx) return;
     started = true;
     actx.audioWorklet.addModule(`horo-worklet.js?v=${VER}`).then(() => {
       node = new AudioWorkletNode(actx, 'horo', { numberOfInputs: 0, outputChannelCount: [2] });
       node.connect(bus.pre); ready = true;
+      node.port.onmessage = (e) => {
+        const d = e.data; if (d.t !== 'p') return;
+        const now = performance.now();
+        Pm = d.P; Fm = d.F; tP = now;
+        if (d.hits.length) { for (const i of d.hits) ringHit[i] = now; strikes += d.hits.length; if (new Set(d.hits).size > 1 && fx.concursus > 0.05) conc = { t: now, a: (d.P % 1) * TAU }; lastSound = now; }
+      };
+      sendAll(); applyFx();
       while (queue.length) node.port.postMessage(queue.shift());
     }).catch(() => { started = false; });
   }
@@ -81,118 +91,126 @@
     const t = actx.currentTime;
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.4, t, 0.05);
     for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4)), t, 0.05);
+    send({ t: 'set', mat: fx.materia, conc: fx.concursus, chance: fx.chance, aeq: fx.aequalis });
   }
-  const sunHeight = (step) => Math.sin((step / SUN_STEPS) * TAU);   // −1 — полночь, +1 — полдень
-  const PAN = [-0.45, 0.45, -0.25, 0.25];
-  // удар: сложный генератор → складки → low pass gate; всё по сэмплам в horo-worklet.js, здесь — только параметры
-  function strike(gi, t, step, vel = 0.85) {
-    const g = gears[gi];
-    start();
-    if (Math.random() >= fx.chance) return;              // chance: каждый удар — с этой вероятностью
-    const mods = [0, 0, 0, 0];                             // fold, index, decay, pitch
-    if (g.ramp > 0) mods[g.rampTo] += g.ramp * ((step % g.teeth) / Math.max(1, g.teeth - 1));   // рампа за оборот шестерни: от нуля к вершине, на новом обороте — сброс
-    if (fx.fortuna > 0) {                                  // fortuna: изредка пропуск, разная сила и случайное напряжение в цель
-      if (Math.random() < fx.fortuna * 0.15) return;
-      vel = clamp(vel * (1 - fx.fortuna * 0.3 * Math.random()), 0.2, 1);
-      mods[fx.fto] += fx.fortuna * (fx.fmode ? smoothV : chance);
-    }
-    const fold = clamp(g.fold + fx.sol * 0.6 * sunHeight(step) + mods[0]), f = hzSemi(g.semi + Math.round(mods[3] * 12)), idx = g.index * Math.max(0, 1 + 2 * mods[1]), decK = Math.max(0.2, 1 + 2 * mods[2]);
-    const dec = (0.04 + (g.decay * 0.7 + fx.decay * 0.3) ** 1.7 * 1.3) * decK;
-    send({ t: 'hit', i: gi, at: t, f, ratio: g.ratio, idx, fold, dec, vel, peak: 0.46 * g.level * (0.55 + 0.45 * vel), fmax: 2500 + 15000 * vel ** 1.5, pan: PAN[gi] });
-    setTimeout(() => { g.hit = performance.now(); }, Math.max(0, (t - actx.currentTime) * 1000));
-    lastSound = performance.now(); setLive(true);
+  let sentF = -1, sentB = -1;
+  function sendAll() { send({ t: 'set', rings: rings.map(({ on, under, phi, lvl }) => ({ on, under, phi, lvl })), B: baseB(), F: Fnow() }); sentF = Fnow(); sentB = baseB(); }
+  function live() { start(); setLive(true); lastSound = performance.now(); }
+  const Pvis = () => Pm + Fm * Math.min(0.1, (performance.now() - tP) / 1000);
+  const sounding = () => (clock.run || pend.held) && rings.some((r) => r.on);
+
+  // ---------- маятник и ход ----------
+  function setRun(on, u = 0) { clock.run = on; clock.u = u; if (on) { live(); const A = Math.acos(1 - Math.min(1.9, eOfU(u))); pend.ph = Math.asin(clamp(pend.th / A, -1, 1)); } }
+  function release(th, om) {                               // отпустил маятник: энергия броска → скорость хода
+    const e = (om / OM0) ** 2 / 2 + (1 - Math.cos(th));
+    pend.held = false;
+    if (e < ET / 6 || (Math.abs(om) < 0.3 && Math.abs(th) < 0.45)) { clock.run = false; return; }   // поймал и отпустил у низа — стоп; поднял повыше и отпустил — пошёл
+    clock.run = true; clock.u = uOfE(e); live();
+    pend.spin = e >= 1.95;
+    if (!pend.spin) { const A = Math.acos(1 - e); pend.ph = om >= 0 ? Math.asin(clamp(th / A, -1, 1)) : Math.PI - Math.asin(clamp(th / A, -1, 1)); }
   }
-  function schedule() {
-    if (!seq.playing || !actx) return;
-    const now = actx.currentTime, ahead = now + 0.2;
-    if (!seq.next) seq.next = now + 0.05;
-    while (seq.next < ahead) {
-      if (seq.next > now + 0.003) {                       // опоздавший удар пропускаем — задним числом щёлкает
-        chance = Math.random() * 2 - 1;                    // ступень: новое случайное на каждый такт
-        if (seq.step % 6 === 0) smoothT = Math.random() * 2 - 1;   // плавное: новая цель раз в шесть тактов, к ней — скольжением
-        smoothV += (smoothT - smoothV) * 0.18;
-        gears.forEach((g, i) => { const j = seq.step % g.teeth; if (g.pins.has(j)) strike(i, seq.next, seq.step, j === Math.min(...g.pins) ? 1 : 0.78); });   // первый штифт оборота — акцент
-        if (fx.fortuna > 0) { const v = fx.fmode ? smoothV : chance; setTimeout(() => { moonA = 0.5 + 0.42 * v; if (!fx.fmode) moonHit = performance.now(); }, Math.max(0, (seq.next - now) * 1000)); }   // луна показывает случайное напряжение
-      }
-      lastSteps.push([seq.next, seq.step]); if (lastSteps.length > 16) lastSteps.shift();
-      seq.step++; seq.next += stepSec();
-    }
+  function tickClock(dt) {
+    if (clock.run && !pend.held) {
+      if (clock.u > 0) clock.u -= clock.u * dt / 6;        // раскачанный — медленно успокаивается к темпу
+      else clock.u += -clock.u * dt / 1.5;                 // слабый — спуск подталкивает к темпу
+      const e = eOfU(clock.u), F = Fnow();
+      if (e < 1.95) {
+        const A = Math.acos(1 - e);
+        if (pend.spin) { pend.spin = false; pend.ph = Math.asin(clamp(Math.sin(pend.th) / A, -1, 1)); }
+        pend.ph += TAU * (Z * F / 2) * dt; pend.th = A * Math.sin(pend.ph);
+      } else { pend.spin = true; pend.th = ((pend.th + TAU * Z * F * dt / 2 + Math.PI) % TAU + TAU) % TAU - Math.PI; }
+    } else if (!pend.held) { pend.th *= Math.exp(-dt * 3); }   // стоит — повисает отвесно
+    const F = Fnow(), B = baseB();
+    if (Math.abs(F - sentF) > Math.max(0.002, sentF * 0.004) || B !== sentB) { send({ t: 'set', F, B }); sentF = F; sentB = B; }
   }
-  setInterval(schedule, 25);
-  function play(on = !seq.playing) { seq.playing = on; seq.next = 0; if (on) { start(); setLive(true); schedule(); } }
-  function curStep() {                                     // какой шаг сейчас слышен (и сколько от него прошло, 0…1)
-    if (!actx || !lastSteps.length) return { s: seq.step, k: 1 };
-    const t = actx.currentTime;
-    let cur = null;
-    for (const [tt, s] of lastSteps) if (tt <= t) cur = [tt, s];
-    if (!cur) return { s: lastSteps[0][1] - 1, k: 1 };
-    return { s: cur[1], k: clamp((t - cur[0]) / Math.min(0.09, stepSec())) };
-  }
-  const sounding = () => seq.playing && gears.some((g) => g.pins.size);
 
   // ---------- касания ----------
   const touches = new Map();
-  function gearAt(G, x, y) { for (let i = 0; i < 4; i++) { const [gx, gy] = G.pos[i]; const d = Math.hypot(x - gx, y - gy); if (d < G.Rg + 12) return { i, d }; } return null; }
-  function toothAt(G, i, x, y) {
-    const g = gears[i], [gx, gy] = G.pos[i], a = (Math.atan2(x - gx, -(y - gy)) + TAU) % TAU, c = curStep();
-    return (((Math.round((a / TAU) * g.teeth) + c.s) % g.teeth) + g.teeth) % g.teeth;
-  }
+  let lastRingTap = null;
   function down(f) {
-    const G = geo(), now = performance.now();
-    const sw = Math.sin(swingA(now)), bx = G.pivot.x + sw * (G.bob.y - G.pivot.y);
-    if (Math.hypot(f.x - bx, f.y - G.bob.y) < G.bob.r + 22 || (Math.abs(f.y - G.dial.y) < G.dial.r * 0.3 && Math.abs(f.x - G.dial.x) < G.dial.r * 0.3)) {   // маятник или середина циферблата — пуск, вбок — темп
-      touches.set(f.id, { kind: 'pend', x0: f.x, bpm0: seq.bpm, moved: false }); return;
+    const G = geo(), now = performance.now(), b = bobXY(G), dp = Math.hypot(f.x - G.piv.x, f.y - G.piv.y);
+    start();
+    if (Math.hypot(f.x - b.x, f.y - b.y) < G.bob + 24 || (pend.spin && Math.abs(dp - G.L) < 30)) {   // маятник: схватить
+      const th = Math.atan2(f.x - G.piv.x, f.y - G.piv.y);
+      touches.set(f.id, { kind: 'pend', x0: f.x, y0: f.y, t0: now, th, tt: now, om: 0, moved: false, was: clock.run });
+      pend.held = true; pend.spin = false; pend.th = th; send({ t: 'set', F: 0 }); sentF = 0; live();
+      return;
     }
-    const h = gearAt(G, f.x, f.y);
-    if (h) {
-      if (h.d > G.Rg - 30) { const j = toothAt(G, h.i, f.x, f.y), g = gears[h.i]; if (g.pins.has(j)) g.pins.delete(j); else g.pins.add(j); touches.set(f.id, { kind: 'none' }); return; }   // зубец — штифт
-      touches.set(f.id, { kind: 'gear', i: h.i, y0: f.y, x0: f.x, s0: gears[h.i].semi, t0: now, moved: false }); return;
+    const dh = Math.hypot(f.x - G.cx, f.y - G.cy);
+    if (dh < G.r0 - 6) { touches.set(f.id, { kind: 'hub', t0: now, x0: f.x, y0: f.y, moved: false }); return; }
+    const i = ringAt(G, f.x, f.y);
+    if (i >= 0) {
+      const r = rings[i];
+      if (lastRingTap && lastRingTap.i === i && now - lastRingTap.t < T.DTAP_MS) { r.under = !r.under; r.on = true; lastRingTap = null; sendAll(); live(); touches.set(f.id, { kind: 'none' }); return; }   // двойной тап — унтертон
+      touches.set(f.id, { kind: 'ring', i, t0: now, x0: f.x, y0: f.y, a0: Math.atan2(f.x - G.cx, -(f.y - G.cy)), phi0: r.phi, moved: false, was: r.on });
+      return;
     }
     touches.set(f.id, { kind: 'none' });
   }
   function move(f) {
     const t = touches.get(f.id);
     if (!t || t.kind === 'none' || t.sheet) return;
-    if (t.kind === 'pend') {
-      if (Math.abs(f.x - t.x0) > 8) t.moved = true;
-      if (t.moved) { const b = Math.round(clamp(t.bpm0 + (f.x - t.x0) / 2, 40, 200)); if (b !== seq.bpm) { seq.bpm = b; T.tempoFrom(9, b); } }
+    const G = geo(), now = performance.now();
+    if (Math.hypot(f.x - t.x0, f.y - t.y0) > 8) t.moved = true;
+    if (t.kind === 'pend') {                              // ведёшь маятник: каждый проход через низ — спуск, колесо на 1/Z оборота
+      const th = Math.atan2(f.x - G.piv.x, f.y - G.piv.y), dt = Math.max(1, now - t.tt) / 1000;
+      let d = th - t.th; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU;
+      if (Math.sign(th) !== Math.sign(t.th) && Math.abs(th) < Math.PI / 2 && Math.abs(t.th) < Math.PI / 2) { send({ t: 'step', d: 1 / Z }); handSteps++; }
+      t.om = 0.6 * t.om + 0.4 * (d / dt); t.th = th; t.tt = now; pend.th = th;
       return;
     }
-    if (t.kind === 'gear') {                              // вверх-вниз — нота: 9 px на полутон (с ладом — по ступеням)
-      if (Math.abs(f.y - t.y0) > 8) t.moved = true;
-      if (t.moved) gears[t.i].semi = clamp(Math.round(t.s0 + (t.y0 - f.y) / 9), -24, 24);
+    if (t.kind === 'ring' && t.moved) {                   // вдоль кольца — фаза
+      const a = Math.atan2(f.x - G.cx, -(f.y - G.cy)); let d = a - t.a0; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU;
+      const r = rings[t.i], m = mOf(r); r.phi = ((t.phi0 - (d / TAU) * m) % 1 + 1) % 1; t.a0 = a; t.phi0 = r.phi; t.ph = true;
+      send({ t: 'set', rings: rings.map(({ on, under, phi, lvl }) => ({ on, under, phi, lvl })) });
     }
   }
+  let handSteps = 0;
   function up(f) {
     const t = touches.get(f.id);
     touches.delete(f.id);
-    if (t && t.kind === 'pend' && !t.moved) { play(); T.tempoFrom(9, seq.bpm); }
-    if (t && t.kind === 'gear' && t.moved && !seq.playing) strike(t.i, actx ? actx.currentTime + 0.01 : 0, seq.step);   // часы стоят — услышать новую ноту
+    if (!t) return;
+    const now = performance.now();
+    if (t.kind === 'pend') {
+      if (!t.moved && now - t.t0 < 300) { pend.held = false; if (t.was) clock.run = false; else setRun(true, 0); return; }   // тап — пуск / стоп
+      if (now - t.tt > 120) t.om = 0;                     // держал неподвижно — поймал
+      release(t.th, t.om); return;
+    }
+    if (t.kind === 'hub' && !t.moved && !t.sheet) { if (clock.run) clock.run = false; else setRun(true, 0); return; }
+    if (t.kind === 'ring' && !t.moved && !t.sheet) { const r = rings[t.i]; r.on = !r.on; lastRingTap = { i: t.i, t: now }; sendAll(); if (r.on) live(); }
   }
-  function gearSheet(i) {
-    const g = gears[i], ti = () => TEETH.indexOf(g.teeth), ri = () => RATIOS.indexOf(g.ratio);
+  function ringSheet(i) {
+    const r = rings[i];
     T.openSheet({
-      title: `rota ${ROMAN[i]}`, hint: 'wheel — tap outside to close',
-      rows: [{ key: 'teeth', label: 'teeth' }, { key: 'fold', label: 'fold' }, { key: 'ratio', label: 'ratio' }, { key: 'index', label: 'index' }, { key: 'decay', label: 'decay' }, { key: 'level', label: 'level' }, { key: 'ramp', label: 'ramp' }, { key: 'rampTo', label: 'ramp to' }],
-      get: (k) => (k === 'teeth' ? ti() / (TEETH.length - 1) : k === 'ratio' ? ri() / (RATIOS.length - 1) : k === 'rampTo' ? g.rampTo / 3 : g[k]),
-      set: (k, v) => {
-        if (k === 'teeth') { g.teeth = TEETH[Math.round(v * (TEETH.length - 1))]; g.pins = new Set([...g.pins].filter((p) => p < g.teeth)); }
-        else if (k === 'ratio') g.ratio = RATIOS[Math.round(v * (RATIOS.length - 1))];
-        else if (k === 'rampTo') g.rampTo = Math.round(v * 3);
-        else g[k] = v;
-      },
-      text: (k) => (k === 'teeth' ? `${g.teeth}` : k === 'ratio' ? `${g.ratio} : 1` : k === 'rampTo' ? TARGETS[g.rampTo] : k === 'ramp' && g.ramp < 0.01 ? 'off' : `${Math.round(g[k] * 100)}%`),
+      title: `circulus ${ROMAN[r.n]}`, hint: 'ring — tap outside to close',
+      rows: [{ key: 'on', label: 'sounds' }, { key: 'under', label: 'undertone' }, { key: 'phi', label: 'phase' }, { key: 'lvl', label: 'level' }],
+      lfo: { id: `horo-r${i}`, keys: ['phi', 'lvl'], shapes: 'classic' },
+      get: (k) => (k === 'on' || k === 'under' ? (r[k] ? 1 : 0) : r[k]),
+      set: (k, v) => { if (k === 'on' || k === 'under') r[k] = v >= 0.5; else r[k] = v; sendAll(); },
+      text: (k) => (k === 'on' ? (r.on ? 'yes' : 'no') : k === 'under' ? (r.under ? `1/${r.n} · ${+(12 / r.n).toFixed(2)} a turn` : `${r.n} a turn`) : k === 'phi' ? `${Math.round(r.phi * 360)}°` : `${Math.round(r.lvl * 100)}%`),
     });
   }
-  function tick(now) {
-    for (const t of touches.values()) if (t.kind === 'gear' && !t.moved && !t.sheet && now - t.t0 > T.HOLD_MS) { t.sheet = true; gearSheet(t.i); }
+  function hubSheet() {
+    T.openSheet({
+      title: 'tempus', hint: 'one turn of the wheel = one bar — tap outside to close',
+      rows: [{ key: 'bpm', label: 'tempo' }],
+      get: () => (clock.bpm - 40) / 160, set: (k, v) => { clock.bpm = Math.round(40 + v * 160); T.tempoFrom(9, clock.bpm); }, text: () => `${clock.bpm} bpm`,
+    });
+  }
+  function tick(now, dt) {
+    tickClock(dt);
+    for (const t of touches.values()) {
+      if (t.sheet || t.moved || now - t.t0 <= T.HOLD_MS) continue;
+      if (t.kind === 'ring') { t.sheet = true; ringSheet(t.i); }
+      else if (t.kind === 'hub') { t.sheet = true; hubSheet(); }
+    }
   }
 
   // ---------- рисование ----------
   const ink = (a) => `rgba(${INK},${a})`;
   let wallC = null, wallKey = '';
-  function wall(G) {                                      // неподвижное: рамка циферблата, 24 часа, деления, горизонт, ось маятника
-    const key = `${G.W}x${G.H}x${T.DPR}|${G.dial.y}|${G.Rg}`;
+  function wall(G) {                                      // неподвижное: обод, деления, unitas, шкала tempus, ось маятника
+    const key = `${G.W}x${G.H}x${T.DPR}|${G.cy}|${G.R}|${G.strip.y}`;
     if (wallC && key === wallKey) return wallC;
     wallKey = key;
     wallC = document.createElement('canvas');
@@ -200,144 +218,154 @@
     const x = wallC.getContext('2d');
     x.setTransform(T.DPR, 0, 0, T.DPR, 0, 0);
     x.fillStyle = BGC; x.fillRect(0, 0, G.W, G.H);
-    const { x: cx, y: cy, r: R } = G.dial;
+    const { cx, cy, R } = G;
     x.lineWidth = 1;
-    x.strokeStyle = ink(0.8); x.beginPath(); x.arc(cx, cy, R, 0, TAU); x.stroke();
+    x.strokeStyle = ink(0.85); x.beginPath(); x.arc(cx, cy, R, 0, TAU); x.stroke();
     x.strokeStyle = ink(0.3); x.beginPath(); x.arc(cx, cy, R - 4, 0, TAU); x.stroke();
-    x.strokeStyle = ink(0.55); x.beginPath(); x.arc(cx, cy, R - 22, 0, TAU); x.stroke();
-    x.font = `${Math.max(8, Math.min(11, R * 0.085))}px ${T.MAP}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = ink(0.75);
-    for (let k = 0; k < 24; k++) {                        // 24 часа: римские дважды по кругу
-      const a = (k / 24) * TAU, r = R - 13;
-      x.save(); x.translate(cx + Math.sin(a) * r, cy - Math.cos(a) * r); x.rotate(a); x.fillText(ROMAN[k % 12], 0, 0); x.restore();
-    }
-    x.strokeStyle = ink(0.4); x.beginPath();
-    for (let k = 0; k < 96; k++) { const a = (k / 96) * TAU, l = k % 4 ? 2 : 4; x.moveTo(cx + Math.sin(a) * (R - 22), cy - Math.cos(a) * (R - 22)); x.lineTo(cx + Math.sin(a) * (R - 22 - l), cy - Math.cos(a) * (R - 22 - l)); }
+    x.strokeStyle = ink(0.45); x.beginPath();
+    for (let k = 0; k < 96; k++) { const a = (k / 96) * TAU, l = k % 4 ? 3 : 7; x.moveTo(cx + Math.sin(a) * (R - 4), cy - Math.cos(a) * (R - 4)); x.lineTo(cx + Math.sin(a) * (R - 4 - l), cy - Math.cos(a) * (R - 4 - l)); }
     x.stroke();
-    const ri = R - 26;                                    // горизонт: дуга, ниже — ночь (штриховка), выше — день
-    x.save(); x.beginPath(); x.arc(cx, cy, ri, 0, TAU); x.clip();
-    x.strokeStyle = ink(0.09); x.beginPath(); for (let y = cy + ri * 0.15; y < cy + ri; y += 4) { x.moveTo(cx - ri, y); x.lineTo(cx + ri, y); } x.stroke();
-    x.restore();
-    x.strokeStyle = ink(0.5); x.beginPath(); x.moveTo(cx - ri, cy + ri * 0.15); x.quadraticCurveTo(cx, cy - ri * 0.05, cx + ri, cy + ri * 0.15); x.stroke();
-    x.font = `italic 10px ${T.MAP}`; x.fillStyle = ink(0.35); x.fillText('ORTUS', cx - ri * 0.62, cy + ri * 0.3); x.fillText('OCCASUS', cx + ri * 0.62, cy + ri * 0.3);
-    x.strokeStyle = ink(0.35); x.setLineDash([2, 4]); x.beginPath(); x.arc(cx, cy - ri * 0.22, ri * 0.62, 0, TAU); x.stroke(); x.setLineDash([]);   // эклиптика — смещённый круг
-    x.fillStyle = ink(0.7); x.beginPath(); x.arc(G.pivot.x, G.pivot.y, 3, 0, TAU); x.fill();
+    x.font = `italic 11px ${T.MAP}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = ink(0.6); x.fillText('unitas', cx, cy - R - 9);
+    x.strokeStyle = ink(0.12); x.setLineDash([1, 3]); x.beginPath(); x.moveTo(cx, cy - G.r0 + 4); x.lineTo(cx, cy - R + 10); x.stroke(); x.setLineDash([]);   // «раз»: здесь все кольца сходятся
+    const S = G.strip;                                    // шкала tempus: от ритма к тону
+    x.strokeStyle = ink(0.5); x.beginPath(); x.moveTo(S.x0, S.y); x.lineTo(S.x1, S.y); x.stroke();
+    x.beginPath(); for (let k = 0; k <= 40; k++) { const px = S.x0 + ((S.x1 - S.x0) * k) / 40, l = k % 5 ? 3 : 6; x.moveTo(px, S.y); x.lineTo(px, S.y + l); } x.stroke();
+    x.font = `italic 10.5px ${T.MAP}`; x.fillStyle = ink(0.45); x.textAlign = 'left'; x.fillText('rhythmus', S.x0, S.y - 9); x.textAlign = 'right'; x.fillText('tonus', S.x1, S.y - 9);
+    x.fillStyle = ink(0.7); x.beginPath(); x.arc(G.piv.x, G.piv.y, 3, 0, TAU); x.fill();
     return wallC;
   }
-  const swingA = (now) => { if (!seq.playing || !actx) return 0; const c = curStep(), ph = c.s + c.k; return 0.04 * Math.cos(Math.PI * ph); };
-  function drawGear(c, G, i, now) {                       // шестерня: мелкие зубцы обода, гнёзда шагов по кругу (штифт — залито), колокольчик сверху
-    const g = gears[i], [gx, gy] = G.pos[i], R = G.Rg, n = g.teeth, cs = curStep();
-    const ease = seq.playing ? 1 - (1 - cs.k) ** 3 : 1, rot = -((cs.s - 1 + ease) / n) * TAU;   // за такт — на шаг, рывком, как спуск часов
-    const m = n * Math.max(2, Math.round(30 / n)), tw = (TAU / m) * 0.25, hit = clamp(1 - (now - g.hit) / 300);
-    c.lineWidth = 1; c.strokeStyle = ink(0.8); c.fillStyle = BGC;
-    c.beginPath();
-    for (let j = 0; j < m; j++) {
-      const a = rot + (j / m) * TAU;
-      for (const [aa, rr] of [[a - tw * 1.3, R - 5], [a - tw * 0.7, R], [a + tw * 0.7, R], [a + tw * 1.3, R - 5]]) { const px = gx + Math.sin(aa) * rr, py = gy - Math.cos(aa) * rr; j || aa !== a - tw * 1.3 ? c.lineTo(px, py) : c.moveTo(px, py); }
-    }
-    c.closePath(); c.fill(); c.stroke();
-    c.strokeStyle = ink(0.3); c.beginPath(); c.arc(gx, gy, R - 8, 0, TAU); c.stroke();
-    c.beginPath(); c.arc(gx, gy, R - 22, 0, TAU); c.stroke();
-    const sp = Math.max(3, Math.min(8, Math.round(g.ratio * 2)));   // спицы — отношение FM
-    const rv = g.ramp > 0 ? g.ramp * (((cs.s % n) + n) % n) / Math.max(1, n - 1) : 0;   // рампа: спицы светлеют за оборот
-    c.strokeStyle = ink(0.45 + 0.5 * rv); c.lineWidth = 1 + rv; c.beginPath();
-    for (let k = 0; k < sp; k++) { const a = rot + (k / sp) * TAU + 0.2; c.moveTo(gx + Math.sin(a) * R * 0.17, gy - Math.cos(a) * R * 0.17); c.lineTo(gx + Math.sin(a) * (R - 22), gy - Math.cos(a) * (R - 22)); }
-    c.stroke();
-    c.lineWidth = 1; c.strokeStyle = ink(0.7); c.beginPath(); c.arc(gx, gy, R * 0.17, 0, TAU); c.stroke();
-    c.beginPath(); c.arc(gx, gy, 2.5, 0, TAU); c.stroke();
-    for (let j = 0; j < n; j++) {                         // гнёзда шагов; штифт — залитое
-      const a = rot + (j / n) * TAU, px = gx + Math.sin(a) * (R - 15), py = gy - Math.cos(a) * (R - 15), aa = ((a % TAU) + TAU) % TAU, top = aa < 0.15 || aa > TAU - 0.15;
-      if (g.pins.has(j)) { c.fillStyle = ink(top && hit > 0 ? 1 : 0.85); c.beginPath(); c.arc(px, py, 4.2, 0, TAU); c.fill(); }
-      else { c.strokeStyle = ink(0.35); c.beginPath(); c.arc(px, py, 3, 0, TAU); c.stroke(); }
-    }
-    const bx = gx, by = gy - R - 13, sw = hit * 0.35;      // колокольчик над шестернёй: качнулся и светится, когда бьёт
-    c.save(); c.translate(bx, by - 6); c.rotate(Math.sin(now * 0.03) * sw);
-    c.fillStyle = BGC; c.strokeStyle = ink(0.6 + 0.4 * hit); c.beginPath();
-    c.moveTo(-8, 10); c.quadraticCurveTo(-7, 2, -5, -1); c.quadraticCurveTo(0, -8, 5, -1); c.quadraticCurveTo(7, 2, 8, 10); c.closePath(); c.fill(); c.stroke();
-    c.beginPath(); c.moveTo(-9, 10.5); c.lineTo(9, 10.5); c.stroke();
-    c.fillStyle = ink(0.8); c.beginPath(); c.arc(0, 12.5, 1.8, 0, TAU); c.fill();
-    c.restore();
-    c.fillStyle = ink(0.6); c.beginPath(); c.moveTo(gx - 3, gy - R - 1); c.lineTo(gx + 3, gy - R - 1); c.lineTo(gx, gy - R + 4); c.closePath(); c.fill();   // собачка: место удара
-    if (hit > 0) T.glowAt(bx, by, 18, hit * 0.45);
+  const FLO = 0.05, FHI = 120, stripX = (S, F) => S.x0 + (S.x1 - S.x0) * clamp(Math.log(F / FLO) / Math.log(FHI / FLO));
+  function marksOf(r, P) {                                // удары этого оборота: углы
+    const m = mOf(r), P0 = Math.floor(P), out = [];
+    for (let k = Math.ceil(P0 * m + r.phi); k < (P0 + 1) * m + r.phi; k++) out.push({ k, a: ((k - r.phi) / m - P0) * TAU });
+    return out;
   }
-  function drawDial(c, G, now) {
-    const { x: cx, y: cy, r: R } = G.dial, cs = curStep(), step = cs.s + (seq.playing ? cs.k : 0), ri = R - 26;
-    const sa = (step / SUN_STEPS) * TAU + Math.PI, sx = cx + Math.sin(sa) * ri * 0.78, sy = cy - Math.cos(sa) * ri * 0.78;   // солнце: полдень наверху
-    c.strokeStyle = ink(0.75); c.lineWidth = 1.2; c.beginPath(); c.moveTo(cx, cy); c.lineTo(sx, sy); c.stroke();
-    const sr = 7.5;                                        // солнце не прыгает в размере: sol (и его LFO) — живость лучей
-    c.fillStyle = BGC; c.beginPath(); c.arc(sx, sy, sr, 0, TAU); c.fill(); c.strokeStyle = ink(0.9); c.lineWidth = 1; c.stroke();
-    const sp = now * 0.0006 * (0.3 + 2.5 * fx.sol); c.beginPath();
-    for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU + sp * 0.4, l = 3 + fx.sol * 7 * (0.55 + 0.45 * Math.sin(sp * 5 + k * 2.3)) * (k % 2 ? 0.7 : 1); c.moveTo(sx + Math.cos(a) * (sr + 2), sy + Math.sin(a) * (sr + 2)); c.lineTo(sx + Math.cos(a) * (sr + 2 + l), sy + Math.sin(a) * (sr + 2 + l)); }
-    c.stroke();
-    moonV += (moonA - moonV) * 0.06;                       // луна — fortuna: стоит напротив солнца, напряжение — цвет, от бледной до кровавой
-    const ma = sa + Math.PI, mx = cx + Math.sin(ma) * ri * 0.55, my = cy - Math.cos(ma) * ri * 0.55, jump = clamp(1 - (now - moonHit) / 400);
-    const bl = fx.fortuna > 0 ? clamp((moonV - 0.08) / 0.84) * clamp(fx.fortuna * 2.5) : 0, mc = `${Math.round(214 - 64 * bl)},${Math.round(180 - 150 * bl)},${Math.round(110 - 85 * bl)}`;
-    c.strokeStyle = ink(0.3 + 0.3 * fx.fortuna); c.beginPath(); c.moveTo(cx, cy); c.lineTo(mx, my); c.stroke();
-    c.fillStyle = `rgba(${mc},${0.75 + 0.25 * bl})`; c.beginPath(); c.arc(mx, my, 5, 0, TAU); c.fill(); c.fillStyle = BGC; c.beginPath(); c.arc(mx + 2.3, my - 1, 4.4 * (1 - 0.5 * bl), 0, TAU); c.fill();   // кровавая — почти полная
-    if (jump > 0) T.glowAt(mx, my, 14, jump * 0.2);
-    c.fillStyle = ink(0.9); c.beginPath(); c.arc(cx, cy, 3.5, 0, TAU); c.fill();
+  function drawRings(c, G, now, P) {
+    const fast = Fm > 4;
+    rings.forEach((r, i) => {
+      const rr = ringR(G, i), on = r.on, m = mOf(r), hit = clamp(1 - (now - ringHit[i]) / 260), cur = Math.floor(P * m + r.phi);
+      c.lineWidth = 1; c.strokeStyle = ink(on ? 0.5 + 0.2 * r.lvl : 0.13); c.setLineDash(on ? [] : [2, 4]); c.beginPath(); c.arc(G.cx, G.cy, rr, 0, TAU); c.stroke(); c.setLineDash([]);
+      if (on && r.under) { c.strokeStyle = ink(0.3); c.beginPath(); c.arc(G.cx, G.cy, rr - 3, 0, TAU); c.stroke(); }   // унтертон — двойной обвод
+      for (const q of marksOf(r, P)) {
+        const x = G.cx + Math.sin(q.a) * rr, y = G.cy - Math.cos(q.a) * rr;
+        if (!on) { c.strokeStyle = ink(0.22); c.beginPath(); c.arc(x, y, 1.8, 0, TAU); c.stroke(); continue; }
+        const g = fast ? 0.35 + 0.4 * r.lvl : q.k === cur ? hit : 0;
+        if (g > 0.05) T.glowAt(x, y, 10 + 8 * g, 0.35 * g);
+        c.fillStyle = ink(Math.min(1, 0.55 + 0.45 * g));
+        if (r.under) { c.beginPath(); c.moveTo(x, y - 3.6); c.lineTo(x + 3, y); c.lineTo(x, y + 3.6); c.lineTo(x - 3, y); c.closePath(); c.fill(); }
+        else { c.beginPath(); c.arc(x, y, 3.1, 0, TAU); c.fill(); }
+      }
+      let la = Math.PI + 0.35;                            // число кольца — внизу слева, в просвете между метками
+      const ms = marksOf(r, P).map((q) => ((q.a % TAU) + TAU) % TAU).sort((x, y) => x - y);
+      if (ms.length) { let best = la, bd = 9; for (let j = 0; j < ms.length; j++) { const a0 = ms[j], a1 = j + 1 < ms.length ? ms[j + 1] : ms[0] + TAU, mid = (a0 + a1) / 2, d = Math.abs(((mid - la + Math.PI) % TAU + TAU) % TAU - Math.PI); if (d < bd) { bd = d; best = mid; } } la = best; }
+      const lx = G.cx + Math.sin(la) * rr, ly = G.cy - Math.cos(la) * rr;
+      c.font = `italic ${on ? 11 : 9.5}px ${T.MAP}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+      const lab = r.under ? `1/${ROMAN[r.n]}` : ROMAN[r.n], w = c.measureText(lab).width;
+      c.fillStyle = BGC; c.fillRect(lx - w / 2 - 2, ly - 6, w + 4, 12);
+      c.fillStyle = ink(on ? 0.9 : 0.32); c.fillText(lab, lx, ly);
+    });
   }
-  function drawPendulum(c, G, now) {
-    const a = swingA(now), L = G.bob.y - G.pivot.y, bx = G.pivot.x + Math.sin(a) * L, by = G.pivot.y + Math.cos(a) * L;
-    c.strokeStyle = ink(0.6); c.lineWidth = 1; c.beginPath(); c.moveTo(G.pivot.x, G.pivot.y); c.lineTo(bx, by); c.stroke();
-    c.fillStyle = BGC; c.strokeStyle = ink(0.9); c.beginPath(); c.arc(bx, by, G.bob.r, 0, TAU); c.fill(); c.stroke();
-    c.strokeStyle = ink(0.35); c.beginPath(); c.arc(bx, by, G.bob.r - 4, 0, TAU); c.stroke();
-    if (!seq.playing) { c.fillStyle = ink(0.8); c.beginPath(); c.moveTo(bx - 3, by - 5); c.lineTo(bx + 5, by); c.lineTo(bx - 3, by + 5); c.closePath(); c.fill(); }   // стоит — знак пуска
-    for (const t of touches.values()) if (t.kind === 'pend') T.mapText(`${seq.bpm} bpm`, bx, by + G.bob.r + 14, 13, 0.85, 'center');
+  function drawHand(c, G, now, P) {
+    const R = G.R - 14;
+    if (Fm > 4) {                                         // быстро — стрелка слилась в диск
+      const k = clamp((Fm - 4) / 12);
+      c.strokeStyle = ink(0.05 * k + 0.02); c.beginPath(); for (let j = 0; j < 120; j++) { const a = (j / 120) * TAU; c.moveTo(G.cx, G.cy); c.lineTo(G.cx + Math.sin(a) * R, G.cy - Math.cos(a) * R); } c.stroke();
+      c.strokeStyle = ink(0.5); c.beginPath(); c.arc(G.cx, G.cy, R, 0, TAU); c.stroke();
+    } else {
+      const a = (((P % 1) + 1) % 1) * TAU, hx = G.cx + Math.sin(a) * R, hy = G.cy - Math.cos(a) * R;
+      for (let j = 1; j < 10; j++) { const b = a - j * 0.04 * clamp(Fm); c.strokeStyle = ink(0.05 * (1 - j / 10)); c.beginPath(); c.moveTo(G.cx, G.cy); c.lineTo(G.cx + Math.sin(b) * R, G.cy - Math.cos(b) * R); c.stroke(); }
+      c.strokeStyle = ink(0.85); c.lineWidth = 1.2; c.beginPath(); c.moveTo(G.cx, G.cy); c.lineTo(hx, hy); c.stroke(); c.lineWidth = 1;
+      c.fillStyle = BGC; c.beginPath(); c.arc(hx, hy, 7, 0, TAU); c.fill(); c.strokeStyle = ink(0.95); c.stroke();
+      c.beginPath(); for (let k = 0; k < 12; k++) { const b = (k / 12) * TAU + now * 0.0004; c.moveTo(hx + Math.cos(b) * 9, hy + Math.sin(b) * 9); c.lineTo(hx + Math.cos(b) * 13, hy + Math.sin(b) * 13); } c.stroke();
+    }
+    const ck = clamp(1 - (now - conc.t) / 350);           // concursus: кольца совпали — луч
+    if (ck > 0 && Fm <= 4) { c.strokeStyle = ink(0.5 * ck); c.beginPath(); c.moveTo(G.cx, G.cy); c.lineTo(G.cx + Math.sin(conc.a) * (G.R - 4), G.cy - Math.cos(conc.a) * (G.R - 4)); c.stroke(); }
+    c.fillStyle = BGC; c.beginPath(); c.arc(G.cx, G.cy, G.r0 - 8, 0, TAU); c.fill();   // ступица: тап — пуск, держишь — темп
+    c.strokeStyle = ink(clock.run ? 0.8 : 0.5); c.beginPath(); c.arc(G.cx, G.cy, G.r0 - 8, 0, TAU); c.stroke();
+    if (!clock.run && !pend.held) { c.fillStyle = ink(0.8); const s = 5; c.beginPath(); c.moveTo(G.cx - s * 0.6, G.cy - s); c.lineTo(G.cx + s, G.cy); c.lineTo(G.cx - s * 0.6, G.cy + s); c.closePath(); c.fill(); }
+    else { c.fillStyle = ink(0.9); c.beginPath(); c.arc(G.cx, G.cy, 3.2, 0, TAU); c.fill(); }
+  }
+  function ratioText() {                                  // что звучит: отношение и его имя
+    const act = rings.filter((r) => r.on);
+    if (!act.length) return { a: 'quies', b: 'tap a ring' };
+    const a = act.map((r) => (r.under ? `1/${ROMAN[r.n]}` : ROMAN[r.n])).join(' : ');
+    const ms = act.map((r) => (r.under ? 12 / r.n : r.n)).sort((x, y) => x - y);
+    let name = '';
+    for (const [set, nm] of NAMES) if (set.length === ms.length && set.every((v, k) => Math.abs(v / set[0] - ms[k] / ms[0]) < 1e-6)) { name = nm; break; }
+    const tone = Fm * ms[0] >= 20;
+    const b = tone ? `tonus${name ? ` — ${name}` : ''} · ${ms.map((m) => noteName(m * Fm)).join(' ')}` : `rhythmus · ${ms.map((m) => +m.toFixed(2)).join(' · ')} ictus in circuitu${name ? ` · ${name}` : ''}`;
+    return { a, b };
+  }
+  function drawPendulum(c, G) {
+    const { x: px, y: py } = G.piv, L = G.L, rate = clock.run && !pend.held ? (Z * Fnow()) / 2 : 0;
+    if (pend.spin && rate > 3) {                          // крутится — расплылся
+      c.strokeStyle = ink(0.1); c.beginPath(); c.arc(px, py, L, 0, TAU); c.stroke();
+      for (let j = 0; j < 7; j++) { const a = pend.th + (j / 7) * TAU; c.strokeStyle = ink(0.12); c.beginPath(); c.moveTo(px, py); c.lineTo(px + Math.sin(a) * L, py + Math.cos(a) * L); c.stroke(); c.beginPath(); c.arc(px + Math.sin(a) * L, py + Math.cos(a) * L, G.bob, 0, TAU); c.stroke(); }
+      return;
+    }
+    if (rate > 2.5 && !pend.spin) {                       // качается быстро — веером
+      const A = Math.acos(1 - Math.min(1.9, eOfU(clock.u)));
+      for (const s of [-1, -0.5, 0, 0.5, 1]) { const a = s * A; c.strokeStyle = ink(0.1); c.beginPath(); c.moveTo(px, py); c.lineTo(px + Math.sin(a) * L, py + Math.cos(a) * L); c.stroke(); }
+    }
+    const b = bobXY(G);
+    c.strokeStyle = ink(0.65); c.beginPath(); c.moveTo(px, py); c.lineTo(b.x, b.y); c.stroke();
+    c.fillStyle = BGC; c.strokeStyle = ink(pend.held ? 1 : 0.9); c.beginPath(); c.arc(b.x, b.y, G.bob, 0, TAU); c.fill(); c.stroke();
+    c.strokeStyle = ink(0.35); c.beginPath(); c.arc(b.x, b.y, G.bob - 4, 0, TAU); c.stroke();
   }
   let noSun = false;
   function draw(now) {
-    const c = T.g, G = geo();
+    const c = T.g, G = geo(), P = Pvis();
     c.drawImage(wall(G), 0, 0, T.W, T.H);
-    drawDial(c, G, now);
-    drawPendulum(c, G, now);
-    for (let i = 0; i < 4; i++) drawGear(c, G, i, now);
-    for (const t of touches.values()) {                   // подписи — пока трогаешь шестерню
-      if (t.kind !== 'gear') continue;
-      const g = gears[t.i], [gx, gy] = G.pos[t.i], f = hzOf(g);
-      T.mapText(`${noteName(f)} · ${Math.round(f)} Hz`, gx, gy + G.Rg + 16, 13, 0.9, 'center');
-    }
+    drawRings(c, G, now, P);
+    drawHand(c, G, now, P);
+    const rt = ratioText();
+    T.mapText(rt.a, G.cx, G.ty, 19, 0.95, 'center');
+    T.mapText(rt.b, G.cx, G.ty + 21, 12, 0.6, 'center');
+    const S = G.strip, act = rings.filter((r) => r.on), mAvg = act.length ? act.reduce((s, r) => s + mOf(r), 0) / act.length : 4, lim = stripX(S, 20 / mAvg);   // limen: где удары сливаются в тон
+    c.strokeStyle = ink(0.35); c.setLineDash([2, 3]); c.beginPath(); c.moveTo(lim, S.y - 14); c.lineTo(lim, S.y + 14); c.stroke(); c.setLineDash([]);
+    T.mapText('limen', lim, S.y + 22, 10.5, 0.45, 'center');
+    if (Fm > 0.01) { const mx = stripX(S, Fm); c.fillStyle = ink(0.95); c.beginPath(); c.moveTo(mx, S.y - 3); c.lineTo(mx - 5, S.y - 11); c.lineTo(mx + 5, S.y - 11); c.closePath(); c.fill(); T.mapText(`${Fm < 10 ? Fm.toFixed(2) : Math.round(Fm)} / s`, mx, S.y - 20, 11, 0.75, 'center'); }
+    drawPendulum(c, G);
+    for (const t of touches.values()) if (t.kind === 'ring' && t.ph) { const r = rings[t.i]; T.mapText(`${ROMAN[r.n]} · ${Math.round(r.phi * 360)}°`, G.cx, G.cy + G.R + 14, 12, 0.85, 'center'); }
     if (!noSun) T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, -1, now, INK, BGC);
   }
 
   // ---------- мир ----------
   const deg = (d) => (d * Math.PI) / 180;
   const fxw = {
-    sectors: [{ key: 'sol', label: 'sol', ang: deg(190) }, { key: 'fortuna', label: 'fortuna', ang: deg(160) }, { key: 'fmode', label: 'fortuna mode', ang: deg(140) }, { key: 'fto', label: 'fortuna to', ang: deg(120) }, { key: 'decay', label: 'decay', ang: deg(100) }, { key: 'chance', label: 'chance', ang: deg(90) }, { key: 'hall', label: 'hall', ang: deg(80) }],
-    get: (k) => (k === 'fto' ? fx.fto / 3 : fx[k]), set: (k, v) => { if (k === 'fmode') fx.fmode = v >= 0.5 ? 1 : 0; else if (k === 'fto') fx.fto = Math.round(v * 3); else fx[k] = v; applyFx(); },
-    text: (k) => (k === 'fmode' ? (fx.fmode ? 'smooth' : 'stepped') : k === 'fto' ? TARGETS[fx.fto] : `${Math.round(fx[k] * 100)}%`),
-    lfo: { keys: ['sol', 'fortuna', 'decay', 'chance', 'hall'], shapes: 'random' },   // West Coast: рампы и случайность
+    sectors: [{ key: 'aequalis', label: 'aequalis', ang: deg(190) }, { key: 'materia', label: 'materia', ang: deg(160) }, { key: 'concursus', label: 'concursus', ang: deg(130) }, { key: 'chance', label: 'chance', ang: deg(105) }, { key: 'hall', label: 'hall', ang: deg(80) }],
+    get: (k) => fx[k], set: (k, v) => { fx[k] = v; applyFx(); },
+    text: (k) => (k === 'aequalis' ? (fx.aequalis < 0.01 ? 'pure' : fx.aequalis > 0.99 ? 'equal' : `${Math.round(fx.aequalis * 100)}% equal`) : k === 'materia' ? `${fx.materia < 0.5 ? 'lignum' : 'metallum'} ${Math.round(fx.materia * 100)}%` : `${Math.round(fx[k] * 100)}%`),
+    lfo: { keys: ['aequalis', 'materia', 'concursus', 'chance', 'hall'], shapes: 'random' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); },
   };
-  function dice() {                                       // зубцы — вразброс (полиритм), штифты по Евклиду, ноты — ступени, тембры — случайно; часы идут
-    const R = Math.random, euclid = (k, n) => { const s = []; for (let i = 0; i < n; i++) if (Math.floor((i * k) / n) !== Math.floor(((i - 1) * k) / n)) s.push(i); return s; };
-    gears.forEach((g) => {
-      g.teeth = TEETH[Math.floor(R() * 10)]; const k = 1 + Math.floor(R() * Math.max(1, g.teeth / 2)), rot = Math.floor(R() * g.teeth);
-      g.pins = new Set(euclid(k, g.teeth).map((p) => (p + rot) % g.teeth));
-      g.semi = [-12, -5, 0, 3, 7, 10, 12, 15][Math.floor(R() * 8)]; g.fold = 0.2 + R() * 0.7; g.ratio = RATIOS[Math.floor(R() * (R() < 0.8 ? 6 : RATIOS.length))]; g.index = R() * 0.7; g.decay = 0.1 + R() * 0.7; g.ramp = R() < 0.4 ? 0.3 + R() * 0.5 : 0; g.rampTo = Math.floor(R() * 4);
-    });
-    if (!seq.playing) play(true);
+  function dice() {                                       // волшебное отношение, иногда — унтертонами; фаза — у одного кольца; часы идут
+    const R = Math.random, set = MAGIC[Math.floor(R() * MAGIC.length)], under = R() < 0.25;
+    rings.forEach((r) => { r.on = set.includes(r.n); r.under = under; r.phi = 0; r.lvl = 0.8; });
+    if (R() < 0.4) { const on = rings.filter((r) => r.on); on[Math.floor(R() * on.length)].phi = [0.25, 0.5, 0.75][Math.floor(R() * 3)]; }
+    fx.materia = R(); applyFx(); sendAll(); setRun(true, 0);
   }
   const horo = {
-    n: 'IX', title: 'Horologium', sub: 'rotae · horae', theme: { ink: INK, bg: BGC, paper: PAPER },
+    n: 'IX', title: 'Horologium', sub: 'numeri · horae', theme: { ink: INK, bg: BGC, paper: PAPER },
     corner: { hit: (f) => { const G = geo(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} },   // солнце — карта
     fx: fxw,
-    legend: [['tap', 'tap the pendulum', 'clock runs / stops'], ['drag', 'drag the pendulum sideways', 'tempo'],
-      ['tap', 'tap a tooth', 'a pin · at the top the hammer strikes'], ['up', 'drag a wheel up or down', 'its note'],
-      ['hold', 'hold a wheel', 'its sheet: teeth, fold, ratio, index, decay, level, ramp'], ['tap', 'tap the sun', 'map of worlds']],
+    legend: [['tap', 'tap a ring', 'it sounds: n strikes a turn, the n-th harmonic'], ['double', 'double tap a ring', 'undertone 1/n'], ['drag', 'drag along a ring', 'its phase'],
+      ['hold', 'hold a ring', 'its sheet'], ['throw', 'swing the pendulum', 'by hand — it ticks · throw — faster · over the top — a chord · catch — stop'],
+      ['tap', 'tap the hub', 'run / stop · hold — tempo'], ['tap', 'tap the sun', 'map of worlds']],
     build, tick, draw, down, move, up, dice, enter: start,
-    clear() { for (const g of gears) g.pins.clear(); },
-    snapshot: () => JSON.stringify({ g: gears.map((g) => ({ ...g, pins: [...g.pins], hit: 0 })), fx, bpm: seq.bpm }),
+    clear() { for (const r of rings) r.on = false; clock.run = false; sendAll(); },
+    snapshot: () => JSON.stringify({ r: rings.map(({ on, under, phi, lvl }) => ({ on, under, phi, lvl })), fx, bpm: clock.bpm, run: clock.run, u: clock.u }),
     restore(js) {
       const st = JSON.parse(js);
-      st.g.forEach((q, i) => Object.assign(gears[i], q, { pins: new Set(q.pins) }));
-      Object.assign(fx, st.fx); seq.bpm = st.bpm; applyFx();
+      if (!st.r) return;                                   // снимок старого Horologium — не наш
+      st.r.forEach((q, i) => Object.assign(rings[i], q));
+      Object.assign(fx, st.fx); clock.bpm = st.bpm; clock.run = st.run; clock.u = st.u || 0; applyFx(); sendAll();
     },
-    sounding, tempo: { set: (bpm) => { seq.bpm = bpm; } }, mapShot(on) { noSun = on; },
+    sounding, tempo: { set: (bpm) => { clock.bpm = bpm; } }, mapShot(on) { noSun = on; },
   };
   T.registerWorld(9, horo);
   window.t2d.horo = {
-    gears, fx, seq, geo, setFx: (k, v) => fxw.set(k, v), play, get live() { return !!(bus && bus.live); }, get ready() { return ready; }, hz: hzOf,
-    tooth: (i, j) => { const G = geo(), c = curStep(), g = gears[i], a = ((j - c.s) / g.teeth) * TAU, [gx, gy] = G.pos[i], r = G.Rg - 15; return { x: gx + Math.sin(a) * r, y: gy - Math.cos(a) * r }; },
-    bob: () => { const G = geo(), a = swingA(performance.now()), L = G.bob.y - G.pivot.y; return { x: G.pivot.x + Math.sin(a) * L, y: G.pivot.y + Math.cos(a) * L }; },
+    rings, fx, clock, pend, geo, setFx: (k, v) => fxw.set(k, v), get ready() { return ready; }, get live() { return !!(bus && bus.live); }, get F() { return Fm; }, get P() { return Pm; }, get strikes() { return strikes; }, get handSteps() { return handSteps; },
+    ring: (i, a = 0) => { const G = geo(), r = ringR(G, i); return { x: G.cx + Math.sin(a) * r, y: G.cy - Math.cos(a) * r }; }, bob: () => bobXY(geo()), hub: () => { const G = geo(); return { x: G.cx, y: G.cy }; }, run: setRun, ratio: ratioText,
   };
 })();
