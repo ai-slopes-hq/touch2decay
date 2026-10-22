@@ -12,7 +12,7 @@ class Horo extends AudioWorkletProcessor {
     super();
     this.P = 0; this.F = 0; this.Ft = 0; this.glide = 0; this.glideN = 0; this.B = 55;
     this.mat = 0.35; this.conc = 0.4; this.chance = 1; this.aeq = 0;
-    this.r = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: false, under: false, phi: 0, lvl: 0.8, x: 0, y1: 0, y2: 0, nz: 0, pan: -0.7 + (1.4 * i) / (NR - 1), m: i + 2, hit: 0 }));
+    this.r = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: false, under: false, phi: 0, lvl: 0.8, x: 0, y1: 0, y2: 0, nz: 0, ek: 0, eN: 1, ea: 0, pan: -0.7 + (1.4 * i) / (NR - 1), m: i + 2, hit: 0 }));
     this.dc = [0, 0]; this.dx = [0, 0]; this.lp = [0, 0];
     this.count = 0; this.every = Math.round(sampleRate / 30); this.hits = [];
     this.port.onmessage = (e) => {
@@ -55,7 +55,8 @@ class Horo extends AudioWorkletProcessor {
             for (const q of act) if (q !== o) { const xq = this.P * q.m + q.phi; if (Math.abs(xq - Math.round(xq)) < w * q.m) { hitc = true; break; } }
             if (hitc) acc += this.conc * 1.2; else acc *= 1 - 0.35 * this.conc;
           }
-          ex = acc * o.lvl;
+          o.ea = acc * o.lvl;                             // удар — не щелчок в один отсчёт, а мягкий молоточек (sin²): дерево — 1.6 мс, металл — 0.5 мс
+          o.eN = Math.max(4, Math.round((0.0005 + 0.0011 * (1 - this.mat)) * sr)); o.ek = o.eN;
           o.nz = Math.round(0.0015 * sr * (1 - this.mat));   // дерево — с шорохом
           o.rate = rate;
           if (this.hits.length < 32) this.hits.push(o.n - 2);
@@ -63,14 +64,15 @@ class Horo extends AudioWorkletProcessor {
         const f = Math.min(sr * 0.42, o.m * Math.max(this.B, Math.min(Fe, 400))), T = 0.012 * 50 ** this.mat * Math.sqrt(Math.min(4, 220 / f));
         const rr = Math.exp(-1 / (T * sr)), w = (TAU * f) / sr, sw = Math.sin(w);
         const norm = 1 - Math.exp(-1 / (T * Math.max(1, o.rate || 1)));   // часто — сумма не растёт без меры
-        let xin = ex * sw * norm * 1.6;
-        if (o.nz > 0) { xin += (Math.random() * 2 - 1) * 0.08 * sw * o.lvl * norm; o.nz--; }
+        if (o.ek > 0) { const j = o.eN - o.ek, w2 = Math.sin((Math.PI * (j + 0.5)) / o.eN); ex = (o.ea * 2 * w2 * w2) / o.eN; o.ek--; }
+        let xin = ex * sw * norm * 0.55;
+        if (o.nz > 0) { xin += (Math.random() * 2 - 1) * 0.02 * sw * o.lvl * norm * (o.nz / 72); o.nz--; }
         const y = 2 * rr * Math.cos(w) * o.y1 - rr * rr * o.y2 + xin;
         o.y2 = o.y1; o.y1 = y;
         const pl = (1 - o.pan) * 0.5, pr = (1 + o.pan) * 0.5;
         yl += y * pl; yr += y * pr;
       }
-      const og = (0.7 + 1.1 * (1 - this.mat)) / Math.sqrt(1 + Fe / 8);   // дерево тише металла — подтянуть; быстро — поток плотнее, громче — убавить
+      const og = (0.8 + 0.6 * (1 - this.mat)) / Math.sqrt(1 + Fe / 8);   // дерево тише металла — подтянуть; быстро — поток плотнее, громче — убавить
       L[k] = yl * og; if (R !== L) R[k] = yr * og;
     }
     for (const o of this.r) if (!o.on) { o.y1 *= 0.9; o.y2 *= 0.9; }

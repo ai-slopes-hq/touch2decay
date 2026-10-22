@@ -1231,6 +1231,10 @@ async def sc_horologium(p):                        # Horologium Nova: кольц
     F = await p.js('()=>t2d.horo.F'); r = await p.js('()=>t2d.horo.ratio().b'); print('  over the top: F', round(F, 1), '·', r)
     assert F > 20 and r.startswith('tonus'), f'over the top — a tone: {F} {r}'
     await p.shot('horologium-tonus')
+    a = await p.js('()=>t2d.horo.strip(1)'); b = await p.js('()=>t2d.horo.strip(30)'); pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], b['x'], b['y'], steps=8); await p.up(); await p.pg.wait_for_timeout(3000)
+    F = await p.js('()=>t2d.horo.F'); print('  tempus scale to 30 / s, 3 s later:', round(F, 1)); assert 22 < F < 40, f'drag the tempus scale — the speed stays: {F}'
+    await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(90); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(1500)
+    F = await p.js('()=>t2d.horo.F'); assert F < 1, f'double tap the scale — back to tempo: {F}'
     r = await p.js("()=>t2d.worlds[9].fx.sectors.length"); assert r == 5, 'FX: aequalis, materia, concursus, chance, hall'
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
     assert await p.js('()=>t2d.horo.rings.some(r=>r.on) && t2d.horo.clock.run'), 'dice — a magic ratio, running'
