@@ -1480,6 +1480,7 @@ async def sc_portus(p):                            # Portus: остров на �
     assert 6 in await p.js('()=>t2d.portus.steps'), 'tap a marker lamp — a boat on that step'
     ph = await p.js('()=>t2d.portus.geo().ph'); await p.tap(ph['x'], ph['y'] - 40); await p.pg.wait_for_timeout(2500)
     assert await p.js('()=>t2d.portus.seq.playing'), 'tap the lighthouse — it plays'
+    assert await p.js('()=>T2D.clockLive'), 'the clock worklet ticks'
     lv = await p.js('()=>T2D.level'); print('  portus level, playing:', round(lv, 3)); assert lv > 0.02, f'chords are heard: {lv}'
     await p.shot('portus-play')
     M = await p.js('()=>t2d.portus.geo().moon'); c0 = await p.js('()=>t2d.portus.luna.cut'); mx = M['x'] + M['r'] * 0.5

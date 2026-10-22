@@ -108,7 +108,7 @@ export function createEngine(T, model) {
       clock.step++; clock.next += stepSec();
     }
   }
-  setInterval(schedule, 25);
+  T.onTick(schedule);                                  // таймер 25 мс + метроном из звукового потока — в фоне шаги не пропадают
   function play(on) { clock.next = 0; if (on) { clock.step = 0; setLive(true); schedule(); } }
   function curStep() {
     if (!actx || !lastSteps.length || !seq.playing) return -1;

@@ -3,6 +3,7 @@
 import { an, asym, chanLvl, chans, ctx, filter, gainNode, hall, lfo, mix, noiseBuffer, restartAudio, saveMix, scopeBuf, setVol, soft, unlock, vol, VOL_TRAVEL } from './host/audio.js';
 import { audioPanel, drawAudioPanel, panelDown, panelGeo, panelHit, panelMove, setAudioPanel, volTap } from './host/audio-panel.js';
 import { link, tempoFrom, transportFrom } from './host/concordia.js';
+import { clockLive, onTick, setClockVer } from './host/clock.js';
 import { cellRect, deck, field, panel, setDeck } from './host/deck.js';
 import { BG, cv, diamond, dot, DPR, drawCurve, fitCanvas, g, glowAt, H, hairBox, INK, ink, mapText, paper, quarterSun, ring, safeBot, scopeY, setTheme, sunGlyph, text, W } from './host/draw.js';
 import { MAP, READ, reading } from './host/fonts.js';
@@ -19,6 +20,7 @@ import { backPos, btnHit, btnPos, drawUI, headHit, ITEM_H, markDice, rootAt, scl
 import { commit, hists, undo } from './host/undo.js';
 import { clamp, inBox, invLog, lerpLog } from './host/util.js';
 import { morphFn, morphName, NW, WAVES, weight } from './host/waves.js';
+setClockVer(new URL(import.meta.url).searchParams.get('v') || '0');   // версия для addModule метронома (у host/ её нет)
 
 // ---------- звук ----------
 const F_LO = 55;          // нижняя нота поля (A1)
@@ -2590,7 +2592,7 @@ registerWorld(1, solNiger);
 // общее для миров из других файлов (worlds/<мир>/): регистрация и помощники рисования
 // lfoClear(prefix) — снять LFO строк мира (корзина, закрытая звезда) без возврата базы
 window.T2D = {
-  registerWorld, tempoFrom, transportFrom, openSheet: (spec) => { setFxSheet({ w: nav.world, spec }); }, lfoBase: (id, key) => { const e = SL.find((q) => q.id === id && q.key === key); return e ? e.base : null; }, lfoClear: (prefix) => { for (const e of [...SL]) if (e.id.startsWith(prefix)) SL.splice(SL.indexOf(e), 1); }, closeSheet: () => { setFxSheet(null); }, get sheetOpen() { return !!fxSheet; }, get link() { return { ...link }; }, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,
+  registerWorld, tempoFrom, transportFrom, onTick, get clockLive() { return clockLive(); }, openSheet: (spec) => { setFxSheet({ w: nav.world, spec }); }, lfoBase: (id, key) => { const e = SL.find((q) => q.id === id && q.key === key); return e ? e.base : null; }, lfoClear: (prefix) => { for (const e of [...SL]) if (e.id.startsWith(prefix)) SL.splice(SL.indexOf(e), 1); }, closeSheet: () => { setFxSheet(null); }, get sheetOpen() { return !!fxSheet; }, get link() { return { ...link }; }, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,
   get g() { return g; }, get W() { return W; }, get H() { return H; }, get DPR() { return DPR; },
   get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
   get ctx() { return ctx; }, hall, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,

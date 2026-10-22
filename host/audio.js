@@ -1,5 +1,6 @@
 // звук хоста: контекст, мастер (срез, компрессор, потолок), микшер-каналы миров, общий зал, громкость,
 // перезапуск при смене выхода, разблокировка звука в iOS. Голоса Tenebrae — в app.js (solBuild)
+import { startClock } from './clock.js';
 import { clamp } from './util.js';
 import { worlds, nav } from './registry.js';
 
@@ -145,6 +146,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {   // п
 export function build() {
   const AC = window.AudioContext || window.webkitAudioContext;
   ctx = new AC({ latencyHint: audioPref.stable ? 'playback' : 'interactive' });   // stable — буфер больше: для USB-интерфейсов, где мелкий буфер хрипит
+  startClock(ctx);                                       // метроном секвенсоров — от звукового потока (host/clock.js)
   const hp = filter('highpass', 30), mLpf = filter('lowpass', 20000, 0.5);
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -10; comp.knee.value = 10; comp.ratio.value = 2.5;
