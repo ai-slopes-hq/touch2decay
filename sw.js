@@ -1,13 +1,14 @@
 // Офлайн без залипания старой версии.
 // Код и страница — сначала из сети (мимо HTTP-кеша), кеш — только запасной вариант без сети.
 // Шрифты, иконки и гравюры не меняются — сразу из кеша.
-const CACHE = 't2d-v160';   // при выкладке менять вместе с ?v= у модулей в index.html
+const CACHE = 't2d-v161';   // при выкладке менять вместе с ?v= у модулей в index.html
 const PAGE = ['./', './index.html', './manifest.webmanifest'];
 // ES-модули — те же, что <script type="module"> в index.html, в том же порядке; host/ — их импортирует app.js
 const HOST = ['./host/util.js', './host/fonts.js', './host/draw.js', './host/scale.js', './host/registry.js', './host/undo.js', './host/audio.js',
   './host/touch.js', './host/waves.js', './host/sl.js', './host/sheet.js', './host/ui-top.js', './host/legend.js', './host/strain.js', './host/deck.js', './host/concordia.js', './host/mixer.js', './host/art.js', './host/map.js'];
 const MODULES = [...HOST, './app.js', './cymatica.js', './laboratorium.js', './natura.js', './inferno.js', './paradisus.js', './monochord.js', './oceanus.js',
-  './horologium.js', './firmamentum.js', './tria.js', './arcadia.js', './portus.js', './goetia.js', './prisma.js', './vitrea.js'];
+  './horologium.js', './worlds/firmamentum/index.js', './tria.js', './arcadia.js', './portus.js', './goetia.js', './prisma.js', './vitrea.js',
+  './worlds/firmamentum/model.js', './worlds/firmamentum/engine.js', './worlds/firmamentum/view.js'];   // части миров (worlds/<мир>/) — их импортирует index.js мира
 // модули AudioWorklet — грузятся из миров через addModule(`…?v=`)
 const WORKLETS = ['./plate-worklet.js', './monochord-worklet.js', './ocean-worklet.js', './horo-worklet.js', './pulsar-worklet.js', './terrain-worklet.js', './goetia-worklet.js'];
 const SHELL = [...PAGE, ...MODULES, ...WORKLETS];
