@@ -3557,7 +3557,7 @@
   function worldImage(w) { return ENTER.has(w) ? snaps[w] : artFor(w); }
   // эмблемы звука на карте: гравюрный знак генератора каждого мира и латинская строка; рисуются один раз на размер экрана
   const emblems = {};
-  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · IV operatores', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'numeri · horae', 'pulsar · stellae', 'chaos · tria corpora', 'terrain · montes', 'concentus · echo', null, 'formula · sigilla', null, 'additio · lux', 'frictio · vitrum'];
+  const EMB_LINE = [null, 'tabulae · morphosis', 'modi · lamina', 'FM · alembicus', 'VA · flumen', 'strepitus · IX resonatores', 'chorus · vocales', 'chorda · physica', 'scansio · oceanus', 'numeri · horae', 'pulsar · stellae', 'chaos · tria corpora', 'terrain · montes', 'concentus · echo', null, 'formula · sigilla', null, 'additio · lux', 'frictio · vitrum'];
   const fontKey = () => (document.fonts ? document.fonts.status : '');
   function emblemFor(w) {                                 // лицо карты мира: подложка мира, двойная рамка, номер сверху, медальон со знаком звука, имя снизу
     const F = field(), pw = F.cw, ph = F.ch, key = `${pw}x${ph}|${DPR}|${fontKey()}`;
@@ -4224,7 +4224,7 @@
   // ---------- миры: реестр; Tenebrae — мир I поверх своих функций ----------
   // выключенные миры (автор, 22.10): номера за ними, код на месте — не регистрируются: нет на карте (рубашка), в микшере, звуке, легенде.
   // Вернуть мир — убрать его номер отсюда.
-  const HIDDEN = new Set([3, 17, 18]), hiddenW = {};   // 17, 18 — DLC vol. I в бэклоге (22.10: «скучные»)
+  const HIDDEN = new Set([17, 18]), hiddenW = {};   // 17, 18 — DLC vol. I в бэклоге (22.10: «скучные»)
   function registerWorld(n, w) {
     if (HIDDEN.has(n)) { hiddenW[n] = w; return; }
     if (n > 2) ENTER.add(n);                     // III и IV — модули-эскизы: пока без звука, но в них можно влететь

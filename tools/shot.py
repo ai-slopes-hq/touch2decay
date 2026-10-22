@@ -678,83 +678,44 @@ async def sc_sketches(p):                         # эскизы миров III 
     await p.shot('map-sketches')
 
 
-async def sc_lab(p):                              # Laboratorium: огонь — дрон, колба вбок — высота, вверх — уровень, трубки, пеликан, корзина, отмена, кубик
-    if 3 in await p.js('()=>t2d.hidden'): print('  switched off — skipped'); return
-    await p.js('()=>t2d.go(3)'); await p.pg.wait_for_timeout(300)
-    fb = await p.js('()=>t2d.lab.furnace()'); await p.tap(fb['x'], fb['y']); await p.pg.wait_for_timeout(1800)
-    assert await p.js('()=>t2d.lab.fire && t2d.lab.live'), 'tap the furnace — fire, drone'
-    lv = await p.js('()=>T2D.level'); assert lv > 0.02, f'drone is heard: {lv}'
-    assert await p.js('()=>t2d.sounding()'), 'sounding while the fire burns'
-    a = await p.js('()=>t2d.lab.at(2)'); await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(1700)   # двойной тап по колбе — разбить
-    assert await p.js('()=>t2d.lab.broken[2]'), 'double tap a flask — it breaks'
-    await p.shot('lab-broken')
-    await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(200)
-    assert not await p.js('()=>t2d.lab.broken[2]'), 'double tap again — mended'
-    a = await p.js('()=>t2d.lab.at(0)'); f0 = await p.js('()=>t2d.lab.OPS[0].f')   # держишь колбу — плашка: высота, уровень, пеликан
-    await p.hold(a['x'], a['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(150)
-    assert await p.js('()=>T2D.sheetOpen'), 'hold a flask — its sheet'
-    fg = await p.js('()=>t2d.fxGeo()'); r = next(q for q in fg['rows'] if q['k'] == 'pitch'); y = r['y'] + r['h'] / 2
-    pid = await p.hold(fg['tx0'] + 40, y, ms=60); await p.drag(pid, fg['tx0'] + 40, y, fg['tx0'] + 100, y, steps=6); await p.shot('lab-flask-sheet'); await p.up()
-    assert await p.js('()=>t2d.lab.OPS[0].f') > f0 * 1.3, 'flask sheet: pitch row up'
-    await p.tap(200, fg['top'] - 60); await p.pg.wait_for_timeout(100)
-    a = await p.js('()=>t2d.lab.at(0)'); f0 = await p.js('()=>t2d.lab.OPS[0].f')
-    pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], a['x'] + 60, a['y'], steps=8)
-    assert await p.js('()=>t2d.lab.focus') == 0, 'holding a flask — its waveform in the scroll'
-    await p.shot('lab-pitch'); await p.up(); await p.pg.wait_for_timeout(100)
-    f1 = await p.js('()=>t2d.lab.OPS[0].f')
-    assert abs(12 * math.log2(f1 / f0) - 10) < 0.6, f'drag right 60 px — ten semitones up: {f0} -> {f1}'
-    l0 = await p.js('()=>t2d.lab.OPS[0].level'); a = await p.js('()=>t2d.lab.at(0)')
-    pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], a['x'], a['y'] - 40, steps=8); await p.up()
-    assert await p.js('()=>t2d.lab.OPS[0].level') > l0 + 0.2, 'drag up — more liquid'
-    n = await p.js('()=>t2d.lab.at(1)'); t = await p.js('()=>t2d.lab.at(0)')
-    pid = await p.hold(n['x'], n['neckY'], ms=60); await p.drag(pid, n['x'], n['neckY'], t['x'], t['y'], steps=12)
-    await p.shot('lab-tube'); await p.up(); await p.pg.wait_for_timeout(300)
-    assert [1, 0] in await p.js('()=>t2d.lab.mods'), 'neck of aer to ignis — aer modulates ignis'
-    await p.pg.wait_for_timeout(400)
-    q = await p.js('()=>t2d.lab.tubeAt(1, 0)'); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(200)
-    assert [1, 0] not in await p.js('()=>t2d.lab.mods'), 'tap on the tube removes it'
-    n = await p.js('()=>t2d.lab.at(1)')
-    pid = await p.hold(n['x'], n['neckY'], ms=60); await p.drag(pid, n['x'], n['neckY'], n['x'] + 70, n['neckY'] - 40, steps=6)
-    await p.drag(pid, n['x'] + 70, n['neckY'] - 40, n['x'], n['y'], steps=6); await p.up(); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.lab.OPS[1].fb') > 0, 'neck back into itself — pelican'
-    m0 = await p.js('()=>t2d.lab.mods')
-    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(200)
-    assert await p.js('()=>t2d.lab.mods') == [] and not await p.js('()=>t2d.lab.fire'), 'trash — tubes gone, fire out'
-    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
-    assert await p.js('()=>t2d.lab.mods') == m0 and await p.js('()=>t2d.lab.fire'), 'undo brings tubes and fire back'
-    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
-    assert await p.js('()=>t2d.lab.fire && t2d.lab.live'), 'dice keeps a burning fire burning'
-    await p.tap(fb['x'], fb['y']); await p.pg.wait_for_timeout(1200)                      # ещё тап по лампе — погасить
-    m1 = await p.js('()=>t2d.lab.mods'); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(300)
-    assert not await p.js('()=>t2d.lab.fire'), 'dice does not light the fire'
-    await p.tap(fb['x'], fb['y']); await p.pg.wait_for_timeout(1500)
-    j = await p.js('()=>t2d.lab.jar(3)'); pid = await p.hold(j['x'], j['y'], ms=400)
-    assert any(v['k'] == 3 and v['on'] for v in await p.js('()=>t2d.lab.voices')), 'hold a jar — the apparatus sounds on its note'
-    await p.shot('lab-jar'); await p.up(); await p.pg.wait_for_timeout(100)
-    assert not any(v['k'] == 3 for v in await p.js('()=>t2d.lab.voices')), 'lift the finger — the jar is quiet'
-    j = await p.js('()=>t2d.lab.jar(2)'); await p.pin(j['x'], j['y']); await p.pg.wait_for_timeout(200)
-    assert any(v['k'] == 2 and v['latched'] for v in await p.js('()=>t2d.lab.voices')), 'double tap — the jar keeps sounding'
-    s0 = await p.js('()=>t2d.lab.jars[4]'); j = await p.js('()=>t2d.lab.jar(4)')
-    pid = await p.hold(j['x'], j['y'], ms=60); await p.drag(pid, j['x'], j['y'], j['x'], j['y'] - 30, steps=6); await p.up()
-    assert await p.js('()=>t2d.lab.jars[4]') == s0 + 5, 'jar up 30 px — its note five semitones up'
-    e = await p.js('()=>t2d.lab.geo().egg'); await p.tap(e['x'], e['y']); await p.pg.wait_for_timeout(700)   # тап по яйцу — тоже огонь: погасить
-    await p.shot('lab-jug'); await p.pg.wait_for_timeout(300)
-    assert not await p.js('()=>t2d.lab.fire') and not any(v['latched'] for v in await p.js('()=>t2d.lab.voices')), 'tap the egg while burning — fire out, kept jars quiet'
-    await p.js("()=>{t2d.lab.setFx('solve', 0.2); t2d.lab.setFx('coagula', 0)}")
-    for k, v in (('solve', 0.8), ('coagula', 0.7)):                       # дуги на кольце: палец идёт по окружности
-        q = await p.js(f"()=>t2d.lab.arcPt('{k}', 0.1)"); pid = await p.hold(q['x'], q['y'], ms=60)
-        for j in range(1, 9):
-            r = await p.js(f"()=>t2d.lab.arcPt('{k}', {0.1 + (v - 0.1) * j / 8})"); await p.drag(pid, q['x'], q['y'], r['x'], r['y'], steps=1); q = r
-        if k == 'coagula': await p.shot('lab-knob')
-        await p.up(); await p.pg.wait_for_timeout(100)
-    v = await p.js('()=>t2d.lab.fx')
-    assert abs(v['solve'] - 0.8) < 0.02 and abs(v['coagula'] - 0.7) < 0.02, f'vials set solve and coagula: {v}'
-    assert await p.js('()=>t2d.lab.solveOn'), 'coagula up — solve·coagula on'
-    await p.shot('lab-solve')
-    await p.js("()=>t2d.lab.setFx('coagula', 0)"); await p.pg.wait_for_timeout(100)
-    assert not await p.js('()=>t2d.lab.solveOn'), 'coagula at zero — off, no ticking'
-    w = await p.js('()=>Array.from(t2d.lab.waveOf(0))'); assert max(w) > 0.9 and min(w) < -0.9, 'flask surface is its waveform'
+async def sc_lab(p):                              # Laboratorium: огонь — звук, жар; колба — уровень → высота; змеевик — витки; кольцо; перегонка и капли сами; плашка; кубик; корзина; отмена; лампа — карта
+    if await p.js('()=>t2d.hidden.includes(3)'): print('  Laboratorium hidden — skipped'); return
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(3)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 3], 'the card opens Laboratorium'
+    G = await p.js('()=>t2d.lab.geo()')
+    fx, fy = G['cx'], (G['furn'] + G['bot']) / 2
+    await p.tap(fx, fy); await p.pg.wait_for_timeout(1200)
+    assert await p.js('()=>t2d.lab.st.fire'), 'tap the fire — it burns'
+    lv = await p.js('()=>T2D.level'); print('  lab level:', round(lv, 3)); assert lv > 0.02, f'the flasks are heard: {lv}'
+    pid = await p.hold(fx, fy, ms=40); await p.drag(pid, fx, fy, fx, fy - 70, steps=6); await p.up()
+    assert await p.js('()=>t2d.lab.st.heat') > 0.8, 'drag the fire up — hotter'
+    A = G['F'][0]; f0 = await p.js('()=>t2d.lab.freq(t2d.lab.fl[0])')
+    pid = await p.hold(A['x'], A['y'], ms=40); await p.drag(pid, A['x'], A['y'], A['x'], A['y'] - 60, steps=6); await p.up()
+    f1 = await p.js('()=>t2d.lab.freq(t2d.lab.fl[0])'); assert f1 < f0 * 0.9, f'more liquor — lower: {f0} -> {f1}'
+    c0 = await p.js('()=>t2d.lab.coil[0]'); P = await p.js('()=>t2d.lab.tubes()[0]'); m = P[1]
+    await p.tap(m['x'], (m['y'] + P[0]['y']) / 2); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.lab.coil[0]') == (c0 + 1) % 7, 'tap a coil — one more turn'
+    R = await p.js('()=>t2d.lab.tubes()[2]'); await p.tap((R[1]['x'] + R[2]['x']) / 2, R[1]['y']); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.lab.st.ring'), 'tap the ring — closed'
+    L0 = await p.js('()=>t2d.lab.fl.map(f=>f.L)'); await p.pg.wait_for_timeout(3000)
+    L1 = await p.js('()=>t2d.lab.fl.map(f=>f.L)'); dn = await p.js('()=>t2d.lab.drops')
+    print('  flow', [round(x, 3) for x in L0], '->', [round(x, 3) for x in L1], 'drops', dn)
+    assert any(abs(a - b) > 0.01 for a, b in zip(L0, L1)) and dn >= 3, 'it lives: liquor flows, drops fall'
     await p.shot('lab')
+    await p.hold(A['x'], A['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>T2D.sheetOpen'), 'hold a flask — its sheet'
+    await p.shot('lab-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(800)
+    assert await p.js('()=>t2d.lab.st.fire'), 'dice — fire'
+    await p.shot('lab-dice')
+    c = await p.js("()=>t2d.btnPos('clr')"); await p.tap(c['x'], c['y']); await p.pg.wait_for_timeout(3500)
+    assert not await p.js('()=>t2d.lab.st.fire'), 'trash — fire out'
+    lv = await p.js('()=>T2D.level'); assert lv < 0.01, f'after trash it is silent: {lv}'
+    u = await p.js("()=>t2d.btnPos('undo')"); await p.tap(u['x'], u['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.lab.st.fire'), 'undo — fire again'
+    Lp = await p.js('()=>t2d.lab.geo().lamp'); await p.tap(Lp['x'], Lp['y']); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>t2d.view') == 'map', 'tap the lamp — map'
 
 
 async def sc_natura(p):                           # Natura: лодочка — пуск/темп, кувшинки — посадить/убрать/нота/цветок, мостик — длина, кубик, корзина, отмена
@@ -905,7 +866,7 @@ async def sc_cymx(p):                              # Cymatica: запись по
 async def sc_startmap(p):                          # карта — стартовая; солнце — concordia: общие часы и лад
     assert await p.js('()=>t2d.view') == 'map', 'the app opens on the map'
     await p.shot('startmap')
-    q = await p.js('()=>t2d.mapCell(1, 2)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(200)
+    q = await p.js('()=>t2d.mapCell(0, 0)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.view') == 'map' and await p.js('()=>t2d.mapPeek()'), 'a face-down card only shivers — nondum'
     await p.shot('map-peek'); await p.pg.wait_for_timeout(300)
     for w in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11):
