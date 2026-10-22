@@ -1309,7 +1309,7 @@ async def sc_triaenergy(p):                        # Tria: энергия бро
 async def sc_tria(p):                              # Tria corpora: тела молчат, брошенное — хаос и звук, якорь, плашка, Fiat lux, FX, кубик, корзина, отмена, солнце — карта
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(11)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
-    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 11], 'the card right of Natura opens Tria corpora'
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 11], 'the card above Firmamentum opens Tria corpora'
     assert await p.js('()=>t2d.tria.still'), 'the bodies rest at first'
     await p.shot('tria-still')
     a = await p.js('()=>t2d.tria.at(1)'); pid = await p.hold(a['x'], a['y'], ms=40)

@@ -236,7 +236,7 @@
     touches.delete(f.id);
     if (!t || t.kind !== 'body') return;
     const b = bodies[t.i], G = geo();
-    b.held = false; eDirty = true; fresh = true;
+    b.held = false; eDirty = true; if (t.moved) fresh = true;   // порог энергии — только у броска, не у тапа
     if (t.moved && !b.fixed) {                            // бросок: скорость пальца за последние кадры
       const h = t.hist, a = h[0], z = h[h.length - 1], dtm = Math.max(16, z[0] - a[0]);
       b.vx = clamp(((z[1] - a[1]) / G.R / dtm) * 1000 * 0.5, -3, 3); b.vy = clamp(((z[2] - a[2]) / G.R / dtm) * 1000 * 0.5, -3, 3);
