@@ -1,5 +1,5 @@
 // render-cli — офлайн-рендер ядра для сверки с вебом (tools/test-goetia-core.mjs, tools/test-firm-core.mjs).
-// world <goetia|firmamentum> — первой строкой (по умолчанию goetia), дальше команды мира.
+// world <goetia|firmamentum|oceanus> — первой строкой (по умолчанию goetia), дальше команды мира.
 // stdin, по команде в строке: init <sr> · prog <i> <код> <сдвиг> … · voice <i> <on> <rate> <lp> <lvl> <legio> <pan> <rel> <trig>
 // · fx <spread> <wide> · sett <i> <t> · run <блоков>.
 // Firmamentum: init <sr> <зерно> · voice <i> <on 1|0|-1> <fp> <ff> <cyc> <win> <mask> <lvl> <pan> · fx <jit> <spread> <crep> <fulg> · run <блоков>.

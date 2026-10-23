@@ -59,6 +59,16 @@ export function loadRef(seed = SEED, sr = SR) {          // эталон с зе
   const { reg, posted } = sandbox('./ref/ocean-worklet.js', { sampleRate: sr });
   return { proc: new reg.ocean({ processorOptions: { seed } }), posted };
 }
+export function loadWasm(seed = SEED, sr = SR) {         // обёртка ocean-worklet.js над ocean.wasm; ready — когда пришло {t:'ready'}
+  const { reg, posted } = sandbox('../ocean-worklet.js', { sampleRate: sr });
+  const bytes = readFileSync(WASM);
+  const proc = new reg.ocean({ processorOptions: { wasm: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), seed } });
+  const ready = new Promise((res, rej) => {
+    const post = proc.port.postMessage;
+    proc.port.postMessage = (m) => { post(m); if (m.t === 'ready') res(); else if (m.t === 'err') rej(new Error(m.msg)); };
+  });
+  return { proc, posted, ready };
+}
 export function loadOld(i = 0, sr = SR) {                // прежний код: ветер и шторм — на независимом xorshift32 от номера прогона (начальные фазы голосов — из зерна 1 конструктора, одни и те же)
   const r = loadRef(1, sr);
   let s = (0x9E3779B9 ^ (i + 1)) >>> 0 || 1;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Сборка ядра: render-cli (нативно, для сверки) и goetia.wasm (в корень, рядом с worklet). Запуск из любой папки: core/build.sh
+# Сборка ядра: render-cli (нативно, для сверки) и goetia.wasm, pulsar.wasm и ocean.wasm (в корень, рядом с worklet). Запуск из любой папки: core/build.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p core/build
@@ -15,3 +15,8 @@ emcc -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --
   -sFILESYSTEM=0 -sINITIAL_MEMORY=1MB -sSTACK_SIZE=64KB -sALLOW_MEMORY_GROWTH=0 \
   -o pulsar.wasm core/worlds/firmamentum/wasm.cpp core/worlds/firmamentum/pulsar.cpp
 echo "pulsar.wasm ($(wc -c < pulsar.wasm | tr -d ' ') bytes)"
+emcc -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --no-entry \
+  -sEXPORTED_FUNCTIONS=_oc_init,_oc_params,_oc_push,_oc_release,_oc_splash,_oc_voice,_oc_process,_oc_shape,_oc_moon,_oc_gain \
+  -sFILESYSTEM=0 -sINITIAL_MEMORY=1MB -sSTACK_SIZE=64KB -sALLOW_MEMORY_GROWTH=0 \
+  -o ocean.wasm core/worlds/oceanus/wasm.cpp core/worlds/oceanus/ocean.cpp
+echo "ocean.wasm ($(wc -c < ocean.wasm | tr -d ' ') bytes)"
