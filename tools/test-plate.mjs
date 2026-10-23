@@ -369,3 +369,31 @@ test('polyrhythm 5 x 7 repeats every 35 steps under the lock', () => {
   const t = stepsOf(posted).map((m) => m.time);
   assert.ok(t.slice(1).every((x, i) => i === 0 || x > t[i]), 'time grows');
 });
+
+test('no double tick on grids off the sample grid', () => {
+  for (const t0 of [0.0100023, 0.0100001, 0.0099977, 0.0100107]) {
+    const { ctx, proc, send, posted } = plate();
+    send(seqMsg({ rhythm: { len: 16, steps: slots(() => hit) } }));
+    send({ t: 'lock', t0, p: 0.5 });
+    runT(ctx, proc, 4);
+    const st = stepsOf(posted), t = st.map((m) => m.time);
+    assert.ok(t.length >= 30, `ticks: ${t.length}`);
+    for (let i = 1; i < t.length; i++) {
+      assert.ok(i === 1 || t[i] - t[i - 1] > 0.1, `t0 ${t0}: tick ${i} too close: ${t[i] - t[i - 1]}`);   // тик 1 — после пуска, сразу
+      assert.equal(st[i].r, i % 16, `t0 ${t0}: r steps by one`);
+      if (i > 1) close(t[i], t0 + (i - 1) * 0.125, 1 / FS, `t0 ${t0}: tick ${i} on grid`);
+    }
+  }
+});
+
+test('lock half-step guard: a new grid right after a tick does not double it', () => {
+  const { ctx, proc, send, posted } = plate();
+  send(seqMsg({ rhythm: { len: 5, steps: slots(() => hit) } }));
+  send({ t: 'lock', t0: 0.01, p: 0.5 });
+  while (stepsOf(posted).length < 4) runT(ctx, proc, 128 / FS);   // ждём третий тик сетки и новую сетку сразу после него
+  send({ t: 'lock', t0: ctx.currentTime + 0.01, p: 0.5 });          // ближайший узел новой сетки — в пределах p/8 после тика
+  runT(ctx, proc, 1);
+  const st = stepsOf(posted), t = st.map((m) => m.time);
+  for (let i = 2; i < t.length; i++) assert.ok(t[i] - t[i - 1] >= 0.5 / 8 - 1 / FS, `tick ${i} gap ${t[i] - t[i - 1]}`);
+  st.forEach((m, i) => assert.equal(m.r, i % 5, 'r counted without loss'));
+});
