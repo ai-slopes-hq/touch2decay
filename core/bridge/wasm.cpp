@@ -1,5 +1,5 @@
 // Мост ядра SDK для WASM (t2d.wasm): хост и все миры SDK в одном модуле, его крутит t2d-worklet.js (в Node — tools/t2d-core.mjs).
-// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Oceanus — 8, Firmamentum — 10.
+// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Oceanus — 8, Firmamentum — 10, Goetia — 15.
 // Обмен — через буферы ядра: аргументы action (t2d_args), зеркало и услышанное (t2d_mbuf), строка снимка (t2d_str_buf + длина).
 #include <cstring>
 #include <string>
@@ -7,13 +7,15 @@
 #include "../host/host.hpp"
 #include "../worlds/firmamentum/world.hpp"
 #include "../worlds/oceanus/world.hpp"
+#include "../worlds/goetia/world.hpp"
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
 static oceanus::Oceanus ocean(host.scale());
+static goetia::World goe(host.scale());
 static sdk::World* worlds[Host::SLOTS] = {};
 static double args[64];
-static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135
+static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59
 static constexpr int STR_CAP = 1 << 16;
 static char str[STR_CAP];
 
@@ -35,6 +37,9 @@ API void t2d_init(double sr, unsigned seed) {
   ocean.prepare(sr, seed);
   worlds[8] = &ocean;
   host.add(8, &ocean);
+  goe.prepare(sr, seed);
+  worlds[15] = &goe;
+  host.add(15, &goe);
 }
 API double* t2d_args() { return args; }
 API void t2d_action(int slot, int kind, int i, const double* a, int n) {

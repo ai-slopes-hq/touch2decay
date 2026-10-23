@@ -1,6 +1,13 @@
-// Goetia — модель: восемь знаков круга, печать (путь от знака к знаку) → программа bytebeat, духи в треугольниках (до трёх), общие FX.
-// Только данные и алгоритм — без DOM, холста и Web Audio. Время — секунды (tick(dt)), случайность — rng, лад — scale { on, snap }.
-// Что должно прозвучать — события слушателям (listen): { t: 'spirit', s, on, added? } — дух целиком (печать, высота, тон…), 'fx'.
+// Goetia — фасад модели. Сама модель живёт в ядре (core/worlds/goetia → t2d.wasm, узел t2d-worklet.js хоста, слот 15), здесь — её
+// зеркало и действия касаний. API — прежней JS-модели (эталон — tools/ref/goetia-model.js), без DOM, холста и Web Audio:
+// state.spirits — живые объекты по born (порядок призыва — id духа; view держит ссылку на рисуемого духа), правятся на месте из зеркала.
+// Действия применяются к state сразу (summon — синхронно: слот — первый свободный, как в ядре, born — свой) и уходят в ядро через send
+// (порт узла ядра, асинхронно; send → номер сообщения). Зеркало (sync) приходит ~60 раз в секунду с числом уже применённых ядром
+// сообщений: поля духа, которые здесь правили, а ядро ещё не видело, зеркало не перетирает; призванного здесь, ещё не дошедшего, —
+// не убирает; изгнанного здесь — не возвращает (как фасад Firmamentum). clear, restore и кубик — целиком здесь (кубик — алгоритм эталона
+// на rng) и в ядро: restore — одним сообщением со слотами и born. Счётчик t и громкость духа — только из зеркала (t, gain).
+// Чистые функции печати (NODES, имя духа, программа, формула) — здесь же: их берут view и тесты.
+// События listen — из действий и разницы зеркал: { t: 'spirit', s, on, added? }, 'fx'.
 export const SMAX = 3, PMAX = 8;
 // узлы по кругу от верха по часовой: знак (как соединяется с набранным) и сдвиг члена t >> s
 export const NODES = [['|', 8], ['&', 5], ['^', 10], ['+', 6], ['*', 11], ['-', 4], ['%', 9], ['>', 7]].map(([op, s]) => ({ op, s }));
@@ -30,44 +37,122 @@ export function randPath(R) {                           // печать: 3–5 �
   return p;
 }
 
-export function createModel({ scale = { on: false, snap: (s) => s }, rng = Math.random } = {}) {
-  const spirits = [];                                   // {slot, path [узлы], semi, tone, rel, legio, lvl, born}
+// ядро: слот мира в хосте, коды action, ключи set и fx, раскладка зеркала — core/worlds/goetia/world.hpp
+export const SLOT = 15, SEAL_MAX = 8;
+export const ACT = { summon: 0, path: 1, banish: 2, set: 3, fx: 4, clear: 5, dice: 6, sett: 7 };
+export const SET_KEYS = ['semi', 'tone', 'rel', 'legio', 'lvl'];
+export const FX_KEYS = Object.keys(FX_DEF);             // legio, echo, spread, hall
+export const MSPIRIT = ['slot', 'born', 'semi', 'tone', 'rel', 'legio', 'lvl', 'np', ...Array.from({ length: SEAL_MAX }, (_, k) => `p${k}`), 't', 'gain'];   // дух в зеркале
+export const HEAD = FX_KEYS.length + 1;                 // fx, число духов
+const OWN = ['slot', 'semi', 'tone', 'rel', 'legio', 'lvl'];   // поля, которые правит фасад (и path); t и gain — только ядро
+
+export function createModel({ scale = { on: false, snap: (s) => s }, rng = Math.random, send = () => 0 } = {}) {
+  const spirits = [];                                   // {slot, path [узлы], semi, tone, rel, legio, lvl, born, t, gain}
   const fx = { ...FX_DEF };
   const state = { spirits, fx, time: 0 };
   let bornSeq = 0;                                      // порядок призыва — кто старше (born растёт строго)
   const listeners = [];
   const emit = (e) => { for (const fn of listeners) fn(e); };
+  let post = send;
+  const dirty = new Map(), gone = new Map();            // born → номер сообщения: духа правили / изгнали здесь, ядро ещё не видело
+  let wipe = 0, fxAt = 0;
+  const act = (kind, i = 0, a = []) => post({ t: 'action', slot: SLOT, kind, i, a });
+  const live = (s) => !!s && spirits.includes(s);
 
   const semi = (s) => (scale.on ? scale.snap(s.semi + 24) - 24 : s.semi);
   const rate = (s) => 128 * 55 * 2 ** (semi(s) / 12);  // semi 0 — 7 040 отсчётов t в секунду
 
-  function summon(path, opt = {}) {                     // дух в свободный треугольник; все заняты — уходит самый старый
-    const used = new Set(spirits.map((s) => s.slot));
-    let slot = [...Array(SMAX).keys()].find((k) => !used.has(k));
-    if (slot == null) { const old = spirits.reduce((a, b) => (a.born < b.born ? a : b)); slot = old.slot; banish(old); }
-    const s = { slot, path: [...path], semi: 0, tone: 0.45, rel: 1, legio: 1, lvl: 0.8, born: ++bornSeq, ...opt };
-    spirits.push(s); emit({ t: 'spirit', s, on: true, added: true });
+  function make(path, opt) {                            // новый дух здесь: первый свободный треугольник, свой born
+    const used = new Set(spirits.map((s) => s.slot)), slot = [...Array(SMAX).keys()].find((k) => !used.has(k));
+    const s = { slot, path: [...path].slice(0, SEAL_MAX), semi: 0, tone: 0.45, rel: 1, legio: 1, lvl: 0.8, born: ++bornSeq, t: 0, gain: 0, ...opt };
+    spirits.push(s);
     return s;
   }
-  function banish(s) { emit({ t: 'spirit', s, on: false }); spirits.splice(spirits.indexOf(s), 1); }
-  function setSpirit(s, patch) { if (!spirits.includes(s)) return; Object.assign(s, patch); emit({ t: 'spirit', s, on: true }); }
-  function setFx(k, v) { fx[k] = v; emit({ t: 'fx' }); }
-  function loadFx(o) { Object.assign(fx, o); emit({ t: 'fx' }); }
-  function clear() { while (spirits.length) banish(spirits[0]); }
+  function summon(path, opt = {}) {                     // дух в свободный треугольник; все заняты — уходит самый старый
+    if (spirits.length >= SMAX) banish(spirits.reduce((a, b) => (a.born < b.born ? a : b)));
+    const s = make(path, opt);
+    dirty.set(s.born, act(ACT.summon, 0, [s.slot, s.born, s.semi, s.tone, s.rel, s.legio, s.lvl, ...s.path]));
+    emit({ t: 'spirit', s, on: true, added: true });
+    return s;
+  }
+  function banish(s) {
+    if (!live(s)) return;
+    emit({ t: 'spirit', s, on: false });
+    spirits.splice(spirits.indexOf(s), 1); dirty.delete(s.born);
+    gone.set(s.born, act(ACT.banish, s.born));
+  }
+  function setSpirit(s, patch) {
+    if (!live(s)) return;
+    Object.assign(s, patch);
+    let q = 0;
+    if (patch.path) { s.path = [...patch.path].slice(0, SEAL_MAX); q = act(ACT.path, s.born, s.path); }
+    for (const k of SET_KEYS) if (patch[k] != null) q = act(ACT.set, s.born, [SET_KEYS.indexOf(k), patch[k]]);
+    if (q) dirty.set(s.born, q);
+    emit({ t: 'spirit', s, on: true });
+  }
+  function setFx(k, v) { const i = FX_KEYS.indexOf(k); if (i < 0) return; fx[k] = v; fxAt = act(ACT.fx, i, [v]); emit({ t: 'fx' }); }
+  function loadFx(o) { for (const [k, v] of Object.entries(o || {})) { const i = FX_KEYS.indexOf(k); if (i >= 0) { fx[k] = v; fxAt = act(ACT.fx, i, [v]); } } emit({ t: 'fx' }); }
+  function dropAll() { const was = spirits.splice(0); dirty.clear(); gone.clear(); for (const s of was) emit({ t: 'spirit', s, on: false }); }
+  function clear() { dropAll(); wipe = act(ACT.clear); }
   function tick(dt) { state.time += dt; }
 
-  function dice() {                                     // два-три духа: случайные печати, высоты — кварта/квинта/октава от тоники; половина — удары
-    const R = rng;
-    clear();
-    const n = 2 + (R() < 0.4 ? 1 : 0), SEMIS = [-12, -5, 0, 0, 7, 12];
-    for (let k = 0; k < n; k++) summon(randPath(R), { semi: SEMIS[Math.floor(R() * SEMIS.length)], tone: 0.3 + R() * 0.3, rel: R() < 0.5 ? 1 : 0.1 + R() * 0.55, legio: R() < 0.5 ? 1 : 2, lvl: 0.7 });
+  const scene = () => JSON.stringify({ s: spirits.map(({ slot, path, semi: se, tone, rel, legio, lvl, born }) => ({ slot, path, semi: se, tone, rel, legio, lvl, born })), fx });
+  function replace(list, fo) {                          // сцена целиком: здесь — сразу, в ядро — одним restore со слотами и born
+    dropAll();
+    for (const q of list.slice(0, SMAX)) make(q.path || [], { semi: q.semi, tone: q.tone, rel: q.rel != null ? q.rel : 1, legio: q.legio, lvl: q.lvl });
+    if (fo) Object.assign(fx, fo);
+    wipe = fxAt = post({ t: 'restore', slot: SLOT, js: scene() });
+    for (const s of spirits) emit({ t: 'spirit', s, on: true, added: true });
+    emit({ t: 'fx' });
   }
-  const snapshot = () => JSON.stringify({ s: spirits.map(({ slot, path, semi, tone, rel, legio, lvl }) => ({ slot, path, semi, tone, rel, legio, lvl })), fx });
-  function restore(js) {
-    const st = JSON.parse(js);
-    clear();
-    for (const q of st.s) summon(q.path, { semi: q.semi, tone: q.tone, rel: q.rel != null ? q.rel : 1, legio: q.legio, lvl: q.lvl });
-    loadFx(st.fx);
+  function dice() {                                     // два-три духа: случайные печати, высоты — кварта/квинта/октава от тоники; половина — удары
+    const R = rng, list = [];
+    const n = 2 + (R() < 0.4 ? 1 : 0), SEMIS = [-12, -5, 0, 0, 7, 12];
+    for (let k = 0; k < n; k++) list.push({ path: randPath(R), semi: SEMIS[Math.floor(R() * SEMIS.length)], tone: 0.3 + R() * 0.3, rel: R() < 0.5 ? 1 : 0.1 + R() * 0.55, legio: R() < 0.5 ? 1 : 2, lvl: 0.7 });
+    replace(list);
+  }
+  const snapshot = () => JSON.stringify({ s: spirits.map(({ slot, path, semi: se, tone, rel, legio, lvl }) => ({ slot, path, semi: se, tone, rel, legio, lvl })), fx });
+  function restore(js) { const st = JSON.parse(js); replace(st.s || [], st.fx); }
+
+  function sync(m, applied) {                           // зеркало ядра → state; applied — сколько сообщений ядро уже применило
+    if (applied >= fxAt) {
+      let changed = false;
+      FX_KEYS.forEach((k, i) => { if (fx[k] !== m[i]) { fx[k] = m[i]; changed = true; } });
+      if (changed) emit({ t: 'fx' });
+    }
+    if (applied < wipe) return;                         // ядро ещё до последней сцены целиком — духи в зеркале старые
+    for (const [b, q] of dirty) if (q <= applied) dirty.delete(b);
+    for (const [b, q] of gone) if (q <= applied) gone.delete(b);
+    const byBorn = new Map(spirits.map((s) => [s.born, s])), next = [], ev = [], NS = MSPIRIT.length;
+    const at = (o, k) => m[o + MSPIRIT.indexOf(k)];
+    for (let i = 0; i < m[HEAD - 1]; i++) {
+      const o = HEAD + i * NS, born = at(o, 'born');
+      if (gone.has(born)) continue;                     // изгнан здесь — ядро ещё не видело
+      let s = byBorn.get(born);
+      const added = !s;
+      if (added) s = { born };
+      byBorn.delete(born);
+      const was = added ? null : [...OWN.map((k) => s[k]), s.path.join()];
+      if (!dirty.has(born)) {                           // свои правки в пути — поля не трогаем
+        for (const k of OWN) s[k] = at(o, k);
+        s.path = Array.from({ length: at(o, 'np') }, (_, q) => at(o, `p${q}`));
+      }
+      s.t = at(o, 't'); s.gain = at(o, 'gain');
+      bornSeq = Math.max(bornSeq, born);
+      next.push(s);
+      if (added) ev.push({ t: 'spirit', s, on: true, added: true });
+      else if ([...OWN.map((k) => s[k]), s.path.join()].some((x, j) => x !== was[j])) ev.push({ t: 'spirit', s, on: true });
+    }
+    for (const s of byBorn.values()) {                  // в зеркале нет
+      if (dirty.has(s.born)) next.push(s);              // призван здесь, ядро ещё не видело
+      else ev.push({ t: 'spirit', s, on: false });      // изгнало ядро
+    }
+    spirits.length = 0; spirits.push(...next);
+    for (const e of ev) emit(e);
+  }
+  function bind(fn) {                                   // новый узел ядра (новый контекст): счёт сообщений — заново, сцена — туда целиком
+    post = fn; dirty.clear(); gone.clear();
+    wipe = fxAt = post({ t: 'restore', slot: SLOT, js: scene() });
   }
 
   return {
@@ -75,5 +160,7 @@ export function createModel({ scale = { on: false, snap: (s) => s }, rng = Math.
     summon, banish, setSpirit, setFx, loadFx, clear, dice,
     tick, snapshot, restore, sounding: () => spirits.length > 0,
     listen(fn) { listeners.push(fn); },
+    sync, bind,
+    sett(slot, t) { act(ACT.sett, slot, [t]); },        // для тестов: стартовое t голоса
   };
 }

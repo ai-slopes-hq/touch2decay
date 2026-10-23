@@ -94,3 +94,29 @@ test('a voice index out of range is ignored', async () => {
   const got = play(w.proc, [...steps.slice(0, -1), ...bad, ...steps.slice(-1)], w.posted), r = ref('drone');
   same(got.L, r.L, 'drone L'); same(got.R, r.R, 'drone R');
 });
+
+// ---------- SDK: мир XV в t2d.wasm (модель ядра + goetia.cpp + эхо и шина) против эталона: JS-модель → engine.js → goetia-worklet.js → шина ----------
+// Сухой L/R (с эхом, ×1.6) — 1e-6 на сэмпл; метры (t и громкость каждого духа) — те же, в те же блоки; снимок — тот же JSON.
+const { ACTS, refPath, corePath } = await import('./goetia-scenarios.mjs');
+for (const name of Object.keys(ACTS)) {
+  test(`sdk: dry output matches the reference: ${name}`, () => {
+    const r = refPath(ACTS[name]), c = corePath(ACTS[name]);
+    assert.ok(rms(r.L) + rms(r.R) > 1e-3, `${name}: reference is silent`);
+    same(c.L, r.L, `${name} L`); same(c.R, r.R, `${name} R`);
+    assert.equal(c.meters.length, r.meters.length, `${name}: meter count`);
+    r.meters.forEach((m, k) => {
+      const q = c.meters[k], at = `${name} meter #${k} (block ${m.at})`;
+      assert.equal(q.at, m.at, `${at}: block`);
+      assert.deepEqual(q.s.map((p) => p[0]), m.s.map((p) => p[0]), `${at}: spirits`);
+      same(q.s.map((p) => p[1]), m.s.map((p) => p[1]), `${at}: t`); same(q.s.map((p) => p[2]), m.s.map((p) => p[2]), `${at}: gain`);
+    });
+    assert.equal(c.snapshot, r.snapshot, `${name}: snapshot`);
+  });
+}
+
+test('sdk: the echo repeats a strike after 0.375 s', () => {
+  const steps = [['fx', 'echo', 0.8], ['seal', [2, 5, 0], { rel: 0.05 }], { run: 30 }, ['banish', 1], { run: 400 }];
+  const c = corePath(steps), noEcho = corePath([['fx', 'echo', 0], ...steps.slice(1)]);
+  const after = (x) => rms(x.L.subarray(150 * 128, 400 * 128));   // через ~0.4–1 с после изгнания — только эхо
+  assert.ok(after(c) > 20 * after(noEcho), `echo tail ${after(c)} vs dry tail ${after(noEcho)}`);
+});

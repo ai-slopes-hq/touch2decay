@@ -27,5 +27,6 @@ em++ -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --
   -sFILESYSTEM=0 -sINITIAL_MEMORY=4MB -s$STACK=64KB -sALLOW_MEMORY_GROWTH=0 \
   -o t2d.wasm core/bridge/wasm.cpp core/sdk/reverb.cpp core/host/host.cpp core/host/scale.cpp \
   core/worlds/firmamentum/model.cpp core/worlds/firmamentum/world.cpp core/worlds/firmamentum/sound.cpp \
-  core/worlds/oceanus/model.cpp core/worlds/oceanus/world.cpp core/worlds/oceanus/ocean.cpp
+  core/worlds/oceanus/model.cpp core/worlds/oceanus/world.cpp core/worlds/oceanus/ocean.cpp \
+  core/worlds/goetia/model.cpp core/worlds/goetia/world.cpp core/worlds/goetia/goetia.cpp
 echo "t2d.wasm ($(wc -c < t2d.wasm | tr -d ' ') bytes)"
