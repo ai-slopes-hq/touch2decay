@@ -25,7 +25,7 @@ export const SCENARIOS = {
   relight: [PARAMS, voice(0, {}), { run: 200 }, { t: 'voice', i: 0, on: false }, { run: 30 }, voice(0, { f: 150 }), { run: 200 },
     { t: 'voice', i: 0, on: false }, { run: 2000 }, voice(0, {}), { run: 200 }],
   partial: [PARAMS, voice(0, {}), { run: 200 }, { t: 'voice', i: 0, on: true }, { run: 200 }, { t: 'voice', i: 0, on: true, f: 0 }, { run: 200 }, { t: 'params', wind: 0.5 }, { run: 200 }],
-  ceiling: [PARAMS, voice(0, {}), press(1, 0.5, 2.5, 0.5), { run: 500 }],
+  ceiling: [PARAMS, voice(0, {}), press(1, 0.25, 5, 0.5), press(2, 0.75, -5, 0.5), { run: 500 }],   // цели за потолком ±3: срабатывают обе границы
   all: [...SIX, { ...PARAMS, storm: 0.5, wind: 0.4, sway: 0.5, swayTo: 1 }, press(1, 0.2, 1), press(2, 0.6, -1), { t: 'splash', a: 0.4, amt: 0.3 }, { run: 5000 },
     { t: 'splash', a: 0.9, amt: -0.4 }, press(1, 0.5, 0.5, 0.2), { run: 6250 }],
 };
@@ -59,7 +59,7 @@ export function loadRef(seed = SEED, sr = SR) {          // эталон с зе
   const { reg, posted } = sandbox('./ref/ocean-worklet.js', { sampleRate: sr });
   return { proc: new reg.ocean({ processorOptions: { seed } }), posted };
 }
-export function loadOld(i = 0, sr = SR) {                // прежний код с независимым источником случайности (xorshift32 от номера прогона — не mulberry32 эталона)
+export function loadOld(i = 0, sr = SR) {                // прежний код: ветер и шторм — на независимом xorshift32 от номера прогона (начальные фазы голосов — из зерна 1 конструктора, одни и те же)
   const r = loadRef(1, sr);
   let s = (0x9E3779B9 ^ (i + 1)) >>> 0 || 1;
   r.proc.rnd = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
