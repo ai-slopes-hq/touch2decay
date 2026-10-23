@@ -2593,7 +2593,7 @@ registerWorld(1, solNiger);
 // общее для миров из других файлов (worlds/<мир>/): регистрация и помощники рисования
 // lfoClear(prefix) — снять LFO строк мира (корзина, закрытая звезда) без возврата базы
 // MIDI-часы: оболочка зовёт window.t2dMidi, миры берут сетку через T.midiGrid()
-const midi = createMidi({ worlds: () => Object.values(worlds).filter((w) => w.tempo), now: () => (ctx ? ctx.currentTime : null) });
+const midi = createMidi({ worlds: () => Object.values(worlds).filter((w) => w.tempo), now: () => (ctx ? ctx.currentTime : null), current: () => (nav.view === 'play' ? cur() : null) });
 window.t2dMidi = midi.message;
 onTick(midi.tick);
 window.T2D = {

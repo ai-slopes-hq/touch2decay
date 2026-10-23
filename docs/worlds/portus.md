@@ -11,4 +11,4 @@
 
 **chance** (v142): FX `fx.chance` — каждый шаг играет с этой вероятностью (`step` в модели). Луна при LFO на cutoff: `T.lfoBase('portus-luna', 'cut')` — луна стоит на базе, `moon.lfo` 0…1 — цвет (ниже базы — blood moon); тест — `t2d.slAdd('cut')` в сценарии.
 
-**Ведомый по MIDI** (`host/midi.js`): пока идут внешние MIDI-часы, шаги Portus ставит `T.stepTime(T.midiGrid(), step, 4)` (4 шага на долю, swing сверху) вместо своего `clock.next += stepSec()`; Start запускает маяк, если есть острова (`tempo.armed`), Stop останавливает, темп берётся из часов. Сетка пропала — идёт своим темпом. Тесты — `tools/test-follow.mjs`, сценарий `shot.py midi`.
+**Ведомый по MIDI** (`host/midi.js`): пока идут внешние MIDI-часы, шаги Portus ставит `T.stepTime(T.midiGrid(), step, 4)` (4 шага на долю, swing сверху) вместо своего `clock.next += stepSec()`; Start запускает маяк, если его запускали руками в этой сессии (или Portus на экране и есть кораблики — `tempo.armed`), Stop останавливает, темп берётся из часов. Сетка пропала — идёт своим темпом. Тесты — `tools/test-follow.mjs`, сценарий `shot.py midi`.

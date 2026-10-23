@@ -13,9 +13,9 @@ const fake = (o = {}) => {
   };
   return w;
 };
-const rig = (ws = []) => {
-  const r = { t: 10 };
-  r.m = createMidi({ worlds: () => ws, now: () => r.t });
+const rig = (ws = [], cur = null) => {
+  const r = { t: 10, cur };
+  r.m = createMidi({ worlds: () => ws, now: () => r.t, current: () => r.cur });
   return r;
 };
 const beat = (r, n, at, bpm = 120) => { r.t = at; r.m.message({ t: 'beat', n, bpm, ago: 0 }); };
@@ -39,7 +39,7 @@ test('takes a jump over 50 ms at once', () => {
 
 test('start waits for the first beat', () => {
   const a = fake({ armed: true });
-  const r = rig([a]);
+  const r = rig([a], a);                                   // мир на экране, с узором
   r.m.message({ t: 'start', ago: 0 });
   assert.equal(r.m.grid(), null);
   assert.deepEqual(a.calls, []);
@@ -48,16 +48,38 @@ test('start waits for the first beat', () => {
   assert.deepEqual(a.calls.filter((c) => c[0] === 'play'), [['play', true]]);
 });
 
-test('start runs armed, playing and stopped-by-midi worlds only', () => {
-  const w1 = fake({ armed: true }), w2 = fake({ armed: false, playing: true }), w3 = fake({ armed: false }), w4 = fake({ armed: false });
-  const r = rig([w1, w2, w3, w4]);
-  r.m.message({ t: 'stop', ago: 0 });                      // прошлый Stop: останавливает только 2
-  assert.equal(w2.on, false);
-  w4.on = true;                                            // 4 включили руками после Stop: не в наборе, но играет
+test('start runs worlds the user started this session, the one on screen, and stopped-by-midi', () => {
+  const nat = fake({ armed: true });                       // стартовый патч есть, но мир не трогали и не смотрят на него
+  const cym = fake({ armed: true }), por = fake({ armed: true }), mono = fake({ armed: false }), horo = fake({ armed: true });
+  const r = rig([nat, cym, por, mono, horo], por);
+  cym.on = true; r.m.tick(); cym.on = false; r.m.tick();   // Cymatica запускали руками и остановили
+  mono.on = true; r.m.tick();                              // автострам играет
+  r.m.message({ t: 'stop', ago: 0 });                      // MIDI Stop: останавливает автострам
   r.m.message({ t: 'start', ago: 0 });
   beat(r, 0, 10);
   const ran = (w) => w.calls.some((c) => c[0] === 'play' && c[1] === true);
-  assert.deepEqual([w1, w2, w3, w4].map(ran), [true, true, false, true]);
+  assert.deepEqual([nat, cym, por, mono, horo].map(ran), [false, true, true, true, false]);
+});
+
+test('a world started by hand just before the first beat joins', () => {
+  const w = fake({ armed: true });
+  const r = rig([w]);
+  r.m.message({ t: 'start', ago: 0 });
+  w.on = true;                                             // тика ещё не было
+  beat(r, 0, 10);
+  assert.deepEqual(w.calls.filter((c) => c[0] === 'play'), [['play', false], ['play', true]]);
+});
+
+test('a world the service started does not count as started by hand', () => {
+  const w = fake({ armed: true }), other = fake({ armed: true });
+  const r = rig([w, other], w);
+  r.m.message({ t: 'start', ago: 0 }); beat(r, 0, 10); r.m.tick();
+  assert.equal(w.on, true);                                // на экране — запустила служба
+  w.on = false; r.m.tick();                                // остановил руками
+  r.cur = other;                                           // ушёл в другой мир
+  r.m.message({ t: 'start', ago: 0 }); beat(r, 0, 12);
+  assert.equal(w.on, false);
+  assert.equal(other.on, true);
 });
 
 test('start restarts a playing world', () => {
@@ -145,7 +167,7 @@ test('repeated stop keeps who was playing', () => {
 
 test('beats after stop are ignored until the next start', () => {
   const a = fake({ armed: true });
-  const r = rig([a]);
+  const r = rig([a], a);
   r.m.message({ t: 'stop', ago: 0 });
   beat(r, 3, 10);
   assert.equal(r.m.grid(), null); assert.deepEqual(a.calls, []);

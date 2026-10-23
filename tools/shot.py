@@ -1465,39 +1465,36 @@ async def sc_arcadia(p):                           # Arcadia: странник �
     await p.shot('arcadia-map')
 
 
-async def sc_midi(p):                             # ведомый по MIDI: внешние часы (t2dMidi) пускают и ведут Portus, Natura, Cymatica и автострам Monochordum (играл до Stop — вернётся на Start); Horologium на нуле tempus — нет; Stop — все стоят
+async def sc_midi(p):                             # ведомый по MIDI: Start пускает миры, которые запускали руками в этой сессии (и мир на экране, если в нём узор); Natura со стартовым патчем, которую не трогали, молчит; включённая посреди игры — встаёт на сетку; Stop — все стоят, следующий Start возвращает набор
     await p.tap(195, 420); await p.pg.wait_for_timeout(300)           # тап — звук
-    await p.js('()=>{for (const n of [13, 4, 2]) t2d.worlds[n].dice(); t2d.worlds[9].clear()}')
-    await p.js('()=>{for (const n of [13, 4, 2, 9, 7]) { const w = t2d.worlds[n]; if (w.tempo.playing()) w.tempo.play(false) }}'); await p.pg.wait_for_timeout(300)
+    await p.js('()=>{for (const n of [13, 2]) t2d.worlds[n].dice(); t2d.worlds[9].clear(); t2d.go(9)}'); await p.pg.wait_for_timeout(300)   # на экране — Horologium без колец
     pl = lambda: p.js('()=>[13, 4, 2, 9, 7].map(n => !!t2d.worlds[n].tempo.playing())')
-    assert not any(await pl()), f'all stopped before the clock: {await pl()}'
-    assert await p.js('()=>[13, 4, 2].every(n => t2d.worlds[n].tempo.armed())'), 'dice arms Portus, Natura, Cymatica'
-    assert not await p.js('()=>t2d.worlds[9].tempo.armed()'), 'Horologium cleared — not armed'
-    await p.js('()=>t2d.worlds[7].tempo.play(true)'); await p.pg.wait_for_timeout(200)
-    assert (await pl())[4], 'autostrum switched on before Start'
+    await p.js('()=>{for (const n of [13, 2, 7]) t2d.worlds[n].tempo.play(true)}'); await p.pg.wait_for_timeout(300)   # Portus, Cymatica, автострам — руками
+    await p.js('()=>{for (const n of [13, 2]) t2d.worlds[n].tempo.play(false)}'); await p.pg.wait_for_timeout(300)   # Portus и Cymatica остановили; автострам играет
+    assert await pl() == [False, False, False, False, True], f'before the clock: {await pl()}'
+    assert await p.js('()=>t2d.worlds[4].tempo.armed()'), 'Natura has its starting patch (armed) — but nobody touched it'
     await p.js("()=>{window.__mn = 0; t2dMidi({t:'start', ago:0}); window.__mi = setInterval(() => t2dMidi({t:'beat', n: ++window.__mn, bpm: 120, ago: 0}), 500)}")
     await p.pg.wait_for_timeout(3000)
     r = await pl(); print('  playing 13/4/2/9/7:', r)
-    assert r[:3] == [True, True, True], f'Portus, Natura, Cymatica follow Start: {r}'
-    assert r[3] is False, f'Horologium is not armed — it does not start: {r}'
-    assert r[4] is True, f'a running autostrum is restarted on the MIDI Start and keeps playing: {r}'
+    assert r == [True, False, True, False, True], f'Start runs Portus, Cymatica (started by hand) and the running autostrum; untouched Natura and the empty Horologium stay silent: {r}'
+    await p.js('()=>t2d.worlds[4].tempo.play(true)'); await p.pg.wait_for_timeout(1500)   # Natura включили руками посреди игры
     d = None
-    for _ in range(8):                         # оба номера — в одном вычислении; шаги по четыре на долю — совпадают по модулю 4
+    for _ in range(8):                         # оба номера — в одном вычислении; шаги по четыре на долю от одного t0 — совпадают по модулю 4
         d = await p.js('()=>{const a = t2d.portus.stepNow, b = t2d.nat.phase; return b == null ? null : [a, b, (((a - Math.floor(b)) % 4) + 4) % 4, b - Math.floor(b)]}')
         if d and d[2] == 0: break
         await p.pg.wait_for_timeout(137)
     print('  portus step, natura phase, diff mod 4:', d)
     edge = d and (d[3] < 0.1 or d[3] > 0.9)    # на границе шага выборка может разойтись на один
-    assert d and (d[2] == 0 or (edge and d[2] in (1, 3))), f'Portus and Natura steps agree mod 4: {d}'
-    lv = await p.js('()=>T2D.level'); print('  level:', round(lv, 3))
+    assert d and (d[2] == 0 or (edge and d[2] in (1, 3))), f'Natura started mid-clock lands on the same grid as Portus: {d}'
     await p.js('()=>t2d.go(13)'); await p.pg.wait_for_timeout(500); await p.shot('midi')   # Portus идёт по чужим часам
     await p.js("()=>{clearInterval(window.__mi); t2dMidi({t:'stop'})}"); await p.pg.wait_for_timeout(600)
     r = await pl(); print('  after Stop:', r)
     assert not any(r), f'Stop halts every world: {r}'
+    await p.js('()=>t2d.go(9)')
     await p.js("()=>{window.__mn = 0; t2dMidi({t:'start', ago:0}); window.__mi = setInterval(() => t2dMidi({t:'beat', n: ++window.__mn, bpm: 120, ago: 0}), 500)}")
     await p.pg.wait_for_timeout(2500)
     r = await pl(); print('  second Start:', r)
-    assert r[4] is True, f'the autostrum stopped by MIDI Stop is brought back by the next Start (only the host can): {r}'
+    assert r == [True, True, True, False, True], f'the next Start brings the whole set back, Natura included: {r}'
     await p.js("()=>{clearInterval(window.__mi); t2dMidi({t:'stop'})}"); await p.pg.wait_for_timeout(400)
 
 async def sc_portus(p):                            # Portus: остров на луче — удар аккорда, дальше — выше; фонарь — остров; маяк — пуск; луна — фильтр; буй — эхо; небо — гасит эхо; туман; плашки; кубик; корзина; отмена; луна — карта

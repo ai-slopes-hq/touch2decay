@@ -6,4 +6,4 @@ IV · Natura (**звучит**: нота `playNote` — sine/square/triangle →
 
 Спеки: `docs/superpowers/specs/2026-10-20-{laboratorium,natura}-design.md`.
 
-**Ведомый по MIDI** (`host/midi.js`): шаги реки ставит `T.stepTime(T.midiGrid(), step, 4)` (как у Portus); Start запускает реку, если посажена хоть одна кувшинка (`tempo.armed`), Stop останавливает; `phase()` engine на MIDI-сетке совпадает с шагом Portus по модулю 4. Тесты — `tools/test-follow.mjs`, сценарий `shot.py midi`.
+**Ведомый по MIDI** (`host/midi.js`): шаги реки ставит `T.stepTime(T.midiGrid(), step, 4)` (как у Portus); Start запускает реку, только если её запускали руками в этой сессии (или Natura на экране и есть кувшинка — `tempo.armed`): стартовый патч сам не играет (автор: «натура, куда не заходил, играет на фоне» — нет); Stop останавливает; включённая посреди игры встаёт на сетку; `phase()` engine на MIDI-сетке совпадает с шагом Portus по модулю 4. Тесты — `tools/test-follow.mjs`, сценарий `shot.py midi`.

@@ -27,12 +27,17 @@ export function due(t, now, first) {
 let inst = null;
 export const midiOn = () => !!(inst && inst.grid());
 
-export function createMidi({ worlds, now }) {
+export function createMidi({ worlds, now, current = () => null }) {
   let grid = null, cue = false, halted = false;
   let stopped = new Set();                                            // миры, игравшие в момент прошлого Stop
+  const joined = new Set(), was = new Map();                          // joined — миры, которые запускали руками в этой сессии (автор: «натура, куда не заходил, не должна играть»)
   const subs = [];
   const seqs = () => worlds().filter((w) => w.tempo && w.tempo.play);
   const each = (f) => { try { f(); } catch (e) { console.error('midi', e); } };   // один сбойный мир не мешает остальным
+  const play = (w, on) => { w.tempo.play(on); was.set(w, on); };     // пуск службой — не «руками»
+  function scan() {                                                   // мир пошёл не от службы — его запустили руками
+    for (const w of seqs()) each(() => { const on = !!w.tempo.playing?.(); if (on && !was.get(w)) joined.add(w); was.set(w, on); });
+  }
   const setTempo = (bpm) => {
     const b = Math.round(bpm * 10) / 10;
     for (const w of worlds()) if (w.tempo) each(() => { const cur = w.tempo.get ? w.tempo.get() : NaN; if (!(Math.abs(b - cur) <= TEMPO_EPS)) w.tempo.set(b); });
@@ -45,9 +50,10 @@ export function createMidi({ worlds, now }) {
     if (grid && t < grid.last - 0.05) { grid = null; }                // время пошло назад — новый AudioContext (restartAudio): сетка старых часов не годится, следующая доля встанет заново
     if (m.t === 'start') { cue = true; halted = false; grid = null; }
     else if (m.t === 'stop') {
-      const was = new Set();                                          // Elektron шлёт Stop 2–3 раза: пустой повтор прежний набор не затирает
-      for (const w of seqs()) each(() => { if (w.tempo.playing?.()) { was.add(w); w.tempo.play(false); } });
-      if (was.size) stopped = was;
+      scan();
+      const on = new Set();                                           // Elektron шлёт Stop 2–3 раза: пустой повтор прежний набор не затирает
+      for (const w of seqs()) each(() => { if (w.tempo.playing?.()) { on.add(w); play(w, false); } });
+      if (on.size) stopped = on;
       grid = null; cue = false; halted = true;
     } else if (m.t === 'tempo') setTempo(m.bpm);
     else if (m.t === 'beat' && !halted) {
@@ -55,17 +61,19 @@ export function createMidi({ worlds, now }) {
       setTempo(m.bpm);
       if (cue) {
         cue = false;
-        for (const w of seqs()) each(() => {
+        scan();
+        const here = current();
+        for (const w of seqs()) each(() => {                          // свои (запускали руками), играющие, остановленные Stop и мир на экране, если в нём есть узор
           const playing = !!w.tempo.playing?.();
-          if (!(w.tempo.armed?.() || playing || stopped.has(w))) return;
-          if (playing) w.tempo.play(false);
-          w.tempo.play(true);
+          if (!(joined.has(w) || playing || stopped.has(w) || (w === here && w.tempo.armed?.()))) return;
+          if (playing) play(w, false);
+          play(w, true);
         });
         stopped = new Set();
       }
     }
   }
-  function tick() { const t = now(); if (grid && t != null && t < grid.last - 0.05) grid = null; if (grid && t != null && t > grid.last + LOST) grid = null; }
+  function tick() { scan(); const t = now(); if (grid && t != null && t < grid.last - 0.05) grid = null; if (grid && t != null && t > grid.last + LOST) grid = null; }
   inst = { message, tick, grid: () => grid, listen: (f) => { subs.push(f); } };
   return inst;
 }

@@ -4,4 +4,4 @@
 
 **chance** (v142): FX `fx.chance` — вероятность каждого шага автострама (`autoStep` в модели).
 
-**Ведомый по MIDI** (`host/midi.js`): автострам идёт по сетке MIDI-часов (доли, деления, swing). `tempo.armed` — всегда `false`, поэтому с нуля Start его не заводит; но на Start хост перезапускает каждый мир, который уже играет или играл в момент прошлого Stop: идущий автострам начинает с доли 0, остановленный MIDI Stop возвращается на следующем Start. Тесты — `tools/test-follow.mjs`, `tools/models/monochord.test.mjs`, сценарий `shot.py midi`.
+**Ведомый по MIDI** (`host/midi.js`): автострам идёт по сетке MIDI-часов (доли, деления, swing). `tempo.armed` — всегда `false`: Start заводит автострам, только если его включали руками в этой сессии (или он играет / играл в момент прошлого Stop) — идущий начинает с доли 0, остановленный MIDI Stop возвращается на следующем Start. Тесты — `tools/test-follow.mjs`, `tools/models/monochord.test.mjs`, сценарий `shot.py midi`.
