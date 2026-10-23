@@ -4,7 +4,7 @@
 
 - `worlds/goetia/` — Goetia (bytebeat), порт `goetia-worklet.js`; эталон — `tools/ref/goetia-worklet.js`.
 - `worlds/firmamentum/` — Firmamentum (пульсарный синтез): модель (`model.cpp`), звук (`sound.cpp`), мир SDK (`world.cpp`); в вебе — внутри `t2d.wasm`; эталон звука — `tools/ref/pulsar-worklet.js` (тот же JS, но со своим генератором случайных чисел с зерном — иначе не с чем сверять), эталон модели — `tools/ref/firmamentum-model.js`.
-- `sdk/` — блоки (фильтры, задержки, `Rng`, ревербы `room` / `plate` / `hall` / `cathedral`) и интерфейс мира `World`; `host/` — хост ядра (миры, посылы после фейдера, четыре общих ревербера, лад); `bridge/wasm.cpp` — вход `t2d.wasm`. Миры на Web Audio шлют в ревербы хоста через `T.send(rev)` (`host/audio.js`) — своего зала у них нет.
+- `sdk/` — блоки (фильтры, задержки, `Rng`, ревербы `room` / `plate` / `hall` / `cathedral`) и интерфейс мира `World`; `host/` — хост ядра (миры, посылы после фейдера, четыре общих ревербера, лад); `bridge/wasm.cpp` — вход `t2d.wasm`. Миры на Web Audio шлют в ревербы хоста через `T.send(rev)` (`host/audio.js`) — своего зала у них нет. Что брать из SDK и что в него класть — `CLAUDE.md`, раздел «SDK звука».
 - `worlds/oceanus/` — Oceanus (сканирующий синтез), порт `ocean-worklet.js`; эталон — `tools/ref/ocean-worklet.js` (тот же JS со своим генератором случайных чисел с зерном).
 - `render-cli/` — офлайн-рендер по текстовому сценарию (stdin) в float32 (stdout), для сверки с JS.
 

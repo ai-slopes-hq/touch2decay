@@ -1,6 +1,6 @@
 # SDK звука: инвентаризация блоков (вход для дизайна)
 
-Сводка трёх разборов кода (23.10): worklet-миры и `core/`, миры на узлах Web Audio, хост и Tenebrae. Цель — C++ SDK: общие блоки + интерфейс мира, чтобы новый мир собирался из блоков, а не писался с нуля; хост — микшер, мастер, зал, транспорт; AUv3 для AUM с синхронизацией от хоста. Картинка (view) — вне рамок. Фазы и решения — `docs/native-plan.md`, ядро — `core/README.md`.
+Сводка трёх разборов кода (23.10): worklet-миры и `core/`, миры на узлах Web Audio, хост и Tenebrae. Цель — C++ SDK: общие блоки + интерфейс мира, чтобы новый мир собирался из блоков, а не писался с нуля; хост — микшер, мастер, зал, транспорт; AUv3 для AUM с синхронизацией от хоста. Картинка (view) — вне рамок. Фазы и решения — `docs/native-plan.md`, ядро — `core/README.md`. **Что уже переехало в `core/sdk/` и правила «взять / положить» — `CLAUDE.md`, раздел «SDK звука»** (здесь `core/common` — старое имя, теперь `core/sdk`).
 
 Обозначения: (H) — выключенный мир (III Laboratorium, XVII Prisma, XVIII Vitrea), низкий приоритет. Сокращения файлов worklet: PL = `plate-worklet.js`, MO = `monochord-worklet.js`, HO = `horo-worklet.js`, TE = `terrain-worklet.js`, PU = `tools/ref/pulsar-worklet.js`, OC = `tools/ref/ocean-worklet.js`, GO = `tools/ref/goetia-worklet.js`; `w/<мир>/e` = `worlds/<мир>/engine.js`; `au` = `host/audio.js`. Строки — по ветке `native`.
 
