@@ -36,7 +36,7 @@
 | VII | Monochordum — Карплус — Стронг, страм, ветер, автострам | `worlds/monochord/`, `monochord-worklet.js` | `docs/worlds/monochordum.md` |
 | VIII | Oceanus — сканирующий синтез, карта T-O, луна | `worlds/oceanus/`, `ocean-worklet.js` | `docs/worlds/oceanus.md` |
 | IX | Horologium (Nova) — волшебные числа: кольца II…IX, n ударов за оборот на n-й гармонике (Rhythmicon), унтертоны, фаза, маятник руками, ритм → аккорд за limen | `worlds/horologium/`, `horo-worklet.js` | `docs/worlds/horologium.md` |
-| X | Firmamentum — пульсарный синтез, свод (**образец model / engine / view**) | `worlds/firmamentum/`, `pulsar-worklet.js` | `docs/worlds/firmamentum.md` |
+| X | Firmamentum — пульсарный синтез, свод (**образец model / engine / view**) | `worlds/firmamentum/`, `pulsar-worklet.js` (обёртка), ядро C++ `core/worlds/firmamentum` → `pulsar.wasm` | `docs/worlds/firmamentum.md` |
 | XI | Tria corpora — задача трёх тел, FM по кругу | `worlds/tria/` | `docs/worlds/tria.md` |
 | XII | Arcadia — wave terrain, страна в псевдоперспективе, кубик — новая страна | `worlds/arcadia/`, `terrain-worklet.js` | `docs/worlds/arcadia.md` |
 | XIII | Portus — dub techno: одна дорожка-фарватер на 16 шагов (кораблик — удар, поперёк — нота), аккорд и октава −2…+2 у маяка, луна-фильтр, буй-эхо, туман-ревер, небо гасит эхо | `worlds/portus/` | `docs/worlds/portus.md` |

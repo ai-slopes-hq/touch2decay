@@ -1295,7 +1295,13 @@ async def sc_firmamentum(p):                       # Firmamentum: прокол �
         if await p.js('()=>t2d.firm.ready'): break
         await p.pg.wait_for_timeout(100)
     L = await p.js('()=>t2d.firm.LIMEN')
-    a = await p.js(f'()=>t2d.firm.at({L * 0.5}, -0.3)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(1500)
+    a = await p.js(f'()=>t2d.firm.at({L * 0.5}, -0.3)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(300)
+    for _ in range(30):                              # ядро (pulsar.wasm) поднимается после первой звезды
+        if await p.js("()=>t2d.firm.core == 'wasm'"): break
+        await p.pg.wait_for_timeout(100)
+    assert await p.js("()=>t2d.firm.core") == 'wasm', 'the pulsar core is up (pulsar.wasm)'
+    await p.pg.wait_for_timeout(1200)
+    assert await p.js('()=>Math.max(...t2d.firm.gains) > 0'), 'the core sounds: a voice has gain'
     assert await p.js('()=>t2d.firm.stars.length') == 1, 'tap the sky — a star'
     fp = await p.js('()=>t2d.firm.fp(t2d.firm.stars[0])'); c = await p.js('()=>t2d.firm.counts[t2d.firm.stars[0].slot]')
     print('  low star:', round(fp, 2), 'pulses/s, pulsarets so far', c); assert fp < 20 and c >= 1, f'near the horizon — a rhythm: {fp} {c}'

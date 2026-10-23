@@ -29,6 +29,6 @@ T.registerWorld(10, {
 window.t2d.firm = {
   stars: model.state.stars, fx: model.state.fx, geo: () => geo(T), setFx: (k, v) => view.fx.set(k, v),
   get comets() { return model.state.comets; }, get comet() { return model.state.comet; }, launch: model.launch,
-  get ready() { return engine.ready; }, get specks() { return view.specks; }, get bolts() { return view.bolts; }, get gains() { return engine.gains; }, get counts() { return engine.counts; },
+  get ready() { return engine.ready; }, get core() { return engine.core; }, get specks() { return view.specks; }, get bolts() { return view.bolts; }, get gains() { return engine.gains; }, get counts() { return engine.counts; },
   fp: model.fp, ff: model.ff, LIMEN: model.LIMEN, at: (h, u) => fromSky(geo(T), { h, u }), model,
 };
