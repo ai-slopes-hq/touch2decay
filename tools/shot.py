@@ -1047,6 +1047,7 @@ async def sc_inferno(p):                           # Inferno: удар, тлен
 
 
 async def sc_paradisus(p):                         # Paradisus: ангел поёт, гласная вдоль, сфера поперёк, закрепить, плашка, роза, FX, кубик, корзина, отмена, свет — карта
+    if 6 in await p.js('()=>t2d.hidden'): print('  switched off — skipped'); return
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(6)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 6], 'map quadrant above Cymatica opens Paradisus'
