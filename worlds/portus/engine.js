@@ -1,5 +1,5 @@
 // Portus — звук на обычных узлах (без worklet): dub techno — аккорды-стабы сквозь фильтр, эхо и туман.
-// Шина: стабы → drive → сухо; эхо пинг-понг (петля: highpass, lowpass dark, tanh, wow на delayTime); ревер T.hall(); море — шум в полосе.
+// Шина: стабы → drive → сухо; эхо пинг-понг (петля: highpass, lowpass dark, tanh, wow на delayTime); туман — посыл в ревербер ядра (room / hall / cathedral по размеру); море — шум в полосе.
 // Часы — здесь (schedule на ctx.currentTime: 25 мс, запас 200 мс, шестнадцатые; что играет шаг — модель). События модели → узлы;
 // метры — step (нынешний шаг), live; что услышано (listen): { hit: is, dt, fb } — удар прозвучал (кораблик, маяк, круги эха во view).
 import { CHORDS, DT, NSTEP, PSPAN } from './model.js';
@@ -27,13 +27,16 @@ export function createEngine(T, model) {
     const dOut = ctx.createChannelMerger(2), dWet = g(0.9);
     dL.connect(dOut, 0, 0); dR.connect(dOut, 0, 1); dOut.connect(dWet).connect(out);
     const wow = ctx.createOscillator(), wowG = g(0); wow.frequency.value = 0.55; wow.connect(wowG); wowG.connect(dL.delayTime); wowG.connect(dR.delayTime); wow.start();
-    const h = T.hall(), rSend = g(0); post.connect(rSend); dWet.connect(rSend); rSend.connect(h.input); h.out.connect(g(1)).connect(out);   // туман слышит и аккорды, и эхо
+    // туман слышит и аккорды, и эхо: посыл в ревербер ядра по размеру тумана (room < 0.33 < hall < 0.66 < cathedral); смена типа — перекрёстное
+    // затухание посылов за ~50 мс (applyAll). Возврат шёл через g(1) и out (1.6), у ядра возврат ×0.9 — посыл 1.6/0.9, баланс сухого и мокрого прежний
+    const rSend = g(0); post.connect(rSend); dWet.connect(rSend);
+    const revs = ['room', 'hall', 'cathedral'].map((r) => { const x = g(0); rSend.connect(x).connect(T.send(r)); return x; });
     if (!noiseBuf) { noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
     const nz = ctx.createBufferSource(); nz.buffer = noiseBuf; nz.loop = true; nz.start();     // море: шум в полосе, накатывает волнами
     const mareBp = bq('bandpass', 380, 0.5), mareLp = bq('lowpass', 1600), mareAm = g(0.55), mareG = g(0), swell = ctx.createOscillator(), swellG = g(0.45);
     swell.frequency.value = 0.09; swell.connect(swellG).connect(mareAm.gain); swell.start();
     nz.connect(mareBp).connect(mareLp).connect(mareAm).connect(mareG);
-    bus = { stabs, drive, post, out, dSend, dL, dR, fbL, fbR, lpL, lpR, wowG, dWet, rSend, hall: h, mareG, input, live: false, mareOn: false };
+    bus = { stabs, drive, post, out, dSend, dL, dR, fbL, fbR, lpL, lpR, wowG, dWet, rSend, revs, mareG, input, live: false, mareOn: false };
     applyAll();
   }
   function setLive(on) {
@@ -60,7 +63,8 @@ export function createEngine(T, model) {
     S(bus.dSend.gain, echo.mix * 0.75);
     S(bus.wowG.gain, 0.0035 * fx.wow * fx.wow + 0.0002);
     S(bus.rSend.gain, fog.amt * fog.amt * 1.6);
-    for (const l of bus.hall.lines) S(l.g.gain, 10 ** ((-3 * l.len) / (1.2 + fog.size * 8)));
+    const ri = fog.size < 0.33 ? 0 : fog.size < 0.66 ? 1 : 2;
+    bus.revs.forEach((x, i) => S(x.gain, i === ri ? 1.6 / 0.9 : 0, 0.017));
     S(bus.mareG.gain, fx.mare * fx.mare * 0.09);
     const mo = fx.mare > 0.01;
     if (mo !== bus.mareOn) { bus.mareOn = mo; if (mo) { bus.mareG.connect(bus.out); setLive(true); } else bus.mareG.disconnect(); }

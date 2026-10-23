@@ -17,12 +17,12 @@ export function createEngine(T, model, ver) {
   function build(ctx, input) {
     actx = ctx; lastAt = -1; clock.next = 0;             // новый контекст (restartAudio): время старого не годится — часы встают заново
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const pre = g(1), mix = g(1), out = g(2.2), body = g(0), hallSend = g(0), h = T.hall();   // струны → (сухо + дека) → mix → выход; mix → зал → выход
+    const pre = g(1), mix = g(1), out = g(2.2), body = g(0), hallSend = g(0);   // струны → (сухо + дека) → mix → выход; post → зал ядра (посыл ×2.2 — прежний out после возврата зала)
     pre.connect(mix);
     const bands = [[190, 3], [420, 4], [1100, 5]].map(([f, q]) => { const b = ctx.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = f; b.Q.value = q; pre.connect(b).connect(body); return b; });
     const post = g(1);                                  // mix → (сухо + хор) → post → выход и зал
-    body.connect(mix); mix.connect(post); post.connect(out); post.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-    bus = { pre, mix, post, out, body, hallSend, hall: h, input, live: false, bands, ch: null };
+    body.connect(mix); mix.connect(post); post.connect(out); post.connect(hallSend); hallSend.connect(g(2.2)).connect(T.send('hall'));
+    bus = { pre, mix, post, out, body, hallSend, input, live: false, bands, ch: null };
     ready = false; node = null; started = false;
     applyFx();
   }
@@ -76,7 +76,6 @@ export function createEngine(T, model, ver) {
     bus.body.gain.setTargetAtTime(fx.body * 2.5, t, 0.05);
     send({ t: 'couple', amt: 0.0015 * fx.sympathy });
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.4, t, 0.05);
-    for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4)), t, 0.05);
     for (let i = 0; i < N; i++) retune(i);
   }
 

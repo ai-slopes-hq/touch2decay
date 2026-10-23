@@ -53,33 +53,6 @@ export function lfo(rate, depth, ...params) {
   return { o, a };
 }
 
-// зал: четыре линии задержки с перекрёстной обратной связью (матрица Хаусхолдера).
-// На входе срез низа — иначе бас дрона превращает хвост в кашу — и фазовое размазывание.
-export function hall() {
-  const N = 4, SIZE = 2.4, base = [0.0297, 0.0371, 0.0411, 0.0437];
-  const input = gainNode(1);
-  let x = input.connect(filter('highpass', 280, -3)).connect(filter('lowpass', 7500, -3));
-  for (const fr of [430, 1150, 2400, 4300]) { const ap = filter('allpass', fr, 0.7); x.connect(ap); x = ap; }
-  const mix = gainNode(-2 / N);
-  const merge = ctx.createChannelMerger(2);
-  const lines = [];
-  for (let i = 0; i < N; i++) {
-    const len = base[i] * SIZE;
-    const d = ctx.createDelay(1); d.delayTime.value = len;
-    lfo(0.13 + i * 0.07, 0.0009, d.delayTime);          // лёгкое плавание — хвост не звенит металлом
-    const damp = filter('lowpass', 6000 - i * 500, -3);
-    const gn = gainNode(0.7);
-    x.connect(i % 2 ? gainNode(-1) : gainNode(1)).connect(d);
-    d.connect(damp).connect(gn);
-    gn.connect(d);
-    gn.connect(mix);
-    mix.connect(d);
-    d.connect(merge, 0, i % 2);
-    lines.push({ g: gn, len });
-  }
-  return { input, out: merge, lines };
-}
-
 // ---------- ядро SDK: t2d.wasm в t2d-worklet.js — один узел на контекст (build), на хост и все миры SDK ----------
 // Входы узла — посылы миров на Web Audio в ревербы ядра (по стереовходу на тип: room 0, plate 1, hall 2, cathedral 3), выходы —
 // возврат ревербов (→ общий вход мастера, до компрессора) и сухой звук каждого мира SDK (→ его канал микшера, через engine мира).

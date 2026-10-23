@@ -12,7 +12,7 @@ export function createEngine(T, model, ver) {
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const pre = g(1), mix = g(1), out = g(1.5), hallSend = g(0), h = T.hall();
+    const pre = g(1), mix = g(1), out = g(1.5), hallSend = g(0);
     const lfo = (f, depth, ...params) => { const o = ctx.createOscillator(), gg = g(depth); o.frequency.value = f; o.connect(gg); for (const p of params) gg.connect(p); o.start(); return gg; };
     pre.connect(mix);                                                                           // фейзер: шесть всепропускающих фильтров плывут, сумма с сухим — бегущие провалы
     const aps = [0, 1, 2, 3, 4, 5].map((i) => { const b = ctx.createBiquadFilter(); b.type = 'allpass'; b.frequency.value = 320 * 1.7 ** i; b.Q.value = 0.6; return b; });
@@ -25,8 +25,8 @@ export function createEngine(T, model, ver) {
     const pL = ctx.createStereoPanner ? ctx.createStereoPanner() : g(1), pR = ctx.createStereoPanner ? ctx.createStereoPanner() : g(1);
     if (pL.pan) { pL.pan.value = -0.8; pR.pan.value = 0.8; }
     d1.connect(pL).connect(chWet); d2.connect(pR).connect(chWet); chWet.connect(out);
-    mix.connect(chDry).connect(out); mix.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-    bus = { pre, mix, out, hallSend, hall: h, input, live: false, aps, phWet, phLfo, chWet, chDry, d1, d2, phOn: false, chOn: false };
+    mix.connect(chDry).connect(out); mix.connect(hallSend); hallSend.connect(g(1.5)).connect(T.send('hall'));   // ×1.5 — прежний out после возврата зала
+    bus = { pre, mix, out, hallSend, input, live: false, aps, phWet, phLfo, chWet, chDry, d1, d2, phOn: false, chOn: false };
     ready = false; node = null; started = false;
     applyFx();
   }
@@ -65,7 +65,6 @@ export function createEngine(T, model, ver) {
     if (!bus) return;
     const t = actx.currentTime;
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.4, t, 0.05);
-    for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4.5)), t, 0.05);
     send({ t: 'params', relief: fx.relief, speed: 0.01 * 40 ** fx.pace, wind: fx.wind, spread: fx.spread });
     const ph = fx.phaser > 0.01, ch = fx.chorus > 0.01;                                       // выключенные — отцеплены, не считаются
     if (ph !== bus.phOn) { bus.phOn = ph; if (ph) bus.pre.connect(bus.aps[0]); else bus.pre.disconnect(bus.aps[0]); }

@@ -15,11 +15,11 @@ export function createEngine(T, model, ver) {
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const pre = g(1), out = g(1.6), hallSend = g(0), h = T.hall(), echoSend = g(0), dl = ctx.createDelay(1.5), fb = g(0), damp = ctx.createBiquadFilter();
+    const pre = g(1), out = g(1.6), hallSend = g(0), echoSend = g(0), dl = ctx.createDelay(1.5), fb = g(0), damp = ctx.createBiquadFilter();
     dl.delayTime.value = 0.375; damp.type = 'lowpass'; damp.frequency.value = 2600;
-    pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
+    pre.connect(out); pre.connect(hallSend); hallSend.connect(g(1.6)).connect(T.send('hall'));   // ×1.6 — прежний out после возврата зала
     pre.connect(echoSend); echoSend.connect(dl); dl.connect(damp); damp.connect(fb); fb.connect(dl); damp.connect(out);
-    bus = { pre, out, hallSend, hall: h, echoSend, fb, input, live: false };
+    bus = { pre, out, hallSend, echoSend, fb, input, live: false };
     ready = false; node = null; started = false; core = null;
     applyFx();
   }
@@ -61,7 +61,6 @@ export function createEngine(T, model, ver) {
     if (!bus) return;
     const t = actx.currentTime;
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.5, t, 0.05);
-    for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 5)), t, 0.05);
     bus.echoSend.gain.setTargetAtTime(fx.echo * 0.8, t, 0.05); bus.fb.gain.setTargetAtTime(fx.echo * 0.55, t, 0.05);
     send({ t: 'fx', spread: fx.spread, wide: fx.legio });
   }

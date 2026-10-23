@@ -13,9 +13,9 @@ export function createEngine(T, model, ver) {
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const pre = g(1), out = g(1.6), hallSend = g(0), h = T.hall();
-    pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-    bus = { pre, out, hallSend, hall: h, input, live: false };
+    const pre = g(1), out = g(1.6), hallSend = g(0);
+    pre.connect(out); pre.connect(hallSend); hallSend.connect(g(1.6)).connect(T.send('hall'));   // ×1.6 — прежний out после возврата зала
+    bus = { pre, out, hallSend, input, live: false };
     ready = false; node = null; started = false; core = null;
     applyFx();
   }
@@ -52,7 +52,6 @@ export function createEngine(T, model, ver) {
     if (!bus) return;
     const t = actx.currentTime;
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.4, t, 0.05);
-    for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4)), t, 0.05);
     sendParams();
   }
   function sendVoice(v, on = true) { send({ t: 'voice', i: v.slot, on, f: model.hz(v), lvl: v.lvl * 0.8, path: v.path || 0 }); if (on) { setLive(true); lastSound = performance.now(); } }

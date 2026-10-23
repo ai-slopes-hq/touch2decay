@@ -514,12 +514,12 @@ const VOICE_MAX = 3;                            // банок звучит ра�
 function build(ctx, input) {
   actx = ctx;
   const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-  const sum = g(1), shaper = ctx.createWaveShaper(), out = g(1.3), hallSend = g(0), h = T.hall(), an = ctx.createAnalyser();
+  const sum = g(1), shaper = ctx.createWaveShaper(), out = g(1.3), hallSend = g(0), an = ctx.createAnalyser();
   shaper.oversample = '2x'; an.fftSize = 1024;
   sum.connect(shaper).connect(out);
   const sc = makeSolve(ctx); shaper.connect(sc.input); sc.wet.connect(out); sc.wet.connect(hallSend);
-  shaper.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-  bus = { sum, shaper, out, hallSend, hall: h, an, buf: new Float32Array(1024), sc, input, live: false };
+  shaper.connect(hallSend); hallSend.connect(g(1.3)).connect(T.send('hall'));   // ×1.3 — прежний out после возврата зала
+  bus = { sum, shaper, out, hallSend, an, buf: new Float32Array(1024), sc, input, live: false };
   voices.clear(); curveK = -1;
   applyFx();
   if (fire) setFire(true);
@@ -595,8 +595,6 @@ function applyFx() {
     bus.shaper.curve = cv;
   }
   bus.hallSend.gain.setTargetAtTime(fx.vitrum * fx.vitrum * 1.3, t, 0.05);
-  const tail = 0.4 + fx.vitrum * 2.4;
-  for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / tail), t, 0.05);
   solveFx(t);
   setParams();
 }

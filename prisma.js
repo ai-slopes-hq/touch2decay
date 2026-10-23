@@ -58,9 +58,9 @@ let actx = null, bus = null, osc = null, lastSound = 0, gainsNow = new Array(NH)
 function build(ctx, input) {
   actx = ctx;
   const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-  const pre = g(1), out = g(1), hallSend = g(0), h = T.hall();
-  pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-  bus = { pre, out, hallSend, hall: h, input, live: false, master: g(0) };
+  const pre = g(1), out = g(1), hallSend = g(0);
+  pre.connect(out); pre.connect(hallSend); hallSend.connect(T.send('hall'));   // out ×1 — коэффициент прежний
+  bus = { pre, out, hallSend, input, live: false, master: g(0) };
   bus.master.connect(pre);
   osc = null;
   applyFx();
@@ -132,7 +132,6 @@ function applyFx() {
   if (!bus) return;
   const t = actx.currentTime;
   bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.5, t, 0.05);
-  for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 5)), t, 0.05);
   update();
 }
 let tickAt = 0;

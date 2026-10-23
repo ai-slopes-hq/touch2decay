@@ -21,7 +21,7 @@
 4. Связи (`addLink`, `wire`, `chaosTick`), LFO (`setLfo`, `lfoTargets`), мост (`startBridge`).
 5. **Касания**: `down`, `move`, `up`, `spawn`, `deleteVoice`, зум.
 6. **Кнопки и меню**: `uiHit`, `uiDown/uiMove/uiUp` (верхняя строка — `host/ui-top.js`, плашка FX — `host/sheet.js`), лад, кубик `rollDice`, **отмена** (`snapshot`, `restore`; `commit` — `host/undo.js`), веер FX, кольца (`openMenu`, `openLink`, `pinFrom`, `ringTouch`).
-7. **Аудио**: таблицы (`makeWave`, `alignWaves` — у звуковых таблиц фазы гармоник выровнены по saw, морф без провалов), `morphOsc` + `useTables` (считаются только соседние таблицы), `shifter` + `shifterOn` (шифтер отцеплен, пока выключен), зал `hall()`, `build()`, голос `voiceNodes()`, `apply(v)` — перевод параметров в звук.
+7. **Аудио**: таблицы (`makeWave`, `alignWaves` — у звуковых таблиц фазы гармоник выровнены по saw, морф без провалов), `morphOsc` + `useTables` (считаются только соседние таблицы), `shifter` + `shifterOn` (шифтер отцеплен, пока выключен), посыл в зал ядра (`send('hall')`, rev²·1.4; `fx.decay` — теперь только размер туманностей на поле, хвост у зала ядра один), `build()`, голос `voiceNodes()`, `apply(v)` — перевод параметров в звук.
 8. **Рисование**: `resize` (фон-звёзды в `scan`), `contour` (контур из сигнала), `drawVoice` (планета, кольцо Сатурна, двойная звезда, спутники, хвост кометы), `drawLinks` (нити), кольца `drawRing/drawEditor/drawHeld`, `drawLfoPanel`, `drawAmpStrip`, поле `drawField` (кеш `orbitLayer` + `bgLayer`), `drawSun`, `drawUI`, `frame`.
 9. **Нагрузка** — `host/strain.js`: `measureStrain` (время кадра, отставание звуковых часов, доля графа — от мира I через `setGraphLoad`) → `drawStrain`.
 

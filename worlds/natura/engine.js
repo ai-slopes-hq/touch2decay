@@ -29,14 +29,14 @@ export function createEngine(T, model) {
     const dSend = g(0), dl = ctx.createDelay(4), dfb = g(0), dlp = ctx.createBiquadFilter();   // задержка — лента: время плывёт
     dlp.type = 'lowpass'; dlp.frequency.value = 2800;
     pre.connect(dSend).connect(dl); dl.connect(dlp).connect(dfb).connect(dl); dlp.connect(out);
-    const rSend = g(0), h = T.hall();                 // зал — туман
-    pre.connect(rSend).connect(h.input); h.out.connect(g(0.9)).connect(out);
+    const rSend = g(0);                               // зал — туман: посыл в общий зал ядра; ×1.2 — прежний out после возврата зала
+    pre.connect(rSend).connect(g(1.2)).connect(T.send('hall'));
     dlp.connect(rSend);
-    bus = { vin, hp, chOut, ch, dSend, dl, dfb, rSend, hall: h, out, input, live: false, pre };
+    bus = { vin, hp, chOut, ch, dSend, dl, dfb, rSend, out, input, live: false, pre };
     setLive(true);
     applyFx();
   }
-  // молчит дольше хвоста — мир отцеплен от выхода: его хор, задержка и зал не считаются (меньше нагрузки, нет треска)
+  // молчит дольше хвоста — мир отцеплен от выхода: его хор и задержка не считаются (меньше нагрузки, нет треска)
   function setLive(on) {
     if (!bus || bus.live === on) return;
     bus.live = on;
@@ -50,8 +50,6 @@ export function createEngine(T, model) {
     for (const c of bus.ch) S(c.lg.gain, 0.0015 + 0.0045 * fx.chorus);
     S(bus.dSend.gain, fx.delay * 0.7); S(bus.dfb.gain, 0.2 + 0.55 * fx.delay); S(bus.dl.delayTime, model.delaySec(), 0.15);
     S(bus.rSend.gain, fx.reverb * fx.reverb * 1.3);
-    const tail = 1.5 + fx.reverb * 6;
-    for (const l of bus.hall.lines) S(l.g.gain, 10 ** ((-3 * l.len) / tail));
   }
   let sharpPW = null;
   function setWave(o, w) {

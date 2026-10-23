@@ -1,6 +1,6 @@
 // touch2decay — дрон / нойз на 1–2 пальца. Web Audio + canvas, без зависимостей.
 // хост: сервисы, примитивы и экраны — в host/ (шаги 2–3 docs/refactor-plan.md); здесь роутер касаний, кадр и мир I · Tenebrae
-import { an, asym, chanLvl, chans, core, ctx, filter, gainNode, hall, lfo, mix, noiseBuffer, restartAudio, saveMix, scopeBuf, send, setCoreVer, setVol, soft, syncScale, unlock, vol, VOL_TRAVEL } from './host/audio.js';
+import { an, asym, chanLvl, chans, core, ctx, filter, gainNode, lfo, mix, noiseBuffer, restartAudio, saveMix, scopeBuf, send, setCoreVer, setVol, soft, syncScale, unlock, vol, VOL_TRAVEL } from './host/audio.js';
 import { audioPanel, drawAudioPanel, panelDown, panelGeo, panelHit, panelMove, setAudioPanel, volTap } from './host/audio-panel.js';
 import { link, tempoFrom, transportFrom } from './host/concordia.js';
 import { clockLive, onTick, setClockVer } from './host/clock.js';
@@ -1308,7 +1308,6 @@ function applyFx() {
   if (!fxN) return;
   const t = ctx.currentTime, T = (p, v) => p.setTargetAtTime(v, t, 0.05);
   T(fxN.revSend.gain, fx.rev * fx.rev * 1.4);
-  for (const l of fxN.hall.lines) T(l.g.gain, 10 ** ((-3 * l.len) / fx.decay));
   T(fxN.dSend.gain, fx.dly * 0.7);
   T(fxN.pre.gain, 0.45 + fx.dirt ** 1.4 * 14);   // до ~15× в перегруз
   T(fxN.post.gain, 2.2 / (1 + 4 * fx.dirt ** 0.8));   // громкость примерно ровная по всему ходу drive
@@ -1348,13 +1347,12 @@ function solBuild(_, chanIn) {
   dMerge.connect(out);
 
   // зал слышит и сухой звук, и повторы дилея
-  const h = hall();
+  // посыл — в общий зал ядра (T.send); после возврата зала в цепи ничего нет (out → канал), коэффициент прежний: rev²·1.4
   const revSend = gainNode(0);
   post.connect(revSend); dMerge.connect(revSend);
-  revSend.connect(h.input);
-  h.out.connect(gainNode(0.9)).connect(out);
+  revSend.connect(send('hall'));
 
-  fxN = { pre, post, dSend, revSend, hall: h };
+  fxN = { pre, post, dSend, revSend };
   applyFx();
   out.connect(chanIn);
 
@@ -2605,7 +2603,7 @@ window.T2D = {
   registerWorld, tempoFrom, transportFrom, onTick, get clockLive() { return clockLive(); }, openSheet: (spec) => { setFxSheet({ w: nav.world, spec }); }, lfoBase: (id, key) => { const e = SL.find((q) => q.id === id && q.key === key); return e ? e.base : null; }, lfoClear: (prefix) => { for (const e of [...SL]) if (e.id.startsWith(prefix)) SL.splice(SL.indexOf(e), 1); }, closeSheet: () => { setFxSheet(null); }, get sheetOpen() { return !!fxSheet; }, get link() { return { ...link }; }, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,
   get g() { return g; }, get W() { return W; }, get H() { return H; }, get DPR() { return DPR; },
   get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
-  get ctx() { return ctx; }, hall, send, get core() { return core; }, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,
+  get ctx() { return ctx; }, send, get core() { return core; }, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,
   MENU_DEAD, get MENU_SPAN() { return MENU_SPAN; }, HOLD_MS, DTAP_MS, PIN_MAX, get scaleOn() { return scl.on; },
   get scaleRoot() { return scaleRoot(); },                                        // тоника — класс высоты от A
   get scalePCs() { return scalePCs(); },                                          // классы высот лада
@@ -2616,7 +2614,7 @@ window.t2d = {
   go(w) { if (!worlds[w]) return false; nav.world = w; nav.view = 'play'; nav.anim = null; nav.settings = false; if (worlds[w].enter) worlds[w].enter(); },
   mix, chanLvl, mixGeo: () => mixGeo(), backPos: () => backPos(), get chanGains() { return Object.fromEntries(Object.entries(chans).map(([n, c]) => [n, c.g.gain.value])); },
   get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, get audioPanel() { return !!audioPanel; }, panelGeo: () => panelGeo(), legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, get deck() { return deck; }, setDeck, mixRows: () => mixGeo().rows.map((r) => r.n), restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey, slAdd: (k) => { if (fxSheet && fxSheet.spec.lfo) { const e = slAdd(fxSheet.spec, k); e.spec.depth = 0.8; e.spec.rate = 1; return true; } return false; },   // сразу в мир, без касаний (тесты)
-  get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
+  get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.send === 'function' && T2D.snapSemi(3.4) === 3.4; },
   hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
   voices: V, fx, scl, freq, cutoff, applyFx, place, unplace, semi,
   get ctx() { return ctx; }, get core() { return core && { ready: core.ready, sent: core.sent, node: !!core.node }; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,

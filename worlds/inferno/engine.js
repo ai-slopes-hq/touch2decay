@@ -1,5 +1,5 @@
 // Inferno — звук на обычных узлах (без worklet): шум сквозь банк резонаторов (как Rings, накормленный шумом).
-// Круг — резонатор из трёх полос → перегруз → срез верха → уровень; шина: fire (tanh), smoke (тёмный зал T.hall()).
+// Круг — резонатор из трёх полос → перегруз → срез верха → уровень; шина: fire (tanh), smoke (тёмный посыл в зал ядра, T.send('hall')).
 // События модели → узлы; метры — strikes, live; что услышано (listen): { strike: k } — удар прозвучал (угольки во view).
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 
@@ -43,11 +43,11 @@ export function createEngine(T, model) {
     actx = ctx;
     noiseBufs(ctx);
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const inp = g(1), pre = g(0.6), fire = ctx.createWaveShaper(), out = g(1), smoke = g(0), smLP = ctx.createBiquadFilter(), h = T.hall();
+    const inp = g(1), pre = g(0.6), fire = ctx.createWaveShaper(), out = g(1), smoke = g(0), smLP = ctx.createBiquadFilter(), smRet = g(3);
     fire.oversample = '2x'; smLP.type = 'lowpass'; smLP.frequency.value = 1400;
     inp.connect(pre).connect(fire).connect(out);
-    fire.connect(smoke).connect(smLP).connect(h.input); h.out.connect(g(0.9)).connect(out);
-    bus = { inp, pre, fire, out, smoke, hall: h, input, live: false };
+    fire.connect(smoke).connect(smLP).connect(smRet).connect(T.send('hall'));   // smRet повторяет out: прежний out (3/(1+fire·1.5)) стоял и после возврата зала
+    bus = { inp, pre, fire, out, smoke, smRet, input, live: false };
     N.fill(null);
     applyFx();
     for (let k = 0; k < 9; k++) if (circ[k].sinner) smoulder(k, true);
@@ -126,8 +126,8 @@ export function createEngine(T, model) {
     bus.fire.curve = curve(k);
     bus.pre.gain.setTargetAtTime(0.6, t, 0.05);
     bus.out.gain.setTargetAtTime(3 / (1 + fx.fire * 1.5), t, 0.05);   // ×3: вровень с планетами Tenebrae
+    bus.smRet.gain.setTargetAtTime(3 / (1 + fx.fire * 1.5), t, 0.05);
     bus.smoke.gain.setTargetAtTime(fx.smoke * fx.smoke * 1.4, t, 0.05);
-    for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.smoke * 5)), t, 0.05);
     for (let i = 0; i < 9; i++) retune(i);
   }
   function on(e) {                                      // событие модели → узлы

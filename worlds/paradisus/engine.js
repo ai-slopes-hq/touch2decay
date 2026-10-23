@@ -1,5 +1,4 @@
-// Paradisus — звук на обычных узлах (без worklet): хор гласных (пилы → четыре форманты → громкость), собор (свёртка со своим отзвуком),
-// шиммер (хвост собора на октаву вверх — снова в собор), зёрна Gloria. События модели → узлы; голоса — здесь (ангел → узлы, Map),
+// Paradisus — звук на обычных узлах (без worklet): хор гласных (пилы → четыре форманты → громкость), собор (посыл в ревербер-собор ядра), зёрна Gloria. События модели → узлы; голоса — здесь (ангел → узлы, Map),
 // модель их не видит. Наружу — live и что услышано (listen): { t: 'voice', a, on } — голос собран / снят, { t: 'grain' } — зерно сыграно,
 // { t: 'chime', a } — планета над ангелом.
 import { formants } from './model.js';
@@ -9,41 +8,6 @@ const TAU = Math.PI * 2;
 // уровни — с запасом до потолка мастера
 const BWK = 2.2, FGK = 1.4, BODYK = 0.3, VCAK = 0.32, OUTK = 1.1, DBK = 0.55;   // DBK — верхние форманты не так глубоко: больше присутствия и воздуха
 
-// собор: свёртка с длинным отзвуком, который считается здесь же (шум со спадом, чем дальше — тем темнее; каналы — разный шум).
-// Свёртку браузер считает сам, быстро; отзвук пересчитывается только при смене aether
-function cathedralIR(ctx, t60) {
-  const sr = ctx.sampleRate, len = Math.round(sr * (t60 + 0.3)), buf = ctx.createBuffer(2, len, sr), pre = Math.round(sr * 0.022), fade = sr * 0.03;
-  for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch);
-    let y = 0, e = 0;
-    for (let i = pre; i < len; i++) {
-      const t = (i - pre) / sr, fc = 9000 * Math.pow(1200 / 9000, Math.min(1, t / t60)), a = Math.exp((-2 * Math.PI * fc) / sr);
-      y = (1 - a) * (Math.random() * 2 - 1) + a * y;
-      const v = y * Math.exp((-6.9 * t) / t60) * Math.min(1, (i - pre) / fade);
-      d[i] = v; e += v * v;
-    }
-    const k = Math.sqrt(2500 / (sr / 2)) / Math.sqrt(e || 1);   // энергия отзвука сидит ниже ~2.5 кГц: нормируем по полосе, иначе собор на +9 дБ громче сухого и перегружает
-    for (let i = 0; i < len; i++) d[i] *= k;
-  }
-  return buf;
-}
-// сдвиг на октаву вверх: две линии задержки, время бежит вниз пилой (окно 60 мс), окна вполнакладку — косинус², сумма — единица
-function octaver(ctx, inp, out) {
-  const w = 0.06, t0 = ctx.currentTime + 0.05, win = new Float32Array(256);
-  for (let i = 0; i < 256; i++) { const x = (i / 255) * 2 - 1; win[i] = Math.cos((Math.PI * x) / 2) ** 2; }
-  const n = Math.round(w * ctx.sampleRate), ramp = ctx.createBuffer(1, n, ctx.sampleRate), rd = ramp.getChannelData(0);
-  for (let i = 0; i < n; i++) rd[i] = (i / n) * 2 - 1;   // точная пила из буфера: у осциллятора-пилы склон не ровный (Гиббс) — октава уезжала на 1.84
-  return [0, w / 2].map((off) => {
-    const saw = ctx.createBufferSource(), dt = ctx.createGain(), dl = ctx.createDelay(0.2), sh = ctx.createWaveShaper(), tg = ctx.createGain();
-    saw.buffer = ramp; saw.loop = true;
-    dl.delayTime.value = w / 2; dt.gain.value = -w / 2; tg.gain.value = 0; sh.curve = win;
-    saw.connect(dt).connect(dl.delayTime); saw.connect(sh).connect(tg.gain);
-    inp.connect(dl).connect(tg).connect(out);
-    saw.start(t0, off);
-    return { saw, dl, tg };
-  });
-}
-
 export function createEngine(T, model) {
   const { angels, fx } = model.state;
   const voices = new Map();                             // ангел → узлы его голоса
@@ -51,27 +15,18 @@ export function createEngine(T, model) {
   const heard = (e) => { for (const fn of listeners) fn(e); };
   let actx = null, bus = null, lastSound = 0, noiseBuf = null;
 
-  let irAt = 0, irT60 = 0, irTimer = 0;
-  function setIR(now = false) {                         // aether — длина отзвука; пересчёт не чаще раза в 250 мс
-    if (!bus) return;
-    const t60 = 2.5 + fx.aether * 7;
-    if (Math.abs(t60 - irT60) < 0.3 && bus.conv.buffer) return;
-    clearTimeout(irTimer);
-    const go = () => { irT60 = t60; irAt = performance.now(); bus.conv.buffer = cathedralIR(actx, t60); };
-    if (now || performance.now() - irAt > 250) go(); else irTimer = setTimeout(go, 250);
-  }
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const inp = g(1), out = g(OUTK), send = g(0), revIn = g(1), conv = ctx.createConvolver(), wet = g(1), fb = g(0), hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), oct = g(1);
-    conv.normalize = false; hp.type = 'highpass'; hp.frequency.value = 160; lp.type = 'lowpass'; lp.frequency.value = 7000;
+    const inp = g(1), out = g(OUTK), send = g(0), hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 160;
     inp.connect(g(0.6)).connect(out);                   // сухого меньше — хор звучит из собора
-    inp.connect(send).connect(hp).connect(revIn).connect(conv).connect(wet).connect(out);
-    conv.connect(lp); octaver(ctx, lp, oct); oct.connect(fb).connect(revIn);   // шиммер: хвост собора на октаву вверх — снова в собор
+    // собор — общий ревербер ядра (T.send('cathedral')): прежние свёртка со своим отзвуком и шиммер-петля ушли. Прежняя цепь:
+    // send · wet · OUTK (свёртка в полосе голоса ≈ 1) — wet (0.9 + 0.5·aether) и OUTK теперь в посыле; возврат ядра ×0.9 — как у соседей
+    inp.connect(send).connect(hp).connect(T.send('cathedral'));
     const n = ctx.sampleRate * 2; noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
-    bus = { inp, out, send, conv, wet, fb, input, live: false };
-    irT60 = 0; setIR(true);
+    bus = { inp, out, send, input, live: false };
     for (const a of voices.keys()) heard({ t: 'voice', a, on: false });   // новый контекст — старые голоса остались в старом
     voices.clear();
     for (const a of angels) if (a.pinned) voiceOn(a);
@@ -141,10 +96,7 @@ export function createEngine(T, model) {
   function applyFx() {
     if (!bus) return;
     const t = actx.currentTime;
-    bus.send.gain.setTargetAtTime(0.35 + fx.aether * 0.5, t, 0.05);
-    bus.wet.gain.setTargetAtTime(0.9 + fx.aether * 0.5, t, 0.05);
-    bus.fb.gain.setTargetAtTime(fx.shimmer * 0.62, t, 0.08);   // доля хвоста, ушедшего на октаву вверх обратно в собор
-    setIR();
+    bus.send.gain.setTargetAtTime((0.35 + fx.aether * 0.5) * (0.9 + fx.aether * 0.5) * OUTK, t, 0.05);
     for (const a of angels) retune(a);
   }
   // Gloria — облако зёрен хора: короткие окна синуса на гармониках поющих ангелов, по стерео вразброс, в зал

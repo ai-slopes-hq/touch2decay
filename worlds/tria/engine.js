@@ -11,10 +11,10 @@ export function createEngine(T, model) {
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const pre = g(1), sh = ctx.createWaveShaper(), out = g(1.6), hallSend = g(0), h = T.hall();
+    const pre = g(1), sh = ctx.createWaveShaper(), out = g(1.6), hallSend = g(0);
     const c = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = (i / 1023) * 2 - 1; c[i] = Math.tanh(1.4 * x) / Math.tanh(1.4); } sh.curve = c;
-    pre.connect(sh).connect(out); sh.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-    bus = { pre, out, hallSend, hall: h, input, live: false };
+    pre.connect(sh).connect(out); sh.connect(hallSend); hallSend.connect(g(1.6)).connect(T.send('hall'));   // ×1.6 — прежний out после возврата зала
+    bus = { pre, out, hallSend, input, live: false };
     const n = ctx.sampleRate; noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     vo = null;
     applyFx();
@@ -49,7 +49,6 @@ export function createEngine(T, model) {
     if (!bus) return;
     const t = actx.currentTime;
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.4, t, 0.05);
-    for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4)), t, 0.05);
   }
   function burst(f, pan, k = 1) {                       // близкий пролёт — шорох: шум сквозь узкую полосу
     if (!bus) return;

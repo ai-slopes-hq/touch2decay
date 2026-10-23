@@ -25,9 +25,9 @@ export function createEngine(T, model, ver) {
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const pre = g(1), out = g(2.4), hallSend = g(0), h = T.hall();
-    pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
-    bus = { pre, out, hallSend, hall: h, input, live: false };
+    const pre = g(1), out = g(2.4), hallSend = g(0);
+    pre.connect(out); pre.connect(hallSend); hallSend.connect(g(2.4)).connect(T.send('hall'));   // ×2.4 — прежний out после возврата зала
+    bus = { pre, out, hallSend, input, live: false };
     ready = false; node = null; started = false; queue.length = 0; lockSent = null;   // новый узел — сетка заново
     applyFx();
   }
@@ -63,7 +63,6 @@ export function createEngine(T, model, ver) {
     if (!bus) return;
     const t = actx.currentTime;
     bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.4, t, 0.05);
-    for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 4)), t, 0.05);
     send({ t: 'set', mat: fx.materia, conc: fx.concursus, chance: fx.chance, aeq: fx.aequalis });
   }
   function live() { start(); setLive(true); lastSound = performance.now(); }

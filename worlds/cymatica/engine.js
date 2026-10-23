@@ -75,10 +75,9 @@ export function createEngine(T, model, ver) {
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const out = g(2.5);                          // +8 дБ: пластина вровень с планетами Tenebrae (пики ловит общий ограничитель)
     out.connect(input);
-    // зал — общий с Tenebrae по устройству, свой экземпляр; хвост 4 с
-    const h = T.hall(), hallSend = g(0);
-    for (const l of h.lines) l.g.gain.value = 10 ** ((-3 * l.len) / 4);
-    hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
+    // посыл — в пластинчатый ревербер ядра (T.send('plate')); прежний ×2.5 стоял после возврата зала (out) — он и здесь: hall²·1.4·2.5
+    const hallSend = g(0);
+    hallSend.connect(g(2.5)).connect(T.send('plate'));
     const echoSend = g(0);                       // эхо — пары линий в retime(), доля темпа с луча time (1/4d на 40 BPM — 2.25 с)
     nodes = { out, hallSend, echoSend };
     actx = ctx; echoes = [];                     // новый звуковой контекст — пары эха заводятся заново

@@ -43,10 +43,10 @@ let actx = null, bus = null, noise = null, lastSound = 0;
 function build(ctx, input) {
   actx = ctx;
   const gn = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-  const pre = gn(1), out = gn(1), hallSend = gn(0), h = T.hall(), lp = ctx.createBiquadFilter();
+  const pre = gn(1), out = gn(1), hallSend = gn(0), lp = ctx.createBiquadFilter();
   lp.type = 'lowpass'; lp.frequency.value = 6000;
-  pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(gn(0.9)).connect(out);
-  bus = { pre, out, hallSend, hall: h, input, lp, live: false };
+  pre.connect(out); pre.connect(hallSend); hallSend.connect(T.send('hall'));   // out ×1 — коэффициент прежний
+  bus = { pre, out, hallSend, input, lp, live: false };
   for (const g of glasses) {                          // бокал: возбуждение → моды (bandpass) → громкость → стерео
     const exc = gn(0), sum = gn(1), pan = ctx.createStereoPanner();
     lp.connect(exc);
@@ -90,7 +90,6 @@ function applyAll() {
   if (!bus) return;
   const t = actx.currentTime;
   bus.hallSend.gain.setTargetAtTime(fx.hall * fx.hall * 1.5, t, 0.05);
-  for (const l of bus.hall.lines) l.g.gain.setTargetAtTime(10 ** ((-3 * l.len) / (1.5 + fx.hall * 5)), t, 0.05);
   for (const g of glasses) applyGlass(g);
 }
 function excite(g, v) {                               // трение: громкость шума, плавно
