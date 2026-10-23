@@ -1,5 +1,6 @@
 // Тесты блоков core/sdk — без библиотек: свои CHECK, код выхода ≠ 0 при провале. Эталонные числа (Rng, Biquad) посчитаны в Node
 // независимо: Rng — rnd() из tools/ref/pulsar-worklet.js, Biquad — формулы Web Audio (BiquadFilterNode), sr = 48000.
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstdio>
@@ -10,6 +11,7 @@
 #include "../sdk/delay.hpp"
 #include "../sdk/json.hpp"
 #include "../sdk/pan.hpp"
+#include "../sdk/reverb.hpp"
 #include "../sdk/rng.hpp"
 #include "../sdk/smooth.hpp"
 
@@ -125,8 +127,89 @@ static void json() {
   sdk::Json::parse("[1,2] x", &ok); CHECK(!ok);
 }
 
+// Ревербы: T60 по кривой спада энергии (интеграл Шрёдера, наклон от −5 до −35 дБ × 2), тишина без денормалов, шум без разноса.
+static sdk::Reverb rv;                                  // ~300 КБ линий внутри — не на стеке
+static const char* revName(sdk::Rev t) {
+  switch (t) { case sdk::Rev::room: return "room"; case sdk::Rev::plate: return "plate"; case sdk::Rev::hall: return "hall"; default: return "cathedral"; }
+}
+static double t60(sdk::Rev t, double sr, double secs) {
+  rv.prepare(sr, t, 1);
+  const int B = 128, N = static_cast<int>(secs * sr / B) * B;
+  std::vector<float> zl(B, 0), zr(B, 0), ol(B), orr(B);
+  std::vector<double> e(N);
+  for (int k = 0; k < N; k += B) {
+    zl[0] = zr[0] = (k == 0) ? 1.f : 0.f;
+    rv.process(zl.data(), zr.data(), ol.data(), orr.data(), B);
+    for (int i = 0; i < B; i++) e[k + i] = double(ol[i]) * ol[i] + double(orr[i]) * orr[i];
+  }
+  for (int i = N - 2; i >= 0; i--) e[i] += e[i + 1];   // интеграл Шрёдера
+  int i5 = -1, i35 = -1;
+  for (int i = 0; i < N; i++) {
+    double db = 10 * std::log10(e[i] / e[0] + 1e-300);
+    if (i5 < 0 && db <= -5) i5 = i;
+    if (i35 < 0 && db <= -35) { i35 = i; break; }
+  }
+  if (i5 < 0 || i35 < 0) return -1;
+  return 2.0 * (i35 - i5) / sr;
+}
+
+static void reverb() {
+  const sdk::Rev types[4] = {sdk::Rev::room, sdk::Rev::plate, sdk::Rev::hall, sdk::Rev::cathedral};
+  const double want[4] = {0.8, 2, 3.5, 8}, tol[4] = {0.15, 0.15, 0.10, 0.15};
+  for (int k = 0; k < 4; k++) {
+    for (double sr : {48000.0, 44100.0}) {
+      double t = t60(types[k], sr, want[k] * 2.5);
+      std::printf("reverb %-9s sr %5.0f  T60 %.3f s (want %.1f ± %.0f %%)\n", revName(types[k]), sr, t, want[k], tol[k] * 100);
+      CHECK(std::fabs(t - want[k]) <= want[k] * tol[k]);
+    }
+  }
+  for (int k = 0; k < 4; k++) {
+    sdk::Rev t = types[k];
+    // память: самый большой случай — 96 кГц, всё в статическом буфере
+    rv.prepare(96000, t, 3);
+    CHECK(rv.used() > 0 && rv.used() <= sdk::kRevMem);
+    const double sr = 48000;
+    const int B = 128;
+    std::vector<float> il(B), ir(B), ol(B), orr(B), zl(B, 0), zr(B, 0);
+    // 10 с белого шума: выход конечен, пик < 4
+    rv.prepare(sr, t, 7);
+    sdk::Rng rn(99);
+    double peak = 0; bool fin = true;
+    const int NB = static_cast<int>(10 * sr / B);
+    double tSig = 0;
+    for (int b = 0; b < NB; b++) {
+      for (int i = 0; i < B; i++) { il[i] = float(rn.next() * 2 - 1); ir[i] = float(rn.next() * 2 - 1); }
+      auto t0 = std::chrono::steady_clock::now();
+      rv.process(il.data(), ir.data(), ol.data(), orr.data(), B);
+      tSig += std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+      for (int i = 0; i < B; i++) {
+        fin = fin && std::isfinite(ol[i]) && std::isfinite(orr[i]);
+        peak = std::fmax(peak, std::fmax(std::fabs(ol[i]), std::fabs(orr[i])));
+      }
+    }
+    std::printf("reverb %-9s noise peak %.3f\n", revName(t), peak);
+    CHECK(fin);
+    CHECK(peak < 4);
+    // затем 30 с тишины: хвост уходит ровно в 0 (или < 1e-30), без NaN/inf; тишина не дороже сигнала × 1.5
+    double last = 0; bool fin2 = true;
+    const int NS = static_cast<int>(30 * sr / B);
+    double tSil = 0;
+    for (int b = 0; b < NS; b++) {
+      auto s0 = std::chrono::steady_clock::now();
+      rv.process(zl.data(), zr.data(), ol.data(), orr.data(), B);
+      if (b < NB) tSil += std::chrono::duration<double>(std::chrono::steady_clock::now() - s0).count();   // первые 10 с — как сигнал
+      for (int i = 0; i < B; i++) fin2 = fin2 && std::isfinite(ol[i]) && std::isfinite(orr[i]);
+      if (b == NS - 1) for (int i = 0; i < B; i++) last = std::fmax(last, std::fmax(std::fabs(ol[i]), std::fabs(orr[i])));
+    }
+    std::printf("reverb %-9s after 30 s silence max %.3g; process signal %.1f ms, silence %.1f ms\n", revName(t), last, tSig * 1e3, tSil * 1e3);
+    CHECK(fin2);
+    CHECK(last == 0 || last < 1e-30);
+    CHECK(tSil <= tSig * 1.5);
+  }
+}
+
 int main() {
-  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json();
+  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

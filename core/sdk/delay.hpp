@@ -5,6 +5,7 @@ namespace sdk {
 
 class Delay {
  public:
+  Delay() = default;                                    // пустая — до prepare владельца
   Delay(float* buf, int len) : b_(buf), n_(len) { for (int i = 0; i < n_; i++) b_[i] = 0; }
   void write(double x) { b_[w_] = static_cast<float>(x); if (++w_ >= n_) w_ = 0; }
   // d — сколько записей назад: 1 — последняя записанная, до len включительно; дробное — линейно между соседними.
@@ -18,8 +19,8 @@ class Delay {
 
  private:
   double at(int d) const { int k = w_ - d; while (k < 0) k += n_; return b_[k % n_]; }
-  float* b_;
-  int n_, w_ = 0;
+  float* b_ = nullptr;
+  int n_ = 0, w_ = 0;
 };
 
 // Schroeder-allpass: d = задержанное, w = x + g·d, y = d − g·w. Задержка — вся длина буфера.
