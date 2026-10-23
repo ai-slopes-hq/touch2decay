@@ -8,14 +8,16 @@
 #include "../worlds/firmamentum/world.hpp"
 #include "../worlds/oceanus/world.hpp"
 #include "../worlds/goetia/world.hpp"
+#include "../worlds/monochord/world.hpp"
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
 static oceanus::Oceanus ocean(host.scale());
 static goetia::World goe(host.scale());
+static monochord::World mono(host.scale());
 static sdk::World* worlds[Host::SLOTS] = {};
 static double args[64];
-static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59
+static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59, Monochordum — 52
 static constexpr int STR_CAP = 1 << 16;
 static char str[STR_CAP];
 
@@ -40,6 +42,9 @@ API void t2d_init(double sr, unsigned seed) {
   goe.prepare(sr, seed);
   worlds[15] = &goe;
   host.add(15, &goe);
+  mono.prepare(sr, seed);
+  worlds[7] = &mono;
+  host.add(7, &mono);
 }
 API double* t2d_args() { return args; }
 API void t2d_action(int slot, int kind, int i, const double* a, int n) {
@@ -70,3 +75,13 @@ API void t2d_restore(int slot, int len) {
 }
 API void t2d_fader(int slot, double g) { host.fader(slot, g); }
 API void t2d_scale(int on, int idx, int root) { host.scale(on != 0, idx, root); }
+// часы: время начала следующего блока (секунды контекста), MIDI — байт от входа src или разобранное сообщение (оболочка iOS)
+API void t2d_time(double t) { host.time(t); }
+API void t2d_midi_byte(int src, int status, double at) { host.midiByte(src, status, at); }
+API void t2d_midi_msg(int kind, double n, double bpm, double at) { host.midiMsg(kind, n, bpm, at); }
+API int t2d_hmirror() {                                 // зеркало хоста: сетка есть, t0, p, время блока
+  const sdk::Clock& c = host.clock();
+  mbuf[0] = c.grid.on ? 1 : 0; mbuf[1] = c.grid.t0; mbuf[2] = c.grid.p; mbuf[3] = c.now;
+  return 4;
+}
+API int t2d_hevents() { return host.events(mbuf, 512); }   // события часов: по 2 числа — код, bpm

@@ -131,8 +131,7 @@ struct Json {
       case Bool: r += b ? "true" : "false"; break;
       case Num:                                         // кратчайшее, что читается обратно тем же числом — как JSON.stringify (0.45, не 0.45000000000000001)
         if (n == 0) { r += '0'; break; }
-        for (int pr = 1; pr <= 17; pr++) { std::snprintf(buf, sizeof buf, "%.*g", pr, n); if (std::strtod(buf, nullptr) == n) break; }
-        r += buf; break;
+        num(r, n, buf); break;
       case Str: quote(r, s); break;
       case Arr:
         r += '[';
@@ -142,6 +141,30 @@ struct Json {
         r += '{';
         for (size_t i = 0; i < o.size(); i++) { if (i) r += ','; quote(r, o[i].first); r += ':'; o[i].second.write(r); }
         r += '}'; break;
+    }
+  }
+  // число как Number.prototype.toString (JSON.stringify): кратчайшие цифры, которые читаются обратно тем же числом; десятичная запись
+  // при показателе от −6 до 20 (90, 0.000001, 1e21 — как в JS), иначе — d.ddde±x. Раньше %g давал 9e+01 вместо 90.
+  static void num(std::string& r, double n, char* buf) {
+    if (!(n == n) || n - n != 0) { r += "null"; return; }   // NaN, ±inf — в JSON их нет
+    int pr = 1;
+    for (; pr <= 17; pr++) { std::snprintf(buf, 40, "%.*e", pr - 1, n); if (std::strtod(buf, nullptr) == n) break; }
+    if (pr > 17) pr = 17;
+    std::snprintf(buf, 40, "%.*e", pr - 1, n);
+    const char* p = buf;
+    std::string d;                                      // цифры без точки
+    bool neg = false;
+    if (*p == '-') { neg = true; p++; }
+    for (; *p && *p != 'e'; p++) if (*p != '.') d += *p;
+    const int e = std::atoi(p + 1), k = static_cast<int>(d.size()), m = e + 1;   // число = 0.d × 10^m
+    if (neg) r += '-';
+    if (k <= m && m <= 21) { r += d; r.append(static_cast<size_t>(m - k), '0'); }
+    else if (0 < m && m <= 21) { r += d.substr(0, static_cast<size_t>(m)); r += '.'; r += d.substr(static_cast<size_t>(m)); }
+    else if (-6 < m && m <= 0) { r += "0."; r.append(static_cast<size_t>(-m), '0'); r += d; }
+    else {
+      r += d[0];
+      if (k > 1) { r += '.'; r += d.substr(1); }
+      r += 'e'; r += (m - 1 < 0 ? '-' : '+'); r += std::to_string(m - 1 < 0 ? 1 - m : m - 1);
     }
   }
   static void quote(std::string& r, const std::string& v) {

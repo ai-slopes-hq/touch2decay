@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 #include "reverb.hpp"                                   // Rev — одно определение, здесь не повторяем
+#include "transport.hpp"
 
 namespace sdk {
 
@@ -22,6 +23,7 @@ class World {
   virtual std::string snapshot() const = 0;                             // JSON — тот же, что был у model.js
   virtual void restore(const std::string& js) = 0;
   virtual bool sounding() const = 0;
+  virtual void attach(const Clock*) {}                                  // часы хоста (время блока, сетка MIDI) — мирам с шагами
 };
 
 }  // namespace sdk

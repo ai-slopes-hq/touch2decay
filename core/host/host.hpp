@@ -24,6 +24,15 @@ class Host {
   void scale(bool on, int idx, int root);
   const Scale& scale() const { return scale_; }
 
+  // Часы: время начала следующего блока (секунды контекста; не задали — хост ведёт сам, +n/sr за блок), MIDI-часы, сетка.
+  // Байт — от входа src (у каждого входа свой счёт тиков); сообщение — уже разобранное (оболочка iOS: доля, темп, пуск, стоп).
+  // События часов для хоста веба (кого запускать) — кольцо, забирает events(); их немного: раз в долю.
+  void time(double t) { clk_.now = t; }
+  void midiByte(int src, int status, double at);
+  void midiMsg(int kind, double n, double bpm, double at);   // kind — sdk::MidiMsg::Type
+  const sdk::Clock& clock() const { return clk_; }
+  int events(double* buf, int cap);                     // по 2 числа: код (sdk::Follower::Ev), bpm; очищает
+
  private:
   sdk::World* w_[SLOTS] = {};
   float gain_[SLOTS] = {};                              // 0 у пустых; add ставит 1
@@ -34,4 +43,11 @@ class Host {
   float ret_[2][BLOCK] = {};
   Scale scale_;
   sdk::Reverb rev_[4];
+  void follow(const sdk::MidiMsg& m, double at);
+  static constexpr int SRC = 8, EVMAX = 32;
+  sdk::Clock clk_;
+  sdk::ClockParser parse_[SRC];
+  sdk::Follower follow_;
+  double ev_[EVMAX][2] = {};
+  int nev_ = 0;
 };
