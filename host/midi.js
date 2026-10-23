@@ -31,10 +31,11 @@ export function createMidi({ worlds, now }) {
   let grid = null, cue = false, halted = false;
   let stopped = new Set();                                            // миры, игравшие в момент прошлого Stop
   const subs = [];
-  const seqs = () => worlds().filter((w) => w.tempo);
+  const seqs = () => worlds().filter((w) => w.tempo && w.tempo.play);
+  const each = (f) => { try { f(); } catch (e) { console.error('midi', e); } };   // один сбойный мир не мешает остальным
   const setTempo = (bpm) => {
     const b = Math.round(bpm * 10) / 10;
-    for (const w of seqs()) { const cur = w.tempo.get ? w.tempo.get() : NaN; if (!(Math.abs(b - cur) <= TEMPO_EPS)) w.tempo.set(b); }
+    for (const w of worlds()) if (w.tempo) each(() => { const cur = w.tempo.get ? w.tempo.get() : NaN; if (!(Math.abs(b - cur) <= TEMPO_EPS)) w.tempo.set(b); });
   };
   function message(m) {
     for (const f of subs) f(m);
@@ -43,8 +44,9 @@ export function createMidi({ worlds, now }) {
     const at = t - (m.ago || 0);
     if (m.t === 'start') { cue = true; halted = false; grid = null; }
     else if (m.t === 'stop') {
-      stopped = new Set();
-      for (const w of seqs()) if (w.tempo.playing()) { stopped.add(w); w.tempo.play(false); }
+      const was = new Set();                                          // Elektron шлёт Stop 2–3 раза: пустой повтор прежний набор не затирает
+      for (const w of seqs()) each(() => { if (w.tempo.playing?.()) { was.add(w); w.tempo.play(false); } });
+      if (was.size) stopped = was;
       grid = null; cue = false; halted = true;
     } else if (m.t === 'tempo') setTempo(m.bpm);
     else if (m.t === 'beat' && !halted) {
@@ -52,12 +54,12 @@ export function createMidi({ worlds, now }) {
       setTempo(m.bpm);
       if (cue) {
         cue = false;
-        for (const w of seqs()) {
-          const playing = w.tempo.playing();
-          if (!(w.tempo.armed?.() || playing || stopped.has(w))) continue;
+        for (const w of seqs()) each(() => {
+          const playing = !!w.tempo.playing?.();
+          if (!(w.tempo.armed?.() || playing || stopped.has(w))) return;
           if (playing) w.tempo.play(false);
           w.tempo.play(true);
-        }
+        });
         stopped = new Set();
       }
     }

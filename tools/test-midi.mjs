@@ -49,12 +49,11 @@ test('start waits for the first beat', () => {
 });
 
 test('start runs armed, playing and stopped-by-midi worlds only', () => {
-  const w1 = fake({ armed: true }), w2 = fake({ armed: false, playing: true }), w3 = fake({ armed: false }), w4 = fake({ armed: false, playing: true });
+  const w1 = fake({ armed: true }), w2 = fake({ armed: false, playing: true }), w3 = fake({ armed: false }), w4 = fake({ armed: false });
   const r = rig([w1, w2, w3, w4]);
-  w2.on = false; w2.on = true;
-  r.m.message({ t: 'stop', ago: 0 });                      // прошлый Stop: останавливает играющих 2 и 4
-  assert.equal(w2.on, false); assert.equal(w4.on, false);
-  w2.on = true;                                            // 2 включили руками до Start
+  r.m.message({ t: 'stop', ago: 0 });                      // прошлый Stop: останавливает только 2
+  assert.equal(w2.on, false);
+  w4.on = true;                                            // 4 включили руками после Stop: не в наборе, но играет
   r.m.message({ t: 'start', ago: 0 });
   beat(r, 0, 10);
   const ran = (w) => w.calls.some((c) => c[0] === 'play' && c[1] === true);
@@ -122,4 +121,35 @@ test('due plays the first late step now, skips others', () => {
   assert.equal(due(0.98, 1, false), null);
   assert.equal(due(0.96, 1, true), null);
   assert.equal(due(1.5, 1, false), 1.5);
+});
+
+test('a world without play/playing does not break start and stop', () => {
+  const bad = { tempo: { get: () => 120, set() {} } }, odd = { tempo: { get: () => 120, set() {}, play() { throw new Error('boom'); }, playing: () => true } };
+  const a = fake({ armed: true, playing: true });
+  const r = rig([bad, odd, a]);
+  r.m.message({ t: 'stop', ago: 0 });
+  assert.equal(a.on, false);
+  r.m.message({ t: 'start', ago: 0 });
+  beat(r, 0, 10);
+  assert.equal(a.on, true);
+});
+
+test('repeated stop keeps who was playing', () => {
+  const a = fake({ armed: false, playing: true });
+  const r = rig([a]);
+  r.m.message({ t: 'stop', ago: 0 }); r.m.message({ t: 'stop', ago: 0 });
+  r.m.message({ t: 'start', ago: 0 });
+  beat(r, 0, 10);
+  assert.equal(a.on, true);
+});
+
+test('beats after stop are ignored until the next start', () => {
+  const a = fake({ armed: true });
+  const r = rig([a]);
+  r.m.message({ t: 'stop', ago: 0 });
+  beat(r, 3, 10);
+  assert.equal(r.m.grid(), null); assert.deepEqual(a.calls, []);
+  r.m.message({ t: 'start', ago: 0 });
+  beat(r, 0, 11);
+  assert.ok(r.m.grid()); assert.equal(a.on, true);
 });
