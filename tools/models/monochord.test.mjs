@@ -107,3 +107,12 @@ test('Monochordum: кубик с зерном повторяем, подстав
   assert.ok(many.some((s) => s.str.some((q) => q.sus)));
   assert.ok(many.every((s) => s.wind === 0 || (s.wind >= 0.15 && s.wind <= 0.5)));
 });
+
+test('Monochordum: swingAt совпадает со stepDur (сдвиг нечётного шага, чётный на месте)', () => {
+  const m = createModel(); m.setAutoPar('div', 1); m.setAutoPar('swing', 0.4);
+  const sec = 60 / m.state.auto.bpm / 2;
+  assert.equal(m.swingAt(0), 0);
+  assert.ok(near(m.swingAt(1), m.stepDur(0) - sec) && m.swingAt(1) > 0);
+  assert.equal(m.swingAt(2), 0);
+  assert.equal(m.perBeat(), 2); m.setAutoPar('div', 2); assert.equal(m.perBeat(), 3);
+});

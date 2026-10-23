@@ -15,7 +15,7 @@ export function createEngine(T, model, ver) {
 
   function retune(i) { const s = str[i]; send({ t: 'tune', i, f: model.hzOf(i), bright: clamp(s.bright * 0.5 + fx.bright * 0.5), decay: clamp(s.decay * 0.5 + fx.decay * 0.5), level: s.level }); }
   function build(ctx, input) {
-    actx = ctx;
+    actx = ctx; lastAt = -1; clock.next = 0;             // новый контекст (restartAudio): время старого не годится — часы встают заново
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const pre = g(1), mix = g(1), out = g(2.2), body = g(0), hallSend = g(0), h = T.hall();   // струны → (сухо + дека) → mix → выход; mix → зал → выход
     pre.connect(mix);
@@ -85,13 +85,18 @@ export function createEngine(T, model, ver) {
     for (const h of hits) send({ t: 'pluck', i: h.i, pos: h.pos, vel: h.vel, at: t + h.dt });
     setTimeout(() => heard({ hit: true }), Math.max(0, (t - actx.currentTime) * 1000));
   }
+  let lastAt = -1;                                     // время последнего поставленного шага: сетка прыгнула назад — шаг, что не позже его, пропускаем
   function autoSchedule() {
     if (!auto.on || !actx || !ready) return;
     const now = actx.currentTime, ahead = now + 0.2;
     if (!clock.next) clock.next = now + 0.05;
+    const align = () => { const g = T.midiGrid(); if (g) clock.next = T.stepTime(g, clock.step, model.perBeat()); };   // сетка MIDI-часов ведёт шаги; пропала — идём дальше своим темпом
+    align();
     while (clock.next < ahead) {
-      if (clock.next > now + 0.003) { const hits = model.autoStep(clock.step); if (hits) strumAt(clock.next, hits); }   // опоздавший шаг пропускаем; chance — в модели
-      clock.next += model.stepDur(clock.step); clock.step++;
+      const g = T.midiGrid(), t = T.due(g ? clock.next + model.swingAt(clock.step) : clock.next, now, clock.step === 0);   // опоздавший шаг пропускаем (первый после пуска — сразу)
+      if (t !== null && t > lastAt) { lastAt = t; const hits = model.autoStep(clock.step); if (hits) strumAt(t, hits); }   // chance — в модели
+      if (!g) clock.next += model.stepDur(clock.step);
+      clock.step++; align();
     }
   }
   T.onTick(autoSchedule);                              // таймер 25 мс + метроном из звукового потока — в фоне шаги не пропадают
@@ -103,7 +108,7 @@ export function createEngine(T, model, ver) {
     else if (e.t === 'bow') { send({ t: 'bow', i: e.i, amp: e.amp }); if (e.amp > 0) { setLive(true); lastSound = performance.now(); } }
     else if (e.t === 'sus') { send({ t: 'sus', i: e.i, on: e.on }); if (e.on) wake(); }
     else if (e.t === 'wind') { send({ t: 'wind', amt: e.amt }); if (e.amt > 0.01) wake(); }
-    else if (e.t === 'auto') { clock.next = 0; clock.step = 0; if (e.on) wake(); }
+    else if (e.t === 'auto') { clock.next = 0; clock.step = 0; lastAt = -1; if (e.on) wake(); }
     else if (e.t === 'fx') applyFx();
   }
 

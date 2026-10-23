@@ -25,7 +25,7 @@ T.registerWorld(7, {
   draw: view.draw, down(f) { engine.start(); view.down(f); }, move: view.move, up: view.up,
   dice: model.dice, clear() { T.lfoClear('mono-wind'); model.clear(); },   // корзина: и порывы ветра снимаются
   snapshot: model.snapshot, restore: model.restore, sounding: model.sounding,
-  tempo: { get: () => auto.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => model.setAuto(on), playing: () => auto.on },
+  tempo: { get: () => auto.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => model.setAuto(on), playing: () => auto.on, armed: () => false },
 });
 window.t2d.mono = {
   str, fx, geo: () => geo(T), setFx: (k, v) => view.fx.set(k, v), setWind: model.setWind, auto, earth: () => earthG(geo(T)),

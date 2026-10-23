@@ -53,6 +53,8 @@ export function createModel({ scale = { on: false, root: 0, snap: (s) => s }, rn
   const setAutoPar = (k, v) => { auto[k] = v; };          // div, pattern, strength, swing — читаются на каждом шаге
   const stepSec = () => 60 / auto.bpm / DIVS[auto.div][0];
   const stepDur = (step) => stepSec() * (step % 2 === 0 ? 1 + auto.swing * 0.5 : 1 - auto.swing * 0.5);   // swing: чётные длиннее
+  const perBeat = () => DIVS[auto.div][0];                // шагов на долю — сетка MIDI-часов считает от него
+  const swingAt = (step) => (step % 2 ? auto.swing * 0.5 * stepSec() : 0);   // сдвиг нечётного шага от сетки (чётный на месте)
   function autoStep(step) {                             // одно касание Земли: струны по очереди, с промежутком; null — шаг пропущен (chance)
     if (!(rng() < fx.chance)) return null;
     const p = auto.pattern, up = p === 1 && step % 2 === 1, acc = step % (DIVS[auto.div][0] * 4) === 0 ? 1.15 : 1, vel = clamp(auto.strength * acc, 0.15, 1);
@@ -80,7 +82,7 @@ export function createModel({ scale = { on: false, root: 0, snap: (s) => s }, rn
   }
 
   return {
-    state, hzOf, snapR, stepDur, autoStep,
+    state, hzOf, snapR, stepDur, perBeat, swingAt, autoStep,
     pluck, harm, bow, setSus, toggleSus, setBridge, setString, meter, setWind, toggleWind, setFx, loadFx, setAuto, setBpm, setAutoPar,
     dice, clear, snapshot, restore, sounding,
     tick(dt) { state.time += dt; },                     // своего времени у струн нет: часы автострама — в engine
