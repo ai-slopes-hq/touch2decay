@@ -9,15 +9,17 @@
 #include "../worlds/oceanus/world.hpp"
 #include "../worlds/goetia/world.hpp"
 #include "../worlds/monochord/world.hpp"
+#include "../worlds/horologium/world.hpp"
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
 static oceanus::Oceanus ocean(host.scale());
 static goetia::World goe(host.scale());
 static monochord::World mono(host.scale());
+static horologium::World horo(host.scale());
 static sdk::World* worlds[Host::SLOTS] = {};
 static double args[64];
-static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59, Monochordum — 52
+static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59, Monochordum — 52, Horologium — 47
 static constexpr int STR_CAP = 1 << 16;
 static char str[STR_CAP];
 
@@ -45,6 +47,9 @@ API void t2d_init(double sr, unsigned seed) {
   mono.prepare(sr, seed);
   worlds[7] = &mono;
   host.add(7, &mono);
+  horo.prepare(sr, seed);
+  worlds[9] = &horo;
+  host.add(9, &horo);
 }
 API double* t2d_args() { return args; }
 API void t2d_action(int slot, int kind, int i, const double* a, int n) {

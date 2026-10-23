@@ -1,11 +1,11 @@
-// Тесты колеса Horologium без браузера: horo-worklet.js грузится в vm с заглушками AudioWorklet.
+// Тесты колеса Horologium без браузера: эталонный worklet (tools/ref/horo-worklet.js, прежний horo-worklet.js) в vm с заглушками AudioWorklet.
 //   node --test tools/test-horo.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const SRC = readFileSync(new URL('../horo-worklet.js', import.meta.url), 'utf8');
+const SRC = readFileSync(new URL('./ref/horo-worklet.js', import.meta.url), 'utf8');   // эталон прежнего worklet (колесо теперь в ядре — tools/test-horo-core.mjs)
 const FS = 48000, BLK = 128;
 
 function seeded(seed = 12345) {
