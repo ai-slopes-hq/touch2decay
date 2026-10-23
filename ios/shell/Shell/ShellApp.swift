@@ -7,6 +7,7 @@ import WebKit
 struct ShellApp: App {
   @StateObject var midi = Midi()
   init() {
+    _ = Log.shared
     let s = AVAudioSession.sharedInstance()
     try? s.setCategory(.playback, mode: .default, options: [])
     try? s.setActive(true)
@@ -28,7 +29,9 @@ struct Web: UIViewRepresentable {
     let c = WKWebViewConfiguration()
     c.allowsInlineMediaPlayback = true
     c.mediaTypesRequiringUserActionForPlayback = []
-    c.userContentController.add(ClockBridge(midi: midi), name: "t2dClock")   // страница → часы наружу (lead)
+    let bridge = ClockBridge(midi: midi)
+    c.userContentController.add(bridge, name: "t2dClock")   // страница → часы наружу (lead)
+    c.userContentController.add(bridge, name: "t2dLog")     // страница → лог (Log.swift)
     let w = WKWebView(frame: .zero, configuration: c)
     w.isInspectable = true                              // Safari на Mac → Разработка → iPhone
     w.scrollView.isScrollEnabled = false
@@ -45,6 +48,7 @@ final class ClockBridge: NSObject, WKScriptMessageHandler {   // ПРОБА: { t
   let midi: Midi
   init(midi: Midi) { self.midi = midi }
   func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+    if m.name == "t2dLog" { Log.shared.add("page", m.body as? String ?? "?"); return }
     guard let d = m.body as? [String: Any], let t = d["t"] as? String else { return }
     let n = { (k: String) in (d[k] as? NSNumber)?.doubleValue ?? 0 }
     midi.clockOut(t, step: Int(n("step")), bpm: n("bpm") > 0 ? n("bpm") : 120, at: n("at"))

@@ -29,6 +29,8 @@ final class ClockOut {
     let when = Midi.mach(epochMs: at)
     q.async { [self] in
       msgs += 1; last = t; show()
+      let ahead = Double(Int64(bitPattern: when &- mach_absolute_time())) * Midi.seconds(1) * 1000
+      Log.shared.add("clock", String(format: "%@ step %d bpm %.1f ahead %.0f ms running %d next %d", t, step, bpm, ahead, running ? 1 : 0, next))
       switch t {
       case "start": begin(step, bpm, when)
       case "at":
@@ -57,7 +59,11 @@ final class ClockOut {
     let d = Double(k - anchorTick) * period
     return d >= 0 ? anchorTime &+ Midi.ticks(d) : anchorTime &- Midi.ticks(-d)
   }
+  private var lastFill: UInt64 = 0
   private func fill() {
+    let now = mach_absolute_time()
+    if lastFill > 0, Midi.seconds(now &- lastFill) > 0.04 { Log.shared.add("clock", String(format: "fill late %.0f ms", Midi.seconds(now &- lastFill) * 1000)) }
+    lastFill = now
     guard running else { return }
     let horizon = mach_absolute_time() &+ Midi.ticks(0.1)
     while true {

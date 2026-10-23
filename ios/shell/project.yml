@@ -22,6 +22,8 @@ targets:
         NSBonjourServices: [_apple-midi._udp]
         NSAppTransportSecurity: { NSAllowsLocalNetworking: true }
         UILaunchScreen: {}
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
     settings:

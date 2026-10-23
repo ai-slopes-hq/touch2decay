@@ -86,7 +86,7 @@ export function createEngine(T, model) {
       }
     });
     lp1.connect(lp2).connect(vca).connect(pan).connect(bus.stabs);
-    osc[0].onended = () => { for (const n of [...osc, lp1, lp2, vca, pan]) n.disconnect(); };
+    voices++; osc[0].onended = () => { voices--; for (const n of [...osc, lp1, lp2, vca, pan]) n.disconnect(); };
     const wait = Math.max(0, (t - ctx.currentTime) * 1000);
     setTimeout(() => heard({ hit: is, dt: DT[echo.time] * stepSec() * 1000, fb: fbOf() }), wait);   // для картинки: кораблик вспыхивает, маяк светит, круги эха
     lastSound = performance.now(); setLive(true);
@@ -99,7 +99,7 @@ export function createEngine(T, model) {
   }
   let cue = false, midiPlay = false;                     // ПРОБА 0б: MIDI start пришёл — шаги ждут первую долю; midiPlay — пуск идёт из sync, а не маяком
   // ПРОБА 0б: часы наружу (оболочка ios/shell — ведущий MIDI): пуск, первый шаг такта, смена темпа, стоп — какой шаг, темп и когда его услышат (epoch, мс)
-  const pulses = []; let pulsed = null;                  // pulsed — темп последнего сообщения; null — пуска ещё не было
+  const pulses = []; let pulsed = null, voices = 0, trace = () => {};   // voices — живых ударов (лог пробы), trace — лог sync                  // pulsed — темп последнего сообщения; null — пуска ещё не было
   function heardAt(t) {                                  // время ctx → когда прозвучит из динамика, мс epoch (у оболочки — те же часы)
     const o = actx.getOutputTimestamp && actx.getOutputTimestamp();
     const p = o && o.performanceTime > 0 ? o.performanceTime + (t - o.contextTime) * 1000 : performance.now() + (t - actx.currentTime + (actx.outputLatency || actx.baseLatency || 0)) * 1000;
@@ -151,6 +151,7 @@ export function createEngine(T, model) {
     if (!clock.next) schedule();
     let e = at - (clock.next + (4 * m.n - clock.step) * s);              // доля n — шаг 4n; ошибка фазы
     e -= Math.round(e / (16 * s)) * 16 * s;                              // по модулю такта: номер шага с начала не важен
+    trace({ n: m.n, e: Math.round(e * 1000), late: Math.round((now - at) * 1000) });
     clock.next += Math.abs(e) > 0.05 ? e : e * 0.5;                      // далеко — сразу, близко — мягко
   }
   let audAt = 0;
@@ -172,7 +173,7 @@ export function createEngine(T, model) {
 
   return {
     build, on, poll, apply: applyAll, sync,
-    listen(fn) { listeners.push(fn); }, pulse(fn) { pulses.push(fn); },
+    listen(fn) { listeners.push(fn); }, pulse(fn) { pulses.push(fn); }, trace(fn) { trace = fn; }, get voices() { return voices; },
     get step() { return curStep(); }, get live() { return !!(bus && bus.live); },
   };
 }

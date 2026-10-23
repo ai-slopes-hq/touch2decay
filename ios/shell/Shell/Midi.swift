@@ -11,7 +11,7 @@ final class Midi: ObservableObject {
   @Published var last = "—"
   @Published var outInfo = "page 0"
   @Published var lead = UserDefaults.standard.bool(forKey: "lead") {
-    didSet { UserDefaults.standard.set(lead, forKey: "lead"); leading = lead; if !lead { out?.off() } }
+    didSet { UserDefaults.standard.set(lead, forKey: "lead"); leading = lead; Log.shared.add("shell", lead ? "lead" : "follow"); if !lead { out?.off() } }
   }
 
   private var client = MIDIClientRef(), port = MIDIPortRef()
@@ -48,6 +48,7 @@ final class Midi: ObservableObject {
       names.append((name?.takeRetainedValue() as String?) ?? "?")
     }
     sources = names
+    Log.shared.add("midi", "sources " + names.joined(separator: ", ") + " · outs \(MIDIGetNumberOfDestinations())")
   }
 
   private func receive(_ list: UnsafePointer<MIDIEventList>) {
@@ -70,15 +71,18 @@ final class Midi: ObservableObject {
       let n = ticks.count - 1, b = n >= 24 ? 60 * Double(n) / 24 / Midi.seconds(ticks[n] - ticks[0]) : 0
       total += 1
       if count % 24 == 0 {
+        Log.shared.add("midi", String(format: "beat %d bpm %.2f run %d", count / 24, b, run ? 1 : 0))
         emit(run ? "{t:'beat',n:\(count / 24),bpm:\(b),ago:%AGO%}" : "{t:'tempo',bpm:\(b)}", at: t)
         let k = total; DispatchQueue.main.async { self.clocks = k; if b > 0 { self.bpm = b } }
       }
       count += 1
     case 0xFA, 0xFB:
+      Log.shared.add("midi", status == 0xFA ? "start" : "continue")
       run = true; if status == 0xFA { count = 0 }
       emit("{t:'start',ago:%AGO%}", at: t)
       DispatchQueue.main.async { self.running = true; self.last = status == 0xFA ? "start" : "continue" }
     case 0xFC:
+      Log.shared.add("midi", "stop")
       run = false
       emit("{t:'stop',ago:%AGO%}", at: t)
       DispatchQueue.main.async { self.running = false; self.last = "stop" }

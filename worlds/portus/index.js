@@ -18,8 +18,17 @@ const engine = createEngine(T, model);                  // worklet нет — о
 const view = createView(T, model, engine);
 model.listen(engine.on);
 engine.listen(view.heard);
-window.t2dMidi = (m) => engine.sync(m);                 // ПРОБА 0б (ветка native): MIDI-часы из оболочки ios/shell
-engine.pulse((m) => window.webkit?.messageHandlers?.t2dClock?.postMessage(m));   // ПРОБА 0б: и обратно — оболочка ведёт MIDI-часы за Portus
+// ПРОБА 0б (ветка native): MIDI-часы из оболочки ios/shell и обратно — оболочка ведёт MIDI-часы за Portus; лог — в оболочку (t2dLog → файл и Mac)
+const shellLog = window.webkit?.messageHandlers?.t2dLog;
+const log = (o) => shellLog?.postMessage(JSON.stringify({ ms: Math.round(performance.now()), ...o }));
+window.t2dMidi = (m) => { if (m.t !== 'tempo') log({ in: m }); engine.sync(m); };
+engine.pulse((m) => { log({ out: m.t, step: m.step, bpm: m.bpm, ahead: Math.round(m.at - performance.timeOrigin - performance.now()) }); window.webkit?.messageHandlers?.t2dClock?.postMessage(m); });
+engine.trace((o) => log({ pll: o }));
+if (shellLog) setInterval(() => {                       // раз в секунду: три признака Сатурна, голоса, звук
+  const st = window.t2d.strain, c = window.t2d.ctx;
+  log({ lvl: +st.lvl.toFixed(2), work: +st.work.toFixed(1), drift: +st.drift.toFixed(3), ctx: c && c.state, ct: c && +c.currentTime.toFixed(2),
+    voices: engine.voices, live: engine.live, playing: seq.playing, bpm: seq.bpm, world: window.t2d.world, hidden: document.hidden });
+}, 1000);
 const S = model.state, { isles, luna, echo, buoy, fog, pharos, fx, seq } = S;
 
 let last = 0;
