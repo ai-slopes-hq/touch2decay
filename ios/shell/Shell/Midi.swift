@@ -27,7 +27,10 @@ final class Midi: ObservableObject {
     let net = MIDINetworkSession.default()              // сетевой MIDI: Mac → «Настройка Audio-MIDI» → Сеть
     net.isEnabled = true
     net.connectionPolicy = .anyone
-    MIDIClientCreateWithBlock("shell" as CFString, &client) { [weak self] _ in DispatchQueue.main.async { self?.connectAll() } }
+    MIDIClientCreateWithBlock("shell" as CFString, &client) { [weak self] n in
+      Log.shared.add("midi", "notify \(n.pointee.messageID.rawValue)")    // 1 setup, 2 added, 3 removed, 4 property, 5 thru, 6 serial, 7 I/O error
+      DispatchQueue.main.async { self?.connectAll() }
+    }
     MIDIInputPortCreateWithProtocol(client, "in" as CFString, ._1_0, &port) { [weak self] list, _ in self?.receive(list) }
     connectAll()
     out = ClockOut(client: client)

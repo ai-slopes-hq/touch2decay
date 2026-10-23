@@ -35,7 +35,10 @@ final class ClockOut {
       case "start": begin(step, bpm, when)
       case "at":
         guard running else { if step % 16 == 0 { begin(step, bpm, when) }; return }   // lead включили посреди игры — пуск с такта
-        period = 60 / bpm / 24; anchorTick = (step - base) * 6; anchorTime = when
+        let expected = Double(anchorTick) + Double(Int64(bitPattern: when &- anchorTime)) * Midi.seconds(1) / period   // этот момент по нашей сетке
+        let k = Grid.anchor(expected: expected, phase: (step - base) * 6)
+        if abs(Double(k) - expected) > 3 { Log.shared.add("clock", String(format: "re-anchor %.1f → %d", expected, k)) }
+        period = 60 / bpm / 24; anchorTick = k; anchorTime = when
       case "stop": halt(when)
       default: break
       }

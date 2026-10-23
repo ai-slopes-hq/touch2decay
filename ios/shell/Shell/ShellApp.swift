@@ -11,6 +11,18 @@ struct ShellApp: App {
     let s = AVAudioSession.sharedInstance()
     try? s.setCategory(.playback, mode: .default, options: [])
     try? s.setActive(true)
+    let nc = NotificationCenter.default                  // ПРОБА: что iOS делает со звуком — в лог
+    nc.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: nil) { n in
+      let u = n.userInfo ?? [:]
+      Log.shared.add("audio", "interruption type \(u[AVAudioSessionInterruptionTypeKey] ?? "?") reason \(u[AVAudioSessionInterruptionReasonKey] ?? "-") options \(u[AVAudioSessionInterruptionOptionKey] ?? "-")")
+    }
+    nc.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: nil) { n in
+      let r = n.userInfo?[AVAudioSessionRouteChangeReasonKey] ?? "?"
+      let outs = AVAudioSession.sharedInstance().currentRoute.outputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ", ")
+      Log.shared.add("audio", "route reason \(r) → \(outs)")
+    }
+    nc.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: nil) { _ in Log.shared.add("audio", "media services reset") }
+    Log.shared.add("audio", "route " + s.currentRoute.outputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ", "))
   }
   var body: some Scene {
     WindowGroup {
