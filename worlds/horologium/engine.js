@@ -3,7 +3,7 @@
 // Метры: P, F, tP (когда пришло, performance.now), strikes. Что услышано (listen): { ready } — worklet завёлся (склейка досылает модель),
 // { hits, P } — какие кольца ударили (вспышки, луч concursus — во view).
 export function createEngine(T, model, ver) {
-  const { rings, fx } = model.state;
+  const { rings, fx, clock, pend } = model.state;
   let actx = null, node = null, bus = null, ready = false, started = false, lastSound = 0;
   let Pm = 0, Fm = 0, tP = 0, strikes = 0;               // зеркало колеса из worklet: положение, скорость, когда пришло
   const queue = [], listeners = [];
@@ -11,13 +11,24 @@ export function createEngine(T, model, ver) {
   const heard = (e) => { for (const fn of listeners) fn(e); };
   const ringsMsg = () => rings.map(({ on, under, phi, lvl }) => ({ on, under, phi, lvl }));
 
+  // замок к такту MIDI: колесо идёт от часов Horologium, пока tempus = 0 и маятник не в руке; шлём при смене сетки, не каждые 25 мс
+  let lockSent = null;
+  function syncLock() {
+    if (!ready) return;                                    // узла ещё нет — после запуска досылаем (см. start)
+    const g = clock.run && clock.u === 0 && !pend.held ? T.midiGrid() : null, a = lockSent;
+    if (g ? a && a.t0 === g.t0 && a.p === g.p : !a) return;
+    lockSent = g ? { t0: g.t0, p: g.p } : null;
+    send(g ? { t: 'lock', t0: g.t0, bar: 4 * g.p } : { t: 'lock', off: true });
+  }
+  T.onTick(syncLock);                                      // таймер 25 мс + метроном из звукового потока
+
   function build(ctx, input) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const pre = g(1), out = g(2.4), hallSend = g(0), h = T.hall();
     pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
     bus = { pre, out, hallSend, hall: h, input, live: false };
-    ready = false; node = null; started = false; queue.length = 0;
+    ready = false; node = null; started = false; queue.length = 0; lockSent = null;   // новый узел — сетка заново
     applyFx();
   }
   function start() {                                       // колесо и кольца (horo-worklet.js) — когда в мир впервые зашли
@@ -35,6 +46,7 @@ export function createEngine(T, model, ver) {
       heard({ ready: true });                              // склейка: model.sendAll() — кольца, тоника, скорость
       applyFx();
       while (queue.length) node.port.postMessage(queue.shift());
+      syncLock();
     }).catch(() => { started = false; });
   }
   function setLive(on) {

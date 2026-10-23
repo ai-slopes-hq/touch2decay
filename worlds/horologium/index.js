@@ -25,7 +25,7 @@ T.registerWorld(9, {
   tick(now, dt) { model.tick(dt); view.tick(now); },     // шаг кадра хоста, как было
   draw: view.draw, down(f) { engine.start(); view.down(f); }, move: view.move, up: view.up,
   dice: model.dice, clear: model.clear, snapshot: model.snapshot, restore: model.restore, sounding: model.sounding,
-  tempo: { get: () => clock.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => { if (on) model.setRun(true); else model.stop(); }, playing: () => clock.run }, mapShot: view.mapShot,
+  tempo: { get: () => clock.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => { if (on) model.setRun(true); else model.stop(); }, playing: () => clock.run, armed: () => rings.some((r) => r.on) }, mapShot: view.mapShot,
 });
 window.t2d.horo = {
   rings, fx, clock, pend, geo: () => geo(T), setFx: (k, v) => view.fx.set(k, v), get ready() { return engine.ready; }, get live() { return engine.live; },

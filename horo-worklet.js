@@ -5,12 +5,17 @@
 // aequalis — от чистых чисел к равномерному строю (m → ближайший полутон): появляются биения, полиритм расползается.
 // materia — резонатор: 0 — дерево (коротко), 1 — металл (долго). concursus — удар сильнее, где кольца совпадают.
 // chance — вероятность удара. Спуск руками: {t:'step', d} — колесо доворачивается на d оборота за 40 мс.
+// Замок к такту MIDI: {t:'lock', t0, bar} — t0 (время контекста доли 0) и длина такта; {t:'lock', off:true} — колесо свободно.
+// Один оборот = такт; замок тянет фазу колеса к фазе такта скоростью P (±3 %) — отношения колец не трогает, все они от P.
+// Фаза прыгает к ближайшему обороту лишь при включении замка или при ошибке больше 0.1 оборота (t0 сглаживается по долям — сдвиги малы).
 // Наверх ~30/с: {t:'p', P, F, hits: [номера колец, ударившие с прошлого раза]}.
 const NR = 8;
+function wrap1(x) { return x - Math.floor(x + 0.5); }    // в [−0.5, 0.5)
+function lockRate(P, t, lock) { return 1 + Math.max(-0.03, Math.min(0.03, wrap1((t - lock.t0) / lock.bar - P))); }   // множитель скорости колеса
 class Horo extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.P = 0; this.F = 0; this.Ft = 0; this.glide = 0; this.glideN = 0; this.B = 55;
+    this.P = 0; this.lock = null; this.snap = false; this.F = 0; this.Ft = 0; this.glide = 0; this.glideN = 0; this.B = 55;
     this.mat = 0.35; this.conc = 0.4; this.chance = 1; this.aeq = 0;
     this.r = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: false, under: false, phi: 0, lvl: 0.8, x: 0, y1: 0, y2: 0, nz: 0, ek: 0, eN: 1, ea: 0, pan: -0.7 + (1.4 * i) / (NR - 1), m: i + 2, hit: 0 }));
     this.dc = [0, 0]; this.dx = [0, 0]; this.lp = [0, 0];
@@ -22,6 +27,10 @@ class Horo extends AudioWorkletProcessor {
         for (const k of ['B', 'mat', 'conc', 'chance', 'aeq']) if (d[k] != null) this[k] = d[k];
         if (d.rings) d.rings.forEach((q, i) => Object.assign(this.r[i], q));
       } else if (d.t === 'step') { this.glide += d.d; this.glideN = Math.round(0.04 * sampleRate); }
+      else if (d.t === 'lock') {
+        if (d.off) this.lock = null;
+        else { if (!this.lock) this.snap = true; this.lock = { t0: d.t0, bar: d.bar }; }
+      }
       else if (d.t === 'stop') { this.Ft = 0; this.F = 0; }
     };
   }
@@ -39,6 +48,11 @@ class Horo extends AudioWorkletProcessor {
     for (let k = 0; k < n; k++) {
       this.F += (this.Ft - this.F) * kF;
       let dP = this.F / sr;
+      if (this.lock) {
+        const t = currentTime + k / sr, err = wrap1((t - this.lock.t0) / this.lock.bar - this.P);
+        if (this.snap || Math.abs(err) > 0.1) { this.P += err; this.snap = false; }
+        else dP *= lockRate(this.P, t, this.lock);
+      }
       if (this.glideN > 0) { const g = this.glide / this.glideN; dP += g; this.glide -= g; this.glideN--; }
       const P0 = this.P; this.P += dP;
       const Fe = Math.abs(dP) * sr;                       // мгновенная скорость (и при спуске руками)
