@@ -2,7 +2,7 @@
 #pragma once
 #include <cstdint>
 
-namespace core {
+namespace sdk {
 
 struct Rng {
   uint32_t s;
@@ -16,4 +16,4 @@ struct Rng {
   }
 };
 
-}  // namespace core
+}  // namespace sdk

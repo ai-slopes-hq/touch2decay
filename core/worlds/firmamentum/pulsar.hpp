@@ -1,11 +1,11 @@
 // Firmamentum — ядро звука: пульсарный синтез, порт pulsar-worklet.js (эталон — tools/ref/pulsar-worklet.js) один в один.
 // Каждый период 1/fp начинается пульсарет — окно с синусом на форманте ff; щелчки (crepitus) и вспышки (fulgur) — поверх.
-// ГСЧ — mulberry32 (core/common/rng.hpp), вызовы в том же порядке, что в эталоне, включая короткие замыкания.
+// ГСЧ — mulberry32 (core/sdk/rng.hpp), вызовы в том же порядке, что в эталоне, включая короткие замыкания.
 #pragma once
 #include <cstdint>
 
-#include "../../common/dc.hpp"
-#include "../../common/rng.hpp"
+#include "../../sdk/dc.hpp"
+#include "../../sdk/rng.hpp"
 
 namespace firmamentum {
 
@@ -36,10 +36,10 @@ class Pulsar {
   void dust(float* L, float* R, int n);
 
   double sr_;
-  core::Rng rng_;
+  sdk::Rng rng_;
   Voice vo_[VMAX];
   double jit_ = 0, spread_ = 0.6, crep_ = 0, fulg_ = 0, act_ = 0, burst_ = 0, burstT_ = 0, hiss_[2] = {0, 0};
-  core::DcBlock dc_[2];
+  sdk::DcBlock dc_[2];
   Crackle cr_[CRMAX]; int ncr_ = 0;
   Pip pips_[PIPMAX]; int npips_ = 0;
   double ck_[CKMAX * 2]; int nck_ = 0;
