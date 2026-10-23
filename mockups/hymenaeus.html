@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Hymenaeus · mockup</title>
+<meta name="theme-color" content="#f2ede2">
 <style>
   @font-face { font-family: 'IM Fell English'; font-style: normal; src: url(../fonts/im-fell-english-latin-400-normal.woff2) format('woff2'); }
   @font-face { font-family: 'IM Fell English'; font-style: italic; src: url(../fonts/im-fell-english-latin-400-italic.woff2) format('woff2'); }
   @font-face { font-family: 'EB Garamond'; font-style: italic; src: url(../fonts/eb-garamond-latin-400-italic.woff2) format('woff2'); }
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: #f2ede2; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
 </style>
 </head>
@@ -18,7 +19,7 @@
 // Hymenaeus — статичный макет мира (без звука, не подключён к приложению).
 // Rings → Clouds: жемчужная нить (Marbles) играет случайную мелодию, кольца звенят, звон уходит в облака.
 const cv = document.getElementById('c'), g = cv.getContext('2d');
-const INK = '237,237,237', GOLD = '214,182,118';
+const INK = '44,38,30', GOLD = '168,124,48', BG = '#f2ede2';   // светлый мир: чернила по слоновой кости, золото — кольца
 const ink = (a) => `rgba(${INK},${a})`, gold = (a) => `rgba(${GOLD},${a})`;
 let W, H, S;                                    // S — масштаб от эталонного 390×844
 let seed = 7;
@@ -47,7 +48,7 @@ function topBar() {
   const B = [[152, 'lad'], [194, 'steps'], [240, 'fx'], [285, 'dice'], [324, 'undo'], [363, 'trash']];
   for (const [x, k] of B) {
     const r = k === 'fx' ? 20 : 17;
-    dot(x, y, r, 'rgba(10,10,10,.9)'); circle(x, y, r, ink(k === 'undo' ? .25 : .6), 1);
+    dot(x, y, r, 'rgba(242,237,226,.95)'); circle(x, y, r, ink(k === 'undo' ? .25 : .6), 1);
     g.strokeStyle = ink(k === 'undo' ? .3 : .85); g.lineWidth = 1.2; g.beginPath();
     if (k === 'lad') { g.moveTo(x - 6, y - 7); g.lineTo(x + 6, y - 7); g.moveTo(x - 1.5, y - 7); g.lineTo(x - 1.5, y + 8); g.moveTo(x + 1.5, y - 7); g.lineTo(x + 1.5, y + 8); }
     if (k === 'steps') { g.moveTo(x - 10, y + 7); for (let i = 0; i < 4; i++) { g.lineTo(x - 10 + i * 5, y + 7 - i * 4.5); g.lineTo(x - 5 + i * 5, y + 7 - i * 4.5); } }
@@ -148,7 +149,7 @@ function threads() {
 
 // ---------- кольца (Rings) ----------
 function band(cx, cy, R, w, a, hatch) {
-  g.fillStyle = '#000'; g.beginPath(); g.arc(cx, cy, R + w / 2, 0, TAU); g.arc(cx, cy, R - w / 2, 0, TAU, true); g.fill();
+  g.fillStyle = BG; g.beginPath(); g.arc(cx, cy, R + w / 2, 0, TAU); g.arc(cx, cy, R - w / 2, 0, TAU, true); g.fill();
   circle(cx, cy, R + w / 2, gold(a), 1.3); circle(cx, cy, R - w / 2, gold(a * .85), 1);
   if (hatch) {                                   // гравировка ободка: свет сверху-слева, тень — частой штриховкой
     g.lineWidth = .8;
@@ -196,7 +197,7 @@ function necklace() {
     const t = gap1 + .2 + i / (N - 1) * (TAU - (gap1 - gap0) - .4), x = cx + Math.cos(t) * rx, y = cy + Math.sin(t) * ry;
     const p = rnd(), rest = i === 3 || i === 9, r = (4.5 + p * 5) * S;
     if (rest) { circle(x, y, 2.2 * S, ink(.25), .8); continue; }
-    dot(x, y, r, '#000');
+    dot(x, y, r, BG);
     circle(x, y, r, ink(i === cur ? .95 : .55), 1);
     dot(x - r * .35, y - r * .35, Math.max(.7, r * .22), ink(i === cur ? .95 : .45));      // блик жемчуга
     if (i === cur) {
@@ -210,27 +211,7 @@ function necklace() {
   }
 }
 
-// ---------- факел Гименея в углу — выход на карту ----------
-function torch() {
-  const x = 356 * S, y = 828 * S;
-  g.save(); g.translate(x, y); g.rotate(-0.32);
-  // древко
-  g.strokeStyle = ink(.7); g.lineWidth = 1.1;
-  g.beginPath(); g.moveTo(-3, 0); g.lineTo(-4.5, -58 * S); g.lineTo(4.5, -58 * S); g.lineTo(3, 0); g.stroke();
-  for (let i = 1; i < 6; i++) { g.beginPath(); g.moveTo(-4, -i * 9 * S - 2); g.lineTo(4, -i * 9 * S + 2); g.stroke(); }   // обмотка
-  // чаша
-  g.beginPath(); g.moveTo(-9 * S, -58 * S); g.lineTo(9 * S, -58 * S); g.lineTo(5 * S, -66 * S); g.lineTo(-5 * S, -66 * S); g.closePath(); g.stroke();
-  // пламя — языки линиями, к центру карты (вверх-вправо)
-  const fy = -66 * S;
-  const gr = g.createRadialGradient(0, fy - 16 * S, 0, 0, fy - 16 * S, 44 * S); gr.addColorStop(0, gold(.3)); gr.addColorStop(1, gold(0));
-  g.fillStyle = gr; g.beginPath(); g.arc(0, fy - 16 * S, 44 * S, 0, TAU); g.fill();
-  g.strokeStyle = gold(.9); g.lineWidth = 1.1;
-  const tongue = (w, h, k, a) => { g.strokeStyle = gold(a); g.beginPath(); g.moveTo(-w * S, fy); g.bezierCurveTo(-w * 1.4 * S, fy - h * .45 * S, k * S, fy - h * .6 * S, k * S, fy - h * S);
-    g.bezierCurveTo(k * S + w * .2 * S, fy - h * .55 * S, w * 1.4 * S, fy - h * .4 * S, w * S, fy); g.stroke(); };
-  tongue(8, 34, 3, .9); tongue(5, 24, -2, .7); tongue(3, 15, 1, .55);
-  for (let i = 0; i < 4; i++) dot((-4 + i * 3.5) * S, fy - (40 + i * 6) * S, .8, gold(.5 - i * .1));   // искры
-  g.restore();
-}
+// ---------- предмет в углу (выход на карту) — на выбор автора ----------
 
 // ---------- подписи макета (в игре — только пока тянешь) ----------
 function labels() {
@@ -245,9 +226,9 @@ function draw() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   W = innerWidth; H = innerHeight; S = Math.min(W / 390, H / 844);
   cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  g.fillStyle = BG; g.fillRect(0, 0, W, H);
   g.save(); g.translate((W - 390 * S) / 2, (H - 844 * S) / 2);   // сцена по центру на широком экране
-  stars(); clouds(); threads(); necklace(); rings(); torch(); labels();
+  clouds(); threads(); necklace(); rings(); labels();
   g.restore();
   topBar();
 }
