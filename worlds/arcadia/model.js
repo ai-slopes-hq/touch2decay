@@ -138,7 +138,8 @@ export function createModel({ scale = { on: false, snap: (s) => s, root: 0 }, rn
   const tAt = new Array(VMAX).fill(0);
   const listeners = [];
   const emit = (e) => { for (const fn of listeners) fn(e); };
-  const act = (kind, i = 0, a = []) => post({ t: 'action', slot: SLOT, kind, i, a });
+  let batch = false;                                    // restore: в ядро — одной сценой, не россыпью действий
+  const act = (kind, i = 0, a = []) => (batch ? 0 : post({ t: 'action', slot: SLOT, kind, i, a }));
 
   const zAt = (u, v) => bil(state.land.z, u, v);
   const lakeAt = (u, v) => bil(state.land.lake, u, v);
@@ -216,11 +217,16 @@ export function createModel({ scale = { on: false, snap: (s) => s, root: 0 }, rn
   const snapshot = () => JSON.stringify({ seed: state.land.seed, t: travellers.map((t) => Object.fromEntries(T_KEYS.map((k) => [k, t[k]]))), fx });
   function restore(js) {
     const st = JSON.parse(js);
-    clear();
-    if (st.seed !== state.land.seed) newLand(st.seed);
-    for (const q of st.t) addT(q.u, q.v, q);
-    loadFx(st.fx);
+    batch = true;
+    try {
+      clear();
+      if (st.seed !== state.land.seed) newLand(st.seed);
+      for (const q of st.t) addT(q.u, q.v, q);
+      loadFx(st.fx);
+    } finally { batch = false; }
+    sendScene();
   }
+  function sendScene() { wipe = fxAt = post({ t: 'restore', slot: SLOT, js: snapshot() }); tAt.fill(wipe); }
 
   function sync(m, applied) {                           // зеркало ядра → state; applied — сколько сообщений ядро уже применило
     if (applied >= fxAt) { let ch = false; FX_KEYS.forEach((k, i) => { if (fx[k] !== m[i]) { fx[k] = m[i]; ch = true; } }); if (ch) emit({ t: 'fx' }); }
@@ -232,7 +238,7 @@ export function createModel({ scale = { on: false, snap: (s) => s, root: 0 }, rn
       if (t) T_KEYS.forEach((k, j) => { t[k] = m[o + 1 + j]; });
     }
   }
-  function bind(fn) { post = fn; wipe = fxAt = post({ t: 'restore', slot: SLOT, js: snapshot() }); tAt.fill(wipe); }   // новый узел ядра: сцена целиком
+  function bind(fn) { post = fn; sendScene(); }        // новый узел ядра: сцена целиком
 
   return {
     state, zAt, lakeAt, routeOf, root, semiOf, hzOf,
