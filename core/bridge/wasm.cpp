@@ -19,6 +19,8 @@ static char str[STR_CAP];
 namespace std { inline namespace __2 {
 [[noreturn]] void __libcpp_verbose_abort(const char*, ...) noexcept { __builtin_trap(); }
 } }
+// старый emscripten (3.1.6): abort → _Exit → импорт WASI proc_exit; модуль без импортов — тоже ловушка
+extern "C" void _Exit(int) { __builtin_trap(); }
 
 #define API extern "C" __attribute__((used))
 static sdk::World* at(int slot) { return (slot >= 0 && slot < Host::SLOTS) ? worlds[slot] : nullptr; }
