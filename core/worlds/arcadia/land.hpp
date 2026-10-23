@@ -5,6 +5,7 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
+#include "../../sdk/jsmath.hpp"
 #include "../../sdk/rng.hpp"
 
 namespace arcadia {
@@ -13,20 +14,7 @@ constexpr int GX = 80, GY = 160, NG = GX * GY;
 constexpr double ASP = 3.2;                             // страна вглубь в 3.2 раза длиннее, чем вширь
 constexpr double TAU = 6.283185307179586;               // Math.PI * 2
 
-// Math.hypot(a, b) как в V8 (Kahan по нормированным): обычный sqrt(a² + b²) расходится в последнем бите на трети чисел
-inline double jsHypot(double a, double b) {
-  a = std::fabs(a); b = std::fabs(b);
-  if (a != a || b != b) return (a == INFINITY || b == INFINITY) ? INFINITY : NAN;
-  double m = 0;
-  if (a > m) m = a;
-  if (b > m) m = b;
-  if (m == INFINITY) return INFINITY;
-  if (m == 0) return 0;
-  double sum = 0, comp = 0;
-  const double xs[2] = {a, b};
-  for (double x : xs) { const double n = x / m, s = n * n - comp, p = sum + s; comp = (p - sum) - s; sum = p; }
-  return std::sqrt(sum) * m;
-}
+using sdk::jsHypot;                                     // Math.hypot V8 — core/sdk/jsmath.hpp
 inline double clampd(double x, double a = 0, double b = 1) { return x < a ? a : x > b ? b : x; }   // Math.min(b, Math.max(a, x))
 inline double dist(double u0, double v0, double u1, double v1) { return jsHypot(u1 - u0, (v1 - v0) * ASP); }
 double bil(const float* arr, double u, double v);       // билинейно по сетке, края прижаты
