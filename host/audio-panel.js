@@ -1,4 +1,4 @@
-// панель «audio» — тап по кнопке громкости (тянуть — по-прежнему громкость): tempo мира, stop, restart audio, stable audio
+// панель «audio» — тап по кнопке громкости (тянуть — по-прежнему громкость): tempo мира, stop, restart audio, stable audio, midi clock (где есть Web MIDI)
 import { audioPref, ctx, restartAt, restartAudio } from './audio.js';
 import { link, tempoFrom, toggleStable } from './concordia.js';
 import { dot, g, hairBox, ink, mapText, paper, ring, text, W } from './draw.js';
@@ -7,15 +7,17 @@ import { cur, nav } from './registry.js';
 import { F, TAP_MOVE, TAP_MS } from './touch.js';
 import { btnPos, CLR_R } from './ui-top.js';
 import { clamp } from './util.js';
+import { midiIn, toggleWebMidi, webMidi } from './webmidi.js';
 
 export let audioPanel = null;                   // { w } — открыта у мира w
 export function setAudioPanel(p) { audioPanel = p; }
 const ROWS = [['tempo', 'tempo'], ['stop', 'stop'], ['restart', 'restart audio'], ['stable', 'stable audio']];
+const rowsNow = () => (webMidi() ? [...ROWS, ['midi', 'midi clock']] : ROWS);   // на iPhone Web MIDI нет — часы даёт оболочка
 const ROW_H = 44;
 export function panelGeo() {
   const b = btnPos('vol'), w = 230, x = clamp(b.x - 34, 12, W - w - 12), top = b.y + CLR_R + 12;
-  const rows = ROWS.map(([k, label], i) => ({ k, label, y: top + 34 + i * ROW_H + ROW_H / 2 }));
-  return { x, w, top, h: 34 + ROWS.length * ROW_H + 8, rows, tx0: x + 88, tx1: x + w - 82 };
+  const rows = rowsNow().map(([k, label], i) => ({ k, label, y: top + 34 + i * ROW_H + ROW_H / 2 }));
+  return { x, w, top, h: 34 + rows.length * ROW_H + 8, rows, tx0: x + 88, tx1: x + w - 82 };
 }
 // часы мира: tempo {get, set, play?, playing?, min?, max?}; у мира без часов — null
 const clockOf = (w) => (w.tempo && w.tempo.get ? w.tempo : null);
@@ -42,6 +44,7 @@ export function panelDown(f) {
   else if (k === 'stop') { if (t && t.play) t.play(!t.playing()); else w.clear(); }   // часы — стоп / пуск; нет часов — заглушить (отмена вернёт)
   else if (k === 'restart') { if (ctx) restartAudio(); }
   else if (k === 'stable') toggleStable();
+  else if (k === 'midi') toggleWebMidi();
   return true;
 }
 export function panelMove(f) {                  // tempo: тянешь вбок; общий темп — у всех миров
@@ -87,6 +90,15 @@ function drawAudioPanel0() {
       g.strokeStyle = ink(0.5 + 0.5 * k); g.lineWidth = 1.1; g.beginPath(); g.arc(bx, r.y, 8, -0.3, Math.PI * 1.6); g.stroke();
       const ax = bx + 8 * Math.cos(-0.3), ay = r.y + 8 * Math.sin(-0.3);
       g.beginPath(); g.moveTo(ax - 4, ay - 1); g.lineTo(ax, ay); g.lineTo(ax + 1, ay - 4.5); g.stroke();
+      continue;
+    }
+    if (r.k === 'midi') {                       // часы по Web MIDI: переключатель; под ним — вход или почему нет
+      const st = midiIn.state, lit = st === 'on' || st === 'wait';
+      text(r.label, P.x + 16, r.y - (st === 'off' ? 0 : 6), 14, lit ? 0.95 : 0.75);
+      const nm = midiIn.names[0] || '', note = st === 'wait' ? 'asking…' : st === 'denied' ? 'not allowed' : st === 'on' ? (nm ? (nm.length > 22 ? nm.slice(0, 21) + '…' : nm) : 'no device') : '';
+      if (note) mapText(note, P.x + 16, r.y + 9, 10, 0.45, 'left');
+      ring(bx, r.y, 9, lit ? 0.9 : 0.45, 1.1);
+      if (st === 'on') dot(bx, r.y, 4.5, 0.9);
       continue;
     }
     const st = audioPref.stable;                // stable audio: переключатель

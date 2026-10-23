@@ -1465,6 +1465,37 @@ async def sc_arcadia(p):                           # Arcadia: странник �
     await p.shot('arcadia-map')
 
 
+async def sc_webmidi(p):                          # компьютер / Android: часы по Web MIDI — строка «midi clock» в панели audio; вход подделан, тики с отметками времени
+    await p.tap(195, 420); await p.pg.wait_for_timeout(300)           # тап — звук
+    await p.js("""()=>{
+      const inp = { name: 'Fake Clock', state: 'connected', onmidimessage: null };
+      window.__inp = inp;
+      window.__send = (b, ts) => inp.onmidimessage && inp.onmidimessage({ data: new Uint8Array([b]), timeStamp: ts, target: inp });
+      navigator.requestMIDIAccess = async () => ({ inputs: new Map([['a', inp]]), onstatechange: null });
+    }""")
+    await p.js('()=>{t2d.go(13); t2d.worlds[13].dice(); t2d.worlds[13].tempo.play(true)}'); await p.pg.wait_for_timeout(300)   # Portus запускали руками
+    await p.js('()=>t2d.worlds[13].tempo.play(false)'); await p.pg.wait_for_timeout(300)
+    b = await p.js("()=>t2d.btnPos('vol')"); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(200)
+    P = await p.js('()=>t2d.panelGeo()'); row = {r['k']: r['y'] for r in P['rows']}
+    assert 'midi' in row, f'Web MIDI is there — the midi clock row: {list(row)}'
+    await p.tap(P['x'] + P['w'] / 2, row['midi']); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>!!window.__inp.onmidimessage'), 'midi clock on — the input is listened to'
+    await p.shot('webmidi')
+    await p.js("""()=>{ const d = 500 / 24; let k = 0;
+      __send(0xFA, performance.now());
+      window.__mi = setInterval(() => { const now = performance.now(); for (let i = 0; i < 24; i++) __send(0xF8, now - (23 - i) * d); }, 500); }""")
+    await p.pg.wait_for_timeout(3000)
+    g = await p.js('()=>T2D.midiGrid()'); on = await p.js('()=>t2d.worlds[13].tempo.playing()'); bpm = await p.js('()=>t2d.worlds[13].tempo.get()')
+    print('  grid p:', g and round(g['p'], 4), 'portus playing:', on, 'bpm:', bpm)
+    assert g and abs(g['p'] - 0.5) < 0.01, f'the grid follows 120 bpm: {g}'
+    assert on and abs(bpm - 120) < 1, f'Start runs Portus at the clock tempo: {on} {bpm}'
+    await p.js("()=>{clearInterval(window.__mi); __send(0xFC, performance.now())}"); await p.pg.wait_for_timeout(400)
+    assert not await p.js('()=>t2d.worlds[13].tempo.playing()'), 'Stop halts Portus'
+    await p.tap(P['x'] + P['w'] / 2, row['midi']); await p.pg.wait_for_timeout(200)
+    assert not await p.js('()=>!!window.__inp.onmidimessage'), 'midi clock off — the input is let go'
+    assert await p.js("()=>JSON.parse(localStorage.getItem('t2d-audio')).midi") is False
+
+
 async def sc_midi(p):                             # ведомый по MIDI: Start пускает миры, которые запускали руками в этой сессии (и мир на экране, если в нём узор); Natura со стартовым патчем, которую не трогали, молчит; включённая посреди игры — встаёт на сетку; Stop — все стоят, следующий Start возвращает набор
     await p.tap(195, 420); await p.pg.wait_for_timeout(300)           # тап — звук
     await p.js('()=>{for (const n of [13, 2]) t2d.worlds[n].dice(); t2d.worlds[9].clear(); t2d.go(9)}'); await p.pg.wait_for_timeout(300)   # на экране — Horologium без колец
@@ -1766,7 +1797,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

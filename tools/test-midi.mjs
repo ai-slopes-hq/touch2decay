@@ -2,7 +2,7 @@
 //   node --test tools/test-midi.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createMidi, due, stepTime } from '../host/midi.js';
+import { clockParser, createMidi, due, stepTime } from '../host/midi.js';
 
 const fake = (o = {}) => {
   const w = { calls: [], bpm: o.bpm ?? 120, on: !!o.playing };
@@ -223,4 +223,43 @@ test('two outliers that disagree do not change p', () => {
   for (let i = 0; i < 8; i++) beat(r, i, 10 + i * 0.5);
   beat(r, 8, 15.5); beat(r, 9, 15.6);                      // пауза 2 с, потом 0.1 с — не новый темп
   assert.ok(Math.abs(r.m.grid().p - 0.5) < 1e-9, `p ${r.m.grid().p}`);
+});
+
+// Web MIDI: байты часов → те же сообщения, что шлёт оболочка iOS
+const clock = () => { const out = []; return { out, p: clockParser((m, at) => out.push({ ...m, at })) }; };
+const ticks = (c, from, n, bpm = 120) => { const d = 60 / bpm / 24; for (let i = 0; i < n; i++) c.p(0xF8, from + i * d); return from + n * d; };
+
+test('clock parser: one message per beat, tempo from the ticks', () => {
+  const c = clock();
+  let t = ticks(c, 0, 48);                                // стоят: только темп, раз в долю
+  assert.deepEqual(c.out.map((m) => m.t), ['tempo', 'tempo']);
+  assert.equal(c.out[0].bpm, 0);                          // меньше доли тиков — темп неизвестен
+  c.p(0xFA, t); t = ticks(c, t, 48);
+  const beats = c.out.filter((m) => m.t === 'beat');
+  assert.deepEqual(beats.map((m) => m.n), [0, 1]);
+  assert.ok(Math.abs(beats[0].bpm - 120) < 1e-6 && Math.abs(beats[1].at - (t - 24 * 60 / 120 / 24)) < 1e-9);
+  c.p(0xFC, t); c.p(0xFB, t + 1);                         // Stop, Continue — счёт долей не сброшен
+  ticks(c, t + 1, 1);
+  assert.deepEqual(c.out.slice(-3).map((m) => m.t), ['stop', 'start', 'beat']);
+  assert.equal(c.out.at(-1).n, 2);
+});
+
+test('clock parser: a gap over 0.5 s forgets the old tempo', () => {
+  const c = clock();
+  let t = ticks(c, 0, 48, 120);
+  c.p(0xFA, t + 2); ticks(c, t + 2, 25, 90);
+  const b = c.out.filter((m) => m.t === 'beat');
+  assert.equal(b[0].bpm, 0);                              // после паузы тиков ещё нет
+  assert.ok(Math.abs(b[1].bpm - 90) < 1e-6, `tempo after the gap: ${b[1].bpm}`);
+});
+
+test('a first beat with unknown tempo waits for the next one, tempo 0 is never set', () => {
+  const w = fake({ bpm: 100 }), r = rig([w]);
+  r.t = 10; r.m.message({ t: 'tempo', bpm: 0, ago: 0 });
+  r.m.message({ t: 'start', ago: 0 });
+  beat(r, 0, 10, 0);
+  assert.equal(r.m.grid(), null);
+  assert.ok(!w.calls.some(([k, b]) => k === 'set' && !(b > 0)));
+  beat(r, 1, 10.5, 120);
+  assert.ok(Math.abs(r.m.grid().t0 - 10) < 1e-9 && Math.abs(r.m.grid().p - 0.5) < 1e-9);
 });

@@ -29,6 +29,21 @@ export function due(t, now, first) {
   return null;
 }
 
+// байты часов (24 тика на долю) → сообщения t2dMidi, как у оболочки iOS (Midi.swift); at — секунды. Для Web MIDI (host/webmidi.js)
+export function clockParser(emit) {
+  let ticks = [], count = 0, run = false;
+  return (status, at) => {
+    if (status === 0xF8) {
+      if (ticks.length && at - ticks[ticks.length - 1] > 0.5) ticks = [];   // часы прерывались (Ableton на стопе молчит) — темп заново
+      ticks.push(at); if (ticks.length > 97) ticks.shift();
+      const n = ticks.length - 1, bpm = n >= 24 ? (60 * n) / 24 / (ticks[n] - ticks[0]) : 0;
+      if (count % 24 === 0) emit(run ? { t: 'beat', n: count / 24, bpm } : { t: 'tempo', bpm }, at);   // раз в долю, не на каждый тик
+      count++;
+    } else if (status === 0xFA || status === 0xFB) { run = true; if (status === 0xFA) count = 0; emit({ t: 'start' }, at); }
+    else if (status === 0xFC) { run = false; emit({ t: 'stop' }, at); }
+  };
+}
+
 let inst = null;
 export const midiOn = () => !!(inst && inst.grid());
 
@@ -44,6 +59,7 @@ export function createMidi({ worlds, now, current = () => null }) {
     for (const w of seqs()) each(() => { const on = !!w.tempo.playing?.(); if (on && !was.get(w)) joined.add(w); was.set(w, on); });
   }
   const setTempo = (bpm) => {
+    if (!(bpm > 0)) return;                                           // темп ещё не известен (меньше доли тиков)
     const b = Math.round(bpm * 10) / 10;
     for (const w of worlds()) if (w.tempo) each(() => { const cur = w.tempo.get ? w.tempo.get() : NaN; if (!(Math.abs(b - cur) <= TEMPO_EPS)) w.tempo.set(b); });
   };
@@ -61,7 +77,7 @@ export function createMidi({ worlds, now, current = () => null }) {
       if (on.size) stopped = on;
       grid = null; cue = false; halted = true;
     } else if (m.t === 'tempo') setTempo(m.bpm);
-    else if (m.t === 'beat' && !halted) {
+    else if (m.t === 'beat' && !halted && (m.bpm > 0 || (grid && !cue))) {   // первая доля без темпа (часы только пошли) сетку не строит — ждём следующую
       grid = nextBeat(cue ? null : grid, m.n, at, m.bpm);
       setTempo(m.bpm);
       if (cue) {

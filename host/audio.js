@@ -121,8 +121,9 @@ export function pollLevels(now) {
   lvlAt = now; if (!lvlBuf) lvlBuf = new Float32Array(256);
   for (const [n, c] of Object.entries(chans)) { c.an.getFloatTimeDomainData(lvlBuf); let e = 0; for (let i = 0; i < 256; i++) e += lvlBuf[i] * lvlBuf[i]; const r = Math.sqrt(e / 256); chanLvl[n] = Math.max(r, (chanLvl[n] || 0) * 0.82); }
 }
-export const audioPref = { stable: false };
+export const audioPref = { stable: false, midi: false };   // midi — часы по Web MIDI (host/webmidi.js)
 try { Object.assign(audioPref, JSON.parse(localStorage.getItem('t2d-audio') || '{}')); } catch (_) { /* приватный режим */ }
+export function saveAudioPref() { try { localStorage.setItem('t2d-audio', JSON.stringify(audioPref)); } catch (_) { /* приватный режим */ } }
 export let restartAt = 0;
 // перезапуск звука без потери патчей: Safari после смены выхода (USB-интерфейс, другая частота) хрипит, пока контекст не пересоздан.
 // Снимки миров → новый контекст (build пересобирает и голоса Tenebrae) → миры восстанавливаются из снимков

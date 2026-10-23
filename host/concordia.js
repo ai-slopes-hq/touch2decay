@@ -1,5 +1,5 @@
 // общие настройки (тап по солнцу на карте): связать часы (темп и пуск/стоп) и/или лад всех миров
-import { audioPref, ctx, restartAt, restartAudio } from './audio.js';
+import { audioPref, ctx, restartAt, restartAudio, saveAudioPref } from './audio.js';
 import { mapSunY } from './deck.js';
 import { dot, g, H, hairBox, ink, mapText, paper, ring, safeBot, W } from './draw.js';
 import { reading } from './fonts.js';
@@ -11,7 +11,7 @@ try { Object.assign(link, JSON.parse(localStorage.getItem('t2d-link') || '{}'));
 const saveLink = () => { try { localStorage.setItem('t2d-link', JSON.stringify(link)); } catch (_) { /* приватный режим */ } };
 export const perScl = {};                                      // свой лад у каждого мира, когда лад не общий
 // stable audio — больший буфер (latencyHint playback); звук перезапускается
-export function toggleStable() { audioPref.stable = !audioPref.stable; try { localStorage.setItem('t2d-audio', JSON.stringify(audioPref)); } catch (_) { /* приватный режим */ } if (ctx) restartAudio(); }
+export function toggleStable() { audioPref.stable = !audioPref.stable; saveAudioPref(); if (ctx) restartAudio(); }
 export function tempoFrom(n, bpm) { if (link.clock) for (const [k, w] of Object.entries(worlds)) if (+k !== n && w.tempo) w.tempo.set(bpm); }
 export function transportFrom() { /* общие часы — только темп: пуск и стоп у каждого мира свои (автор) */ }
 

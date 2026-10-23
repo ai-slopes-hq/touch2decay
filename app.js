@@ -10,6 +10,7 @@ import { MAP, READ, reading } from './host/fonts.js';
 import { drawLegenda, legenda, legGeo, setLegenda } from './host/legend.js';
 import { drawNav, goMap, navDown, WORLDS_ON } from './host/map.js';
 import { createMidi, due, stepTime } from './host/midi.js';
+import { initWebMidi } from './host/webmidi.js';
 import { mixGeo, mixMove } from './host/mixer.js';
 import { cur, HIDDEN, nav, registerWorld, worlds } from './host/registry.js';
 import { inScale, NOTES, scalePCs, scaleRoot, SCALES, scl, setRetune, snapSemi } from './host/scale.js';
@@ -2595,6 +2596,7 @@ registerWorld(1, solNiger);
 // MIDI-часы: оболочка зовёт window.t2dMidi, миры берут сетку через T.midiGrid()
 const midi = createMidi({ worlds: () => Object.values(worlds).filter((w) => w.tempo), now: () => (ctx ? ctx.currentTime : null), current: () => (nav.view === 'play' ? cur() : null) });
 window.t2dMidi = midi.message;
+initWebMidi(midi.message);                              // компьютер, Android: часы по Web MIDI
 onTick(midi.tick);
 window.T2D = {
   midiGrid: () => midi.grid(), stepTime, due, onMidi: midi.listen,
