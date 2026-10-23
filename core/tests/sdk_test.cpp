@@ -18,6 +18,7 @@
 #include "../sdk/world.hpp"
 #include "../host/host.hpp"
 #include "../host/scale.hpp"
+#include "../worlds/firmamentum/world.hpp"
 
 static int fails = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -352,9 +353,37 @@ static void scaleBasics() {
   sc.on = false; NEAR(sc.snapSemi(1.3), 1.3, 0);
 }
 
+// Firmamentum (мир SDK) нативно: модель в хосте, действия, зеркало, снимок → restore; звук пока тишина
+static Host fhost;
+static void firm() {
+  using namespace firmamentum;
+  fhost.prepare(48000, 7);
+  static Firmamentum w(fhost.scale());
+  w.prepare(48000, 7);
+  fhost.add(10, &w);
+  const double a[] = {0.5, 0.2};
+  fhost.action(10, ADD, 0, a, 2);
+  fhost.action(10, DICE, 0, nullptr, 0);
+  CHECK(w.model().count() >= 3 && w.model().count() <= 4);
+  for (int k = 0; k < 100; k++) fhost.process(128);
+  double m[MIRROR_MAX];
+  const int n = w.mirror(m, MIRROR_MAX);
+  CHECK(n == MIRROR_HEAD + w.model().count() * STAR_N);
+  CHECK(std::fabs(m[0] - 12800 / 48000.0) < 1e-12);
+  CHECK(fhost.dry(10, 0)[5] == 0.f && fhost.ret(1)[5] == 0.f);
+  const std::string js = w.snapshot();
+  static Firmamentum w2(fhost.scale());
+  w2.prepare(48000, 3);
+  w2.restore(js);
+  CHECK(w2.snapshot() == js);
+  CHECK(w.sounding());
+  w.action(CLEAR, 0, nullptr, 0);
+  CHECK(!w.sounding());
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb(); scaleBasics(); host();
+  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb(); scaleBasics(); host(); firm();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
