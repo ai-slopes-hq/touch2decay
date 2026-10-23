@@ -1386,7 +1386,7 @@ async def sc_tria(p):                              # Tria corpora: тела мо
     av = await p.js('()=>t2d.tria.geo().av[1]'); await p.tap(av['x'], av['y']); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'tap a medallion below — that body\'s sheet'
     await p.tap(200, 120); await p.pg.wait_for_timeout(150)
-    await p.js('()=>{t2d.tria.bodies[0].fixed=false}')
+    await p.js("()=>t2d.tria.model.setBody(0, 'fixed', 0)")
     pl = await p.js('()=>t2d.tria.geo().plumb'); await p.tap(pl['x'], pl['y']); await p.pg.wait_for_timeout(4000)
     assert await p.js('()=>t2d.tria.cadit'), 'tap the plumb line — gravity off'
     ys = await p.js('()=>t2d.tria.bodies.map(b=>b.y)'); print('  fallen', [round(y, 2) for y in ys]); assert min(ys) > 0.45, f'everything falls to the bottom: {ys}'

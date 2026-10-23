@@ -13,7 +13,7 @@ import { createView, geo, px } from './view.js';
 
 const T = window.T2D;
 const model = createModel({ scale: { get on() { return T.scaleOn; }, get root() { return T.scaleRoot; }, snap: (s) => T.snapSemi(s) } });
-const engine = createEngine(T, model);                  // worklet нет — обычные узлы
+const engine = createEngine(T, model);                  // мир SDK: физика и звук — ядро t2d.wasm, слот 11
 const view = createView(T, model);
 model.listen(engine.on);
 
@@ -21,7 +21,7 @@ let last = 0;
 T.registerWorld(11, {
   n: 'XI', title: 'Tria corpora', sub: 'sal · sulphur · mercurius', theme: view.theme, corner: view.corner, fx: view.fx, legend: view.legend,
   build: engine.build,
-  tick(now) { model.tick(last ? (now - last) / 1000 : 0); last = now; view.tick(now); },   // шаг физики модель обрежет сама, как хост (DT_MAX)
+  tick(now) { model.tick(last ? (now - last) / 1000 : 0); last = now; view.tick(now); },   // часы картинки; физика шагает в ядре блоком звука
   draw: view.draw, down: view.down, move: view.move, up: view.up,
   dice: model.dice, clear: model.clear, snapshot: model.snapshot, restore: model.restore, sounding: model.sounding, mapShot: view.mapShot,
 });
@@ -29,7 +29,7 @@ const B = model.state.bodies, d = (i, j) => Math.hypot(B[i].x - B[j].x, B[i].y -
 window.t2d.tria = {
   bodies: B, fx: model.state.fx, geo: () => geo(T), setFx: (k, v) => view.fx.set(k, v),
   get still() { return model.state.still; }, get lux() { return model.state.lux; }, get cadit() { return model.state.cadit; },
-  get encounters() { return engine.encounters; }, get strikes() { return engine.strikes; }, get pair() { return [...model.state.pairK]; },
+  get encounters() { return engine.encounters; }, get strikes() { return engine.strikes; }, get pair() { return [...model.state.pairK]; }, get ready() { return engine.ready; }, get core() { return engine.core; },
   fiatLux: model.fiatLux, energy: model.energy, spread: () => (d(0, 1) + d(1, 2) + d(0, 2)) / 3, dmin: () => Math.min(d(0, 1), d(1, 2), d(0, 2)),
   at: (i) => px(geo(T), B[i]), model,
 };

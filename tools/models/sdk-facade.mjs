@@ -16,8 +16,9 @@ export const hostScale = (sc) => ({
 });
 
 // facade — createModel мира, slot — его слот в ядре, actions — методы фасада, после которых синхронный порт сразу шлёт зеркало
-// wake — код action, которым мир просыпается при входе (Oceanus), — шлётся сразу после init, как enter у вошедшего мира
-export function sdkFacade(facade, slot, actions, { seed = 1, scale = null, rng = seeded(seed), async = false, wake = null, ...opts } = {}) {
+// wake — код action, которым мир просыпается при входе (Oceanus), — шлётся сразу после init, как enter у вошедшего мира;
+// heard — фасаду нужно услышанное ядра (sync(mirror, applied, [запись])) — Tria: вспышки
+export function sdkFacade(facade, slot, actions, { seed = 1, scale = null, rng = seeded(seed), async = false, wake = null, heard = false, ...opts } = {}) {
   const sc = scale ? { ...scale } : { on: false, idx: 0, root: 0 };
   let core = null, sent = 0, applied = 0;
   const queue = [];
@@ -29,7 +30,7 @@ export function sdkFacade(facade, slot, actions, { seed = 1, scale = null, rng =
     else if (d.t === 'restore') core.restore(d.slot, d.js);
   }
   const flush = () => { while (queue.length) apply(queue.shift()); };
-  const deliver = () => m.sync(core.mirror(slot), applied);
+  const deliver = () => { const h = heard ? core.heard(slot) : []; m.sync(core.mirror(slot), applied, h.length ? [h] : []); };   // heard — услышанное ядра (вспышки Tria)
   const send = (d) => { sent++; if (async) queue.push(d); else apply(d); return sent; };
   const m = facade({ scale: hostScale(sc), rng, send, ...opts });
   const wrap = (fn) => (...a) => { const r = fn(...a); if (!async) deliver(); return r; };

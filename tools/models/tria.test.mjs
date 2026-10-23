@@ -1,16 +1,24 @@
-// Тесты модели Tria corpora (worlds/tria/model.js) в Node: физика трёх тел, энергия, снимок, кубик с зерном.
-//   node --test tools/models/tria.test.mjs
+// Тесты модели Tria corpora в Node: физика трёх тел, энергия, снимок, кубик с зерном. Каждый тест — дважды: против эталонной JS-модели
+// (tools/ref/tria-model.js) и против ядра (t2d.wasm, слот 11) через фасад веба worlds/tria/model.js (порт — tria-core.mjs): у ядра физика
+// шагает блоком звука, вспышки — из его услышанного, колокола — счётчик strikes из зеркала.
+//   core/build.sh && node --test tools/models/tria.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createModel, BODY_KEYS, FX_DEF } from '../../worlds/tria/model.js';
+import { createModel as jsModel } from '../ref/tria-model.js';
+import { BODY_KEYS, FX_DEF } from '../../worlds/tria/model.js';
+import { createModel as coreModel } from './tria-core.mjs';
 import { seeded } from './util.mjs';
+
+const FACTORIES = { js: (o = {}) => jsModel(o), core: (o = {}) => coreModel(o) };
 
 const DT = 1 / 60;
 const run = (m, secs) => { for (let k = 0; k < Math.round(secs / DT); k++) m.tick(DT); };
 
+for (const [name, createModel] of Object.entries(FACTORIES)) {
+
 // Fiat lux: восьмёрка Шенсине — Монтгомери (x1 = (−0.97000436, 0.24308753), v3 = (−0.93240737, −0.86473146) при G = m = 1, период 6.32591398),
 // в модели — масштаб 0.55, G = Gc(), без земли и почти без смягчения (lux: eps² = 1e-6), decay 0 — ничего отключать не надо
-test('Fiat lux: восьмёрка держится — тела на той же кривой и энергия на месте 18 периодов', () => {
+test(`[${name}] Fiat lux: восьмёрка держится — тела на той же кривой и энергия на месте 18 периодов`, () => {
   const m = createModel(), B = m.state.bodies;
   m.fiatLux();
   assert.ok(m.state.lux && !m.state.still);
@@ -31,7 +39,7 @@ test('Fiat lux: восьмёрка держится — тела на той ж�
   assert.ok(Math.hypot(cm[0], cm[1]) < 1e-6, `центр масс в центре блюда: ${cm}`);
 });
 
-test('бросок: энергия сохраняется 20 с (кубик с зерном и бросок тела)', () => {
+test(`[${name}] бросок: энергия сохраняется 20 с (кубик с зерном и бросок тела)`, () => {
   const m = createModel({ rng: seeded(7) });
   m.dice();
   run(m, 1);                                        // первый кадр поднимает энергию нового броска до EMIN
@@ -45,7 +53,7 @@ test('бросок: энергия сохраняется 20 с (кубик с �
   assert.ok(E1 >= 0.6 * m.state.bodies.reduce((a, b) => a + b.m, 0) - 1e-6, `у броска энергия не ниже EMIN: ${E1}`);
 });
 
-test('decay садит тела в клубок; корзина замораживает', () => {
+test(`[${name}] decay садит тела в клубок; корзина замораживает`, () => {
   const m = createModel({ rng: seeded(3) });
   m.dice(); m.setFx('decay', 1);
   run(m, 40);
@@ -57,18 +65,18 @@ test('decay садит тела в клубок; корзина заморажи
   assert.deepEqual(B.map((b) => [b.x, b.y]), p);
 });
 
-test('аспекты и соединения — события для звука, вспышки в state', () => {
+test(`[${name}] аспекты и соединения — события для звука, вспышки в state`, () => {
   const m = createModel({ rng: seeded(11) }), ev = {};
   m.listen((e) => { ev[e.t] = (ev[e.t] || 0) + 1; });
   m.dice(); run(m, 10);
   assert.equal(ev.start, 1);
-  assert.equal(ev.drone, 600);
-  assert.ok(ev.bell > 3, `колокола: ${ev.bell}`);
+  if (name === 'js') { assert.equal(ev.drone, 600); assert.ok(ev.bell > 3, `колокола: ${ev.bell}`); }
+  else assert.ok(m.state.counts.strikes > 3, `колокола ядра: ${m.state.counts.strikes}`);
   assert.ok(m.state.flashes.length > 0 && m.state.flashes.length <= 30);
   assert.ok(m.state.flashes.every((f) => f.t > 0 && f.t <= m.state.time));
 });
 
-test('снимок → restore: тот же JSON, форма как была', () => {
+test(`[${name}] снимок → restore: тот же JSON, форма как была`, () => {
   const a = createModel({ rng: seeded(5) });
   a.dice(); run(a, 3); a.anchor(2);
   const js = a.snapshot(), st = JSON.parse(js);
@@ -83,7 +91,7 @@ test('снимок → restore: тот же JSON, форма как была', (
   assert.ok(b.state.bodies.every((q) => q.trail.length === 0));
 });
 
-test('кубик с зерном повторяется', () => {
+test(`[${name}] кубик с зерном повторяется`, () => {
   const a = createModel({ rng: seeded(42) }), b = createModel({ rng: seeded(42) });
   a.dice(); b.dice();
   assert.equal(a.snapshot(), b.snapshot());
@@ -93,11 +101,12 @@ test('кубик с зерном повторяется', () => {
   assert.notEqual(a.snapshot(), c.snapshot());
 });
 
-test('лад: с ладом — тоника и ступени из scale, без лада — пентатоника', () => {
+test(`[${name}] лад: с ладом — тоника и ступени из scale, без лада — пентатоника`, () => {
   const m = createModel(), b = m.state.bodies[0];
   assert.equal(m.baseHz(b), 55);                    // semi 0 − 12 → A1
   b.semi = 1; assert.equal(m.baseHz(b), 55);        // 1 → ближайшая ступень пентатоники 0
-  const on = createModel({ scale: { on: true, root: 3, snap: (s) => s } }), q = on.state.bodies[0];
+  const on = createModel({ scale: name === 'js' ? { on: true, root: 3, snap: (s) => s } : { on: true, idx: 0, root: 3 } }), q = on.state.bodies[0];
   assert.equal(on.tonic(), 3);
   assert.ok(Math.abs(on.baseHz(q) - 55 * 2 ** (3 / 12)) < 1e-9);
 });
+}
