@@ -17,7 +17,7 @@ const view = createView(T, model, engine);
 let last = 0;
 T.registerWorld(8, {
   n: 'VIII', title: 'Oceanus', sub: 'orbis terrarum', theme: view.theme, corner: view.corner, fx: view.fx, legend: view.legend,
-  build: engine.build,
+  build: engine.build, enter: model.wake,
   tick(now) { model.tick(last ? (now - last) / 1000 : 0); last = now; view.tick(now); },
   draw: view.draw, down: view.down, move: view.move, up: view.up,
   dice: model.dice, clear: model.clear, snapshot: model.snapshot, restore: model.restore, sounding: model.sounding, mapShot: view.mapShot,

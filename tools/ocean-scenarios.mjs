@@ -183,6 +183,7 @@ export function refPath(steps, { seed = SEED } = {}) {   // эталон: JS-м�
 export function corePath(steps, { seed = SEED } = {}) { // ядро: те же действия → t2d.wasm, сухой выход мира VIII
   const c = loadT2d();
   c.init(SR, seed);
+  c.action(SLOT, ACT.wake);                             // эталонный worklet считает с первого блока — как мир, в который вошли
   const L = [], R = [], meters = [];
   let count = 0;
   for (const s of steps) {

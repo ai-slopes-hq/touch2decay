@@ -14,7 +14,7 @@ export const FX_DEF = { tension: 0.45, damping: 0.4, wind: 0, tide: 0.55, hall: 
 export const LUNA_DEF = { orbit: 0.45, storm: 0, sway: 0, to: 0 };   // луна — LFO мира: орбита, рывки, качание (sway) натяжения, высоты или затухания
 // ядро: слот мира в хосте, коды action, ключи set, fx и луны, раскладка зеркала — core/worlds/oceanus/world.hpp
 export const SLOT = 8;
-export const ACT = { add: 0, drop: 1, move: 2, set: 3, fx: 4, luna: 5, push: 6, release: 7, splash: 8, clear: 9, dice: 10 };
+export const ACT = { add: 0, drop: 1, move: 2, set: 3, fx: 4, luna: 5, push: 6, release: 7, splash: 8, clear: 9, dice: 10, wake: 11 };
 export const SET_KEYS = ['lvl', 'oct', 'path', 'pinned'];
 export const FX_KEYS = Object.keys(FX_DEF), LUNA_KEYS = Object.keys(LUNA_DEF);
 export const MVOICE = ['slot', 'id', 'ang', 'rn', 'pinned', 'lvl', 'oct', 'path', 'hz', 'gain'];   // город в зеркале
@@ -163,5 +163,6 @@ export function createModel({ scale = { on: false, root: 0, snap: (s) => s }, rn
     tick, snapshot, restore, sounding: () => voices.length > 0,
     listen(fn) { listeners.push(fn); },
     sync, bind,
+    wake() { act(ACT.wake); },                          // вход в мир: кольцо в ядре оживает (до того спит — тишина, без расчёта)
   };
 }

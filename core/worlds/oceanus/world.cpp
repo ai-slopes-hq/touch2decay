@@ -11,6 +11,7 @@ void Oceanus::prepare(double sr, uint32_t seed) {
   sound_ = Ocean(sr_, seed ^ SOUND_SEED);
   c_ = 1 - std::exp(-1 / (0.05 * sr_));
   hall_ = sdk::OnePole();
+  awake_ = false;
   applyFx();                                            // как build у engine.js: параметры кольца и посыл — до первого города
 }
 
@@ -22,6 +23,7 @@ void Oceanus::applyFx() {                               // sendParams + посы
 }
 
 void Oceanus::on(const Ev& e) {
+  if (e.t != Ev::FX) awake_ = true;                     // город, палец, всплеск — кольцо оживает (FX сами не будят)
   switch (e.t) {
     case Ev::VOICE: sound_.voice(e.v->slot, e.on, model_.hz(*e.v), e.v->lvl * 0.8, e.v->path); break;
     case Ev::FX: applyFx(); break;
@@ -45,12 +47,18 @@ void Oceanus::action(int kind, int i, const double* a, int n) {
     case SPLASH: if (n >= 2) model_.splash(a[0], a[1]); break;
     case CLEAR: model_.clear(); break;
     case DICE: model_.dice(); break;
+    case WAKE: awake_ = true; break;
     default: break;
   }
 }
 
 void Oceanus::process(const sdk::Out& out, int n) {
   if (n <= 0) return;
+  if (!awake_) {                                        // спит: тишина, кольцо и луна стоят, посыл — сразу у цели
+    for (int k = 0; k < n; k++) out.L[k] = out.R[k] = out.sL[k] = out.sR[k] = 0;
+    hall_.y = hallTo_;
+    return;
+  }
   sound_.process(out.L, out.R, n);
   for (int k = 0; k < n; k++) {
     const double g = hall_.step(hallTo_, c_) * OUT;     // посыл после out мира: прежний out ×1.6 стоял и за возвратом зала

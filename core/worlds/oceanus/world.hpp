@@ -22,7 +22,8 @@ namespace oceanus {
 //   RELEASE a = [id пальца]
 //   SPLASH  a = [a, amt]
 //   CLEAR, DICE
-enum Act { ADD, DROP, MOVE, SET, FX, LUNA, PUSH, RELEASE, SPLASH, CLEAR, DICE };
+//   WAKE                                         — вход в мир: кольцо оживает (как прежний worklet, который заводился при входе)
+enum Act { ADD, DROP, MOVE, SET, FX, LUNA, PUSH, RELEASE, SPLASH, CLEAR, DICE, WAKE };
 
 // зеркало: fx [NFX], luna [NLUNA], moon (доля круга), форма кольца [N], число городов,
 // затем на город VOICE_N чисел: slot, id, ang, rn, pinned, lvl, oct, path, hz, gain (громкость голоса — свечение города)
@@ -44,6 +45,7 @@ class Oceanus : public sdk::World {
   void restore(const std::string& js) override { model_.restore(js); }
   bool sounding() const override { return model_.count() > 0; }
   const Model& model() const { return model_; }
+  bool awake() const { return awake_; }
 
  private:
   static void onEvent(void* self, const Ev& e) { static_cast<Oceanus*>(self)->on(e); }
@@ -54,6 +56,7 @@ class Oceanus : public sdk::World {
   Ocean sound_{48000, 1};
   sdk::OnePole hall_;
   double hallTo_ = 0, c_ = 0, sr_ = 48000;
+  bool awake_ = false;                                  // кольцо спит до входа в мир или первого города / пальца: тишина, физика стоит (~0.6 % ядра CPU)
 };
 
 }  // namespace oceanus

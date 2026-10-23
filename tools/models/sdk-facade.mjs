@@ -16,11 +16,12 @@ export const hostScale = (sc) => ({
 });
 
 // facade — createModel мира, slot — его слот в ядре, actions — методы фасада, после которых синхронный порт сразу шлёт зеркало
-export function sdkFacade(facade, slot, actions, { seed = 1, scale = null, rng = seeded(seed), async = false, ...opts } = {}) {
+// wake — код action, которым мир просыпается при входе (Oceanus), — шлётся сразу после init, как enter у вошедшего мира
+export function sdkFacade(facade, slot, actions, { seed = 1, scale = null, rng = seeded(seed), async = false, wake = null, ...opts } = {}) {
   const sc = scale ? { ...scale } : { on: false, idx: 0, root: 0 };
   let core = null, sent = 0, applied = 0;
   const queue = [];
-  const boot = (sd) => { core = loadT2d(); core.init(SR, sd); core.scale(sc.on, sc.idx, sc.root); sent = applied = 0; queue.length = 0; };
+  const boot = (sd) => { core = loadT2d(); core.init(SR, sd); core.scale(sc.on, sc.idx, sc.root); if (wake != null) core.action(slot, wake); sent = applied = 0; queue.length = 0; };
   boot(seed);
   function apply(d) {                                   // как apply у t2d-worklet.js
     applied++;

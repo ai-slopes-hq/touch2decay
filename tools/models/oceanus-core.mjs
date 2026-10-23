@@ -6,7 +6,7 @@ export { SLOT, ACT };
 const ACTIONS = ['addVoice', 'dropVoice', 'moveVoice', 'setVoice', 'setFx', 'loadFx', 'setLuna', 'push', 'release', 'splash', 'clear', 'dice', 'restore'];
 
 export function createModel(opts = {}) {
-  const m = sdkFacade(facade, SLOT, ACTIONS, opts);
+  const m = sdkFacade(facade, SLOT, ACTIONS, { wake: ACT.wake, ...opts });
   const voicesOf = () => { const x = m.mirror(), N = MVOICE.length; return Array.from({ length: x[HEAD - 1] }, (_, i) => Object.fromEntries(MVOICE.map((k, j) => [k, x[HEAD + i * N + j]]))); };
   m.coreVoices = voicesOf;                              // города в зеркале ядра (сейчас, без фасада)
   m.coreIds = () => voicesOf().map((v) => v.id);
