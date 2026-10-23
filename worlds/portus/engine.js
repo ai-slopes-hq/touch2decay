@@ -13,7 +13,7 @@ export function createEngine(T, model) {
   const stepSec = model.stepSec, fbOf = model.fbOf;
 
   function build(ctx, input) {
-    actx = ctx;
+    actx = ctx; lastAt = -1; clock.next = 0;                // новый контекст (restartAudio): время старого не годится — часы встают заново
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const bq = (type, f, q = 0.7) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
     const stabs = g(1), drive = ctx.createWaveShaper(), post = g(1), out = g(1.6);

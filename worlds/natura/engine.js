@@ -13,7 +13,7 @@ export function createEngine(T, model) {
   const heard = (e) => { for (const fn of listeners) fn(e); };
 
   function build(ctx, input) {
-    actx = ctx;
+    actx = ctx; lastAt = -1; clock.next = 0;                // новый контекст (restartAudio): время старого не годится — часы встают заново
     rustle = null; skiffV = null;                       // голоса старого контекста (restartAudio) — с ним и умерли; заведутся заново на новом
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const vin = g(1), pre = g(1), out = g(1.2), chOut = g(0), hp = ctx.createBiquadFilter();

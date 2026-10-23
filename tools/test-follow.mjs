@@ -29,12 +29,13 @@ function rig(world, T = {}) {
   model.listen(engine.on);
   const ctx = fakeCtx(starts, rec);
   engine.build(ctx, node());
-  const at = (t) => { ctx.currentTime = t; for (const f of ticks) f(); };
+  const at = (t) => { r.ctx.currentTime = t; for (const f of ticks) f(); };
   const run = (from, to) => { for (let t = from; t <= to + 1e-9; t += 0.025) at(t); };
   if (world === 'portus') for (let i = 0; i < 16; i++) model.place(i, 0);      // кораблик на каждом месте
   else for (let i = 0; i < 12; i++) model.state.pads.at[i] = { note: i % 8, wave: 0 };   // кувшинка на каждом месте
   const out = []; if (engine.pulse) engine.pulse((m) => out.push(m));
-  return Object.assign(r, { model, engine, ctx, at, run, out, seq: model.state.seq });
+  const rebuild = (t) => { const c = fakeCtx(starts, rec); c.currentTime = t; r.ctx = c; engine.build(c, node()); };   // restartAudio: новый контекст, время с нуля
+  return Object.assign(r, { model, engine, ctx, at, run, rebuild, out, seq: model.state.seq });
 }
 const times = (starts) => [...new Set(starts.map((t) => Math.round(t * 1e6) / 1e6))].sort((a, b) => a - b);   // у аккорда голосов много — удар один
 
@@ -77,6 +78,19 @@ for (const world of ['portus', 'natura']) {
     assert.ok(post.length >= 8, `free notes ${post.length}`);
     assert.ok(post[0] - before.at(-1) <= 0.25 + 1e-3, `first gap ${post[0] - before.at(-1)}`);   // без паузы
     for (let i = 1; i < post.length; i++) assert.ok(Math.abs(post[i] - post[i - 1] - 0.25) < 1e-3, `gap ${post[i] - post[i - 1]}`);   // без пачки
+  });
+
+  test(`${world}: a new AudioContext re-anchors the clock`, () => {
+    const r = rig(world); r.model.setBpm(120);
+    r.at(300); r.model.play(true); r.run(300, 301);
+    r.rebuild(0.5); r.starts.length = 0; r.rec.length = 0;
+    r.run(0.5, 1);
+    const ts = times(r.starts);
+    assert.ok(ts.length >= 2 && ts[0] < 0.5 + 0.125 + 0.06, `resumes within a step: ${ts[0]}`);
+    r.starts.length = 0; r.grid = { t0: 2, p: 0.5 }; r.run(1, 6);          // сетка на часах нового контекста
+    const g = times(r.starts).filter((t) => t >= 2.3);                       // номер шага идёт дальше, но время — по новой сетке
+    assert.ok(g.length >= 4, `grid notes ${g.length}`);
+    g.forEach((t) => assert.ok(Math.abs((t - 2) / 0.125 - Math.round((t - 2) / 0.125)) < 0.008, `off grid: ${t}`));
   });
 }
 
