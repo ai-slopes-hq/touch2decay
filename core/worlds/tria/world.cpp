@@ -20,6 +20,7 @@ void World::prepare(double sr, uint32_t seed) {
   model_.reset();
   rng_ = sdk::Rng(seed ^ 0x7121A11u);                   // шум шороха — свой
   shaper_.build([](double x) { return std::tanh(1.4 * x) / std::tanh(1.4); });
+  dl_ = 128 + 0.002 * sr_;
   hall_.reset(0);                                        // посыл — GainNode 0 до первого target
   vo_ = false; voStop_ = -1; quiet_ = 0;
   for (Note& no : notes_) no.on = false;
@@ -42,8 +43,8 @@ void World::startVoices() {                              // три генера�
     dVca_[i].reset(0); dPan_[i].reset(0); dMg_[i].reset(0);
     dOsc_[i].reset();
   }
-  for (float& x : ring_) x = 0;
-  ringAt_ = 0;
+  for (float& x : h2_) x = 0;
+  h2At_ = 0;
 }
 
 void World::drone() {                                    // громкость и пульс — из модели; FM по кругу — ближе источник, глубже
@@ -181,12 +182,13 @@ void World::process(const sdk::Out& out, int n) {
     for (int i = 0; i < NB; i++) { dFreq_[i].fill(fq[i], n, t_); dVca_[i].fill(vc[i], n, t_); dPan_[i].fill(pn[i], n, t_); dMg_[i].fill(mg[i], n, t_); }
     for (int k = 0; k < n; k++) {
       if (voStop_ >= 0 && t_ + k >= voStop_) break;
-      const double d2 = ring_[ringAt_];
+      const double rp = h2At_ - dl_, i0 = std::floor(rp), fr = rp - i0;   // 2 → 0: квант + 2 мс (по прямой между сэмплами)
+      const int j = static_cast<int>(i0) & 1023;
+      const double d2 = (1 - fr) * h2_[j] + fr * h2_[(j + 1) & 1023];
       const double y0 = dOsc_[0].sine((fq[0][k] + mg[2][k] * d2) / sr_);
       const double y1 = dOsc_[1].sine((fq[1][k] + mg[0][k] * y0) / sr_);
       const double y2 = dOsc_[2].sine((fq[2][k] + mg[1][k] * y1) / sr_);
-      ring_[ringAt_] = static_cast<float>(y2);
-      ringAt_ = (ringAt_ + 1) & 127;
+      h2_[h2At_] = static_cast<float>(y2); h2At_ = (h2At_ + 1) & 1023;
       const double ys[NB] = {y0, y1, y2};
       for (int i = 0; i < NB; i++) {
         double gl, gr;
@@ -203,12 +205,22 @@ void World::process(const sdk::Out& out, int n) {
     double* p2 = tmpB_;
     no.vca.fill(vc, n, t_);
     if (no.tri) no.fr.fill(p2, n, t_); else no.mg.fill(p2, n, t_);
+    double mh[128];                                      // вход FM несущей (индекс × модулятор) по кадрам блока
+    const double s0 = std::ceil(no.t0);
+    const bool first = s0 >= t_ && s0 < t_ + n;          // блок, где нота стартует
     for (int k = 0; k < n; k++) {
       const double f = t_ + k;
+      mh[k] = 0;
       if (f < no.t0 || f >= no.end) continue;           // до start и после stop генератор молчит
       double y;
       if (no.tri) y = no.car.triangle(p2[k] / sr_);
-      else { const double m = no.mod.sine(no.f * no.ratio / sr_); y = no.car.sine((no.f + p2[k] * m) / sr_); }
+      else {
+        const double m = no.mod.sine(no.f * no.ratio / sr_);
+        mh[k] = p2[k] * m;
+        double fm = mh[k];
+        if (first) { const int j = static_cast<int>(f - s0); fm = mh[j]; }   // как браузер: в кванте старта — вход с начала кванта
+        y = no.car.sine((no.f + fm) / sr_);
+      }
       const double s = y * vc[k];
       L[k] += s * no.gl; R[k] += s * no.gr;
     }

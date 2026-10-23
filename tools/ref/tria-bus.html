@@ -1,0 +1,94 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>tria bus</title>
+<!-- Сверка звука Tria в браузере: прежний engine.js на узлах Web Audio (tools/ref/tria-engine.js) с эталонной моделью (tools/ref/tria-model.js)
+     против ядра t2d.wasm (мир XI, сухой выход) — оба в OfflineAudioContext, одна сцена. Эталонная модель шагает по кванту: tick(128/sr)
+     в suspend каждого кванта (первый — до рендера), как ядро — шаг модели в начале блока; траектории одинаковые (tools/test-tria-core.mjs),
+     события звука — в те же кванты. Шум шороха у эталона — Math.random, у ядра — Rng. Запускает tools/tria-bus.py; результат — window.__res. -->
+<script type="module">
+import { createModel } from './tria-model.js';
+import { createEngine } from './tria-engine.js';
+
+const SR = 48000, SEC = 6, Q = 128;
+const scene = (b, fx, extra = {}) => JSON.stringify({ b: b.map(([x, y, vx, vy, m, semi, fixed = false, level = 0.8]) => ({ x, y, vx, vy, m, fixed, semi, level })), fx: { gravitas: 0.5, flux: 0.5, nexus: 0.35, aspectus: 0.6, decay: 0, hall: 0.35, ...fx }, still: false, lux: false, cadit: false, ...extra });
+const CASES = {
+  chaos: { js: scene([[0.3, 0.1, 0.6, -0.5, 1.2, 0], [-0.4, 0.35, -0.3, 0.7, 0.8, 7], [0.05, -0.55, 0.2, 0.3, 1.0, 12]], {}) },
+  pair: { js: scene([[0.12, 0.0, 0.0, 1.1, 1.0, 0], [-0.12, 0.0, 0.0, -1.1, 1.0, 7], [0.0, 0.7, 0.4, 0.0, 0.6, 12]], { nexus: 0.8 }) },
+  bells: { js: scene([[0.6, 0.1, -0.4, 1.4, 1.0, 0], [-0.5, -0.4, 0.9, -0.2, 0.9, 4], [0.1, 0.7, 0.8, 0.6, 1.1, 11]], { aspectus: 0.9, flux: 0.8, nexus: 0.6 }) },
+  lux: { js: scene([[0, 0.5, 0, 0, 1, 0], [0.43, -0.25, 0, 0, 1, 7], [-0.43, -0.25, 0, 0, 1, 12]], { aspectus: 0.4 }), lux: true },
+  thud: { js: scene([[0.8, 0.0, 3.0, 0.0, 1.0, 0, false, 1], [-0.6, 0.6, 0, 0, 1, 7, true, 0], [-0.6, -0.6, 0, 0, 1, 12, true, 0]], { aspectus: 0, nexus: 0 }), dbg: true },
+  bell: { js: scene([[0.45, 0.0, 0.0, 2.0, 1.0, 0, false, 1], [-0.6, 0.6, 0, 0, 1, 7, true, 0], [-0.6, -0.6, 0, 0, 1, 12, true, 0]], { aspectus: 0.2, nexus: 0.5 }), dbg: true },
+  cadit: { js: scene([[0.3, 0.1, 0.6, -0.5, 1.2, 0], [-0.4, 0.35, -0.3, 0.7, 0.8, 7], [0.05, -0.55, 0.2, 0.3, 1.0, 12]], {}, { cadit: true }) },
+};
+
+async function ref(c) {
+  const ctx = new OfflineAudioContext(2, SR * SEC, SR);
+  const T = { send: () => ctx.createGain() };            // посыл в зал — мимо (сверяем сухой выход)
+  const model = createModel(), eng = createEngine(T, model);
+  model.listen(eng.on);
+  eng.build(ctx, ctx.destination);
+  model.restore(c.js);
+  if (c.lux) model.fiatLux();
+  model.tick(Q / SR);                                     // шаг первого кванта — до рендера
+  for (let b = 1; b < (SR * SEC) / Q; b++) ctx.suspend((b * Q) / SR).then(() => { model.tick(Q / SR); ctx.resume(); });
+  const buf = await ctx.startRendering();
+  return [buf.getChannelData(0), buf.getChannelData(1)];
+}
+
+async function core(c) {
+  const ctx = new OfflineAudioContext(2, SR * SEC, SR);
+  await ctx.audioWorklet.addModule('../../t2d-worklet.js');
+  const wasm = await (await fetch('../../t2d.wasm')).arrayBuffer();
+  const node = new AudioWorkletNode(ctx, 't2d', { numberOfInputs: 4, numberOfOutputs: 2, outputChannelCount: [2, 2], processorOptions: { wasm, seed: 1, worlds: [11] } });
+  node.connect(ctx.destination, 1);
+  await new Promise((r) => { node.port.onmessage = (e) => { if (e.data.t === 'ready') r(); }; });
+  node.port.postMessage({ t: 'restore', slot: 11, js: c.js });
+  if (c.lux) node.port.postMessage({ t: 'action', slot: 11, kind: 7, i: 0, a: [] });
+  await new Promise((r) => setTimeout(r, 100));
+  const buf = await ctx.startRendering();
+  return [buf.getChannelData(0), buf.getChannelData(1)];
+}
+
+const rmsDb = (x) => 10 * Math.log10(x.reduce((s, v) => s + v * v, 0) / x.length + 1e-30);
+function bands(x) {                                       // энергия по октавам: среднее по окнам 4096 (Hann), DFT по бинам октавы
+  const N = 4096, edges = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000], out = new Array(edges.length - 1).fill(0);
+  let wins = 0;
+  for (let o = N; o + N <= x.length; o += N * 2) {
+    wins++;
+    for (let k = 1; k < N / 2; k++) {
+      const f = (k * SR) / N, bi = edges.findIndex((e, i) => f >= e && f < edges[i + 1]);
+      if (bi < 0) continue;
+      let r = 0, q = 0;
+      for (let n = 0; n < N; n += 2) { const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * n) / N), a = (2 * Math.PI * k * n) / N; r += x[o + n] * w * Math.cos(a); q -= x[o + n] * w * Math.sin(a); }
+      out[bi] += r * r + q * q;
+    }
+  }
+  return out.map((e) => 10 * Math.log10(e / wins + 1e-30));
+}
+
+window.__dbg = async (name, fx, win = 0.5) => {                     // отладка: октавы по окнам 0.5 с; fx — правка ручек сцены
+  let c = CASES[name];
+  if (fx) { const st = JSON.parse(c.js); Object.assign(st.fx, fx); c = { ...c, js: JSON.stringify(st) }; }
+  const [rL] = await ref(c), [cL] = await core(c), W = Math.round(SR * win), rows = [];
+  for (let o = 0; o + W <= rL.length; o += W) rows.push([o / SR, rmsDb(rL.subarray(o, o + W)), rmsDb(cL.subarray(o, o + W)), bands(rL.subarray(o, o + W)).map((x, i) => +(bands(cL.subarray(o, o + W))[i] - x).toFixed(1))]);
+  return rows;
+};
+window.__self = async (name, eps) => {                  // разброс самого браузера: тот же эталон, nexus × (1 + eps) — физику не трогает
+  const c = CASES[name], st = JSON.parse(c.js); st.fx.nexus *= 1 + eps;
+  const [aL] = await ref(c), [bL] = await ref({ ...c, js: JSON.stringify(st) });
+  const ba = bands(aL), bb = bands(bL);
+  return { rms: rmsDb(bL) - rmsDb(aL), octaves: ba.map((x, i) => +(bb[i] - x).toFixed(2)) };
+};
+const REF_RUNS = 4;                                       // у браузера место разрыва петли FM — случайное на каждый контекст: эталон — разброс прогонов
+window.__res = new URLSearchParams(location.search).has('dbg') ? null : (async () => {
+  const res = {};
+  for (const [name, c] of Object.entries(CASES)) {
+    if (c.dbg) continue;
+    const refs = [];
+    for (let r = 0; r < REF_RUNS; r++) { const [L, R] = await ref(c); refs.push({ rms: [rmsDb(L), rmsDb(R)], bands: bands(L) }); }
+    const [cL, cR] = await core(c);
+    res[name] = { refRms: refs.map((x) => x.rms), coreRms: [rmsDb(cL), rmsDb(cR)], refBands: refs.map((x) => x.bands), coreBands: bands(cL) };
+  }
+  return res;
+})();
+</script>
