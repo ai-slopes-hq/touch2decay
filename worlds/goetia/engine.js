@@ -17,9 +17,9 @@ export function createEngine(T, model, ver) {
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const pre = g(1), out = g(1.6), hallSend = g(0), echoSend = g(0), dl = ctx.createDelay(1.5), fb = g(0), damp = ctx.createBiquadFilter();
     dl.delayTime.value = 0.375; damp.type = 'lowpass'; damp.frequency.value = 2600;
-    pre.connect(out); pre.connect(hallSend); hallSend.connect(g(1.6)).connect(T.send('hall'));   // ×1.6 — прежний out после возврата зала
+    pre.connect(out); pre.connect(hallSend); const wet = g(1.6); wet.connect(T.send('hall'));   // ×1.6 — прежний out после возврата зала
     pre.connect(echoSend); echoSend.connect(dl); dl.connect(damp); damp.connect(fb); fb.connect(dl); damp.connect(out);
-    bus = { pre, out, hallSend, echoSend, fb, input, live: false };
+    bus = { feed: [[hallSend, wet]], pre, out, hallSend, echoSend, fb, input, live: false };
     ready = false; node = null; started = false; core = null;
     applyFx();
   }
@@ -51,6 +51,7 @@ export function createEngine(T, model, ver) {
     if (!bus || bus.live === on) return;
     bus.live = on;
     if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+    for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
   }
   setInterval(() => {
     if (!bus) return;

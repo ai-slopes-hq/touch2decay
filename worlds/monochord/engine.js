@@ -21,8 +21,8 @@ export function createEngine(T, model, ver) {
     pre.connect(mix);
     const bands = [[190, 3], [420, 4], [1100, 5]].map(([f, q]) => { const b = ctx.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = f; b.Q.value = q; pre.connect(b).connect(body); return b; });
     const post = g(1);                                  // mix → (сухо + хор) → post → выход и зал
-    body.connect(mix); mix.connect(post); post.connect(out); post.connect(hallSend); hallSend.connect(g(2.2)).connect(T.send('hall'));
-    bus = { pre, mix, post, out, body, hallSend, input, live: false, bands, ch: null };
+    body.connect(mix); mix.connect(post); post.connect(out); post.connect(hallSend); const wet = g(2.2); wet.connect(T.send('hall'));
+    bus = { feed: [[hallSend, wet]], pre, mix, post, out, body, hallSend, input, live: false, bands, ch: null };
     ready = false; node = null; started = false;
     applyFx();
   }
@@ -45,6 +45,7 @@ export function createEngine(T, model, ver) {
     if (!bus || bus.live === on) return;
     bus.live = on;
     if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+    for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
   }
   const wake = () => { start(); setLive(true); lastSound = performance.now(); };   // звук пошёл — модуль, выход
   setInterval(() => {

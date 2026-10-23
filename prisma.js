@@ -59,8 +59,8 @@ function build(ctx, input) {
   actx = ctx;
   const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
   const pre = g(1), out = g(1), hallSend = g(0);
-  pre.connect(out); pre.connect(hallSend); hallSend.connect(T.send('hall'));   // out ×1 — коэффициент прежний
-  bus = { pre, out, hallSend, input, live: false, master: g(0) };
+  pre.connect(out); pre.connect(hallSend); const wet = T.send('hall');   // out ×1 — коэффициент прежний
+  bus = { feed: [[hallSend, wet]], pre, out, hallSend, input, live: false, master: g(0) };
   bus.master.connect(pre);
   osc = null;
   applyFx();
@@ -70,6 +70,7 @@ function setLive(on) {
   if (!bus || bus.live === on) return;
   bus.live = on;
   if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+  for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
 }
 setInterval(() => { if (!bus) return; if (st.on || performance.now() - lastRing < 2500) lastSound = performance.now(); else if (performance.now() - lastSound > 9000) { setLive(false); stopOsc(); } }, 1000);
 function startOsc() {

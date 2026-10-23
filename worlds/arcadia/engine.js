@@ -25,8 +25,8 @@ export function createEngine(T, model, ver) {
     const pL = ctx.createStereoPanner ? ctx.createStereoPanner() : g(1), pR = ctx.createStereoPanner ? ctx.createStereoPanner() : g(1);
     if (pL.pan) { pL.pan.value = -0.8; pR.pan.value = 0.8; }
     d1.connect(pL).connect(chWet); d2.connect(pR).connect(chWet); chWet.connect(out);
-    mix.connect(chDry).connect(out); mix.connect(hallSend); hallSend.connect(g(1.5)).connect(T.send('hall'));   // ×1.5 — прежний out после возврата зала
-    bus = { pre, mix, out, hallSend, input, live: false, aps, phWet, phLfo, chWet, chDry, d1, d2, phOn: false, chOn: false };
+    mix.connect(chDry).connect(out); mix.connect(hallSend); const wet = g(1.5); wet.connect(T.send('hall'));   // ×1.5 — прежний out после возврата зала
+    bus = { feed: [[hallSend, wet]], pre, mix, out, hallSend, input, live: false, aps, phWet, phLfo, chWet, chDry, d1, d2, phOn: false, chOn: false };
     ready = false; node = null; started = false;
     applyFx();
   }
@@ -55,6 +55,7 @@ export function createEngine(T, model, ver) {
     if (!bus || bus.live === on) return;
     bus.live = on;
     if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+    for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
   }
   setInterval(() => {
     if (!bus) return;

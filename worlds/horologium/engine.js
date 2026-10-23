@@ -26,8 +26,8 @@ export function createEngine(T, model, ver) {
     actx = ctx;
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const pre = g(1), out = g(2.4), hallSend = g(0);
-    pre.connect(out); pre.connect(hallSend); hallSend.connect(g(2.4)).connect(T.send('hall'));   // ×2.4 — прежний out после возврата зала
-    bus = { pre, out, hallSend, input, live: false };
+    pre.connect(out); pre.connect(hallSend); const wet = g(2.4); wet.connect(T.send('hall'));   // ×2.4 — прежний out после возврата зала
+    bus = { feed: [[hallSend, wet]], pre, out, hallSend, input, live: false };
     ready = false; node = null; started = false; queue.length = 0; lockSent = null;   // новый узел — сетка заново
     applyFx();
   }
@@ -53,6 +53,7 @@ export function createEngine(T, model, ver) {
     if (!bus || bus.live === on) return;
     bus.live = on;
     if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+    for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
   }
   setInterval(() => {
     if (!bus) return;

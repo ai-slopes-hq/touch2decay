@@ -30,17 +30,18 @@ export function createEngine(T, model) {
     dlp.type = 'lowpass'; dlp.frequency.value = 2800;
     pre.connect(dSend).connect(dl); dl.connect(dlp).connect(dfb).connect(dl); dlp.connect(out);
     const rSend = g(0);                               // зал — туман: посыл в общий зал ядра; ×1.2 — прежний out после возврата зала
-    pre.connect(rSend).connect(g(1.2)).connect(T.send('hall'));
+    const wet = g(1.2); wet.connect(T.send('hall')); pre.connect(rSend);
     dlp.connect(rSend);
-    bus = { vin, hp, chOut, ch, dSend, dl, dfb, rSend, out, input, live: false, pre };
+    bus = { feed: [[rSend, wet]], vin, hp, chOut, ch, dSend, dl, dfb, rSend, out, input, live: false, pre };
     setLive(true);
     applyFx();
   }
-  // молчит дольше хвоста — мир отцеплен от выхода: его хор и задержка не считаются (меньше нагрузки, нет треска)
+  // молчит дольше хвоста — мир отцеплен от выхода и от зала ядра: его хор и задержка не считаются (меньше нагрузки, нет треска)
   function setLive(on) {
     if (!bus || bus.live === on) return;
     bus.live = on;
     if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+    for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
   }
   setInterval(() => { if (bus && !seq.playing && performance.now() - lastSound > 9000) setLive(false); }, 1000);
   function applyFx() {

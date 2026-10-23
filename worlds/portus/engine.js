@@ -30,19 +30,20 @@ export function createEngine(T, model) {
     // туман слышит и аккорды, и эхо: посыл в ревербер ядра по размеру тумана (room < 0.33 < hall < 0.66 < cathedral); смена типа — перекрёстное
     // затухание посылов за ~50 мс (applyAll). Возврат шёл через g(1) и out (1.6), у ядра возврат ×0.9 — посыл 1.6/0.9, баланс сухого и мокрого прежний
     const rSend = g(0); post.connect(rSend); dWet.connect(rSend);
-    const revs = ['room', 'hall', 'cathedral'].map((r) => { const x = g(0); rSend.connect(x).connect(T.send(r)); return x; });
+    const revs = ['room', 'hall', 'cathedral'].map((r) => { const x = g(0); x.connect(T.send(r)); return x; });
     if (!noiseBuf) { noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
     const nz = ctx.createBufferSource(); nz.buffer = noiseBuf; nz.loop = true; nz.start();     // море: шум в полосе, накатывает волнами
     const mareBp = bq('bandpass', 380, 0.5), mareLp = bq('lowpass', 1600), mareAm = g(0.55), mareG = g(0), swell = ctx.createOscillator(), swellG = g(0.45);
     swell.frequency.value = 0.09; swell.connect(swellG).connect(mareAm.gain); swell.start();
     nz.connect(mareBp).connect(mareLp).connect(mareAm).connect(mareG);
-    bus = { stabs, drive, post, out, dSend, dL, dR, fbL, fbR, lpL, lpR, wowG, dWet, rSend, revs, mareG, input, live: false, mareOn: false };
+    bus = { feed: revs.map((x) => [rSend, x]), stabs, drive, post, out, dSend, dL, dR, fbL, fbR, lpL, lpR, wowG, dWet, rSend, revs, mareG, input, live: false, mareOn: false };
     applyAll();
   }
   function setLive(on) {
     if (!bus || bus.live === on) return;
     bus.live = on;
     if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+    for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
   }
   setInterval(() => {
     if (!bus) return;

@@ -23,10 +23,10 @@ export function createEngine(T, model) {
     inp.connect(g(0.6)).connect(out);                   // сухого меньше — хор звучит из собора
     // собор — общий ревербер ядра (T.send('cathedral')): прежние свёртка со своим отзвуком и шиммер-петля ушли. Прежняя цепь:
     // send · wet · OUTK (свёртка в полосе голоса ≈ 1) — wet (0.9 + 0.5·aether) и OUTK теперь в посыле; возврат ядра ×0.9 — как у соседей
-    inp.connect(send).connect(hp).connect(T.send('cathedral'));
+    hp.connect(T.send('cathedral')); inp.connect(send);
     const n = ctx.sampleRate * 2; noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
-    bus = { inp, out, send, input, live: false };
+    bus = { feed: [[send, hp]], inp, out, send, input, live: false };
     for (const a of voices.keys()) heard({ t: 'voice', a, on: false });   // новый контекст — старые голоса остались в старом
     voices.clear();
     for (const a of angels) if (a.pinned) voiceOn(a);
@@ -36,6 +36,7 @@ export function createEngine(T, model) {
     if (!bus || bus.live === on) return;
     bus.live = on;
     if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+    for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
   }
   setInterval(() => {
     if (!bus) return;
@@ -96,7 +97,7 @@ export function createEngine(T, model) {
   function applyFx() {
     if (!bus) return;
     const t = actx.currentTime;
-    bus.send.gain.setTargetAtTime((0.35 + fx.aether * 0.5) * (0.9 + fx.aether * 0.5) * OUTK, t, 0.05);
+    bus.send.gain.setTargetAtTime((0.35 + fx.aether * 0.5) * (0.9 + fx.aether * 0.5) * OUTK / 0.9, t, 0.05);   // /0.9 — у ядра возврат ×0.9, у прежней свёртки его не было
     for (const a of angels) retune(a);
   }
   // Gloria — облако зёрен хора: короткие окна синуса на гармониках поющих ангелов, по стерео вразброс, в зал

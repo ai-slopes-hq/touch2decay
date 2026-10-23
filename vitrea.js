@@ -45,8 +45,8 @@ function build(ctx, input) {
   const gn = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
   const pre = gn(1), out = gn(1), hallSend = gn(0), lp = ctx.createBiquadFilter();
   lp.type = 'lowpass'; lp.frequency.value = 6000;
-  pre.connect(out); pre.connect(hallSend); hallSend.connect(T.send('hall'));   // out ×1 — коэффициент прежний
-  bus = { pre, out, hallSend, input, lp, live: false };
+  pre.connect(out); pre.connect(hallSend); const wet = T.send('hall');   // out ×1 — коэффициент прежний
+  bus = { feed: [[hallSend, wet]], pre, out, hallSend, input, lp, live: false };
   for (const g of glasses) {                          // бокал: возбуждение → моды (bandpass) → громкость → стерео
     const exc = gn(0), sum = gn(1), pan = ctx.createStereoPanner();
     lp.connect(exc);
@@ -69,6 +69,7 @@ function setLive(on) {
   if (!bus || bus.live === on) return;
   bus.live = on;
   if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+  for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
 }
 setInterval(() => { if (!bus) return; if (sounding()) lastSound = performance.now(); else if (performance.now() - lastSound > 9000) { setLive(false); stopNoise(); } }, 1000);
 function wake() { start(); setLive(true); lastSound = performance.now(); }

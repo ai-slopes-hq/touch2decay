@@ -13,8 +13,8 @@ export function createEngine(T, model) {
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
     const pre = g(1), sh = ctx.createWaveShaper(), out = g(1.6), hallSend = g(0);
     const c = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = (i / 1023) * 2 - 1; c[i] = Math.tanh(1.4 * x) / Math.tanh(1.4); } sh.curve = c;
-    pre.connect(sh).connect(out); sh.connect(hallSend); hallSend.connect(g(1.6)).connect(T.send('hall'));   // ×1.6 — прежний out после возврата зала
-    bus = { pre, out, hallSend, input, live: false };
+    pre.connect(sh).connect(out); sh.connect(hallSend); const wet = g(1.6); wet.connect(T.send('hall'));   // ×1.6 — прежний out после возврата зала
+    bus = { feed: [[hallSend, wet]], pre, out, hallSend, input, live: false };
     const n = ctx.sampleRate; noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     vo = null;
     applyFx();
@@ -39,6 +39,7 @@ export function createEngine(T, model) {
     if (!bus || bus.live === on) return;
     bus.live = on;
     if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+    for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
   }
   setInterval(() => {
     if (!bus) return;

@@ -203,7 +203,7 @@ export function createView(T, model) {
       { key: 'orbits', label: 'orbits', ang: deg(80) },
     ],
     get: (k) => fx[k], set: (k, v) => model.setFx(k, v), text: (k) => (k === 'orbits' && fx.orbits <= 0.01 ? 'off' : `${Math.round(fx[k] * 100)}%`),
-    lfo: { keys: ['shimmer', 'gloria', 'vibrato', 'orbits'], shapes: 'classic' },   // aether — без LFO: пересчёт отзвука собора тяжёлый
+    lfo: { keys: ['shimmer', 'gloria', 'vibrato', 'orbits'], shapes: 'classic' },   // aether — без LFO (прежде пересчёт отзвука был тяжёлый; теперь собор общий, aether — только доля посыла)
     arc: () => fx.aether, save: () => ({ ...fx }), load: (o) => model.loadFx(o),
   };
   const legend = [['tap', 'touch a sphere', 'an angel sings while held'], ['drag', 'drag along a sphere', 'the vowel: a, e, i, o, u'],

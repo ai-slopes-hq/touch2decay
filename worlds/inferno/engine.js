@@ -46,8 +46,8 @@ export function createEngine(T, model) {
     const inp = g(1), pre = g(0.6), fire = ctx.createWaveShaper(), out = g(1), smoke = g(0), smLP = ctx.createBiquadFilter(), smRet = g(3);
     fire.oversample = '2x'; smLP.type = 'lowpass'; smLP.frequency.value = 1400;
     inp.connect(pre).connect(fire).connect(out);
-    fire.connect(smoke).connect(smLP).connect(smRet).connect(T.send('hall'));   // smRet повторяет out: прежний out (3/(1+fire·1.5)) стоял и после возврата зала
-    bus = { inp, pre, fire, out, smoke, smRet, input, live: false };
+    fire.connect(smoke).connect(smLP); smRet.connect(T.send('hall'));   // smRet повторяет out: прежний out (3/(1+fire·1.5)) стоял и после возврата зала
+    bus = { feed: [[smLP, smRet]], inp, pre, fire, out, smoke, smRet, input, live: false };
     N.fill(null);
     applyFx();
     for (let k = 0; k < 9; k++) if (circ[k].sinner) smoulder(k, true);
@@ -56,6 +56,7 @@ export function createEngine(T, model) {
     if (!bus || bus.live === on) return;
     bus.live = on;
     if (on) bus.out.connect(bus.input); else bus.out.disconnect();
+    for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом: молчащий мир не считается (посыл стоит до out)
   }
   setInterval(() => {                                   // 8 с тишины — шина отцеплена от выхода
     if (!bus) return;

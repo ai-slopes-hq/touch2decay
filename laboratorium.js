@@ -518,8 +518,8 @@ function build(ctx, input) {
   shaper.oversample = '2x'; an.fftSize = 1024;
   sum.connect(shaper).connect(out);
   const sc = makeSolve(ctx); shaper.connect(sc.input); sc.wet.connect(out); sc.wet.connect(hallSend);
-  shaper.connect(hallSend); hallSend.connect(g(1.3)).connect(T.send('hall'));   // ×1.3 — прежний out после возврата зала
-  bus = { sum, shaper, out, hallSend, an, buf: new Float32Array(1024), sc, input, live: false };
+  shaper.connect(hallSend); const wet = g(1.3); wet.connect(T.send('hall'));   // ×1.3 — прежний out после возврата зала
+  bus = { feed: [[hallSend, wet]], sum, shaper, out, hallSend, an, buf: new Float32Array(1024), sc, input, live: false };
   voices.clear(); curveK = -1;
   applyFx();
   if (fire) setFire(true);
@@ -568,6 +568,7 @@ function setLive(on) {
   if (!bus || bus.live === on) return;
   bus.live = on;
   if (on) { bus.out.connect(bus.input); bus.out.connect(bus.an); } else bus.out.disconnect();
+  for (const [a, b] of bus.feed) { if (on) a.connect(b); else a.disconnect(b); }   // посыл в зал ядра — вместе с выходом
 }
 setInterval(() => {
   if (!bus) return;
