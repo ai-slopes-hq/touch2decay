@@ -1,11 +1,12 @@
-// Сверка ядра Goetia (core/worlds/goetia, C++) с прежним JS-worklet (tools/ref/goetia-worklet.js) по сэмплам, допуск 1e-6.
+// Сверка ядра Goetia (core/worlds/goetia, C++) с прежним JS-worklet (tools/ref/goetia-worklet.js) по сэмплам, допуск 1e-6:
+// звук — через render-cli, мир SDK целиком (модель, звук, эхо, шина) — через t2d.wasm (ниже).
 //   core/build.sh && node --test tools/test-goetia-core.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SCENARIOS, BLOCK, SR, WASM, toScript, loadRef, loadWasm, play } from './goetia-scenarios.mjs';
+import { SCENARIOS, BLOCK, toScript, loadRef, play } from './goetia-scenarios.mjs';
 
 const EPS = 1e-6;
 const CLI = fileURLToPath(new URL('../core/build/render-cli', import.meta.url));
@@ -37,64 +38,6 @@ for (const name of Object.keys(SCENARIOS)) {
   });
 }
 
-// ---------- WASM: goetia-worklet.js (обёртка) + goetia.wasm ----------
-
-const sameMeters = (a, b, what) => {
-  assert.equal(a.length, b.length, `${what}: meter count`);
-  a.forEach((m, k) => { same(m.tt, b[k].tt, `${what} tt #${k}`); same(m.g, b[k].g, `${what} g #${k}`); });
-};
-async function wasm(steps) { const w = loadWasm(); await w.ready; return play(w.proc, steps, w.posted); }
-
-for (const name of Object.keys(SCENARIOS)) {
-  test(`wasm matches the JS worklet: ${name}`, async () => {
-    const r = ref(name), w = await wasm(SCENARIOS[name]);
-    same(w.L, r.L, `${name} L`); same(w.R, r.R, `${name} R`); sameMeters(w.meters, r.meters, name);
-  });
-}
-
-test('wasm has no imports', () => {
-  assert.deepEqual(WebAssembly.Module.imports(new WebAssembly.Module(readFileSync(WASM))), []);
-});
-
-test('messages before ready keep their order', async () => {
-  const steps = SCENARIOS.ops, first = steps.findIndex((s) => s.run);
-  const w = loadWasm();
-  for (const s of steps.slice(0, first)) w.proc.port.onmessage({ data: s });   // ещё не готов — в очередь
-  await w.ready;
-  const got = play(w.proc, steps.slice(first), w.posted), r = ref('ops');
-  same(got.L, r.L, 'ops L'); same(got.R, r.R, 'ops R');
-});
-
-test('a partial voice message keeps the other fields', async () => {
-  const steps = [...SCENARIOS.drone, { t: 'voice', i: 0, rate: 9000 }, { run: 100 }];
-  const { proc, posted } = loadRef(), r = play(proc, steps, posted), w = await wasm(steps);
-  same(w.L, r.L, 'partial L'); same(w.R, r.R, 'partial R');
-});
-
-test('speed: 60 s, three spirits, legion 4', async () => {
-  const blocks = Math.round((60 * SR) / BLOCK);
-  const steps = [...SCENARIOS.three.filter((s) => !s.run).map((s) => (s.t === 'voice' ? { ...s, legio: 4 } : s)), { run: blocks }];
-  const time = (proc) => { const t0 = performance.now(); play(proc, steps); return performance.now() - t0; };
-  const js = time(loadRef().proc), w = loadWasm(); await w.ready;
-  const ms = time(w.proc);
-  console.log(`  speed, 60 s of sound: JS ${js.toFixed(0)} ms, WASM ${ms.toFixed(0)} ms (×${(js / ms).toFixed(2)})`);
-});
-
-test('blocks longer than 128 samples', async () => {
-  const steps = SCENARIOS.three.map((s) => (s.run ? { run: 150 } : s));
-  const { proc, posted } = loadRef(), r = play(proc, steps, posted, 256);
-  const w = loadWasm(); await w.ready;
-  const got = play(w.proc, steps, w.posted, 256);
-  same(got.L, r.L, '256 L'); same(got.R, r.R, '256 R');
-});
-
-test('a voice index out of range is ignored', async () => {
-  const bad = [{ t: 'voice', i: 3, on: true, prog: [['|', 8]], rate: 7040, lp: 0.3, lvl: 0.2, legio: 1, pan: 0, rel: 1, trig: 9 }, { t: 'sett', i: 3, t0: 5 }, { t: 'sett', i: -1, t0: 5 }];
-  const steps = SCENARIOS.drone, w = loadWasm(); await w.ready;
-  const got = play(w.proc, [...steps.slice(0, -1), ...bad, ...steps.slice(-1)], w.posted), r = ref('drone');
-  same(got.L, r.L, 'drone L'); same(got.R, r.R, 'drone R');
-});
-
 // ---------- SDK: мир XV в t2d.wasm (модель ядра + goetia.cpp + эхо и шина) против эталона: JS-модель → engine.js → goetia-worklet.js → шина ----------
 // Сухой L/R (с эхом, ×1.6) — 1e-6 на сэмпл; метры (t и громкость каждого духа) — те же, в те же блоки; снимок — тот же JSON.
 const { ACTS, refPath, corePath } = await import('./goetia-scenarios.mjs');
@@ -119,4 +62,9 @@ test('sdk: the echo repeats a strike after 0.375 s', () => {
   const c = corePath(steps), noEcho = corePath([['fx', 'echo', 0], ...steps.slice(1)]);
   const after = (x) => rms(x.L.subarray(150 * 128, 400 * 128));   // через ~0.4–1 с после изгнания — только эхо
   assert.ok(after(c) > 20 * after(noEcho), `echo tail ${after(c)} vs dry tail ${after(noEcho)}`);
+});
+
+test('speed: the reference path vs t2d.wasm, scenario all (~25 s of sound)', () => {
+  const t0 = performance.now(); refPath(ACTS.all); const t1 = performance.now(); corePath(ACTS.all); const t2 = performance.now();
+  console.log(`  speed: JS ${(t1 - t0).toFixed(0)} ms, t2d.wasm (весь хост: 4 ревербера, 3 мира) ${(t2 - t1).toFixed(0)} ms (×${((t1 - t0) / (t2 - t1)).toFixed(1)})`);
 });

@@ -1,9 +1,8 @@
-// Сценарии сверки ядра Oceanus: одни и те же сообщения порта — в эталонный JS-worklet (tools/ref), в обёртку над wasm
-// и текстом в core/build/render-cli. Шаг — сообщение ({t:'params'|'voice'|'push'|'splash', …}) или { run: блоков } (блок — 128 сэмплов).
+// Сценарии сверки ядра Oceanus: одни и те же сообщения порта — в эталонный JS-worklet (tools/ref) и текстом в core/build/render-cli
+// (звук, ocean.cpp). Шаг — сообщение ({t:'params'|'voice'|'push'|'splash', …}) или { run: блоков } (блок — 128 сэмплов).
 import { readFileSync } from 'node:fs';
 import { sandbox } from './goetia-scenarios.mjs';
 
-export const WASM = new URL('../ocean.wasm', import.meta.url);
 export const SR = 48000, BLOCK = 128, SEED = 12345, N = 64;
 // параметры, как шлёт engine при fx по умолчанию
 const PARAMS = { t: 'params', kt: 0.004 * 60 ** 0.45, damp: 0.00003 * 300 ** 0.4, kc: 0.0015 + 0.004 * 0.55, wind: 0, tide: 0.55 * 0.9, moonRate: 0.005 * 40 ** 0.3, storm: 0, sway: 0, swayTo: 0 };
@@ -58,16 +57,6 @@ export function toScript(steps, sr = SR, seed = SEED) {  // текст для re
 export function loadRef(seed = SEED, sr = SR) {          // эталон с зерном
   const { reg, posted } = sandbox('./ref/ocean-worklet.js', { sampleRate: sr });
   return { proc: new reg.ocean({ processorOptions: { seed } }), posted };
-}
-export function loadWasm(seed = SEED, sr = SR) {         // обёртка ocean-worklet.js над ocean.wasm; ready — когда пришло {t:'ready'}
-  const { reg, posted } = sandbox('../ocean-worklet.js', { sampleRate: sr });
-  const bytes = readFileSync(WASM);
-  const proc = new reg.ocean({ processorOptions: { wasm: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), seed } });
-  const ready = new Promise((res, rej) => {
-    const post = proc.port.postMessage;
-    proc.port.postMessage = (m) => { post(m); if (m.t === 'ready') res(); else if (m.t === 'err') rej(new Error(m.msg)); };
-  });
-  return { proc, posted, ready };
 }
 export function loadOld(i = 0, sr = SR) {                // прежний код: ветер и шторм — на независимом xorshift32 от номера прогона (начальные фазы голосов — из зерна 1 конструктора, одни и те же)
   const r = loadRef(1, sr);

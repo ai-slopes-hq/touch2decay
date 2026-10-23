@@ -1,10 +1,10 @@
 // Тесты эталона Oceanus (tools/ref/ocean-worklet.js): звучит, детерминирован, по звуку — как прежний worklet.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SCENARIOS, SEED, BLOCK, toScript, loadRef, loadOld, loadWasm, play, SR, WASM } from './ocean-scenarios.mjs';
+import { SCENARIOS, SEED, BLOCK, toScript, loadRef, loadOld, play } from './ocean-scenarios.mjs';
 
 const rms = (a) => Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length);
 const run = (load, name, steps = SCENARIOS[name]) => { const { proc, posted } = load(); return play(proc, steps, posted); };
@@ -60,62 +60,6 @@ for (const name of Object.keys(SCENARIOS)) {
   });
 }
 
-// ---------- WASM: ocean-worklet.js (обёртка) + ocean.wasm ----------
-
-const sameMeters = (a, b, what) => {
-  assert.equal(a.length, b.length, `${what}: meter count`);
-  a.forEach((m, k) => { same(m.x, b[k].x, `${what} x #${k}`); same([m.moon], [b[k].moon], `${what} moon #${k}`); same(m.g, b[k].g, `${what} g #${k}`); });
-};
-async function wasm(steps, sr = SR, seed = SEED, block = BLOCK) { const w = loadWasm(seed, sr); await w.ready; return play(w.proc, steps, w.posted, block); }
-
-for (const name of Object.keys(SCENARIOS)) {
-  test(`wasm matches the reference: ${name}`, async () => {
-    const r = run(() => loadRef(), name), w = await wasm(SCENARIOS[name]);
-    same(w.L, r.L, `${name} L`); same(w.R, r.R, `${name} R`); sameMeters(w.meters, r.meters, name);
-  });
-}
-
-test('wasm has no imports', () => {
-  assert.deepEqual(WebAssembly.Module.imports(new WebAssembly.Module(readFileSync(WASM))), []);
-});
-
-test('messages before ready keep their order', async () => {
-  const steps = SCENARIOS.fingers, first = steps.findIndex((s) => s.run);
-  const w = loadWasm();
-  for (const s of steps.slice(0, first)) w.proc.port.onmessage({ data: s });   // ещё не готов — в очередь
-  await w.ready;
-  const got = play(w.proc, steps.slice(first), w.posted), r = run(() => loadRef(), 'fingers');
-  same(got.L, r.L, 'fingers L'); same(got.R, r.R, 'fingers R');
-});
-
-test('blocks longer than 128 samples', async () => {
-  const steps = SCENARIOS.one.map((s) => (s.run ? { run: 375 } : s));
-  const { proc, posted } = loadRef(), r = play(proc, steps, posted, 256), w = await wasm(steps, SR, SEED, 256);
-  same(w.L, r.L, '256 L'); same(w.R, r.R, '256 R');
-});
-
-test('a voice index out of range is ignored', async () => {
-  const bad = [{ t: 'voice', i: 6, on: true, f: 90, lvl: 0.5 }, { t: 'voice', i: -1, on: true, f: 90 }];
-  const steps = SCENARIOS.one, w = await wasm([...steps.slice(0, -1), ...bad, ...steps.slice(-1)]), r = run(() => loadRef(), 'one');
-  same(w.L, r.L, 'one L'); same(w.R, r.R, 'one R');
-});
-
-test('at 44.1 kHz', async () => {
-  for (const name of ['sway', 'all']) {
-    const steps = cut(SCENARIOS[name], 2000), { proc, posted } = loadRef(SEED, 44100), r = play(proc, steps, posted), w = await wasm(steps, 44100);
-    same(w.L, r.L, `${name} L`); same(w.R, r.R, `${name} R`); sameMeters(w.meters, r.meters, name);
-  }
-});
-
-test('speed: 60 s, six voices, storm and wind', async () => {
-  const blocks = Math.round((60 * SR) / BLOCK);
-  const steps = [...SCENARIOS.all.filter((s) => !s.run), { run: blocks }];
-  const time = (proc) => { const t0 = performance.now(); play(proc, steps); return performance.now() - t0; };
-  const js = time(loadRef().proc), w = loadWasm(); await w.ready;
-  const ms = time(w.proc);
-  console.log(`  speed, 60 s of sound: JS ${js.toFixed(0)} ms, WASM ${ms.toFixed(0)} ms (x${(js / ms).toFixed(2)})`);
-});
-
 // ---------- SDK: мир VIII в t2d.wasm (модель ядра + ocean.cpp + шина) против эталона: JS-модель → engine.js → ocean-worklet.js ----------
 // Сухой L/R (×1.6) — 1e-6 на сэмпл; метры (форма кольца, луна, громкость каждого города) — те же, в те же блоки; снимок — тот же JSON.
 const { ACTS, refPath, corePath } = await import('./ocean-scenarios.mjs');
@@ -135,3 +79,9 @@ for (const name of Object.keys(ACTS)) {
     assert.equal(c.snapshot, r.snapshot, `${name}: snapshot`);
   });
 }
+
+test('speed: the reference path vs t2d.wasm, scenario all (30 s of sound)', () => {
+  const t0 = performance.now(); refPath(ACTS.all); const t1 = performance.now(); corePath(ACTS.all); const t2 = performance.now();
+  console.log(`  speed: JS ${(t1 - t0).toFixed(0)} ms, t2d.wasm (весь хост: 4 ревербера, 3 мира) ${(t2 - t1).toFixed(0)} ms (×${((t1 - t0) / (t2 - t1)).toFixed(1)})`);
+});
+

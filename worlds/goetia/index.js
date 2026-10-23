@@ -1,5 +1,5 @@
 // Goetia — мир XV (в Таро XV — Дьявол): склейка model / engine / view и регистрация в хосте. Круг заклинателя из «Малого ключа Соломона».
-// Звук — bytebeat (goetia-worklet.js): формула от счётчика t. На круге восемь узлов, у каждого знак (| & ^ + × − % ») и сдвиг (IV…XI). Ведёшь пальцем
+// Звук — bytebeat (мир SDK: модель, звук и эхо — в ядре t2d.wasm): формула от счётчика t. На круге восемь узлов, у каждого знак (| & ^ + × − % ») и сдвиг (IV…XI). Ведёшь пальцем
 // от узла к узлу — чертишь печать; со второго узла дух уже звучит, каждый новый узел дописывает в формулу член (t >> сдвиг) через свой знак.
 // Печать сама называет духа (один из 72), он встаёт в треугольник над кругом. Духов — до трёх, у каждого свой цвет; четвёртый
 // изгоняет самого старого. Тап по треугольнику — изгнать; тянешь вверх-вниз — выше/ниже (и тон, и ритм); держишь — плашка
@@ -11,9 +11,8 @@ import { createEngine } from './engine.js';
 import { createView, geo, nodeXY } from './view.js';
 
 const T = window.T2D;
-const VER = new URL(import.meta.url).searchParams.get('v') || '0';
 const model = createModel({ scale: { get on() { return T.scaleOn; }, snap: (s) => T.snapSemi(s) } });
-const engine = createEngine(T, model, VER);
+const engine = createEngine(T, model);
 const view = createView(T, model, engine);
 model.listen((e) => { if (e.t === 'spirit' && !e.on) T.lfoClear(view.lfoId(e.s)); });   // изгнанный дух — LFO его строк сняты
 model.listen(engine.on);
@@ -21,9 +20,9 @@ model.listen(engine.on);
 let last = 0;
 T.registerWorld(15, {
   n: 'XV', title: 'Goetia', sub: 'sigilla · bytebeat', theme: view.theme, corner: view.corner, fx: view.fx, legend: view.legend,
-  build: engine.build, enter: engine.start,
+  build: engine.build,
   tick(now) { model.tick(last ? (now - last) / 1000 : 0); last = now; view.tick(now); },
-  draw: view.draw, down(f) { engine.start(); view.down(f); }, move: view.move, up: view.up,
+  draw: view.draw, down: view.down, move: view.move, up: view.up,
   dice: model.dice, clear() { view.reset(); model.clear(); }, snapshot: model.snapshot, restore(js) { view.reset(); model.restore(js); }, sounding: model.sounding,
 });
 window.t2d.goe = {

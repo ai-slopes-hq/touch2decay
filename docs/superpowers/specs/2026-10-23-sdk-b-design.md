@@ -43,7 +43,7 @@ in · send → Delay(time) → Biquad LP(f, Q) → out
   - эхо: вход — звук × `echo·0.8`, обратная связь `echo·0.55`, 0.375 с, LP 2600 — в сухой выход, в зал не идёт;
   - посыл = звук × `hall²·1.5` × 1.6, ревербер — `hall`;
   - ручки шины сглаживаются как `setTargetAtTime(…, 0.05)`.
-- Коды `action`: `SUMMON` (a = `[slot, born, semi, tone, rel, legio, lvl, n, узлы…]`), `PATH` (i = slot, a = узлы — печать растёт, пока палец ведёт), `BANISH` (i = slot), `SET` (i = slot, a = `[key, v]`: semi, tone, rel, legio, lvl), `FX` (i = key, a = `[v]`), `CLEAR`, `DICE`, `SETT` (только тесты: стартовое `t`).
+- Коды `action` (как сделано — `core/worlds/goetia/world.hpp`): `SUMMON` (a = `[slot, born, semi, tone, rel, legio, lvl, узлы…]`), `PATH` (i = born, a = узлы — печать растёт, пока палец ведёт), `BANISH` (i = born), `SET` (i = born, a = `[key, v]`: semi, tone, rel, legio, lvl), `FX` (i = key, a = `[v]`), `CLEAR`, `DICE`, `SETT` (только тесты: стартовое `t`). Дух узнаётся по `born`, а не по слоту: слот после изгнания сразу занимает новый дух, а зеркало приходит позже.
 - Зеркало: `fx[4]`, число духов, на духа: `slot, born, semi, tone, rel, legio, lvl, n, узлы[8], t, gain` (`t` — счётчик первого легиона, `gain` — громкость с огибающей: по ним view мигает узлами и ведёт огонёк). Услышанного нет.
 - Фасад `worlds/goetia/model.js`: `state.spirits` — живые объекты по `slot`, правятся на месте из зеркала. `summon` / `banish` / `setSpirit` / `clear` применяются сразу и уходят в ядро. Кубик и `restore` считаются здесь (алгоритм прежний, на `rng`) и уходят полными `SUMMON`. Сверка «зеркало догнало действия» — по номеру сообщения, как у Firmamentum. `engine.tt` / `engine.at` / `engine.gains` — из зеркала (60 раз в секунду вместо 30).
 
@@ -53,8 +53,8 @@ in · send → Delay(time) → Biquad LP(f, Q) → out
 - `sound` — нынешний `ocean.cpp` как есть (кольцо из 64 масс, луна, шторм).
 - `world.hpp|.cpp` — `class Oceanus : sdk::World`; перевод fx в параметры кольца переезжает из `engine.js` (`kt = 0.004·60^tension`, `damp = 0.00003·300^damping`, `kc`, `wind²`, `tide·0.9`, `moonRate = 0.005·40^orbit`, `storm`, `sway`, `swayTo`); голос — `hz`, `lvl·0.8`, `path`. Палец по воде: `push(id, a, d, k = 0.06)`, `release(id)`, `splash(a, amt)` — как сейчас.
 - **Шина:** сухой выход = звук × 1.6; посыл = звук × `hall²·1.4` × 1.6, ревербер — `hall`; сглаживание — 0.05 с.
-- Коды `action`: `ADD` (a = `[ang, rn, pinned, slot]`), `DROP` (i = slot), `MOVE` (i = slot, a = `[ang, rn]`), `SET` (i = slot, a = `[key, v]`: lvl, oct, path, pinned), `FX` (i = key, a = `[v]`), `LUNA` (i = key, a = `[v]`), `PUSH` (a = `[id, a, d]`), `RELEASE` (a = `[id]`), `SPLASH` (a = `[a, amt]`), `CLEAR`, `DICE`.
-- Зеркало: `fx[5]`, `luna[4]`, `moon` (доля круга), форма кольца `[64]`, число городов, на город: `slot, ang, rn, pinned, lvl, oct, path, hz, gain`. Всего до ~130 чисел (буфер моста — 512). Услышанного нет.
+- Коды `action` (как сделано — `core/worlds/oceanus/world.hpp`; город узнаётся по `id`, как звезда Firmamentum): `ADD` (a = `[ang, rn, pinned, slot, id]`), `DROP` (i = id), `MOVE` (i = id, a = `[ang, rn]`), `SET` (i = id, a = `[key, v]`: lvl, oct, path, pinned), `FX` (i = key, a = `[v]`), `LUNA` (i = key, a = `[v]`), `PUSH` (a = `[id, a, d]`), `RELEASE` (a = `[id]`), `SPLASH` (a = `[a, amt]`), `CLEAR`, `DICE`.
+- Зеркало: `fx[5]`, `luna[4]`, `moon` (доля круга), форма кольца `[64]`, число городов, на город: `slot, id, ang, rn, pinned, lvl, oct, path, hz, gain`. Всего до ~130 чисел (буфер моста — 512). Услышанного нет.
 - Фасад `worlds/oceanus/model.js` — так же, как у Goetia; `engine.shape` / `moon` / `gains` — из зеркала.
 - **Зерно:** зерно звука = зерно мира от хоста (раньше — `Math.random` страницы при старте узла). Порядок вызовов `Rng` в звуке не меняется — сверка с эталоном по зерну остаётся точной.
 

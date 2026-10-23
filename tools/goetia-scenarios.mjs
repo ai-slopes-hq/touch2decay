@@ -1,5 +1,5 @@
-// Сценарии сверки ядра Goetia: одни и те же сообщения порта — в эталонный JS-worklet (tools/ref), в обёртку над goetia.wasm
-// и текстом в core/build/render-cli. Шаг — сообщение ({t:'voice'|'fx'|'sett', …}) или { run: блоков } (блок — 128 сэмплов).
+// Сценарии сверки ядра Goetia: одни и те же сообщения порта — в эталонный JS-worklet (tools/ref) и текстом в core/build/render-cli
+// (звук, goetia.cpp). Шаг — сообщение ({t:'voice'|'fx'|'sett', …}) или { run: блоков } (блок — 128 сэмплов).
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
@@ -71,17 +71,6 @@ export function play(proc, steps, posted, block = BLOCK) {   // прогнать
   return { L: cat(L), R: cat(R), meters };
 }
 
-export const WASM = new URL('../goetia.wasm', import.meta.url);
-export function loadWasm() {                            // обёртка goetia-worklet.js над goetia.wasm; ready — когда пришло {t:'ready'}
-  const { reg, posted } = sandbox('../goetia-worklet.js');
-  const bytes = readFileSync(WASM);
-  const proc = new reg.goetia({ processorOptions: { wasm: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) } });
-  const ready = new Promise((res, rej) => {
-    const post = proc.port.postMessage;
-    proc.port.postMessage = (m) => { post(m); if (m.t === 'ready') res(); else if (m.t === 'err') rej(new Error(m.msg)); };
-  });
-  return { proc, posted, ready };
-}
 
 // ---------- SDK: сценарии действиями (мир XV в t2d.wasm) ----------
 // Шаг — действие модели (['seal', [узлы], {semi, tone, rel, legio, lvl}?], ['path', born, [узлы]], ['set', born, {…}], ['banish', born],
