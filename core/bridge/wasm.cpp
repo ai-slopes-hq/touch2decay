@@ -1,5 +1,5 @@
 // Мост ядра SDK для WASM (t2d.wasm): хост и все миры SDK в одном модуле, его крутит t2d-worklet.js (в Node — tools/t2d-core.mjs).
-// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Oceanus — 8, Firmamentum — 10, Goetia — 15.
+// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Monochordum — 7, Oceanus — 8, Horologium — 9, Firmamentum — 10, Arcadia — 12, Goetia — 15.
 // Обмен — через буферы ядра: аргументы action (t2d_args), зеркало и услышанное (t2d_mbuf), строка снимка (t2d_str_buf + длина).
 #include <cstring>
 #include <string>
@@ -10,6 +10,7 @@
 #include "../worlds/goetia/world.hpp"
 #include "../worlds/monochord/world.hpp"
 #include "../worlds/horologium/world.hpp"
+#include "../worlds/arcadia/world.hpp"
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
@@ -17,9 +18,10 @@ static oceanus::Oceanus ocean(host.scale());
 static goetia::World goe(host.scale());
 static monochord::World mono(host.scale());
 static horologium::World horo(host.scale());
+static arcadia::World arc(host.scale());
 static sdk::World* worlds[Host::SLOTS] = {};
 static double args[64];
-static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59, Monochordum — 52, Horologium — 47
+static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59, Monochordum — 52, Horologium — 47, Arcadia — 65
 static constexpr int STR_CAP = 1 << 16;
 static char str[STR_CAP];
 
@@ -50,6 +52,9 @@ API void t2d_init(double sr, unsigned seed) {
   horo.prepare(sr, seed);
   worlds[9] = &horo;
   host.add(9, &horo);
+  arc.prepare(sr, seed);
+  worlds[12] = &arc;
+  host.add(12, &arc);
 }
 API double* t2d_args() { return args; }
 API void t2d_action(int slot, int kind, int i, const double* a, int n) {
@@ -90,3 +95,5 @@ API int t2d_hmirror() {                                 // зеркало хос
   return 4;
 }
 API int t2d_hevents() { return host.events(mbuf, 512); }   // события часов: по 2 числа — код, bpm
+// звучащая страна Arcadia (сетка 80 × 160, float): which 0 — высоты z, 1 — маска воды; для тестов и картинки натива
+API const float* t2d_arc_land(int which) { return which ? arc.land().lake : arc.land().z; }

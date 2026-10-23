@@ -1,6 +1,6 @@
 // Хор: NL плавающих стерео-задержек, у каждой своя база d0, синус-LFO на времени (частота rate, глубина depth, с) и панорама —
 // как цепочка Web Audio у Monochordum (DelayNode ← OscillatorNode × GainNode на delayTime → StereoPannerNode → wet).
-//   выход = wet · Σ panStereo(линия i, задержка d0_i + depth·sin(2π·rate_i·t))
+//   выход = wet · Σ panStereo(линия i, задержка d0_i + depth·k_i·sin(2π·rate_i·t))   (k — доля глубины линии, по умолчанию 1)
 // wet и depth сглаживаются как setTargetAtTime(·, 0.05); feed = false — на вход линиям идёт тишина (хор отцеплен от mix),
 // хвост задержек дозвучивает. Совсем пусто (вход молчит дольше всей задержки и сглаживания) — блок не считается, выход — 0.
 // Чтение задержки — линейное между соседними (как DelayNode в Chromium). Память — внутри объекта; в process аллокаций нет.
@@ -13,7 +13,7 @@ namespace sdk {
 template <int NL, int SIZE>
 class Chorus {
  public:
-  struct Line { double d0, rate, pan; };
+  struct Line { double d0, rate, pan, k = 1; };
   void prepare(double sr, const Line* lines, double depth0) {
     sr_ = sr; c_ = 1 - std::exp(-1 / (0.05 * sr));
     for (int i = 0; i < NL; i++) {
@@ -35,7 +35,7 @@ class Chorus {
       const double xl = feed ? inL[k] : 0, xr = feed ? inR[k] : 0;
       double sl = 0, sr = 0;
       for (int i = 0; i < NL; i++) {
-        double d = (ln_[i].d0 + depth_ * std::sin(2 * M_PI * ph_[i])) * sr_;
+        double d = (ln_[i].d0 + depth_ * ln_[i].k * std::sin(2 * M_PI * ph_[i])) * sr_;
         if (d < 1) d = 1;
         if (d > SIZE - 2) d = SIZE - 2;
         double l, r;
