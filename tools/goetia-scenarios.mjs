@@ -38,7 +38,7 @@ export function toScript(steps, sr = SR) {              // текст для ren
   return out.join('\n') + '\n';
 }
 
-function sandbox(file, extra = {}) {                    // worklet в vm с заглушками AudioWorklet
+export function sandbox(file, extra = {}) {                    // worklet в vm с заглушками AudioWorklet
   const posted = [], reg = {};
   const ctx = {
     sampleRate: SR, Math, Float32Array, Float64Array, Uint8Array, Int32Array, Array, Object, Number, String, JSON, Promise, WebAssembly,
