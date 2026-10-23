@@ -1465,7 +1465,7 @@ async def sc_arcadia(p):                           # Arcadia: странник �
     await p.shot('arcadia-map')
 
 
-async def sc_midi(p):                             # ведомый по MIDI: внешние часы (t2dMidi) пускают и ведут Portus, Natura, Cymatica; Horologium на нуле tempus — нет; Stop — все стоят
+async def sc_midi(p):                             # ведомый по MIDI: внешние часы (t2dMidi) пускают и ведут Portus, Natura, Cymatica и автострам Monochordum (играл до Stop — вернётся на Start); Horologium на нуле tempus — нет; Stop — все стоят
     await p.tap(195, 420); await p.pg.wait_for_timeout(300)           # тап — звук
     await p.js('()=>{for (const n of [13, 4, 2]) t2d.worlds[n].dice(); t2d.worlds[9].clear()}')
     await p.js('()=>{for (const n of [13, 4, 2, 9, 7]) { const w = t2d.worlds[n]; if (w.tempo.playing()) w.tempo.play(false) }}'); await p.pg.wait_for_timeout(300)
@@ -1494,6 +1494,11 @@ async def sc_midi(p):                             # ведомый по MIDI: в
     await p.js("()=>{clearInterval(window.__mi); t2dMidi({t:'stop'})}"); await p.pg.wait_for_timeout(600)
     r = await pl(); print('  after Stop:', r)
     assert not any(r), f'Stop halts every world: {r}'
+    await p.js("()=>{window.__mn = 0; t2dMidi({t:'start', ago:0}); window.__mi = setInterval(() => t2dMidi({t:'beat', n: ++window.__mn, bpm: 120, ago: 0}), 500)}")
+    await p.pg.wait_for_timeout(2500)
+    r = await pl(); print('  second Start:', r)
+    assert r[4] is True, f'the autostrum stopped by MIDI Stop is brought back by the next Start (only the host can): {r}'
+    await p.js("()=>{clearInterval(window.__mi); t2dMidi({t:'stop'})}"); await p.pg.wait_for_timeout(400)
 
 async def sc_portus(p):                            # Portus: остров на луче — удар аккорда, дальше — выше; фонарь — остров; маяк — пуск; луна — фильтр; буй — эхо; небо — гасит эхо; туман; плашки; кубик; корзина; отмена; луна — карта
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
