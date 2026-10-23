@@ -28,6 +28,7 @@ struct Web: UIViewRepresentable {
     let c = WKWebViewConfiguration()
     c.allowsInlineMediaPlayback = true
     c.mediaTypesRequiringUserActionForPlayback = []
+    c.userContentController.add(ClockBridge(midi: midi), name: "t2dClock")   // страница → часы наружу (lead)
     let w = WKWebView(frame: .zero, configuration: c)
     w.isInspectable = true                              // Safari на Mac → Разработка → iPhone
     w.scrollView.isScrollEnabled = false
@@ -40,15 +41,30 @@ struct Web: UIViewRepresentable {
   func updateUIView(_ w: WKWebView, context: Context) {}
 }
 
-struct MidiBadge: View {                                 // ПРОБА: что пришло по MIDI
+final class ClockBridge: NSObject, WKScriptMessageHandler {   // ПРОБА: { t, step, bpm, at } от Portus
+  let midi: Midi
+  init(midi: Midi) { self.midi = midi }
+  func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+    guard let d = m.body as? [String: Any], let t = d["t"] as? String else { return }
+    let n = { (k: String) in (d[k] as? NSNumber)?.doubleValue ?? 0 }
+    midi.clockOut(t, step: Int(n("step")), bpm: n("bpm") > 0 ? n("bpm") : 120, at: n("at"))
+  }
+}
+
+struct MidiBadge: View {                                 // ПРОБА: что пришло по MIDI; тап по follow / lead — кто ведёт
   @ObservedObject var midi: Midi
   var body: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text("MIDI: " + (midi.sources.isEmpty ? "no sources" : midi.sources.joined(separator: ", ")))
-      Text(String(format: "clock %d · %.1f BPM · %@ · %@", midi.clocks, midi.bpm, midi.running ? "running" : "stopped", midi.last))
+    HStack(spacing: 8) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text("MIDI: " + (midi.sources.isEmpty ? "no sources" : midi.sources.joined(separator: ", ")))
+        Text(midi.lead ? "lead · clock out to every port" : String(format: "clock %d · %.1f BPM · %@ · %@", midi.clocks, midi.bpm, midi.running ? "running" : "stopped", midi.last))
+      }
+      .allowsHitTesting(false)
+      Button(midi.lead ? "lead" : "follow") { midi.lead.toggle() }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.6), lineWidth: 0.5))
     }
     .font(.caption2).foregroundColor(.white).padding(6)
     .background(Color.black.opacity(0.6)).cornerRadius(6).padding(.bottom, 2)
-    .allowsHitTesting(false)
   }
 }

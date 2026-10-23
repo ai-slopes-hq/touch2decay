@@ -19,6 +19,7 @@ const view = createView(T, model, engine);
 model.listen(engine.on);
 engine.listen(view.heard);
 window.t2dMidi = (m) => engine.sync(m);                 // ПРОБА 0б (ветка native): MIDI-часы из оболочки ios/shell
+engine.pulse((m) => window.webkit?.messageHandlers?.t2dClock?.postMessage(m));   // ПРОБА 0б: и обратно — оболочка ведёт MIDI-часы за Portus
 const S = model.state, { isles, luna, echo, buoy, fog, pharos, fx, seq } = S;
 
 let last = 0;

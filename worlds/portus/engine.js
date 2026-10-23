@@ -98,11 +98,22 @@ export function createEngine(T, model) {
     setTimeout(() => { if (!bus) return; bus.dWet.gain.setTargetAtTime(0.9, actx.currentTime, 0.05); applyAll(); }, 350);
   }
   let cue = false;                                       // ПРОБА 0б: MIDI start пришёл — шаги ждут первую долю
+  // ПРОБА 0б: часы наружу (оболочка ios/shell — ведущий MIDI): пуск, первый шаг такта, смена темпа, стоп — какой шаг, темп и когда его услышат (epoch, мс)
+  const pulses = []; let pulsed = null;                  // pulsed — темп последнего сообщения; null — пуска ещё не было
+  function heardAt(t) {                                  // время ctx → когда прозвучит из динамика, мс epoch (у оболочки — те же часы)
+    const o = actx.getOutputTimestamp && actx.getOutputTimestamp();
+    const p = o && o.performanceTime > 0 ? o.performanceTime + (t - o.contextTime) * 1000 : performance.now() + (t - actx.currentTime + (actx.outputLatency || actx.baseLatency || 0)) * 1000;
+    return performance.timeOrigin + p;
+  }
+  const pulse = (t, at) => { const m = { t, step: clock.step, bpm: seq.bpm, at: heardAt(at) }; for (const fn of pulses) fn(m); };
   function schedule() {
     if (!seq.playing || !actx || cue) return;
     const now = actx.currentTime, ahead = now + 0.2;
     if (!clock.next) clock.next = now + 0.05;
     while (clock.next < ahead) {
+      if (pulsed === null) pulse('start', clock.next);
+      else if (clock.step % NSTEP === 0 || pulsed !== seq.bpm) pulse('at', clock.next);
+      pulsed = seq.bpm;
       const j = clock.step % NSTEP, sw = model.swing(j);
       if (clock.next + sw > now + 0.003) { const h = model.step(j); if (h) stab(clock.next + sw, h.is, h.vel, h.gap); }   // опоздавший шаг пропускаем; chance — в модели
       lastSteps.push([clock.next, clock.step]); if (lastSteps.length > 24) lastSteps.shift();
@@ -110,7 +121,11 @@ export function createEngine(T, model) {
     }
   }
   T.onTick(schedule);                                  // таймер 25 мс + метроном из звукового потока — в фоне шаги не пропадают
-  function play(on) { clock.next = 0; if (on) { clock.step = 0; setLive(true); schedule(); } }
+  function play(on) {
+    if (!on && pulsed !== null && actx) pulse('stop', actx.currentTime);
+    clock.next = 0; pulsed = null;
+    if (on) { clock.step = 0; setLive(true); schedule(); }
+  }
   function curStep() {
     if (!actx || !lastSteps.length || !seq.playing) return -1;
     const t = actx.currentTime; let cur = -1;
@@ -157,7 +172,7 @@ export function createEngine(T, model) {
 
   return {
     build, on, poll, apply: applyAll, sync,
-    listen(fn) { listeners.push(fn); },
+    listen(fn) { listeners.push(fn); }, pulse(fn) { pulses.push(fn); },
     get step() { return curStep(); }, get live() { return !!(bus && bus.live); },
   };
 }
