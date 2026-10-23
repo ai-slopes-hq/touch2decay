@@ -10,3 +10,5 @@
 Тесты модели — `tools/models/portus.test.mjs` (место и нота, высота с ладом и октавами, `nextGap` через конец и пустой, swing, chance через `rng`, события, снимок, кубик с зерном); сценарий `shot.py portus`.
 
 **chance** (v142): FX `fx.chance` — каждый шаг играет с этой вероятностью (`step` в модели). Луна при LFO на cutoff: `T.lfoBase('portus-luna', 'cut')` — луна стоит на базе, `moon.lfo` 0…1 — цвет (ниже базы — blood moon); тест — `t2d.slAdd('cut')` в сценарии.
+
+**Ведомый по MIDI** (`host/midi.js`): пока идут внешние MIDI-часы, шаги Portus ставит `T.stepTime(T.midiGrid(), step, 4)` (4 шага на долю, swing сверху) вместо своего `clock.next += stepSec()`; Start запускает маяк, если есть острова (`tempo.armed`), Stop останавливает, темп берётся из часов. Сетка пропала — идёт своим темпом. Тесты — `tools/test-follow.mjs`, сценарий `shot.py midi`.
