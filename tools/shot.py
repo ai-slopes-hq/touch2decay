@@ -1301,10 +1301,11 @@ async def sc_firmamentum(p):                       # Firmamentum: прокол �
         await p.pg.wait_for_timeout(100)
     L = await p.js('()=>t2d.firm.LIMEN')
     a = await p.js(f'()=>t2d.firm.at({L * 0.5}, -0.3)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(300)
-    for _ in range(30):                              # ядро (pulsar.wasm) поднимается после первой звезды
+    for _ in range(30):                              # ядро SDK (t2d.wasm в t2d-worklet.js) — один узел на контекст, поднимается в build
         if await p.js("()=>t2d.firm.core == 'wasm'"): break
         await p.pg.wait_for_timeout(100)
-    assert await p.js("()=>t2d.firm.core") == 'wasm', 'the pulsar core is up (pulsar.wasm)'
+    assert await p.js("()=>t2d.firm.core") == 'wasm', 'the SDK core is up (t2d.wasm)'
+    assert await p.js("()=>performance.getEntriesByType('resource').some(e=>e.name.includes('t2d.wasm')) && !performance.getEntriesByType('resource').some(e=>e.name.includes('pulsar'))"), 'Firmamentum runs from t2d.wasm, pulsar.wasm is gone'
     await p.pg.wait_for_timeout(1200)
     assert await p.js('()=>Math.max(...t2d.firm.gains) > 0'), 'the core sounds: a voice has gain'
     assert await p.js('()=>t2d.firm.stars.length') == 1, 'tap the sky — a star'
@@ -1420,6 +1421,11 @@ async def sc_audio(p):                             # перезапуск зву
     await p.pin(150, 600); await p.pg.wait_for_timeout(500)
     await p.js('()=>t2d.go(8)'); await p.pg.wait_for_timeout(1500)
     a = await p.js('()=>t2d.ocean.at(1.0, 0.6)'); await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(1200)
+    await p.js('()=>{ t2d.firm.model.addStar(0.7, 0.2); t2d.firm.setFx("hall", 0.8) }')   # мир SDK (ядро t2d.wasm) тоже переживает перезапуск
+    for _ in range(30):
+        if await p.js('()=>t2d.firm.ready && Math.max(...t2d.firm.gains) > 0'): break
+        await p.pg.wait_for_timeout(100)
+    sent0 = await p.js('()=>t2d.core.sent')
     lv0 = await p.js('()=>T2D.level'); id0 = await p.js('()=>t2d.ctxId')
     await p.js('()=>t2d.restartAudio()'); await p.pg.wait_for_timeout(2500)
     id1 = await p.js('()=>t2d.ctxId'); lv1 = await p.js('()=>T2D.level')
@@ -1428,6 +1434,10 @@ async def sc_audio(p):                             # перезапуск зву
     assert await p.js('()=>t2d.ocean.voices.filter(v=>v.pinned).length') == 1, 'the city survives the restart'
     assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned)'), 'the Tenebrae planet survives'
     assert lv1 > 0.02, f'sound comes back after restart: {lv1}'
+    assert await p.js('()=>t2d.firm.stars.length') == 1 and await p.js("()=>t2d.firm.fx.hall") == 0.8, 'the Firmamentum star and its hall survive the restart'
+    assert await p.js("()=>t2d.firm.core == 'wasm' && t2d.core.ready && t2d.core.sent < 20"), 'a new SDK core node, ready (fresh message count)'
+    assert await p.js('()=>Math.max(...t2d.firm.gains) > 0'), 'the star sounds from the new core'
+    print('  SDK core messages: before restart', sent0, 'after', await p.js('()=>t2d.core.sent'))
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     sun = await p.js('()=>t2d.mapSun()'); await p.tap(sun['x'], sun['y']); await p.pg.wait_for_timeout(200)
     await p.shot('concordia-audio')

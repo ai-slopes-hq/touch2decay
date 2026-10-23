@@ -5,7 +5,7 @@ import { WASM } from './t2d-core.mjs';
 
 export { SR, BLOCK };
 export function loadWorklet(worlds = [10], seed = 1) {   // обёртка над t2d.wasm; ready — когда пришло {t:'ready'}
-  const { reg, posted } = sandbox('../t2d-worklet.js', { TextDecoder, TextEncoder });
+  const { reg, posted } = sandbox('../t2d-worklet.js');   // без TextEncoder / TextDecoder — в AudioWorkletGlobalScope их нет
   const b = readFileSync(WASM);
   const proc = new reg.t2d({ processorOptions: { wasm: b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), worlds, seed } });
   const ready = new Promise((res, rej) => {

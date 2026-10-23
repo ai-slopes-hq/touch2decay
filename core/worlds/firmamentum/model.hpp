@@ -47,7 +47,7 @@ class Model {
   double fp(const Star& s) const;                       // высота — частота пульсаций; в области тона с ладом — по ступеням
   double ff(const Star& s) const;                       // место по своду — формант (с drift)
 
-  Star* add(double h, double u, int slot = -1, int id = 0);          // slot/id от UI; занят или −1/0 — первый свободный / следующий
+  Star* add(double h, double u, int slot = -1, int id = 0);          // slot/id от UI; занят или −1/0 — первый свободный / следующий (правило id — world.hpp, ADD)
   void close(int id);
   void move(int id, double h, double u);
   void set(int id, int key, double v);
@@ -58,7 +58,7 @@ class Model {
   void tick(double dt);
 
   std::string snapshot() const;                         // тот же JSON, что у model.js: {s: [{h,u,cyc,win,mask,lvl}], fx}
-  void restore(const std::string& js);
+  void restore(const std::string& js);                  // у звезды может быть ещё slot и id — как у add (так шлёт фасад в вебе)
 
   int count() const { return n_; }
   const Star& star(int i) const { return stars_[i]; }

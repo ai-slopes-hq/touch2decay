@@ -383,7 +383,7 @@ static void firm() {
   CHECK(!w.sounding());
 }
 
-// Firmamentum: посыл мира (sL, sR) = сухой × fx.hall²·1.5 по каждому сэмплу; сценарий tone (звезда-тон), потом hall 0.9
+// Firmamentum: посыл мира (sL, sR) = сухой × fx.hall²·1.5·2.5 по каждому сэмплу (×2.5 — прежний после возврата зала); сценарий tone (звезда-тон), потом hall 0.9
 static void firmSend() {
   using namespace firmamentum;
   static Scale sc;
@@ -395,7 +395,7 @@ static void firmSend() {
   const sdk::Out out{L, R, sL, sR};
   double peak = 0, err = 0;
   for (int pass = 0; pass < 2; pass++) {
-    const double hall = pass ? 0.9 : FX_DEF[HALL], g = hall * hall * 1.5;
+    const double hall = pass ? 0.9 : FX_DEF[HALL], g = hall * hall * 1.5 * 2.5;
     if (pass) { const double v[] = {0.9}; w.action(FX, HALL, v, 1); }
     for (int b = 0; b < 375; b++) {
       w.process(out, 128);
@@ -410,9 +410,30 @@ static void firmSend() {
   CHECK(w.rev() == sdk::Rev::hall);
 }
 
+// Firmamentum: id звезды (world.hpp, ADD) — id от UI берётся, если он не живой (даже меньше виденных); живой или 0 — свой,
+// выше всех виденных; кубик и restore без id — тоже свои, выше всех виденных
+static void firmIds() {
+  using namespace firmamentum;
+  static Scale sc;
+  static Model m(sc);
+  m.reset(5);
+  m.dice();                                             // свои: 1…n
+  const int n = m.count();
+  CHECK(m.star(n - 1).id == n);
+  CHECK(m.add(0.5, 0, -1, 2) == nullptr || m.star(m.count() - 1).id == n + 1);   // 2 живой — своё
+  m.close(1);
+  Star* s = m.add(0.5, 0, -1, 1);                       // 1 не живой (закрыт) — берётся, хоть и меньше виденных
+  CHECK(s && s->id == 1);
+  m.clear();
+  s = m.add(0.5, 0, -1, 50);
+  CHECK(s && s->id == 50);
+  m.dice();                                             // свои — выше 50
+  for (int i = 0; i < m.count(); i++) CHECK(m.star(i).id > 50);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend();
+  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

@@ -1,97 +1,59 @@
-// Фасад модели Firmamentum над t2d.wasm (Node, для тестов): тот же API, что у worlds/firmamentum/model.js, но модель живёт в ядре.
-// Касания — action в ядро, состояние — из зеркала (звёзды — живые объекты по id, правятся на месте), события star / fp / ff / fx —
-// из разницы зеркал. tick(dt) → process на round(dt·sr) сэмплов кусками ≤ 128.
+// Фасад модели Firmamentum (worlds/firmamentum/model.js — тот же, что в вебе) над t2d.wasm в Node, для тестов. Порт к ядру — имитация
+// t2d-worklet.js: сообщения ядру ({t:'action'|'restore'}) и зеркало с числом применённых сообщений (sync(mirror, applied)).
+// Синхронный порт (по умолчанию): сообщение применяется сразу, зеркало — после каждого действия и шага. Асинхронный (async: true):
+// сообщения копятся, пока не позвать flush(), зеркало — только по deliver(), как ~60 раз в секунду в вебе.
+// tick(dt) → process на round(dt·sr) сэмплов кусками ≤ 128 (в асинхронном — сначала flush), потом зеркало.
 import { loadT2d } from '../t2d-core.mjs';
-import { LIMEN, FX_DEF } from '../../worlds/firmamentum/model.js';
+import { createModel as facade, SLOT, ACT, SET_KEYS, FX_KEYS } from '../../worlds/firmamentum/model.js';
+import { scl, snapSemi } from '../../host/scale.js';
+import { seeded } from './util.mjs';
 
-export const SR = 48000, SLOT = 10;                     // мир X — слот 10 в хосте
+export { SLOT, ACT, SET_KEYS, FX_KEYS };
+export const SR = 48000;
 // свод ядра: place(s) = {x: u, y: −h·K}, комета разгоняет звёзды ближе R (core/worlds/firmamentum/model.hpp);
 // на 390×844 одна единица свода по горизонтали — S px (RX · 0.94 у горизонта), так что R·S = 90 px, как было на экране
 export const RX = 187, S = RX * 0.94, K = 1.75 / 0.94, R = 90 / S;
 export const sky = (s) => ({ x: S * s.u, y: -S * K * s.h });   // свод → px на 390×844: для JS-модели (порог 90 px) и cometAt
-export const ACT = { add: 0, close: 1, move: 2, set: 3, fx: 4, clear: 5, dice: 6, launch: 7 };
-export const SET_KEYS = ['cyc', 'win', 'mask', 'lvl', 'h', 'u'];
-export const FX_KEYS = Object.keys(FX_DEF);             // scintilla, drift, cometa, crepitus, fulgur, spread, hall
-const STAR = ['slot', 'id', 'h', 'u', 'cyc', 'win', 'mask', 'lvl', 'dr', 'cm', 'fp', 'ff'];   // поля звезды в зеркале
-const NFX = FX_KEYS.length, HEAD = 2 + 7 + NFX + 1;     // time, comets, comet[on, a.h, a.u, b.h, b.u, t0, dur], fx, число звёзд
+// лад хоста {on, idx, root} для фасада: snapSemi из host/scale.js (у него общее состояние scl — ставим на время вызова)
+export const hostScale = (sc) => ({
+  get on() { return sc.on; },
+  snap(s) { const keep = { ...scl }; Object.assign(scl, sc); const r = snapSemi(s); Object.assign(scl, keep); return r; },
+});
 
-export function createModel({ seed = 1, scale = null, place = sky } = {}) {
-  const core = loadT2d();
-  core.init(SR, seed);
-  if (scale) core.scale(scale.on, scale.idx, scale.root);
-  const stars = [], fx = { ...FX_DEF };
-  const state = { stars, fx, comet: null, comets: 0, time: 0 };
-  const listeners = [];
-  const emit = (e) => { for (const fn of listeners) fn(e); };
-  let serial = 0;
-
-  function sync() {                                     // зеркало ядра → state, разница — события
-    const m = core.mirror(SLOT);
-    state.time = m[0]; state.comets = m[1];
-    state.comet = m[2] ? { a: { h: m[3], u: m[4] }, b: { h: m[5], u: m[6] }, t0: m[7], dur: m[8] } : null;
-    let fxChanged = false;
-    FX_KEYS.forEach((k, i) => { if (fx[k] !== m[9 + i]) { fx[k] = m[9 + i]; fxChanged = true; } });
-    const n = m[HEAD - 1], seen = new Map(), next = [];
-    for (let i = 0; i < n; i++) {
-      const o = m.slice(HEAD + i * STAR.length, HEAD + (i + 1) * STAR.length), id = o[1];
-      seen.set(id, o);
-    }
-    for (const s of stars) if (!seen.has(s.id)) emit({ t: 'star', s, on: false });
-    for (const [id, o] of seen) {
-      let s = stars.find((q) => q.id === id), added = false;
-      if (!s) { s = { id }; added = true; }
-      const was = { ...s };
-      STAR.forEach((k, i) => { s[k] = o[i]; });
-      serial = Math.max(serial, id);
-      next.push(s);
-      if (added) emit({ t: 'star', s, on: true, added: true });
-      else {
-        if (SET_KEYS.some((k) => was[k] !== s[k])) emit({ t: 'star', s, on: true });
-        if (was.fp !== s.fp) emit({ t: 'fp', s });
-        if (was.ff !== s.ff) emit({ t: 'ff', s });
-      }
-    }
-    stars.length = 0; stars.push(...next);
-    if (fxChanged) emit({ t: 'fx' });
+export function createModel({ seed = 1, scale = null, place = sky, rng = seeded(seed), async = false } = {}) {
+  const sc = scale ? { ...scale } : { on: false, idx: 0, root: 0 };
+  let core = null, sent = 0, applied = 0;
+  const queue = [];
+  const boot = (sd) => { core = loadT2d(); core.init(SR, sd); core.scale(sc.on, sc.idx, sc.root); sent = applied = 0; queue.length = 0; };
+  boot(seed);
+  function apply(d) {                                   // как apply у t2d-worklet.js
+    applied++;
+    if (d.t === 'action') core.action(d.slot, d.kind, d.i | 0, d.a || []);
+    else if (d.t === 'restore') core.restore(d.slot, d.js);
   }
-  const act = (kind, i = 0, a = []) => { core.action(SLOT, kind, i, a); sync(); };
-  const live = (s) => s && stars.includes(s);
-
-  function addStar(h, u) {
-    const used = new Set(stars.map((s) => s.slot)), slot = [0, 1, 2, 3, 4, 5].find((k) => !used.has(k));
-    if (slot == null) return null;
-    const id = serial + 1;
-    act(ACT.add, 0, [h, u, slot, id]);
-    return stars.find((s) => s.id === id) || null;
-  }
-  function setStar(s, patch) {
-    if (!live(s)) return;
-    for (const [k, v] of Object.entries(patch)) { const key = SET_KEYS.indexOf(k); if (key >= 0) core.action(SLOT, ACT.set, s.id, [key, v]); }
-    sync();
-  }
-  function setFx(k, v) { const key = FX_KEYS.indexOf(k); if (key >= 0) act(ACT.fx, key, [v]); }
-  function loadFx(o) { for (const [k, v] of Object.entries(o)) { const key = FX_KEYS.indexOf(k); if (key >= 0) core.action(SLOT, ACT.fx, key, [v]); } sync(); }
-  function tick(dt) {
+  const flush = () => { while (queue.length) apply(queue.shift()); };
+  const deliver = () => m.sync(core.mirror(SLOT), applied);
+  const send = (d) => { sent++; if (async) queue.push(d); else apply(d); return sent; };
+  const m = facade({ scale: hostScale(sc), place, rng, send });
+  // синхронный порт: зеркало — сразу после каждого действия (как прежний фасад над ядром)
+  const wrap = (fn) => (...a) => { const r = fn(...a); if (!async) deliver(); return r; };
+  const out = { ...m };
+  for (const k of ['addStar', 'closeStar', 'moveStar', 'setStar', 'setFx', 'loadFx', 'clear', 'dice', 'restore', 'launch']) out[k] = wrap(m[k]);
+  out.tick = (dt) => {
+    if (async) flush();
     let n = Math.round(dt * SR);
     while (n > 0) { const k = Math.min(128, n); core.process(k); n -= k; }
-    sync();
-  }
-  function cometAt(now = state.time) {                  // как у JS-модели: точка на прямой между концами в координатах place
-    const c = state.comet;
-    if (!c) return null;
-    const k = Math.min(1, (now - c.t0) / c.dur), A = place(c.a), B = place(c.b);
-    return { k, x: A.x + (B.x - A.x) * k, y: A.y + (B.y - A.y) * k, A, B };
-  }
-  const own = (s) => { if (!live(s)) throw new Error('fp/ff: not a live star of the core'); return s; };
-
-  sync();
-  return {
-    state, LIMEN, cometAt, core,
-    fp: (s) => own(s).fp, ff: (s) => own(s).ff,        // из зеркала: частоты считает ядро (с ладом хоста)
-    addStar, closeStar: (s) => { if (live(s)) act(ACT.close, s.id); }, moveStar: (s, h, u) => { if (live(s)) act(ACT.move, s.id, [h, u]); },
-    setStar, setFx, loadFx, clear: () => act(ACT.clear), dice: () => act(ACT.dice), launch: () => act(ACT.launch),
-    tick, snapshot: () => core.snapshot(SLOT), restore: (js) => { core.restore(SLOT, js); sync(); },
-    sounding: () => stars.length > 0,
-    listen(fn) { listeners.push(fn); },
+    deliver();
   };
+  Object.defineProperty(out, 'core', { get: () => core });
+  out.flush = flush; out.deliver = deliver;
+  out.rebind = (sd = seed + 1) => { boot(sd); m.bind(send); if (!async) deliver(); };   // новый узел ядра (restartAudio → build)
+  out.coreDice = () => { core.action(SLOT, ACT.dice); deliver(); };   // кубик ядра (его rng) — для сверки модели ядра с эталоном
+  out.coreStar = (id) => {                              // звезда в зеркале ядра по id (сейчас, без фасада) — для проверок гонок
+    const x = core.mirror(SLOT), n = x[16], N = 14;
+    for (let i = 0; i < n; i++) if (x[17 + i * N + 1] === id) return { slot: x[17 + i * N], id, h: x[17 + i * N + 2], u: x[17 + i * N + 3] };
+    return null;
+  };
+  out.coreIds = () => { const x = core.mirror(SLOT), n = x[16]; return Array.from({ length: n }, (_, i) => x[17 + i * 14 + 1]); };
+  return out;
 }

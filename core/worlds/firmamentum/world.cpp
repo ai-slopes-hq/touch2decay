@@ -46,7 +46,9 @@ void Firmamentum::action(int kind, int i, const double* a, int n) {
 void Firmamentum::process(const sdk::Out& out, int n) {
   if (n <= 0) return;
   sound_.process(out.L, out.R, n);
-  const double h = model_.fx(HALL), g = h * h * 1.5;    // посыл в зал
+  // посыл в зал: hall²·1.5, как было, и ещё ×2.5 — в прежней цепочке engine.js ×2.5 стоял после сухого и после возврата зала;
+  // сухой ×2.5 остался в вебе (engine.js), а возврат ревербов общий — поэтому ×2.5 возврата переехал сюда, в посыл: баланс тот же
+  const double h = model_.fx(HALL), g = h * h * 1.5 * 2.5;
   for (int k = 0; k < n; k++) { out.sL[k] = static_cast<float>(out.L[k] * g); out.sR[k] = static_cast<float>(out.R[k] * g); }
   model_.tick(n / sr_);                                 // шаг модели — раз в блок, после звука: события — к следующему блоку
 }
@@ -66,7 +68,7 @@ int Firmamentum::mirror(double* buf, int cap) const {
   for (int i = 0; i < ns; i++) {
     const Star& s = model_.star(i);
     *p++ = s.slot; *p++ = s.id; *p++ = s.h; *p++ = s.u; *p++ = s.cyc; *p++ = s.win; *p++ = s.mask; *p++ = s.lvl;
-    *p++ = s.dr; *p++ = s.cm; *p++ = model_.fp(s); *p++ = model_.ff(s);
+    *p++ = s.dr; *p++ = s.cm; *p++ = model_.fp(s); *p++ = model_.ff(s); *p++ = sound_.gain(s.slot); *p++ = sound_.count(s.slot);
   }
   return need;
 }

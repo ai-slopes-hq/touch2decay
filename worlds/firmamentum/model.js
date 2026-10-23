@@ -1,21 +1,38 @@
-// Firmamentum — модель: звёзды-проколы на своде, общие FX, комета. Только данные и алгоритм — без DOM, холста и Web Audio.
-// Время — секунды (tick(dt)), случайность — rng, лад — scale { on, snap }, расстояние до кометы — place(sky) → точка на экране.
-// Что должно прозвучать — события слушателям (listen): { t: 'star', s, on, added? } — звезда целиком, 'fp' / 'ff' — одна её частота, 'fx'.
-const TAU = Math.PI * 2;
-const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+// Firmamentum — фасад модели. Сама модель живёт в ядре (core/worlds/firmamentum → t2d.wasm, узел t2d-worklet.js хоста), здесь — её
+// зеркало и действия касаний. API — прежней JS-модели (эталон — tools/ref/firmamentum-model.js), без DOM, холста и Web Audio:
+// state.stars — живые объекты по id (view держит ссылку на звезду под пальцем), правятся на месте из зеркала.
+// Действия применяются к state сразу (addStar — синхронно: слот — первый свободный, как в ядре, id — свой) и уходят в ядро через send
+// (порт узла ядра, асинхронно; send → номер сообщения). Зеркало (sync) приходит ~60 раз в секунду с числом уже применённых ядром
+// сообщений: поля звезды, которые здесь правили, а ядро ещё не видело, зеркало не перетирает; добавленную здесь звезду, ещё не дошедшую,
+// не убирает; закрытую здесь — не возвращает. clear, restore и кубик — целиком здесь (кубик — алгоритм эталона на rng) и в ядро:
+// restore — одним сообщением со слотами и id звёзд (правило id — core/worlds/firmamentum/world.hpp, ADD), так что снимок и отмена видят
+// результат сразу, а id здесь и в ядре совпадают и до прихода зеркала. Время, комета, drift (dr), разгон кометой (cm), громкость голоса
+// (gain) и счётчик пульсаретов (count) — только из зеркала. fp / ff — по полям звезды и ладу хоста, как в ядре (сверка — тесты модели).
+// События listen — из действий и разницы зеркал: { t: 'star', s, on, added? }, 'fp', 'ff', 'fx' (склейке — закрытая звезда снимает LFO).
 export const SMAX = 6;
 export const FP_LO = 0.7, FP_HI = 520, FF_LO = 140, FF_HI = 4800;
 export const LIMEN = Math.log(20 / FP_LO) / Math.log(FP_HI / FP_LO);   // высота, где ритм становится тоном
 export const STAR_KEYS = ['h', 'u', 'cyc', 'win', 'mask', 'lvl'];      // что звезды сохраняется в снимке
 export const FX_DEF = { scintilla: 0.1, drift: 0.2, cometa: 0, crepitus: 0, fulgur: 0, spread: 0.6, hall: 0.45 };
+// ядро: слот мира в хосте, коды action, ключи set и fx, раскладка зеркала — core/worlds/firmamentum/world.hpp
+export const SLOT = 10;
+export const ACT = { add: 0, close: 1, move: 2, set: 3, fx: 4, clear: 5, dice: 6, launch: 7 };
+export const SET_KEYS = ['cyc', 'win', 'mask', 'lvl', 'h', 'u'];
+export const FX_KEYS = Object.keys(FX_DEF);             // scintilla, drift, cometa, crepitus, fulgur, spread, hall
+export const MSTAR = ['slot', 'id', 'h', 'u', 'cyc', 'win', 'mask', 'lvl', 'dr', 'cm', 'fp', 'ff', 'gain', 'count'];   // звезда в зеркале
+export const HEAD = 2 + 7 + FX_KEYS.length + 1;         // time, comets, comet [on, a.h, a.u, b.h, b.u, t0, dur], fx, число звёзд
+const OWN = ['slot', 'h', 'u', 'cyc', 'win', 'mask', 'lvl'];   // поля, которые правит фасад; остальное — только ядро
 
-export function createModel({ scale = { on: false, snap: (s) => s }, rng = Math.random, place = (s) => ({ x: s.u, y: -s.h }) } = {}) {
-  const stars = [];                                     // {slot, id, h (0 горизонт … 1 зенит), u (−1 … 1 по своду), cyc, win, mask, lvl, dr, ph, cm}
-  const fx = { ...FX_DEF };
+export function createModel({ scale = { on: false, snap: (s) => s }, rng = Math.random, place = (s) => ({ x: s.u, y: -s.h }), send = () => 0 } = {}) {
+  const stars = [], fx = { ...FX_DEF };
   const state = { stars, fx, comet: null, comets: 0, time: 0 };   // comet {a, b — точки свода, t0, dur — с}
-  let cometNext = 0, cometSent = 0, driftAt = 0, serial = 0;
   const listeners = [];
   const emit = (e) => { for (const fn of listeners) fn(e); };
+  let post = send, serial = 0;
+  const dirty = new Map(), gone = new Map();            // id → номер сообщения: звезду правили / закрыли здесь, ядро ещё не видело
+  let wipe = 0, fxAt = 0;                               // номер последнего restore / clear (звёзды целиком) и последней правки fx
+  const act = (kind, i = 0, a = []) => post({ t: 'action', slot: SLOT, kind, i, a });
+  const live = (s) => !!s && stars.includes(s);
 
   function fp(s) {                                      // высота — частота пульсаций; в области тона с ладом — по ступеням
     let f = FP_LO * (FP_HI / FP_LO) ** s.h;
@@ -24,49 +41,108 @@ export function createModel({ scale = { on: false, snap: (s) => s }, rng = Math.
   }
   const ff = (s) => FF_LO * (FF_HI / FF_LO) ** ((s.u + 1) / 2) * 2 ** (s.dr || 0);
 
-  function addStar(h, u) {
+  function make(h, u) {                                 // новая звезда здесь: первый свободный слот, свой id
     const used = new Set(stars.map((s) => s.slot)), slot = [...Array(SMAX).keys()].find((k) => !used.has(k));
     if (slot == null) return null;
-    const s = { slot, id: ++serial, h, u, cyc: 3, win: 0.2, mask: 0, lvl: 0.8, dr: 0, ph: rng() * TAU };
-    stars.push(s); emit({ t: 'star', s, on: true, added: true });
+    const s = { slot, id: ++serial, h, u, cyc: 3, win: 0.2, mask: 0, lvl: 0.8, dr: 0, cm: 1, gain: 0, count: 0 };
+    stars.push(s);
     return s;
   }
-  function closeStar(s) { emit({ t: 'star', s, on: false }); stars.splice(stars.indexOf(s), 1); }
-  function moveStar(s, h, u) { s.h = h; s.u = u; emit({ t: 'star', s, on: true }); }
-  function setStar(s, patch) { if (!stars.includes(s)) return; Object.assign(s, patch); emit({ t: 'star', s, on: true }); }
-  function setFx(k, v) { fx[k] = v; emit({ t: 'fx' }); }
-  function loadFx(o) { Object.assign(fx, o); emit({ t: 'fx' }); }
-  function clear() { while (stars.length) closeStar(stars[0]); }
-
-  function tick(dt) {
-    const now = (state.time += dt);
-    if (fx.drift > 0.01 && now - driftAt > 0.1) {       // drift: форманты медленно плывут, у каждой звезды своя фаза
-      driftAt = now;
-      for (const s of stars) { s.dr = 0.6 * fx.drift * Math.sin(now * 0.21 + s.ph) + 0.25 * fx.drift * Math.sin(now * 0.57 + s.ph * 2); emit({ t: 'ff', s }); }
-    }
-    cometTick(now);
+  function addStar(h, u) {
+    const s = make(h, u);
+    if (!s) return null;
+    dirty.set(s.id, act(ACT.add, 0, [h, u, s.slot, s.id]));
+    emit({ t: 'star', s, on: true, added: true });
+    return s;
   }
-  // комета — рампа: пролетает по своду и разгоняет пульсацию звёзд, мимо которых летит
-  function cometTick(now) {
-    if (!state.comet && fx.cometa > 0.01 && stars.length) {   // новая комета: от края свода вниз через небо, раз в 4…24 с (чаще с cometa)
-      if (!cometNext) cometNext = now + 1.5;
-      if (now > cometNext) {
-        const dir = rng() < 0.5 ? -1 : 1, a = { h: 0.55 + rng() * 0.4, u: -0.9 * dir }, b = { h: 0.05 + rng() * 0.35, u: 0.9 * dir };
-        state.comet = { a, b, t0: now, dur: 3.5 + rng() * 3 }; state.comets++;
+  function closeStar(s) {
+    if (!live(s)) return;
+    stars.splice(stars.indexOf(s), 1); dirty.delete(s.id);
+    gone.set(s.id, act(ACT.close, s.id));
+    emit({ t: 'star', s, on: false });
+  }
+  function moveStar(s, h, u) {                          // закрытая (в том числе ядром) — мимо, без ошибки
+    if (!live(s)) return;
+    s.h = h; s.u = u;
+    dirty.set(s.id, act(ACT.move, s.id, [h, u]));
+    emit({ t: 'star', s, on: true });
+  }
+  function setStar(s, patch) {
+    if (!live(s)) return;
+    let q = 0;
+    for (const k of SET_KEYS) if (patch[k] != null) { s[k] = patch[k]; q = act(ACT.set, s.id, [SET_KEYS.indexOf(k), patch[k]]); }
+    if (q) dirty.set(s.id, q);
+    emit({ t: 'star', s, on: true });
+  }
+  function setFx(k, v) { const i = FX_KEYS.indexOf(k); if (i < 0) return; fx[k] = v; fxAt = act(ACT.fx, i, [v]); emit({ t: 'fx' }); }
+  function loadFx(o) { for (const [k, v] of Object.entries(o || {})) { const i = FX_KEYS.indexOf(k); if (i >= 0) { fx[k] = v; fxAt = act(ACT.fx, i, [v]); } } emit({ t: 'fx' }); }
+  function dropAll() { const was = stars.splice(0); dirty.clear(); gone.clear(); for (const s of was) emit({ t: 'star', s, on: false }); }
+  function clear() { dropAll(); wipe = act(ACT.clear); }
+
+  const scene = () => JSON.stringify({ s: stars.map((s) => ({ ...Object.fromEntries(STAR_KEYS.map((k) => [k, s[k]])), slot: s.slot, id: s.id })), fx });
+  function replace(list, fo) {                          // сцена целиком: здесь — сразу, в ядро — одним restore со слотами и id
+    dropAll();
+    for (const q of list) {
+      const s = make(q.h ?? 0, q.u ?? 0);
+      if (!s) continue;
+      for (const k of STAR_KEYS) if (q[k] != null) s[k] = q[k];
+    }
+    if (fo) Object.assign(fx, fo);
+    wipe = fxAt = post({ t: 'restore', slot: SLOT, js: scene() });
+    for (const s of stars) emit({ t: 'star', s, on: true, added: true });
+    emit({ t: 'fx' });
+  }
+  function dice() {                                     // одна звезда — ритм у горизонта, две-три — тоны выше; окна и циклы вразброс (как эталон)
+    const R = rng, list = [];
+    const h0 = 0.08 + R() * (LIMEN - 0.12), u0 = R() * 1.6 - 0.8;
+    list.push({ h: h0, u: u0, cyc: 1 + Math.floor(R() * 3), win: 0.4 + R() * 0.3 });
+    const n = 2 + Math.floor(R() * 2);
+    for (let k = 0; k < n; k++) { const h = LIMEN + 0.08 + R() * 0.45, u = R() * 1.8 - 0.9; list.push({ h, u, cyc: 2 + Math.floor(R() * 6), win: R() * 0.6, mask: R() < 0.3 ? 0.3 : 0 }); }
+    replace(list);
+  }
+  const snapshot = () => JSON.stringify({ s: stars.map((s) => Object.fromEntries(STAR_KEYS.map((k) => [k, s[k]]))), fx });
+  function restore(js) { const st = JSON.parse(js); replace(st.s || [], st.fx); }
+
+  function sync(m, applied) {                           // зеркало ядра → state; applied — сколько сообщений ядро уже применило
+    state.time = m[0]; state.comets = m[1];
+    state.comet = m[2] ? { a: { h: m[3], u: m[4] }, b: { h: m[5], u: m[6] }, t0: m[7], dur: m[8] } : null;
+    if (applied >= fxAt) {
+      let changed = false;
+      FX_KEYS.forEach((k, i) => { if (fx[k] !== m[9 + i]) { fx[k] = m[9 + i]; changed = true; } });
+      if (changed) emit({ t: 'fx' });
+    }
+    if (applied < wipe) return;                         // ядро ещё до последней сцены целиком — звёзды в зеркале старые
+    for (const [id, q] of dirty) if (q <= applied) dirty.delete(id);
+    for (const [id, q] of gone) if (q <= applied) gone.delete(id);
+    const byId = new Map(stars.map((s) => [s.id, s])), next = [], ev = [], N = MSTAR.length;
+    for (let i = 0; i < m[HEAD - 1]; i++) {
+      const o = HEAD + i * N, id = m[o + 1];
+      if (gone.has(id)) continue;                       // закрыта здесь — ядро ещё не видело
+      let s = byId.get(id);
+      const added = !s;
+      if (added) s = { id };
+      byId.delete(id);
+      const was = added ? null : { fp: s.fp, ff: s.ff, own: OWN.map((k) => s[k]) };
+      MSTAR.forEach((k, j) => { if (k !== 'id' && !(dirty.has(id) && OWN.includes(k))) s[k] = m[o + j]; });   // свои правки в пути — поля не трогаем
+      serial = Math.max(serial, id);
+      next.push(s);
+      if (added) ev.push({ t: 'star', s, on: true, added: true });
+      else {
+        if (OWN.some((k, j) => was.own[j] !== s[k])) ev.push({ t: 'star', s, on: true });
+        if (was.fp !== s.fp) ev.push({ t: 'fp', s });
+        if (was.ff !== s.ff) ev.push({ t: 'ff', s });
       }
     }
-    const c = state.comet, at = c && cometAt(now);
-    let changed = false;
-    for (const s of stars) {                            // звезда рядом с кометой — пульсация разгоняется (до двух октав), потом отпускает
-      let cm = 1;
-      if (at) { const p = place(s), d = Math.hypot(p.x - at.x, p.y - at.y); cm = 2 ** (2 * fx.cometa * Math.max(0, 1 - d / 90)); }
-      if (Math.abs(cm - (s.cm || 1)) > 0.01) { s.cm = cm; changed = true; }
+    for (const s of byId.values()) {                    // в зеркале нет
+      if (dirty.has(s.id)) next.push(s);                // добавлена здесь, ядро ещё не видело
+      else ev.push({ t: 'star', s, on: false });        // закрыло ядро
     }
-    if (changed && now - cometSent > 0.033) { cometSent = now; for (const s of stars) emit({ t: 'fp', s }); }
-    if (c && now - c.t0 > c.dur) {
-      state.comet = null; cometNext = now + (24 - 20 * fx.cometa) * (0.6 + 0.8 * rng());
-      for (const s of stars) { s.cm = 1; emit({ t: 'fp', s }); }
-    }
+    stars.length = 0; stars.push(...next);
+    for (const e of ev) emit(e);
+  }
+  function bind(fn) {                                   // новый узел ядра (новый контекст): счёт сообщений — заново, сцена — туда целиком
+    post = fn; dirty.clear(); gone.clear();
+    wipe = fxAt = post({ t: 'restore', slot: SLOT, js: scene() });
   }
   function cometAt(now = state.time) {                  // где комета: k — доля пути, x, y — на экране (линейно между концами, как летит)
     const c = state.comet;
@@ -75,26 +151,12 @@ export function createModel({ scale = { on: false, snap: (s) => s }, rng = Math.
     return { k, x: A.x + (B.x - A.x) * k, y: A.y + (B.y - A.y) * k, A, B };
   }
 
-  function dice() {                                     // одна звезда — ритм у горизонта, две-три — тоны выше; окна и циклы вразброс
-    const R = rng;
-    clear();
-    const s0 = addStar(0.08 + R() * (LIMEN - 0.12), R() * 1.6 - 0.8); if (s0) setStar(s0, { cyc: 1 + Math.floor(R() * 3), win: 0.4 + R() * 0.3 });
-    const n = 2 + Math.floor(R() * 2);
-    for (let k = 0; k < n; k++) { const s = addStar(LIMEN + 0.08 + R() * 0.45, R() * 1.8 - 0.9); if (s) setStar(s, { cyc: 2 + Math.floor(R() * 6), win: R() * 0.6, mask: R() < 0.3 ? 0.3 : 0 }); }
-  }
-  const snapshot = () => JSON.stringify({ s: stars.map((s) => Object.fromEntries(STAR_KEYS.map((k) => [k, s[k]]))), fx });
-  function restore(js) {
-    const st = JSON.parse(js);
-    clear();
-    for (const q of st.s) { const s = addStar(q.h, q.u); if (s) setStar(s, q); }
-    loadFx(st.fx);
-  }
-
   return {
     state, fp, ff, LIMEN, cometAt,
     addStar, closeStar, moveStar, setStar, setFx, loadFx, clear, dice,
-    tick, snapshot, restore, sounding: () => stars.length > 0,
+    tick() {}, snapshot, restore, sounding: () => stars.length > 0,   // время модели идёт в ядре
     listen(fn) { listeners.push(fn); },
-    launch() { cometNext = -1; },                       // для тестов: комета — на следующем шаге
+    launch() { act(ACT.launch); },                      // для тестов: комета — на следующем шаге ядра
+    sync, bind,
   };
 }

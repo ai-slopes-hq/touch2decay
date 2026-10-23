@@ -11,7 +11,7 @@ static Host host;
 static firmamentum::Firmamentum firm(host.scale());
 static sdk::World* worlds[Host::SLOTS] = {};
 static double args[64];
-static double mbuf[512];                                // зеркало Firmamentum — до 89 чисел
+static double mbuf[512];                                // зеркало Firmamentum — до 101 числа
 static constexpr int STR_CAP = 1 << 16;
 static char str[STR_CAP];
 

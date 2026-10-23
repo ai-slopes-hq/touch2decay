@@ -1,10 +1,10 @@
 // Тесты эталона Firmamentum (tools/ref/pulsar-worklet.js): звучит, детерминирован, по звуку — как прежний worklet.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SCENARIOS, SEED, SR, BLOCK, toScript, loadRef, loadOld, loadWasm, play, WASM, ACTS, refPath, corePath } from './firm-scenarios.mjs';
+import { SCENARIOS, SEED, SR, BLOCK, toScript, loadRef, loadOld, play, ACTS, refPath, corePath } from './firm-scenarios.mjs';
 
 const rms = (a) => Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length);
 const run = (load, name, steps = SCENARIOS[name]) => { const { proc, posted } = load(); return play(proc, steps, posted); };
@@ -44,7 +44,8 @@ test('reference sounds like the old worklet', () => {
   }
 });
 
-// Ядро C++ (core/worlds/firmamentum) против эталона по сэмплам, допуск 1e-6: core/build.sh
+// Звук мира SDK (core/worlds/firmamentum/sound.cpp, голоса напрямую — render-cli) против эталона по сэмплам, допуск 1e-6: core/build.sh.
+// Прежние pulsar.cpp / pulsar.wasm / pulsar-worklet.js удалены (задача 7 SDK A) — их место занял sound.cpp в t2d.wasm, сверка ниже.
 const EPS = 1e-6;
 const CLI = fileURLToPath(new URL('../core/build/render-cli', import.meta.url));
 function same(a, b, what) {                             // каждый отсчёт — не дальше EPS; первое расхождение — в сообщении
@@ -66,78 +67,6 @@ for (const name of Object.keys(SCENARIOS)) {
     same(c.L, r.L, `${name} L`); same(c.R, r.R, `${name} R`);
   });
 }
-
-// ---------- WASM: pulsar-worklet.js (обёртка) + pulsar.wasm ----------
-
-const sameMeters = (a, b, what) => {
-  assert.equal(a.length, b.length, `${what}: meter count`);
-  a.forEach((m, k) => { same(m.c, b[k].c, `${what} c #${k}`); same(m.g, b[k].g, `${what} g #${k}`); });
-};
-const sameEvents = (a, b, what) => {
-  assert.equal(a.length, b.length, `${what}: event count`);
-  a.forEach((e, k) => {
-    assert.equal(e.k.length, b[k].k.length, `${what} k count #${k}`);
-    e.k.forEach((p, j) => same(p, b[k].k[j], `${what} k #${k}.${j}`));
-    assert.deepEqual(e.f, b[k].f, `${what} f #${k}`);
-  });
-};
-async function wasm(steps, sr = SR, seed = SEED, block = BLOCK) { const w = loadWasm(seed, sr); await w.ready; return play(w.proc, steps, w.posted, block); }
-
-for (const name of Object.keys(SCENARIOS)) {
-  test(`wasm matches the reference: ${name}`, async () => {
-    const r = run(() => loadRef(), name), w = await wasm(SCENARIOS[name]);
-    same(w.L, r.L, `${name} L`); same(w.R, r.R, `${name} R`); sameMeters(w.meters, r.meters, name); sameEvents(w.events, r.events, name);
-  });
-}
-
-test('wasm has no imports', () => {
-  assert.deepEqual(WebAssembly.Module.imports(new WebAssembly.Module(readFileSync(WASM))), []);
-});
-
-test('messages before ready keep their order', async () => {
-  const steps = SCENARIOS.six, first = steps.findIndex((s) => s.run);
-  const w = loadWasm();
-  for (const s of steps.slice(0, first)) w.proc.port.onmessage({ data: s });   // ещё не готов — в очередь
-  await w.ready;
-  const got = play(w.proc, steps.slice(first), w.posted), r = run(() => loadRef(), 'six');
-  same(got.L, r.L, 'six L'); same(got.R, r.R, 'six R');
-});
-
-test('a partial voice message keeps the other fields', async () => {
-  const steps = [...SCENARIOS.tone, { t: 'voice', i: 0, ff: 2400 }, { run: 100 }];
-  const r = run(() => loadRef(), 'tone', steps), w = await wasm(steps);
-  same(w.L, r.L, 'partial L'); same(w.R, r.R, 'partial R');
-});
-
-// Порядок вызовов ГСЧ зависит от размера блока (голоса — снаружи, отсчёты — внутри; пыль — после голосов блока), поэтому сверка
-// блоков 256 — на одном голосе без пыли: многоголосые сценарии при другой нарезке честно расходятся по случайным амплитудам.
-test('blocks longer than 128 samples', async () => {
-  const steps = SCENARIOS.tone.map((s) => (s.run ? { run: 150 } : s));
-  const { proc, posted } = loadRef(), r = play(proc, steps, posted, 256), w = await wasm(steps, SR, SEED, 256);
-  same(w.L, r.L, '256 L'); same(w.R, r.R, '256 R');
-});
-
-test('a voice index out of range is ignored', async () => {
-  const bad = [{ t: 'voice', i: 6, on: true, fp: 90, ff: 900, cyc: 2, win: 0, mask: 0, lvl: 0.5, pan: 0 }, { t: 'voice', i: -1, on: true, fp: 90 }];
-  const steps = SCENARIOS.tone, w = await wasm([...steps.slice(0, -1), ...bad, ...steps.slice(-1)]), r = run(() => loadRef(), 'tone');
-  same(w.L, r.L, 'tone L'); same(w.R, r.R, 'tone R');
-});
-
-test('at 44.1 kHz', async () => {
-  for (const name of ['fulgur', 'all']) {
-    const steps = cut(SCENARIOS[name], 2000), { proc, posted } = loadRef(SEED, 44100), r = play(proc, steps, posted), w = await wasm(steps, 44100);
-    same(w.L, r.L, `${name} L`); same(w.R, r.R, `${name} R`); sameMeters(w.meters, r.meters, name); sameEvents(w.events, r.events, name);
-  }
-});
-
-test('speed: 60 s, six stars, crepitus and fulgur', async () => {
-  const blocks = Math.round((60 * SR) / BLOCK);
-  const steps = [...SCENARIOS.all.filter((s) => !s.run), { run: blocks }];
-  const time = (proc) => { const t0 = performance.now(); play(proc, steps); return performance.now() - t0; };
-  const js = time(loadRef().proc), w = loadWasm(); await w.ready;
-  const ms = time(w.proc);
-  console.log(`  speed, 60 s of sound: JS ${js.toFixed(0)} ms, WASM ${ms.toFixed(0)} ms (x${(js / ms).toFixed(2)})`);
-});
 
 // ---------- SDK: мир X в t2d.wasm (модель ядра + звук на блоках SDK) против эталона: JS-модель → engine.js → pulsar-worklet.js ----------
 // Сухой L/R — 1e-6 на сэмпл; услышанное (pulsed, dust, bolts) — те же сообщения, в том же порядке, теми же значениями.

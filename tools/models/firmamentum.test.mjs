@@ -1,11 +1,12 @@
 // Тесты модели Firmamentum в Node: слоты звёзд, fp/ff и limen, лад, комета, drift, снимок, кубик.
-// Каждый тест — дважды: против JS-модели (worlds/firmamentum/model.js) и против модели ядра (t2d.wasm через фасад firmamentum-core.mjs).
-// Плюс сверка «JS-модель ↔ ядро»: одно зерно, одни действия, шаг 128 сэмплов — состояние до 1e-9.
+// Каждый тест — дважды: против эталонной JS-модели (tools/ref/firmamentum-model.js) и против модели ядра (t2d.wasm) через фасад
+// веба worlds/firmamentum/model.js (порт — firmamentum-core.mjs). Плюс сверка «JS-модель ↔ ядро»: одно зерно, одни действия,
+// шаг 128 сэмплов — состояние до 1e-9. Ниже — фасад на асинхронном порту: звезда под пальцем, закрытая ядром; id без гонок.
 //   core/build.sh && node --test tools/models/firmamentum.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createModel as jsModel, SMAX, LIMEN } from '../../worlds/firmamentum/model.js';
-import { createModel as coreModel, sky, S, K, SR } from './firmamentum-core.mjs';
+import { createModel as jsModel, SMAX, LIMEN } from '../ref/firmamentum-model.js';
+import { createModel as coreModel, sky, S, K, SR, SLOT, ACT } from './firmamentum-core.mjs';
 import { scl, snapSemi, inScale } from '../../host/scale.js';
 import { seeded, near } from './util.mjs';
 
@@ -16,7 +17,7 @@ const hostSnap = ({ on, idx, root }) => ({
 const inHostScale = ({ idx, root }, n) => { const keep = { ...scl }; Object.assign(scl, { on: true, idx, root }); const r = inScale(n); Object.assign(scl, keep); return r; };
 const FACTORIES = {
   js: ({ seed = 1, scale, place = sky } = {}) => jsModel({ rng: seeded(seed), place, ...(scale ? { scale: hostSnap(scale) } : {}) }),
-  core: ({ seed = 1, scale, place = sky } = {}) => coreModel({ seed, scale, place }),
+  core: ({ seed = 1, scale, place = sky, async } = {}) => coreModel({ seed, scale, place, async }),
 };
 const toSky = (p) => ({ h: -p.y / (S * K), u: p.x / S });   // точка свода (px) → (h, u), обратное к sky
 
@@ -104,6 +105,7 @@ function same(J, C, where) {                            // состояние д
     const c = C.state.stars[i];
     for (const k of KEYS) eq(k === 'cm' ? (j.cm ?? 1) : j[k], c[k], `star ${i} ${k}`);
     eq(J.fp(j), C.fp(c), `star ${i} fp`); eq(J.ff(j), C.ff(c), `star ${i} ff`);
+    eq(J.fp(j), c.fp, `star ${i} fp (core)`); eq(J.ff(j), c.ff, `star ${i} ff (core)`);   // частоты, которые посчитало ядро (зеркало)
   });
 }
 const sameJson = (a, b, path = '') => {                 // разобранные снимки: те же ключи и порядок, числа до 1e-12
@@ -130,9 +132,94 @@ test('Firmamentum: JS-модель ↔ ядро — то же состояние
   let comets = 0;
   for (let k = 0; k < steps; k++) { both((m) => m.tick(dt), `step ${k}`); comets = J.state.comets; }
   assert.ok(comets >= 2, `${comets} comets in 20 s`);
-  both((m) => m.dice(), 'dice');
+  both((m) => (m === J ? m.dice() : m.coreDice()), 'dice');   // кубик ядра (его rng): фасад веба кидает кубик сам — см. ниже
   const js = J.snapshot(), cs = C.snapshot();
   sameJson(JSON.parse(js), JSON.parse(cs));
   both((m) => m.restore(m === J ? js : cs), 'restore');
   for (let k = 0; k < Math.round(2 / dt); k++) both((m) => m.tick(dt), `after restore ${k}`);   // фазы drift после restore — те же
+});
+
+// ---------- фасад веба на асинхронном порту (как t2d-worklet.js: сообщения доходят позже, зеркало ~60 раз в секунду) ----------
+const facadeAsync = (seed = 3) => FACTORIES.core({ seed, async: true });
+
+test('Firmamentum фасад: звезду под пальцем закрыло ядро — её нет в stars, moveStar / setStar / closeStar — мимо, без ошибки', () => {
+  for (const how of ['dice', 'clear', 'restore', 'core']) {
+    const m = facadeAsync(), off = [];
+    m.listen((e) => { if (e.t === 'star' && !e.on) off.push(e.s); });
+    const s = m.addStar(0.4, 0.2); m.addStar(0.7, -0.3);
+    m.tick(0.01);
+    const held = m.state.stars[0];
+    assert.equal(held, s, 'the same live object after the mirror');
+    if (how === 'dice') m.dice();
+    else if (how === 'clear') m.clear();
+    else if (how === 'restore') m.restore(JSON.stringify({ s: [{ h: 0.6, u: 0 }], fx: {} }));
+    else { m.core.action(SLOT, ACT.dice); m.deliver(); }   // ядро само (мимо фасада): зеркало без звезды
+    assert.ok(!m.state.stars.includes(held), `${how}: the held star is not live`);
+    assert.ok(off.includes(held), `${how}: star off event`);
+    m.flush(); m.deliver();
+    assert.ok(!m.state.stars.includes(held), `${how}: still not live after the mirror`);
+    const ids = m.coreIds().join(), scene = m.core.snapshot(SLOT);
+    m.moveStar(held, 0.9, 0.9); m.setStar(held, { cyc: 7 }); m.closeStar(held);
+    m.flush();
+    assert.equal(m.core.snapshot(SLOT), scene, `${how}: the core scene is untouched`);
+    m.tick(0.01);
+    assert.equal(m.coreIds().join(), ids, `${how}: nothing reached the core`);
+    assert.ok(!m.state.stars.includes(held));
+    assert.ok(m.state.stars.every((q) => m.coreStar(q.id)), `${how}: facade stars == core stars`);
+    assert.equal(m.state.stars.length, m.coreIds().length);
+  }
+});
+
+test('Firmamentum фасад: кубик / restore, сразу addStar без зеркала — id тот же в ядре, move и close попадают в неё', () => {
+  for (const how of ['dice', 'restore', 'rebind']) {
+    const m = facadeAsync(5);
+    m.addStar(0.3, 0); m.addStar(0.5, 0.5); m.tick(0.01);
+    if (how === 'dice') m.dice();
+    else if (how === 'restore') m.restore(JSON.stringify({ s: [{ h: 0.2, u: -0.5 }, { h: 0.8, u: 0.1, cyc: 5 }], fx: { hall: 0.7 } }));
+    else { const js = m.snapshot(); m.rebind(); m.restore(js); }   // новый узел ядра, как restartAudio: снимок → build (bind) → restore
+    const a = m.addStar(0.66, 0.33);                    // ядро ещё не видело ни кубика, ни звезды
+    const local = m.state.stars.map((s) => `${s.slot}:${s.id}`).join();
+    m.flush();
+    const c = m.coreStar(a.id);
+    assert.ok(c, `${how}: the new star is in the core by its id ${a.id}`);
+    assert.deepEqual([c.h, c.u, c.slot], [0.66, 0.33, a.slot], `${how}: the same star`);
+    m.deliver();
+    assert.equal(m.state.stars.map((s) => `${s.slot}:${s.id}`).join(), local, `${how}: the mirror agrees with the facade`);
+    assert.ok(m.state.stars.includes(a), `${how}: the same object`);
+    m.moveStar(a, 0.71, -0.2); m.flush();
+    assert.deepEqual([m.coreStar(a.id).h, m.coreStar(a.id).u], [0.71, -0.2], `${how}: move hits it`);
+    const others = m.coreIds().filter((id) => id !== a.id);
+    m.closeStar(a); m.flush();
+    assert.equal(m.coreStar(a.id), null, `${how}: close hits it`);
+    assert.deepEqual(m.coreIds(), others, `${how}: the others stay`);
+  }
+});
+
+test('Firmamentum фасад: зеркало не перетирает свои правки в пути, не возвращает закрытую, не теряет добавленную', () => {
+  const m = facadeAsync(), s = m.addStar(0.3, 0.1);
+  m.tick(0.01);
+  m.moveStar(s, 0.5, 0.2);                              // ядро ещё на 0.3
+  m.deliver();
+  assert.deepEqual([s.h, s.u], [0.5, 0.2], 'a stale mirror does not pull the star back');
+  const t = m.addStar(0.8, 0); m.deliver();
+  assert.ok(m.state.stars.includes(t), 'a star added here survives a mirror that has not seen it');
+  m.closeStar(s); m.deliver();
+  assert.ok(!m.state.stars.includes(s) && m.state.stars.length === 1, 'a star closed here does not come back');
+  m.tick(0.01);
+  assert.deepEqual(m.state.stars.map((q) => q.id), m.coreIds(), 'after the core caught up — the same stars');
+  assert.ok(near(m.coreStar(t.id).h, 0.8));
+});
+
+test('Firmamentum фасад: снимок → restore → зеркало — снимок тот же (числа через ядро без потерь, лишних шагов отмены нет)', () => {
+  const m = FACTORIES.core({ seed: 4 });
+  m.dice(); m.setFx('hall', 0.1 + 0.2); m.setStar(m.state.stars[1], { win: 1 / 3, lvl: 0.7000000000000001 });
+  const js = m.snapshot();
+  m.tick(0.05);
+  assert.equal(m.snapshot(), js);
+  const q = facadeAsync(8);
+  q.restore(js);
+  assert.equal(q.snapshot(), js, 'restore — at once, before the core');
+  q.tick(0.05);
+  assert.equal(q.snapshot(), js, 'and after the mirror');
+  assert.deepEqual(JSON.parse(q.core.snapshot(SLOT)), JSON.parse(js), 'the core has the same scene (numbers — bit for bit)');
 });

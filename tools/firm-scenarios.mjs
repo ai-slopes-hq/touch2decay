@@ -1,15 +1,13 @@
-// Сценарии сверки ядра Firmamentum: одни и те же сообщения порта — в эталонный JS-worklet (tools/ref), в обёртку над wasm
-// и текстом в core/build/render-cli. Шаг — сообщение ({t:'voice'|'fx', …}) или { run: блоков } (блок — 128 сэмплов).
+// Сценарии сверки ядра Firmamentum: одни и те же сообщения порта — в эталонный JS-worklet (tools/ref) и текстом в core/build/render-cli
+// (звук мира SDK, sound.cpp). Шаг — сообщение ({t:'voice'|'fx', …}) или { run: блоков } (блок — 128 сэмплов).
 // Ниже (SDK) — сценарии действиями модели для мира X в t2d.wasm.
-import { readFileSync } from 'node:fs';
 import { sandbox } from './goetia-scenarios.mjs';
-import { createModel as jsModel } from '../worlds/firmamentum/model.js';
+import { createModel as jsModel } from './ref/firmamentum-model.js';
 import { scl, snapSemi } from '../host/scale.js';
 import { seeded } from './models/util.mjs';
 import { loadT2d } from './t2d-core.mjs';
 import { sky, ACT, SET_KEYS, FX_KEYS, SLOT } from './models/firmamentum-core.mjs';
 
-export const WASM = new URL('../pulsar.wasm', import.meta.url);
 export const SR = 48000, BLOCK = 128, SEED = 12345;
 const FX = { t: 'fx', jit: 0, spread: 0.6, crep: 0, fulg: 0 };
 const star = (i, o) => ({ t: 'voice', i, on: true, fp: 4, ff: 600, cyc: 2, win: 0, mask: 0, lvl: 0.44, pan: 0, ...o });
@@ -56,16 +54,6 @@ export function toScript(steps, sr = SR, seed = SEED) {  // текст для re
 export function loadRef(seed = SEED, sr = SR) {          // эталон с зерном
   const { reg, posted } = sandbox('./ref/pulsar-worklet.js', { sampleRate: sr });
   return { proc: new reg.pulsar({ processorOptions: { seed } }), posted };
-}
-export function loadWasm(seed = SEED, sr = SR) {         // обёртка pulsar-worklet.js над pulsar.wasm; ready — когда пришло {t:'ready'}
-  const { reg, posted } = sandbox('../pulsar-worklet.js', { sampleRate: sr });
-  const bytes = readFileSync(WASM);
-  const proc = new reg.pulsar({ processorOptions: { wasm: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), seed } });
-  const ready = new Promise((res, rej) => {
-    const post = proc.port.postMessage;
-    proc.port.postMessage = (m) => { post(m); if (m.t === 'ready') res(); else if (m.t === 'err') rej(new Error(m.msg)); };
-  });
-  return { proc, posted, ready };
 }
 export function loadOld(i = 0, sr = SR) {                // прежний код с независимым источником случайности (xorshift32 от номера прогона — не mulberry32 эталона)
   const r = loadRef(1, sr);

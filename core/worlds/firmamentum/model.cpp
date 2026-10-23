@@ -52,8 +52,8 @@ Star* Model::add(double h, double u, int slot, int id) {
     for (int k = 0; k < SMAX; k++) if (!used[k]) { slot = k; break; }
   }
   if (slot < 0) return nullptr;
-  if (id <= serial_) id = serial_ + 1;                  // id от UI — только вперёд, иначе следующий свой
-  serial_ = id;
+  if (id <= 0 || find(id)) id = serial_ + 1;            // id от UI — любой не живой; нет или занят — следующий свой (выше всех виденных — не живой)
+  if (id > serial_) serial_ = id;
   Star& s = stars_[n_++];
   s = Star();
   s.slot = slot; s.id = id; s.h = h; s.u = u;
@@ -212,9 +212,10 @@ void Model::restore(const std::string& js) {
   if (const Json* arr = st.get("s"); arr && arr->type == Json::Arr) {
     for (const Json& q : arr->a) {
       if (q.type != Json::Obj) continue;
-      double h = 0, u = 0;
+      double h = 0, u = 0, slot = -1, id = 0;
       num(q, "h", h); num(q, "u", u);
-      Star* s = add(h, u);
+      num(q, "slot", slot); num(q, "id", id);           // необязательные: фасад в вебе шлёт свои слоты и id (в снимке их нет)
+      Star* s = add(h, u, static_cast<int>(slot), static_cast<int>(id));
       if (!s) continue;
       const int keys[] = {H, U, CYC, WIN, MASK, LVL};
       for (int k = 0; k < 6; k++) { double v; if (num(q, STAR_KEYS[k], v)) put(*s, keys[k], v); }

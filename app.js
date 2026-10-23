@@ -1,6 +1,6 @@
 // touch2decay — дрон / нойз на 1–2 пальца. Web Audio + canvas, без зависимостей.
 // хост: сервисы, примитивы и экраны — в host/ (шаги 2–3 docs/refactor-plan.md); здесь роутер касаний, кадр и мир I · Tenebrae
-import { an, asym, chanLvl, chans, ctx, filter, gainNode, hall, lfo, mix, noiseBuffer, restartAudio, saveMix, scopeBuf, setVol, soft, unlock, vol, VOL_TRAVEL } from './host/audio.js';
+import { an, asym, chanLvl, chans, core, ctx, filter, gainNode, hall, lfo, mix, noiseBuffer, restartAudio, saveMix, scopeBuf, send, setCoreVer, setVol, soft, syncScale, unlock, vol, VOL_TRAVEL } from './host/audio.js';
 import { audioPanel, drawAudioPanel, panelDown, panelGeo, panelHit, panelMove, setAudioPanel, volTap } from './host/audio-panel.js';
 import { link, tempoFrom, transportFrom } from './host/concordia.js';
 import { clockLive, onTick, setClockVer } from './host/clock.js';
@@ -23,6 +23,7 @@ import { commit, hists, undo } from './host/undo.js';
 import { clamp, inBox, invLog, lerpLog } from './host/util.js';
 import { morphFn, morphName, NW, WAVES, weight } from './host/waves.js';
 setClockVer(new URL(import.meta.url).searchParams.get('v') || '0');   // версия для addModule метронома (у host/ её нет)
+setCoreVer(new URL(import.meta.url).searchParams.get('v') || '0');    // и для ядра SDK (t2d-worklet.js, t2d.wasm)
 
 // ---------- звук ----------
 const F_LO = 55;          // нижняя нота поля (A1)
@@ -2346,6 +2347,7 @@ function frame(now) {
   last = now;
   for (const w of Object.values(worlds)) if (w.tick) w.tick(now, dt);
   slTick(dt);
+  syncScale();                                           // лад сменился — в ядро SDK
   readLevel();
   if (audioPanel && (nav.view !== 'play' || audioPanel.w !== nav.world || fxSheet || legenda)) setAudioPanel(null);
   if ((nav.view !== 'play' || nav.anim) && drawNav(now)) { measureStrain(now, performance.now() - t0); return; }
@@ -2603,7 +2605,7 @@ window.T2D = {
   registerWorld, tempoFrom, transportFrom, onTick, get clockLive() { return clockLive(); }, openSheet: (spec) => { setFxSheet({ w: nav.world, spec }); }, lfoBase: (id, key) => { const e = SL.find((q) => q.id === id && q.key === key); return e ? e.base : null; }, lfoClear: (prefix) => { for (const e of [...SL]) if (e.id.startsWith(prefix)) SL.splice(SL.indexOf(e), 1); }, closeSheet: () => { setFxSheet(null); }, get sheetOpen() { return !!fxSheet; }, get link() { return { ...link }; }, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,
   get g() { return g; }, get W() { return W; }, get H() { return H; }, get DPR() { return DPR; },
   get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },
-  get ctx() { return ctx; }, hall, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,
+  get ctx() { return ctx; }, hall, send, get core() { return core; }, menuMove, drawRing, ringCenter, readoutAt, mapText, snapSemi,
   MENU_DEAD, get MENU_SPAN() { return MENU_SPAN; }, HOLD_MS, DTAP_MS, PIN_MAX, get scaleOn() { return scl.on; },
   get scaleRoot() { return scaleRoot(); },                                        // тоника — класс высоты от A
   get scalePCs() { return scalePCs(); },                                          // классы высот лада
@@ -2617,7 +2619,7 @@ window.t2d = {
   get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.hall === 'function' && T2D.snapSemi(3.4) === 3.4; },
   hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
   voices: V, fx, scl, freq, cutoff, applyFx, place, unplace, semi,
-  get ctx() { return ctx; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
+  get ctx() { return ctx; }, get core() { return core && { ready: core.ready, sent: core.sent, node: !!core.node }; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
 };   // для отладки из консоли
 
 resize();

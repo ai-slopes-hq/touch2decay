@@ -1,8 +1,10 @@
 // звук хоста: контекст, мастер (срез, компрессор, потолок), микшер-каналы миров, общий зал, громкость,
-// перезапуск при смене выхода, разблокировка звука в iOS. Голоса Tenebrae — в app.js (solBuild)
+// ядро SDK (t2d.wasm: миры SDK и четыре общих ревербера, посылы миров T.send), перезапуск при смене выхода, разблокировка звука в iOS.
+// Голоса Tenebrae — в app.js (solBuild)
 import { startClock } from './clock.js';
 import { clamp } from './util.js';
 import { worlds, nav } from './registry.js';
+import { scl } from './scale.js';
 
 export let ctx = null, an = null, scopeBuf = null;
 // асимметричный перегруз: смещённый tanh даёт чётные гармоники — ламповая/фузовая грязь, а не просто громче
@@ -78,6 +80,63 @@ export function hall() {
   return { input, out: merge, lines };
 }
 
+// ---------- ядро SDK: t2d.wasm в t2d-worklet.js — один узел на контекст (build), на хост и все миры SDK ----------
+// Входы узла — посылы миров на Web Audio в ревербы ядра (по стереовходу на тип: room 0, plate 1, hall 2, cathedral 3), выходы —
+// возврат ревербов (→ общий вход мастера, до компрессора) и сухой звук каждого мира SDK (→ его канал микшера, через engine мира).
+// Порт: send(m) → номер сообщения (фасад модели мира сверяет по нему зеркало: t2d-worklet.js шлёт, сколько сообщений применено);
+// пока узла нет (качается wasm, грузится модуль) — очередь. Не загрузилось — console.error, миры на Web Audio звучат без реверба.
+export const REVS = ['room', 'plate', 'hall', 'cathedral'];
+export const SDK_WORLDS = [10];                          // слоты миров SDK в ядре (номер мира): Firmamentum
+let coreVer = '0', coreBytes = null;                     // байты t2d.wasm — качаются один раз, на каждый новый контекст — копия
+export function setCoreVer(v) { coreVer = v; }
+export let core = null;
+let building = null;                                     // мир, чей build идёт сейчас: его посылы — после его фейдера
+function buildCore(c, masterIn) {
+  const k = { ctx: c, node: null, ready: false, sent: 0, queue: [], subs: [], scale: '' };
+  k.ins = REVS.map(() => gainNode(1));                   // сумма посылов по типу → вход узла
+  k.ret = gainNode(1); k.ret.connect(masterIn);
+  k.dry = Object.fromEntries(SDK_WORLDS.map((s) => [s, gainNode(1)]));
+  k.send = (m) => { k.sent++; if (k.node) k.node.port.postMessage(m); else k.queue.push(m); return k.sent; };
+  k.listen = (fn) => { k.subs.push(fn); };
+  if (!coreBytes) coreBytes = fetch(`t2d.wasm?v=${coreVer}`).then((r) => { if (!r.ok) throw new Error(`t2d.wasm ${r.status}`); return r.arrayBuffer(); });
+  Promise.all([c.audioWorklet.addModule(`t2d-worklet.js?v=${coreVer}`), coreBytes]).then(([, buf]) => {
+    if (core !== k) return;                              // пока грузилось, звук перезапустили — этот узел уже не нужен
+    const node = new AudioWorkletNode(c, 't2d', {
+      numberOfInputs: REVS.length, numberOfOutputs: 1 + SDK_WORLDS.length, outputChannelCount: [2, ...SDK_WORLDS.map(() => 2)],
+      processorOptions: { wasm: buf.slice(0), seed: (Math.random() * 4294967296) >>> 0, worlds: SDK_WORLDS },
+    });
+    k.ins.forEach((g, r) => g.connect(node, 0, r));
+    node.connect(k.ret, 0);
+    SDK_WORLDS.forEach((s, j) => node.connect(k.dry[s], 1 + j));
+    node.onprocessorerror = () => console.error('t2d core: the worklet failed');
+    node.port.onmessage = (e) => {
+      const d = e.data;
+      if (d.t === 'm') { for (const fn of k.subs) fn(d); } else if (d.t === 'ready') k.ready = true;
+      else if (d.t === 'err') console.error('t2d core:', d.msg);
+    };
+    k.node = node;
+    while (k.queue.length) node.port.postMessage(k.queue.shift());
+  }).catch((err) => { console.error('t2d core:', err); if (core === k) coreBytes = null; });
+  return k;
+}
+// посыл мира в ревербер ядра: GainNode (усиление — фейдер мира, посыл после фейдера: заглушил мир — хвост дозвучит) → вход ядра типа rev.
+// Зовётся из build мира (мир — тот, чей build идёт) или с номером мира n
+export function send(rev, n = building) {
+  const i = REVS.indexOf(rev), r = i < 0 ? REVS.indexOf('hall') : i;   // неизвестный тип — hall
+  const g = gainNode(n == null ? 1 : chanGain(n));
+  g.connect(core.ins[r]);
+  if (n != null && chans[n]) chans[n].sends.push(g);
+  return g;
+}
+// лад — в ядро, когда сменился (зовёт кадр app.js: лад меняют многие места — сравнить дешевле, чем помнить их все)
+export function syncScale() {
+  if (!core) return;
+  const key = `${scl.on}|${scl.idx}|${scl.root}`;
+  if (key === core.scale) return;
+  core.scale = key;
+  core.send({ t: 'scale', on: scl.on, idx: scl.idx, root: scl.root });
+}
+
 // громкость — общая на всё приложение, кружок с фейдером перед ладом; зажал — вниз выдвигается длинная шкала,
 // палец ведёт её без скачка. Снизу off, выше нуля — до +6 дБ (сильнее в мягкий лимитер). Запоминается на устройстве
 export const VOL_TRAVEL = 220, VOL_LO = -48, VOL_HI = 6, VOL_DEF = -VOL_LO / (VOL_HI - VOL_LO);
@@ -109,7 +168,11 @@ export const MIXM = {                                            // мастер
 export function applyMix() {
   if (!ctx || !mixN) return;
   const t = ctx.currentTime;
-  for (const [n, c] of Object.entries(chans)) c.g.gain.setTargetAtTime(chanGain(n), t, 0.03);
+  for (const [n, c] of Object.entries(chans)) {
+    c.g.gain.setTargetAtTime(chanGain(n), t, 0.03);
+    for (const s of c.sends) s.gain.setTargetAtTime(chanGain(n), t, 0.03);   // посылы миров на Web Audio — после фейдера
+  }
+  if (core) for (const s of SDK_WORLDS) if (chans[s]) core.send({ t: 'fader', slot: s, g: chanGain(s) });   // миры SDK: посыл × фейдер — в ядре
   mixN.lpf.frequency.setTargetAtTime(MIXM.lpf.hz(mix.lpf) > 19000 ? 22000 : MIXM.lpf.hz(mix.lpf), t, 0.03);
   mixN.comp.threshold.setTargetAtTime(MIXM.thr.db(mix.thr), t, 0.03); mixN.comp.ratio.setTargetAtTime(MIXM.ratio.r(mix.ratio), t, 0.03);
   mixN.ceil.gain.setTargetAtTime(10 ** (MIXM.ceil.db(mix.ceil) / 20), t, 0.03);
@@ -165,10 +228,12 @@ export function build() {
   mCeil.connect(an);
   // микшер: у каждого мира свой канал (громкость, mute, уровень для карты) → общий вход мастера
   chans = {};
-  for (const n of Object.keys(worlds)) { const i0 = gainNode(1), g0 = gainNode(1), a0 = ctx.createAnalyser(); a0.fftSize = 256; i0.connect(a0); i0.connect(g0).connect(masterIn); chans[n] = { in: i0, g: g0, an: a0 }; }   // уровень — до фейдера: на карте видно и приглушённый мир
+  for (const n of Object.keys(worlds)) { const i0 = gainNode(1), g0 = gainNode(1), a0 = ctx.createAnalyser(); a0.fftSize = 256; i0.connect(a0); i0.connect(g0).connect(masterIn); chans[n] = { in: i0, g: g0, an: a0, sends: [] }; }   // уровень — до фейдера: на карте видно и приглушённый мир
   mixN = { lpf: mLpf, comp, ceil: mCeil };
+  core = buildCore(ctx, masterIn);                       // ядро SDK — до миров: их build берут посылы (send) и сухие выходы миров SDK
+  syncScale();
   applyMix();
-  for (const [n, w] of Object.entries(worlds)) if (w.build) w.build(ctx, chans[n].in);
+  for (const [n, w] of Object.entries(worlds)) if (w.build) { building = n; try { w.build(ctx, chans[n].in); } finally { building = null; } }
 }
 
 // iOS: звук только после касания; плюс обход переключателя «бесшумно»

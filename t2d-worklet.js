@@ -2,17 +2,41 @@
 // processorOptions.worlds — слоты миров SDK (Firmamentum — 10). Входы: четыре стерео-посыла извне в ревербы room, plate, hall, cathedral.
 // Выходы: [возврат ревербов, сухой звук каждого мира — в порядке worlds], все стерео. Ядро считает кусками по 128.
 // Внутрь: {t:'action', slot, kind, i, a}, {t:'fader', slot, g}, {t:'scale', on, idx, root}, {t:'snap', slot, id} → {t:'snap', id, js}, {t:'restore', slot, js}.
-// Наружу ~60 раз в секунду: {t:'m', w: {слот: {mirror, heard}}} — «услышанное» — список записей (по одной на блок, где что-то было; пустые, из одних нулей, пропускаются), копится между отправками — ничего не теряется, раскладку записи знает мир.
+// Наружу ~60 раз в секунду: {t:'m', n, w: {слот: {mirror, heard}}} — n: сколько сообщений порта уже применено (по нему фасад в вебе
+// понимает, догнало ли зеркало его действия); — «услышанное» — список записей (по одной на блок, где что-то было; пустые, из одних нулей, пропускаются), копится между отправками — ничего не теряется, раскладку записи знает мир.
 // Пока модуль не готов — тишина, сообщения ждут в очереди (порядок сохраняется); готов — {t:'ready'}, не загрузился — {t:'err'} и дальше тишина.
 const REVS = 4;
+// UTF-8 строки снимка — вручную: в AudioWorkletGlobalScope нет TextEncoder / TextDecoder (Chromium, Safari) — конструктор падал бы
+function utf8(s) {
+  const o = [];
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if (c < 0x80) o.push(c);
+    else if (c < 0x800) o.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c < 0x10000) o.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    else o.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  return Uint8Array.from(o);
+}
+function unutf8(b) {
+  let s = '';
+  for (let i = 0; i < b.length;) {
+    const c = b[i++];
+    let cp = c;
+    if (c >= 0xf0) cp = ((c & 7) << 18) | ((b[i++] & 63) << 12) | ((b[i++] & 63) << 6) | (b[i++] & 63);
+    else if (c >= 0xe0) cp = ((c & 15) << 12) | ((b[i++] & 63) << 6) | (b[i++] & 63);
+    else if (c >= 0xc0) cp = ((c & 31) << 6) | (b[i++] & 63);
+    s += String.fromCodePoint(cp);
+  }
+  return s;
+}
 class T2d extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const po = options.processorOptions || {};
     this.slots = po.worlds || [];
-    this.x = null; this.queue = []; this.count = 0; this.every = Math.round(sampleRate / 60);
+    this.x = null; this.queue = []; this.count = 0; this.applied = 0; this.every = Math.round(sampleRate / 60);
     this.heard = {}; for (const s of this.slots) this.heard[s] = [];
-    this.td = new TextDecoder(); this.te = new TextEncoder();
     this.port.onmessage = (e) => { if (this.x) this.apply(e.data); else this.queue.push(e.data); };
     WebAssembly.instantiate(po.wasm, {}).then(({ instance }) => {
       const x = instance.exports;
@@ -27,6 +51,7 @@ class T2d extends AudioWorkletProcessor {
   nums(n) { this.views(this.x); return Array.from(this.mb.subarray(0, n)); }
   apply(d) {
     const x = this.x;
+    this.applied++;
     if (d.t === 'action') {
       const a = d.a || [], n = Math.min(a.length, 64);
       new Float64Array(x.memory.buffer, x.t2d_args(), n).set(a.slice(0, n));
@@ -35,9 +60,9 @@ class T2d extends AudioWorkletProcessor {
     else if (d.t === 'scale') x.t2d_scale(d.on ? 1 : 0, d.idx | 0, d.root | 0);
     else if (d.t === 'snap') {
       const n = x.t2d_snapshot(d.slot);
-      this.port.postMessage({ t: 'snap', id: d.id, js: n ? this.td.decode(new Uint8Array(x.memory.buffer, x.t2d_str_buf(), n)) : '' });
+      this.port.postMessage({ t: 'snap', id: d.id, js: n ? unutf8(new Uint8Array(x.memory.buffer, x.t2d_str_buf(), n)) : '' });
     } else if (d.t === 'restore') {
-      const b = this.te.encode(d.js || '');
+      const b = utf8(d.js || '');
       if (b.length > this.cap) return;                    // не влезло в строковый буфер ядра — мимо
       new Uint8Array(x.memory.buffer, x.t2d_str_buf(), b.length).set(b);
       x.t2d_restore(d.slot, b.length);
@@ -89,7 +114,7 @@ class T2d extends AudioWorkletProcessor {
       this.count = 0;
       const w = {};
       for (const s of this.slots) { w[s] = { mirror: this.nums(x.t2d_mirror(s)), heard: this.heard[s] }; this.heard[s] = []; }
-      this.port.postMessage({ t: 'm', w });
+      this.port.postMessage({ t: 'm', n: this.applied, w });
     }
     return true;
   }

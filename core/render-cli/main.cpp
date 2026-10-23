@@ -2,7 +2,7 @@
 // world <goetia|firmamentum|oceanus> — первой строкой (по умолчанию goetia), дальше команды мира.
 // stdin, по команде в строке: init <sr> · prog <i> <код> <сдвиг> … · voice <i> <on> <rate> <lp> <lvl> <legio> <pan> <rel> <trig>
 // · fx <spread> <wide> · sett <i> <t> · run <блоков>.
-// Firmamentum: init <sr> <зерно> · voice <i> <on 1|0|-1> <fp> <ff> <cyc> <win> <mask> <lvl> <pan> · fx <jit> <spread> <crep> <fulg> · run <блоков>.
+// Firmamentum (звук мира SDK — sound.hpp, голоса напрямую, без модели): init <sr> <зерно> · voice <i> <on 1|0|-1> <fp> <ff> <cyc> <win> <mask> <lvl> <pan> · fx <jit> <spread> <crep> <fulg> · run <блоков>.
 // Oceanus: init <sr> <зерно> · params <kt damp kc wind tide moonRate storm sway swayTo> · push <id a d k> · release <id> · splash <a amt> · voice <i on f lvl path> · run <блоков>.
 // stdout: на каждый блок 128 float32 L, затем 128 float32 R.
 #include <cstdio>
@@ -12,14 +12,14 @@
 #include <string>
 #include <vector>
 
-#include "../worlds/firmamentum/pulsar.hpp"
+#include "../worlds/firmamentum/sound.hpp"
 #include "../worlds/goetia/goetia.hpp"
 #include "../worlds/oceanus/ocean.hpp"
 
 int main() {
   constexpr int BLOCK = 128;
   std::unique_ptr<goetia::Goetia> core;
-  std::unique_ptr<firmamentum::Pulsar> firm;
+  std::unique_ptr<firmamentum::Sound> firm;
   std::unique_ptr<oceanus::Ocean> ocean;
   bool isFirm = false, isOcean = false;
   float L[BLOCK], R[BLOCK];
@@ -55,7 +55,7 @@ int main() {
       continue;
     }
     if (isFirm) {
-      if (cmd == "init") { double sr; uint32_t seed; in >> sr >> seed; firm = std::make_unique<firmamentum::Pulsar>(sr, seed); continue; }
+      if (cmd == "init") { double sr; uint32_t seed; in >> sr >> seed; firm = std::make_unique<firmamentum::Sound>(); firm->prepare(sr, seed); continue; }
       if (!firm) { std::fprintf(stderr, "init first\n"); return 1; }
       if (cmd == "voice") {
         int i, on; double fp, ff, cyc, win, mask, lvl, pan;
