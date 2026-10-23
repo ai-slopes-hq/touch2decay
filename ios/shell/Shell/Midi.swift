@@ -9,6 +9,7 @@ final class Midi: ObservableObject {
   @Published var running = false
   @Published var clocks = 0
   @Published var last = "—"
+  @Published var outInfo = "page 0"
   @Published var lead = UserDefaults.standard.bool(forKey: "lead") {
     didSet { UserDefaults.standard.set(lead, forKey: "lead"); leading = lead; if !lead { out?.off() } }
   }
@@ -30,6 +31,7 @@ final class Midi: ObservableObject {
     MIDIInputPortCreateWithProtocol(client, "in" as CFString, ._1_0, &port) { [weak self] list, _ in self?.receive(list) }
     connectAll()
     out = ClockOut(client: client)
+    out?.report = { [weak self] s in self?.outInfo = s }
   }
 
   func clockOut(_ t: String, step: Int, bpm: Double, at: Double) {   // из страницы: шаг Portus и когда его услышат

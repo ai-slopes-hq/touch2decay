@@ -125,3 +125,12 @@ test('stop sends stop, a stopped world sends nothing', () => {
   const n = out.length; at(3); at(5);
   assert.equal(out.length, n);
 });
+
+test('a MIDI start without beats does not lock out the pharos', () => {
+  const { engine, model, at, out } = rig();
+  at(1); engine.sync({ t: 'start', ago: 0 });              // start пришёл, долей нет (Rytm встал, оболочка ушла в lead)
+  at(1.5); model.play(false); model.play(true);            // маяк: стоп и пуск руками
+  at(1.6); at(1.8);
+  assert.ok(engine.step >= 0, 'steps are scheduled');
+  assert.ok(out.some((x) => x.t === 'start'), 'start sent out');
+});

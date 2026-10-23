@@ -57,7 +57,7 @@ struct MidiBadge: View {                                 // ПРОБА: что �
     HStack(spacing: 8) {
       VStack(alignment: .leading, spacing: 2) {
         Text("MIDI: " + (midi.sources.isEmpty ? "no sources" : midi.sources.joined(separator: ", ")))
-        Text(midi.lead ? "lead · clock out to every port" : String(format: "clock %d · %.1f BPM · %@ · %@", midi.clocks, midi.bpm, midi.running ? "running" : "stopped", midi.last))
+        Text(midi.lead ? "lead · " + midi.outInfo : String(format: "clock %d · %.1f BPM · %@ · %@", midi.clocks, midi.bpm, midi.running ? "running" : "stopped", midi.last))
       }
       .allowsHitTesting(false)
       Button(midi.lead ? "lead" : "follow") { midi.lead.toggle() }

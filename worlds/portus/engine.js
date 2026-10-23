@@ -97,7 +97,7 @@ export function createEngine(T, model) {
     for (const g of [bus.fbL.gain, bus.fbR.gain, bus.dWet.gain, bus.dSend.gain]) { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.setTargetAtTime(0, t, 0.02); }
     setTimeout(() => { if (!bus) return; bus.dWet.gain.setTargetAtTime(0.9, actx.currentTime, 0.05); applyAll(); }, 350);
   }
-  let cue = false;                                       // ПРОБА 0б: MIDI start пришёл — шаги ждут первую долю
+  let cue = false, midiPlay = false;                     // ПРОБА 0б: MIDI start пришёл — шаги ждут первую долю; midiPlay — пуск идёт из sync, а не маяком
   // ПРОБА 0б: часы наружу (оболочка ios/shell — ведущий MIDI): пуск, первый шаг такта, смена темпа, стоп — какой шаг, темп и когда его услышат (epoch, мс)
   const pulses = []; let pulsed = null;                  // pulsed — темп последнего сообщения; null — пуска ещё не было
   function heardAt(t) {                                  // время ctx → когда прозвучит из динамика, мс epoch (у оболочки — те же часы)
@@ -123,7 +123,7 @@ export function createEngine(T, model) {
   T.onTick(schedule);                                  // таймер 25 мс + метроном из звукового потока — в фоне шаги не пропадают
   function play(on) {
     if (!on && pulsed !== null && actx) pulse('stop', actx.currentTime);
-    clock.next = 0; pulsed = null;
+    clock.next = 0; pulsed = null; if (!midiPlay) cue = false;   // пуск и стоп маяком — не ждём долю от прошлого MIDI start
     if (on) { clock.step = 0; setLive(true); schedule(); }
   }
   function curStep() {
@@ -137,7 +137,7 @@ export function createEngine(T, model) {
   function sync(m) {
     if (m.bpm && Math.abs(m.bpm - seq.bpm) > 0.3) model.setBpm(Math.round(m.bpm * 10) / 10);
     if (m.t === 'stop') { cue = false; if (seq.playing) model.play(false); return; }
-    if (m.t === 'start') { cue = true; if (!seq.playing) model.play(true); return; }
+    if (m.t === 'start') { cue = true; midiPlay = true; if (!seq.playing) model.play(true); midiPlay = false; return; }
     if (!actx || m.t !== 'beat' || !seq.playing) return;
     const s = stepSec(), now = actx.currentTime, at = now - m.ago + (m.off || 0);   // когда доля прозвучит у нас
     if (cue) {                                                           // первая доля после start — шаг 4n на неё, сетка — от доли

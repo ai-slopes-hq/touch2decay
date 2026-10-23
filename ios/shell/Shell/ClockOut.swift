@@ -13,6 +13,8 @@ final class ClockOut {
   private var anchorTick = 0, anchorTime: UInt64 = 0    // тик anchorTick звучит в anchorTime (mach)
   private var period = 60.0 / 120 / 24                  // секунд на тик
   private var next = 0, lastSent: UInt64 = 0            // следующий тик к отправке, время последнего отправленного
+  private var msgs = 0, last = "—", sent = 0             // для плашки: сообщений от страницы, последнее, тиков ушло
+  var report: ((String) -> Void)?                       // плашке (на главный поток): раз в сообщение и раз в долю
 
   init(client: MIDIClientRef) {
     MIDIOutputPortCreate(client, "out" as CFString, &port)
@@ -26,6 +28,7 @@ final class ClockOut {
   func message(_ t: String, step: Int, bpm: Double, at: Double) {
     let when = Midi.mach(epochMs: at)
     q.async { [self] in
+      msgs += 1; last = t; show()
       switch t {
       case "start": begin(step, bpm, when)
       case "at":
@@ -61,8 +64,13 @@ final class ClockOut {
       var t = time(next)
       if t > horizon { break }
       if t <= lastSent { t = lastSent &+ Midi.ticks(0.001) }   // сетку подвинули назад — тики не повторяем и не путаем порядок
-      send(0xF8, at: t); lastSent = t; next += 1
+      send(0xF8, at: t); lastSent = t; next += 1; sent += 1
+      if sent % 24 == 0 { show() }
     }
+  }
+  private func show() {
+    let s = "page \(msgs) · \(last) · ticks \(sent) · outs \(MIDIGetNumberOfDestinations())\(running ? " · running" : "")"
+    DispatchQueue.main.async { self.report?(s) }
   }
 
   private func send(_ status: UInt8, at t: UInt64) {
