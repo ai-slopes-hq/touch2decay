@@ -1,7 +1,10 @@
 // Тесты эталона Firmamentum (tools/ref/pulsar-worklet.js): звучит, детерминирован, по звуку — как прежний worklet.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SCENARIOS, SEED, loadRef, loadOld, play } from './firm-scenarios.mjs';
+import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { SCENARIOS, SEED, BLOCK, toScript, loadRef, loadOld, play } from './firm-scenarios.mjs';
 
 const rms = (a) => Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length);
 const run = (load, name, steps = SCENARIOS[name]) => { const { proc, posted } = load(); return play(proc, steps, posted); };
@@ -40,3 +43,26 @@ test('reference sounds like the old worklet', () => {
     for (const key of ['k', 'f']) assert.ok(Math.abs(r[key] - o[key]) <= 0.25 * Math.max(r[key], o[key], 1), `${name} ${key}: ${r[key]} vs ${o[key]}`);
   }
 });
+
+// Ядро C++ (core/worlds/firmamentum) против эталона по сэмплам, допуск 1e-6: core/build.sh
+const EPS = 1e-6;
+const CLI = fileURLToPath(new URL('../core/build/render-cli', import.meta.url));
+function same(a, b, what) {                             // каждый отсчёт — не дальше EPS; первое расхождение — в сообщении
+  assert.equal(a.length, b.length, `${what}: length`);
+  for (let k = 0; k < a.length; k++) if (!(Math.abs(a[k] - b[k]) <= EPS)) assert.fail(`${what}: sample ${k}: ${a[k]} vs ${b[k]}`);
+}
+function cli(steps) {                                   // render-cli: блоки по 128 — L, затем R
+  const p = spawnSync(CLI, { input: toScript(steps), maxBuffer: 1 << 28 });
+  assert.equal(p.status, 0, String(p.stderr));
+  const f = new Float32Array(p.stdout.buffer.slice(p.stdout.byteOffset, p.stdout.byteOffset + p.stdout.byteLength));
+  const n = f.length / (2 * BLOCK), L = new Float32Array(n * BLOCK), R = new Float32Array(n * BLOCK);
+  for (let b = 0; b < n; b++) { L.set(f.subarray(2 * b * BLOCK, (2 * b + 1) * BLOCK), b * BLOCK); R.set(f.subarray((2 * b + 1) * BLOCK, (2 * b + 2) * BLOCK), b * BLOCK); }
+  return { L, R };
+}
+for (const name of Object.keys(SCENARIOS)) {
+  test(`render-cli matches the reference: ${name}`, (t) => {
+    if (!existsSync(CLI)) return t.skip('core/build/render-cli is not built — core/build.sh');
+    const r = run(() => loadRef(), name), c = cli(SCENARIOS[name]);
+    same(c.L, r.L, `${name} L`); same(c.R, r.R, `${name} R`);
+  });
+}
