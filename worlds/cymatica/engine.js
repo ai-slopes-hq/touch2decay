@@ -10,6 +10,16 @@ export function createEngine(T, model, ver) {
   const queue = [], listeners = [];
   const heard = (e) => { for (const fn of listeners) fn(e); };
   function send(msg) { if (ready) node.port.postMessage(msg); else queue.push(msg); }
+  // сетка MIDI-часов — в worklet (там тики секвенсера); шлём при смене, не каждые 25 мс
+  let lockSent = null;
+  function syncLock() {
+    if (!started) return;                        // модуль пластины не заведён — слать некому (очередь не копим)
+    const g = T.midiGrid(), a = lockSent;
+    if (g ? a && a.t0 === g.t0 && a.p === g.p : !a) return;
+    lockSent = g ? { t0: g.t0, p: g.p } : null;
+    send(g ? { t: 'lock', t0: g.t0, p: g.p } : { t: 'lock', off: true });
+  }
+  T.onTick(syncLock);                            // таймер 25 мс + метроном из звукового потока
   function sendParams() {
     const { structure, damping, brightness } = plate.fx;
     send({ t: 'params', structure, damping, brightness });
@@ -72,11 +82,12 @@ export function createEngine(T, model, ver) {
     const echoSend = g(0);                       // эхо — пары линий в retime(), доля темпа с луча time (1/4d на 40 BPM — 2.25 с)
     nodes = { out, hallSend, echoSend };
     actx = ctx; echoes = [];                     // новый звуковой контекст — пары эха заводятся заново
-    started = false; ready = false; node = null;  // и модуль пластины — заново (перезапуск звука после смены выхода)
+    started = false; ready = false; node = null; lockSent = null;  // и модуль пластины — заново (перезапуск звука после смены выхода)
     applyFx();
     if (entered) start();
     send({ t: 'f0', hz: model.effF0() });
     sendParams();
+    syncLock();                                  // новый узел — сетка заново
     for (const b of plate.bows) send(model.bowMsg(b, true));
   }
   // модуль пластины — только когда в Cymatica впервые зашли и звук уже есть: тем, кто играет лишь в Tenebrae, он ничего не стоит

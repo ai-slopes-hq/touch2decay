@@ -139,6 +139,11 @@ function shapeGrid(n) {
 // ---------- часы секвенсера ----------
 // шаг часов — шестнадцатая: отсчётов на шаг
 function stepSamples(bpm, fs) { return Math.round((fs * 60) / bpm / 4); }
+// отсчётов от момента t (с) до ближайшей шестнадцатой сетки MIDI-часов t0 + j·p/4 строго после t; не меньше 1
+function nextTickFrame(t, t0, p, fs) {
+  const q = p / 4, j = Math.floor((t - t0) / q + 1e-9) + 1;
+  return Math.max(1, Math.round((t0 + j * q - t) * fs));
+}
 
 // ---------- процессор ----------
 var F_LO = 55, NV = 4, GRID_N = 96, SLEEP = 1e-14, BOW_TILT = 1.5, BOW_GAIN = 6, MAX_STRIKES = 16, OUT_GAIN = 0.2, STRIKE_GAIN = 5;   // удар — громкость одного касания примерно как у смычка
@@ -167,6 +172,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       this.t = 0; this.lastLive = -1e12; this.lastTick = 0;
       this.seq = { bpm: 96, playing: false, rhythm: { len: 16, steps: [] }, melody: { len: 7, steps: [] } };
       this.stepN = stepSamples(96, this.fs); this.r = -1; this.m = -1; this.toNext = 0;
+      this.lock = null;                              // сетка MIDI-часов { t0, p } (время контекста) или null: тики по ней, счёт r, m — свой
       this.retune();
       this.port.onmessage = (e) => this.msg(e.data);
     }
@@ -197,7 +203,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
     }
     // новый узор: удары шагов с готовыми весами мод; пуск — с первого шага сразу; смена темпа — от последнего тика
     setSeq(d) {
-      const was = this.seq.playing, stepN = stepSamples(d.bpm, this.fs);
+      const was = this.seq.playing, stepN = this.lock ? stepSamples(60 / this.lock.p, this.fs) : stepSamples(d.bpm, this.fs);
       this.seq = {
         bpm: d.bpm, playing: !!d.playing, chance: d.chance == null ? 1 : d.chance,
         // веса мод — заново только у шагов, чьё место изменилось: тянешь темп или длину — в звуковом потоке ничего тяжёлого.
@@ -214,8 +220,19 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         }) },
       };
       if (this.seq.playing && !was) { this.r = -1; this.m = -1; this.toNext = 0; }
-      else if (this.seq.playing && stepN !== this.stepN) this.toNext = Math.max(0, stepN - (this.t - this.lastTick));
+      else if (this.seq.playing && !this.lock && stepN !== this.stepN) this.toNext = Math.max(0, stepN - (this.t - this.lastTick));
       this.stepN = stepN;
+    }
+    // сетка: тик — на ближайшей шестнадцатой (от начала блока); прыжок сетки сдвигает только момент тика, r и m не трогаем.
+    // Не раньше полушага после прошлого тика — иначе сдвиг сетки на ε дал бы двойной тик
+    setLock(d) {
+      const was = this.lock;
+      this.lock = d.off ? null : { t0: d.t0, p: d.p };
+      this.stepN = stepSamples(this.lock ? 60 / this.lock.p : this.seq.bpm, this.fs);
+      if (!this.seq.playing || this.r < 0) return;
+      if (!this.lock) { if (was) this.toNext = Math.max(0, this.stepN - (this.t - this.lastTick)); return; }
+      const last = currentTime - (this.t - this.lastTick) / this.fs, from = Math.max(currentTime, last + this.lock.p / 8);
+      this.toNext = nextTickFrame(from, this.lock.t0, this.lock.p, this.fs) + Math.round((from - currentTime) * this.fs);
     }
     tick() {
       const sq = this.seq;
@@ -238,6 +255,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         return;
       }
       if (d.t === 'seq') { this.setSeq(d); return; }
+      if (d.t === 'lock') { this.setLock(d); return; }
       if (d.t === 'bow') {
         if (!d.on) { this.bows.delete(d.id); return; }
         const b = this.bows.get(d.id) || { x: 0, y: 0, exciter: 0, pressure: 0.5, amp: 1, g: null };
@@ -267,7 +285,11 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         return true;
       }
       for (let n = 0; n < N; n++, this.t++) {
-        if (this.seq.playing && --this.toNext < 0) { this.tick(); this.toNext += this.stepN; }
+        if (this.seq.playing && --this.toNext < 0) {
+          this.tick();
+          if (this.lock) this.toNext = nextTickFrame(currentTime + n / fs, this.lock.t0, this.lock.p, fs) - 1;
+          else this.toNext += this.stepN;
+        }
         for (const v of this.voices) v.x.fill(0);
         // удары: полукосинус единичной площади, длина — твёрдость молоточка
         for (let s = this.strikes.length - 1; s >= 0; s--) {

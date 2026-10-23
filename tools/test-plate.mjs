@@ -44,11 +44,11 @@ const rms = (a, t0, t1) => { const i0 = Math.round(t0 * FS), i1 = Math.round(t1 
 const peak = (a) => a.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
 const finite = (a) => a.every((x) => Number.isFinite(x));
 function plate() {
-  const { reg, posted } = load();
+  const { ctx, reg, posted } = load();
   const proc = new reg.plate();
   const send = (data) => proc.port.onmessage({ data });
   send({ t: 'f0', hz: 110 });
-  return { proc, send, posted };
+  return { proc, send, posted, ctx };
 }
 
 test('besselJ zeros', () => {
@@ -318,4 +318,54 @@ test('a melody step without a place is a rest', () => {
   send(seqMsg({ rhythm: { len: 4, steps: slots(() => ({ vel: 1 })) }, melody: { len: 2, steps: slots((i) => (i === 0 ? { s: 0, x: 0.3, y: 0 } : null)) } }));
   run(proc, 0.45);                                   // тики 0 … 0.375 с — четыре шага
   assert.equal(n, 2);
+});
+
+// ---------- сетка MIDI-часов ----------
+// блоки со временем: currentTime — начало блока, как в AudioWorkletGlobalScope
+function runT(ctx, proc, seconds) {
+  for (let n = 0; n < Math.round((seconds * FS) / 128); n++) {
+    proc.process([], [[new Float32Array(128), new Float32Array(128)]], {});
+    ctx.currentTime += 128 / FS;
+  }
+}
+
+test('nextTickFrame lands on the grid', () => {
+  assert.equal(P.nextTickFrame(1.1, 1, 0.5, FS), Math.round(0.025 * FS));
+  assert.equal(P.nextTickFrame(1.125, 1, 0.5, FS), Math.round(0.125 * FS));   // ровно на узле — следующий
+  assert.equal(P.nextTickFrame(0.9, 1, 0.5, FS), Math.round(0.1 * FS));       // до t0 сетка продолжается назад
+  assert.ok(P.nextTickFrame(1.1249999999, 1, 0.5, FS) >= 1);
+});
+
+test('locked ticks follow the grid', () => {
+  const { ctx, proc, send, posted } = plate();
+  send(seqMsg({ rhythm: { len: 16, steps: slots(() => hit) } }));
+  send({ t: 'lock', t0: 0.01, p: 0.5 });
+  runT(ctx, proc, 1);
+  const t = stepsOf(posted).map((m) => m.time);
+  close(t[0], 0, 1 / FS, 'first tick at start');
+  assert.ok(t.length >= 8, `ticks: ${t.length}`);
+  t.slice(1).forEach((x, i) => close(x, 0.01 + i * 0.125, 1 / FS, `tick ${i + 1} on grid`));
+  send({ t: 'lock', off: true });
+  const n0 = t.length;
+  runT(ctx, proc, 0.5);
+  const u = stepsOf(posted).map((m) => m.time);
+  assert.ok(u.length > n0, 'ticks go on after unlock');
+  close(u[n0] - u[n0 - 1], 0.125, 1 / FS, 'own tempo again (120 BPM)');
+});
+
+test('polyrhythm 5 x 7 repeats every 35 steps under the lock', () => {
+  const { ctx, proc, send, posted } = plate();
+  send(seqMsg({ bpm: 120, rhythm: { len: 5, steps: slots(() => hit) }, melody: { len: 7, steps: slots(() => null) } }));
+  send({ t: 'lock', t0: 0.01, p: 0.5 });
+  let shifted = false;
+  while (stepsOf(posted).length < 70) {
+    runT(ctx, proc, 0.01);
+    if (!shifted && stepsOf(posted).length >= 40) { shifted = true; send({ t: 'lock', t0: 0.09, p: 0.5 }); }   // сетка прыгнула на 80 мс
+  }
+  assert.ok(shifted);
+  const pairs = stepsOf(posted).slice(0, 70).map((m) => `${m.r},${m.m}`);
+  assert.equal(new Set(pairs.slice(0, 35)).size, 35, 'no repeats inside the period');
+  assert.deepEqual(pairs.slice(35), pairs.slice(0, 35));
+  const t = stepsOf(posted).map((m) => m.time);
+  assert.ok(t.slice(1).every((x, i) => i === 0 || x > t[i]), 'time grows');
 });

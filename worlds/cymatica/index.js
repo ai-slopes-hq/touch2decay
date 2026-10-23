@@ -22,7 +22,7 @@ T.registerWorld(2, {
   n: 'II', title: 'Cymatica', sub: 'figurae sonorae', corner: view.corner, fx: view.fx,
   build: engine.build,
   tick(now) { model.tick(last ? (now - last) / 1000 : 0); last = now; view.tick(now); },
-  tempo: { get: () => seq.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => { if (on !== seq.playing) model.play(on); }, playing: () => seq.playing },   // общие часы (карта → concordia)
+  tempo: { get: () => seq.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => { if (on !== seq.playing) model.play(on); }, playing: () => seq.playing, armed: () => seq.rhythm.steps.slice(0, seq.rhythm.len).some(Boolean) },   // общие часы (карта → concordia)
   enter() { engine.start(); },
   draw: view.draw, down: view.down, move: view.move, up: view.up, wheel: view.wheel,
   dice() { model.dice(); T.transportFrom(2, true); },
