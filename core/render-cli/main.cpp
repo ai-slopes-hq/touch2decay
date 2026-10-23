@@ -3,6 +3,7 @@
 // stdin, по команде в строке: init <sr> · prog <i> <код> <сдвиг> … · voice <i> <on> <rate> <lp> <lvl> <legio> <pan> <rel> <trig>
 // · fx <spread> <wide> · sett <i> <t> · run <блоков>.
 // Firmamentum: init <sr> <зерно> · voice <i> <on 1|0|-1> <fp> <ff> <cyc> <win> <mask> <lvl> <pan> · fx <jit> <spread> <crep> <fulg> · run <блоков>.
+// Oceanus: init <sr> <зерно> · params <kt damp kc wind tide moonRate storm sway swayTo> · push <id a d k> · release <id> · splash <a amt> · voice <i on f lvl path> · run <блоков>.
 // stdout: на каждый блок 128 float32 L, затем 128 float32 R.
 #include <cstdio>
 #include <iostream>
@@ -13,19 +14,46 @@
 
 #include "../worlds/firmamentum/pulsar.hpp"
 #include "../worlds/goetia/goetia.hpp"
+#include "../worlds/oceanus/ocean.hpp"
 
 int main() {
   constexpr int BLOCK = 128;
   std::unique_ptr<goetia::Goetia> core;
   std::unique_ptr<firmamentum::Pulsar> firm;
-  bool isFirm = false;
+  std::unique_ptr<oceanus::Ocean> ocean;
+  bool isFirm = false, isOcean = false;
   float L[BLOCK], R[BLOCK];
   std::string line;
   while (std::getline(std::cin, line)) {
     std::istringstream in(line);
     std::string cmd;
     if (!(in >> cmd)) continue;
-    if (cmd == "world") { std::string w; in >> w; isFirm = w == "firmamentum"; if (!isFirm && w != "goetia") { std::fprintf(stderr, "unknown world: %s\n", w.c_str()); return 1; } continue; }
+    if (cmd == "world") { std::string w; in >> w; isFirm = w == "firmamentum"; isOcean = w == "oceanus"; if (!isFirm && !isOcean && w != "goetia") { std::fprintf(stderr, "unknown world: %s\n", w.c_str()); return 1; } continue; }
+    if (isOcean) {
+      if (cmd == "init") { double sr; uint32_t seed; in >> sr >> seed; ocean = std::make_unique<oceanus::Ocean>(sr, seed); continue; }
+      if (!ocean) { std::fprintf(stderr, "init first\n"); return 1; }
+      if (cmd == "params") {
+        double kt, damp, kc, wind, tide, moonRate, storm, sway, swayTo;
+        in >> kt >> damp >> kc >> wind >> tide >> moonRate >> storm >> sway >> swayTo;
+        ocean->params(kt, damp, kc, wind, tide, moonRate, storm, sway, swayTo);
+      } else if (cmd == "push") {
+        double id, a, d, k; in >> id >> a >> d >> k; ocean->push(id, a, d, k);
+      } else if (cmd == "release") {
+        double id; in >> id; ocean->release(id);
+      } else if (cmd == "splash") {
+        double a, amt; in >> a >> amt; ocean->splash(a, amt);
+      } else if (cmd == "voice") {
+        int i, on; double f, lvl, path; in >> i >> on >> f >> lvl >> path; ocean->voice(i, on != 0, f, lvl, path);
+      } else if (cmd == "run") {
+        int blocks; in >> blocks;
+        for (int b = 0; b < blocks; b++) {
+          ocean->process(L, R, BLOCK);
+          std::fwrite(L, sizeof(float), BLOCK, stdout);
+          std::fwrite(R, sizeof(float), BLOCK, stdout);
+        }
+      } else { std::fprintf(stderr, "unknown command: %s\n", cmd.c_str()); return 1; }
+      continue;
+    }
     if (isFirm) {
       if (cmd == "init") { double sr; uint32_t seed; in >> sr >> seed; firm = std::make_unique<firmamentum::Pulsar>(sr, seed); continue; }
       if (!firm) { std::fprintf(stderr, "init first\n"); return 1; }
