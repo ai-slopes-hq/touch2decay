@@ -26,5 +26,6 @@ em++ -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --
   -sEXPORTED_FUNCTIONS=_t2d_init,_t2d_args,_t2d_action,_t2d_process,_t2d_dry,_t2d_ret,_t2d_ext,_t2d_mbuf,_t2d_mirror,_t2d_heard,_t2d_str_buf,_t2d_str_cap,_t2d_snapshot,_t2d_restore,_t2d_fader,_t2d_scale \
   -sFILESYSTEM=0 -sINITIAL_MEMORY=4MB -s$STACK=64KB -sALLOW_MEMORY_GROWTH=0 \
   -o t2d.wasm core/bridge/wasm.cpp core/sdk/reverb.cpp core/host/host.cpp core/host/scale.cpp \
-  core/worlds/firmamentum/model.cpp core/worlds/firmamentum/world.cpp core/worlds/firmamentum/sound.cpp
+  core/worlds/firmamentum/model.cpp core/worlds/firmamentum/world.cpp core/worlds/firmamentum/sound.cpp \
+  core/worlds/oceanus/model.cpp core/worlds/oceanus/world.cpp core/worlds/oceanus/ocean.cpp
 echo "t2d.wasm ($(wc -c < t2d.wasm | tr -d ' ') bytes)"

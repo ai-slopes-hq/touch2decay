@@ -115,3 +115,23 @@ test('speed: 60 s, six voices, storm and wind', async () => {
   const ms = time(w.proc);
   console.log(`  speed, 60 s of sound: JS ${js.toFixed(0)} ms, WASM ${ms.toFixed(0)} ms (x${(js / ms).toFixed(2)})`);
 });
+
+// ---------- SDK: мир VIII в t2d.wasm (модель ядра + ocean.cpp + шина) против эталона: JS-модель → engine.js → ocean-worklet.js ----------
+// Сухой L/R (×1.6) — 1e-6 на сэмпл; метры (форма кольца, луна, громкость каждого города) — те же, в те же блоки; снимок — тот же JSON.
+const { ACTS, refPath, corePath } = await import('./ocean-scenarios.mjs');
+for (const name of Object.keys(ACTS)) {
+  test(`sdk: dry output matches the reference: ${name}`, () => {
+    const r = refPath(ACTS[name]), c = corePath(ACTS[name]);
+    assert.ok(rms(r.L) + rms(r.R) > 1e-3, `${name}: reference is silent`);
+    same(c.L, r.L, `${name} L`); same(c.R, r.R, `${name} R`);
+    assert.equal(c.meters.length, r.meters.length, `${name}: meter count`);
+    r.meters.forEach((m, k) => {
+      const q = c.meters[k], at = `${name} meter #${k} (block ${m.at})`;
+      assert.equal(q.at, m.at, `${at}: block`);
+      same(q.x, m.x, `${at}: shape`); same([q.moon], [m.moon], `${at}: moon`);
+      assert.deepEqual(q.g.map((p) => p[0]), m.g.map((p) => p[0]), `${at}: voices`);
+      same(q.g.map((p) => p[1]), m.g.map((p) => p[1]), `${at}: gains`);
+    });
+    assert.equal(c.snapshot, r.snapshot, `${name}: snapshot`);
+  });
+}

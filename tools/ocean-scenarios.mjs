@@ -91,3 +91,137 @@ export function play(proc, steps, posted, block = BLOCK) {   // L, R и метр
   const ps = posted ? posted.slice(from).filter((m) => m.t === 'shape') : [];
   return { L: cat(L), R: cat(R), meters: ps.map(({ x, moon, g }) => ({ x: [...x], moon, g: [...g] })) };
 }
+
+// ---------- SDK: сценарии действиями (мир VIII в t2d.wasm) ----------
+// Шаг — действие модели (['add', ang, rn, pinned], ['drop', id], ['move', id, ang, rn], ['set', id, {lvl, oct, path}], ['fx', key, v],
+// ['luna', key, v], ['push', id, a, d], ['release', id], ['splash', a, amt], ['clear'], ['dice'], ['restore', js], ['scale', on, idx, root])
+// или { run: блоков }. id города — порядковый номер его появления (1, 2, … — и в эталоне, и в ядре; кубик и restore тоже считаются).
+// Эталонный путь: JS-модель (tools/ref/oceanus-model.js) → сообщения, как прежний engine.js (sendVoice: hz, lvl·0.8, path; sendParams;
+// push k 0.06, release, splash) → tools/ref/ocean-worklet.js, сухой ×1.6. Путь ядра: те же действия → t2d.wasm, сухой выход слота 8.
+// Метры: эталон шлёт 'shape' раз в round(sr/30) сэмплов (по счёту блоков) — зеркало ядра берём по тому же расписанию.
+import { createModel as jsModel } from './ref/oceanus-model.js';
+import { scl, snapSemi } from '../host/scale.js';
+import { seeded } from './models/util.mjs';
+import { loadT2d } from './t2d-core.mjs';
+import { SLOT, ACT, SET_KEYS, FX_KEYS, LUNA_KEYS, HEAD, MVOICE } from '../worlds/oceanus/model.js';
+
+export const soundSeed = (seed) => (seed ^ 0x85EBCA6B) >>> 0;   // зерно звука мира — от зерна мира (core/worlds/oceanus/world.hpp)
+export const OUT = 1.6;
+const EVERY = Math.round(SR / 30);
+const T = Math.PI * 2;
+export const hostScale = (sc) => ({                     // лад хоста {on, idx, root} для JS-модели: snapSemi из host/scale.js
+  get on() { return sc.on; }, get root() { return sc.root; },
+  snap(s) { const keep = { ...scl }; Object.assign(scl, sc); const r = snapSemi(s); Object.assign(scl, keep); return r; },
+});
+
+const SNAP = '{"v":[{"ang":0.6,"rn":0.84,"lvl":0.7,"oct":-1,"path":2},{"ang":3.2,"rn":0.18,"lvl":0.9,"oct":0,"path":1}],"fx":{"tension":0.7,"damping":0.2,"wind":0.3,"tide":0.8,"hall":0.6},"luna":{"orbit":0.8,"storm":1,"sway":0.5,"to":1}}';
+export const ACTS = {
+  one: [['add', 1.0, 0.85, true], { run: 750 }],
+  six: [...[0, 1, 2, 3, 4, 5].map((k) => ['add', k * 1.1, [0.9, 0.5, 0.2][k % 3], k % 2 === 0]), ['set', 2, { path: 1 }], ['set', 4, { path: 2, oct: 1 }], { run: 375 }],
+  drag: [['add', 0.2, 0.85, false], { run: 40 }, ...Array.from({ length: 40 }, (_, k) => [['move', 1, 0.2 + k * 0.05, 0.85 - k * 0.018], { run: 4 }]).flat(), { run: 100 }],
+  fingers: [['add', 2, 0.5, true], ['push', 11, 0.25, 1.2], { run: 200 }, ['push', 12, 0.7, -1], { run: 200 }, ['push', 11, 0.3, 0.6], { run: 200 }, ['release', 11], { run: 200 },
+    ['splash', 0.3, 0.35], { run: 250 }, ['splash', 0.8, -0.35], ['release', 12], { run: 250 }],
+  fx: [['add', 0.5, 0.85, true], ['add', 3, 0.5, true], { run: 200 }, ['fx', 'tension', 0.9], ['fx', 'damping', 0.1], { run: 300 }, ['fx', 'wind', 0.7], { run: 300 },
+    ['fx', 'tide', 0.95], ['luna', 'orbit', 0.9], { run: 300 }, ['luna', 'storm', 1], ['luna', 'sway', 0.6], { run: 300 }, ['luna', 'to', 1], { run: 300 }, ['luna', 'to', 2], { run: 300 },
+    ['fx', 'hall', 0.9], { run: 100 }],
+  relight: [['add', 1, 0.85, true], { run: 200 }, ['drop', 1], { run: 30 }, ['add', 2, 0.5, false], { run: 200 }, ['drop', 2], { run: 2000 }, ['add', 4, 0.2, true], { run: 200 }],
+  levels: [['add', 1, 0.85, true], { run: 100 }, ['set', 1, { lvl: 0.3 }], { run: 200 }, ['set', 1, { oct: -1 }], { run: 200 }, ['set', 1, { oct: 1, path: 2, lvl: 1 }], { run: 200 }],
+  scale: [['scale', true, 1, 3], ['add', 0.7, 0.85, true], ['add', 2.4, 0.5, true], { run: 100 },
+    ...Array.from({ length: 30 }, (_, k) => [['move', 1, 0.7 + k * 0.07, 0.85], { run: 4 }]).flat(),
+    ['scale', true, 0, 5], ['move', 2, 2.5, 0.5], { run: 200 }, ['scale', false, 0, 0], ['move', 2, 2.6, 0.5], { run: 200 }],
+  restore: [['add', 1, 0.85, false], { run: 100 }, ['restore', SNAP], { run: 750 }, ['clear'], { run: 300 }],
+  dice: [['dice'], { run: 600 }, ['dice'], { run: 600 }, ['add', 5, 0.5, false], { run: 200 }],
+  all: [['dice'], ['luna', 'storm', 1], ['fx', 'wind', 0.4], ['luna', 'sway', 0.5], ['luna', 'to', 1], { run: 1500 },
+    ['add', 0.3, 0.84, true], ['push', 1, 0.2, 1], ['splash', 0.4, 0.3], { run: 1500 },
+    ...Array.from({ length: 20 }, (_, k) => [['move', 4, 0.3 + k * 0.2, 0.84 - k * 0.03], { run: 3 }]).flat(), ['release', 1], { run: 3000 },
+    ['dice'], ['set', 7, { path: 1, lvl: 0.5 }], { run: 3000 }, ['drop', 8], ['fx', 'hall', 0.9], { run: 2190 }],   // 30 с
+};
+
+const cat = (bs) => { const o = new Float32Array(bs.length * BLOCK); bs.forEach((b, k) => o.set(b, k * BLOCK)); return o; };
+
+export function refPath(steps, { seed = SEED } = {}) {   // эталон: JS-модель → сообщения как engine.js → ocean-worklet.js эталона
+  const { proc, posted } = loadRef(soundSeed(seed));
+  const sc = { on: false, idx: 0, root: 0 };
+  const model = jsModel({ rng: seeded(seed), scale: hostScale(sc) });
+  const { fx, luna } = model.state;
+  const send = (m) => proc.port.onmessage({ data: m });
+  const sendParams = () => send({ t: 'params', kt: 0.004 * 60 ** fx.tension, damp: 0.00003 * 300 ** fx.damping, kc: 0.0015 + 0.004 * fx.tide, wind: fx.wind * fx.wind, tide: fx.tide * 0.9, moonRate: 0.005 * 40 ** luna.orbit, storm: luna.storm, sway: luna.sway, swayTo: luna.to });
+  const ids = new Map();                                // город → id (порядок появления)
+  let serial = 0;
+  model.listen((e) => {
+    if (e.t === 'voice') { if (e.added) ids.set(e.v, ++serial); send({ t: 'voice', i: e.v.slot, on: e.on, f: model.hz(e.v), lvl: e.v.lvl * 0.8, path: e.v.path || 0 }); }
+    else if (e.t === 'fx') sendParams();
+    else if (e.t === 'push') send({ t: 'push', id: e.id, a: e.a, d: e.d, k: 0.06 });
+    else if (e.t === 'release') send({ t: 'push', id: e.id, off: true });
+    else if (e.t === 'splash') send({ t: 'splash', a: e.a, amt: e.amt });
+  });
+  sendParams();                                         // build: параметры — до первого города
+  const byId = (id) => model.state.voices.find((v) => ids.get(v) === id);
+  const L = [], R = [], meters = [];
+  let seen = 0;
+  for (const s of steps) {
+    if (s.run) {
+      for (let b = 0; b < s.run; b++) {
+        const l = new Float32Array(BLOCK), r = new Float32Array(BLOCK);
+        proc.process([], [[l, r]], {});
+        L.push(l.map((x) => x * OUT)); R.push(r.map((x) => x * OUT));
+        for (; seen < posted.length; seen++) {
+          const d = posted[seen];
+          if (d.t !== 'shape') continue;
+          meters.push({ at: L.length, x: [...d.x], moon: d.moon, g: model.state.voices.map((v) => [ids.get(v), d.g[v.slot]]) });
+        }
+      }
+      continue;
+    }
+    const [a, x, y, z] = s;
+    if (a === 'add') model.addVoice(x, y, z);
+    else if (a === 'drop') { const v = byId(x); if (v) model.dropVoice(v); }
+    else if (a === 'move') { const v = byId(x); if (v) model.moveVoice(v, y, z); }
+    else if (a === 'set') { const v = byId(x); if (v) model.setVoice(v, y); }
+    else if (a === 'fx') model.setFx(x, y);
+    else if (a === 'luna') model.setLuna({ [x]: y });
+    else if (a === 'push') model.push(x, y, z);
+    else if (a === 'release') model.release(x);
+    else if (a === 'splash') model.splash(x, y);
+    else if (a === 'clear') model.clear();
+    else if (a === 'dice') model.dice();
+    else if (a === 'restore') model.restore(x);
+    else if (a === 'scale') Object.assign(sc, { on: x, idx: y, root: z });
+  }
+  return { L: cat(L), R: cat(R), meters, snapshot: model.snapshot() };
+}
+
+export function corePath(steps, { seed = SEED } = {}) { // ядро: те же действия → t2d.wasm, сухой выход мира VIII
+  const c = loadT2d();
+  c.init(SR, seed);
+  const L = [], R = [], meters = [];
+  let count = 0;
+  for (const s of steps) {
+    if (s.run) {
+      for (let b = 0; b < s.run; b++) {
+        c.process(BLOCK);
+        L.push(Float32Array.from(c.dry(SLOT, 0))); R.push(Float32Array.from(c.dry(SLOT, 1)));
+        if ((count += BLOCK) < EVERY) continue;
+        count = 0;
+        const m = c.mirror(SLOT), nf = FX_KEYS.length + LUNA_KEYS.length, NV = MVOICE.length;
+        const g = Array.from({ length: m[HEAD - 1] }, (_, i) => [m[HEAD + i * NV + 1], m[HEAD + i * NV + 9]]);
+        meters.push({ at: L.length, x: m.slice(nf + 1, nf + 1 + N), moon: m[nf], g });
+      }
+      continue;
+    }
+    const [a, x, y, z] = s;
+    if (a === 'add') c.action(SLOT, ACT.add, 0, [x, y, z ? 1 : 0]);
+    else if (a === 'drop') c.action(SLOT, ACT.drop, x);
+    else if (a === 'move') c.action(SLOT, ACT.move, x, [y, z]);
+    else if (a === 'set') for (const [k, v] of Object.entries(y)) c.action(SLOT, ACT.set, x, [SET_KEYS.indexOf(k), v]);   // как фасад: по SET на ключ
+    else if (a === 'fx') c.action(SLOT, ACT.fx, FX_KEYS.indexOf(x), [y]);
+    else if (a === 'luna') c.action(SLOT, ACT.luna, LUNA_KEYS.indexOf(x), [y]);
+    else if (a === 'push') c.action(SLOT, ACT.push, 0, [x, y, z]);
+    else if (a === 'release') c.action(SLOT, ACT.release, 0, [x]);
+    else if (a === 'splash') c.action(SLOT, ACT.splash, 0, [x, y]);
+    else if (a === 'clear' || a === 'dice') c.action(SLOT, ACT[a]);
+    else if (a === 'restore') c.restore(SLOT, x);
+    else if (a === 'scale') c.scale(x, y, z);
+  }
+  return { L: cat(L), R: cat(R), meters, snapshot: c.snapshot(SLOT) };
+}

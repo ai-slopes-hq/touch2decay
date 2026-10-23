@@ -1,5 +1,5 @@
 // Минимальный JSON для снимков миров: объект (порядок ключей сохраняется), массив, число, строка, bool, null.
-// Числа пишутся как %.17g — туда-обратно без потерь. Не для process: выделяет память.
+// Числа пишутся кратчайшей записью, которая читается обратно без потерь (как JSON.stringify). Не для process: выделяет память.
 #pragma once
 #include <cstdio>
 #include <cstdlib>
@@ -129,7 +129,10 @@ struct Json {
     switch (type) {
       case Null: r += "null"; break;
       case Bool: r += b ? "true" : "false"; break;
-      case Num: std::snprintf(buf, sizeof buf, "%.17g", n); r += buf; break;
+      case Num:                                         // кратчайшее, что читается обратно тем же числом — как JSON.stringify (0.45, не 0.45000000000000001)
+        if (n == 0) { r += '0'; break; }
+        for (int pr = 1; pr <= 17; pr++) { std::snprintf(buf, sizeof buf, "%.*g", pr, n); if (std::strtod(buf, nullptr) == n) break; }
+        r += buf; break;
       case Str: quote(r, s); break;
       case Arr:
         r += '[';
