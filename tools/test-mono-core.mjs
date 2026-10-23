@@ -132,3 +132,45 @@ test('autostrum: changing the division mid-run keeps it playing at the new rate'
   const after = r.onsets.slice(n).map((o) => o.t);
   assert.ok(after.length >= 6 && after.length <= 9, `${after.length}`);   // уже назначенный шаг доигрывает прежнюю длину (как в JS)
 });
+
+// сетка из долей оболочки (t2d_midi_msg): пуск, доли n в t0 + n·p при bpm; autostrum — после launch
+function gridRig(o = {}) {
+  const r = autoRig(o), x = r.c.exports;
+  r.beat = (n, at, bpm = 120) => { while (r.t + 128 / SR <= at) r.run(128 / SR); x.t2d_time(r.t); x.t2d_midi_msg(1, n, bpm, at); };
+  r.start = (at) => { while (r.t + 128 / SR <= at) r.run(128 / SR); x.t2d_time(r.t); x.t2d_midi_msg(3, 0, 0, at); };
+  r.beats = (from, to, t0 = 1, p = 0.5) => { for (let n = from; n <= to; n++) r.beat(n, t0 + n * p, 60 / p); };
+  return r;
+}
+
+test('autostrum on the grid: 1/8T with swing — steps on stepTime + swing', () => {
+  const r = gridRig({ div: 2, swing: 0.3 });
+  r.start(0.99); r.beat(0, 1);
+  r.c.action(SLOT, ACT.auto, 0, [1]);
+  r.beats(1, 6);
+  const ts = r.onsets.map((o) => o.t);
+  assert.ok(ts.length >= 10, `${ts.length}`);
+  const stepSec = 0.5 / 3;
+  r.onsets.forEach(({ t, step }) => {
+    const want = 1 + step * stepSec + (step % 2 ? 0.3 * 0.5 * (60 / 120 / 3) : 0);   // swing — от темпа модели (120 в риге), как swingAt в JS
+    assert.ok(t <= want + 1e-9 && want - t < 128 / SR + 1e-9, `step ${step}: block ${t}, want ${want}`);
+  });
+});
+
+test('autostrum started just after the downbeat plays step 0 at once (late < 30 ms)', () => {
+  const r = gridRig();
+  r.start(0.99); r.beat(0, 1);
+  r.run(0.02);                                          // ~1.02: доля 0 была 20 мс назад
+  r.c.action(SLOT, ACT.auto, 0, [1]); r.run(128 / SR);
+  assert.equal(r.onsets.length, 1, 'played in the next block');
+  assert.equal(r.onsets[0].step, 0, 'step 0, late — at once (as due() in JS: only the first step)');
+});
+
+test('a backward grid jump never fires steps out of order', () => {
+  const r = gridRig();
+  r.start(0.99); r.beat(0, 1); r.c.action(SLOT, ACT.auto, 0, [1]);
+  r.beats(1, 4);
+  r.beats(5, 9, 0.8);                                   // сетка прыгнула на 0.2 с назад
+  const st = r.onsets.map((o) => o.step), ts = r.onsets.map((o) => o.t);
+  for (let i = 1; i < st.length; i++) { assert.ok(st[i] > st[i - 1], `steps ${st}`); assert.ok(ts[i] > ts[i - 1]); }
+  assert.ok(st.length >= 12, `${st.length}`);
+});

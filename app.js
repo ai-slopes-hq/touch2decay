@@ -1,6 +1,6 @@
 // touch2decay — дрон / нойз на 1–2 пальца. Web Audio + canvas, без зависимостей.
 // хост: сервисы, примитивы и экраны — в host/ (шаги 2–3 docs/refactor-plan.md); здесь роутер касаний, кадр и мир I · Tenebrae
-import { an, asym, chanLvl, chans, core, ctx, filter, gainNode, lfo, mix, noiseBuffer, restartAudio, saveMix, scopeBuf, send, setCoreVer, setVol, soft, syncScale, unlock, vol, VOL_TRAVEL } from './host/audio.js';
+import { an, asym, chanLvl, chans, core, coreGrid, ctx, filter, gainNode, lfo, mix, noiseBuffer, onClock, restartAudio, saveMix, scopeBuf, send, setCoreVer, setVol, soft, syncScale, unlock, vol, VOL_TRAVEL } from './host/audio.js';
 import { audioPanel, drawAudioPanel, panelDown, panelGeo, panelHit, panelMove, setAudioPanel, volTap } from './host/audio-panel.js';
 import { link, tempoFrom, transportFrom } from './host/concordia.js';
 import { clockLive, onTick, setClockVer } from './host/clock.js';
@@ -2594,9 +2594,11 @@ registerWorld(1, solNiger);
 // общее для миров из других файлов (worlds/<мир>/): регистрация и помощники рисования
 // lfoClear(prefix) — снять LFO строк мира (корзина, закрытая звезда) без возврата базы
 // MIDI-часы: оболочка зовёт window.t2dMidi, миры берут сетку через T.midiGrid()
-const midi = createMidi({ worlds: () => Object.values(worlds).filter((w) => w.tempo), now: () => (ctx ? ctx.currentTime : null), current: () => (nav.view === 'play' ? cur() : null) });
+const midi = createMidi({ worlds: () => Object.values(worlds).filter((w) => w.tempo), now: () => (ctx ? ctx.currentTime : null), current: () => (nav.view === 'play' ? cur() : null),
+  core: { send: (m) => core && core.send(m), grid: coreGrid }, perf: () => performance.now() / 1000 });   // разбор часов и сетка — в ядре
 window.t2dMidi = midi.message;
-initWebMidi(midi.message);                              // компьютер, Android: часы по Web MIDI
+onClock(midi.events);
+initWebMidi(midi.byte);                                 // компьютер, Android: часы по Web MIDI
 onTick(midi.tick);
 window.T2D = {
   midiGrid: () => midi.grid(), stepTime, due, onMidi: midi.listen,

@@ -1,7 +1,10 @@
 // t2d — один узел AudioWorklet на хост и все миры SDK (ядро core/bridge → t2d.wasm; байты приходят в processorOptions.wasm, зерно — processorOptions.seed).
 // processorOptions.worlds — слоты миров SDK (Firmamentum — 10). Входы: четыре стерео-посыла извне в ревербы room, plate, hall, cathedral.
 // Выходы: [возврат ревербов, сухой звук каждого мира — в порядке worlds], все стерео. Ядро считает кусками по 128.
-// Внутрь: {t:'action', slot, kind, i, a}, {t:'fader', slot, g}, {t:'scale', on, idx, root}, {t:'snap', slot, id} → {t:'snap', id, js}, {t:'restore', slot, js}.
+// Внутрь: {t:'action', slot, kind, i, a}, {t:'fader', slot, g}, {t:'scale', on, idx, root}, {t:'snap', slot, id} → {t:'snap', id, js}, {t:'restore', slot, js},
+// MIDI-часы: {t:'midi', src, b, at} — байт реального времени от входа src, {t:'midimsg', kind, n, bpm, at} — разобранное (оболочка iOS); at — секунды контекста.
+// Время ядра — currentTime: перед каждым куском t2d_time. События часов (пуск, стоп, темп, доля, launch) — {t:'h', ev: [код, bpm, …], grid} сразу после
+// блока, где они случились (решение «кого запускать» не должно ждать 1/60 с); сетка {on, t0, p} — ещё и в каждом {t:'m'} (host).
 // Наружу ~60 раз в секунду: {t:'m', n, w: {слот: {mirror, heard}}} — n: сколько сообщений порта уже применено (по нему фасад в вебе
 // понимает, догнало ли зеркало его действия); — «услышанное» — список записей (по одной на блок, где что-то было; пустые, из одних нулей, пропускаются), копится между отправками — ничего не теряется, раскладку записи знает мир.
 // Пока модуль не готов — тишина, сообщения ждут в очереди (порядок сохраняется); готов — {t:'ready'}, не загрузился — {t:'err'} и дальше тишина.
@@ -49,6 +52,7 @@ class T2d extends AudioWorkletProcessor {
     }).catch((err) => this.port.postMessage({ t: 'err', msg: String(err) }));
   }
   nums(n) { this.views(this.x); return Array.from(this.mb.subarray(0, n)); }
+  grid() { const n = this.x.t2d_hmirror(), m = this.mb; return n ? { on: m[0] !== 0, t0: m[1], p: m[2] } : null; }
   apply(d) {
     const x = this.x;
     this.applied++;
@@ -58,6 +62,8 @@ class T2d extends AudioWorkletProcessor {
       x.t2d_action(d.slot, d.kind, d.i | 0, x.t2d_args(), n);
     } else if (d.t === 'fader') x.t2d_fader(d.slot, d.g);
     else if (d.t === 'scale') x.t2d_scale(d.on ? 1 : 0, d.idx | 0, d.root | 0);
+    else if (d.t === 'midi') x.t2d_midi_byte(d.src | 0, d.b | 0, +d.at || 0);
+    else if (d.t === 'midimsg') x.t2d_midi_msg(d.kind | 0, +d.n || 0, +d.bpm || 0, +d.at || 0);
     else if (d.t === 'snap') {
       const n = x.t2d_snapshot(d.slot);
       this.port.postMessage({ t: 'snap', id: d.id, js: n ? unutf8(new Uint8Array(x.memory.buffer, x.t2d_str_buf(), n)) : '' });
@@ -92,8 +98,11 @@ class T2d extends AudioWorkletProcessor {
           else for (let i = 0; i < m; i++) dst[i] = 0;
         }
       }
+      x.t2d_time(currentTime + k / sampleRate);
       x.t2d_process(m);
       this.views(x);
+      const ne = x.t2d_hevents();                         // события часов — редкие (раз в долю): сразу
+      if (ne) { const ev = this.nums(ne); this.port.postMessage({ t: 'h', ev, grid: this.grid() }); }
       for (let c = 0; c < 2; c++) {
         const o = out0[c], rt = this.ret[c];
         if (o) for (let i = 0; i < m; i++) o[k + i] = rt[i];
@@ -114,7 +123,7 @@ class T2d extends AudioWorkletProcessor {
       this.count = 0;
       const w = {};
       for (const s of this.slots) { w[s] = { mirror: this.nums(x.t2d_mirror(s)), heard: this.heard[s] }; this.heard[s] = []; }
-      this.port.postMessage({ t: 'm', n: this.applied, w });
+      this.port.postMessage({ t: 'm', n: this.applied, w, host: this.grid() });
     }
     return true;
   }

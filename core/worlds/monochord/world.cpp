@@ -18,7 +18,7 @@ void World::prepare(double sr, uint32_t seed) {
   chorus_.prepare(sr_, LINES, 0.002);
   c_ = 1 - std::exp(-1 / (0.05 * sr_));
   bodyG_ = sdk::OnePole(); hallG_ = sdk::OnePole();
-  steps_.reset(); quiet_ = 0; hits_ = 0; lastStep_ = 0; now_ = 0; chorusOn_ = false;
+  steps_.reset(); npend_ = 0; quiet_ = 0; hits_ = 0; lastStep_ = 0; now_ = 0; chorusOn_ = false;
   applyFx();                                            // как build + ready прежнего engine.js: шина, связь и строй струн
   for (int i = 0; i < N; i++) if (model_.str(i).sus) sound_.sus(i, true);
 }
@@ -46,7 +46,7 @@ void World::on(const Ev& e) {
     case Ev::BOW: sound_.bow(e.i, e.a); break;
     case Ev::SUS: sound_.sus(e.i, e.a != 0); break;
     case Ev::WIND: sound_.wind(e.a); break;
-    case Ev::AUTO: steps_.reset(); break;              // часы автострама — с начала (по сетке — к нынешней доле)
+    case Ev::AUTO: steps_.reset(); npend_ = 0; break;              // часы автострама — с начала (по сетке — к нынешней доле)
     case Ev::FX: applyFx(); break;
   }
 }
@@ -83,8 +83,15 @@ void World::process(const sdk::Out& out, int n) {
                  const int m = model_.autoStep(k, h);   // chance — в модели
                  if (m < 0) return;
                  for (int j = 0; j < m; j++) sound_.at(t + h[j].dt, h[j].i, h[j].pos, h[j].vel);
-                 hits_++; lastStep_ = k;
+                 if (npend_ == 16) { for (int j = 1; j < 16; j++) pend_[j - 1] = pend_[j]; npend_--; }
+                 pend_[npend_++] = Pend{t, k};
                });
+  }
+  if (npend_) {                                          // удары, чьё время пришло в этом блоке
+    const double end = now + n / sr_;
+    int w = 0;
+    for (int j = 0; j < npend_; j++) { if (pend_[j].t < end) { hits_++; lastStep_ = pend_[j].step; } else pend_[w++] = pend_[j]; }
+    npend_ = w;
   }
   const bool live = sound_.process(pL_, pR_, n, now);
   quiet_ = live ? 0 : quiet_ + n;

@@ -58,6 +58,9 @@ class World : public sdk::World {
   bool chorusOn_ = false;
   int quiet_ = 0, hits_ = 0;
   long lastStep_ = 0;
+  struct Pend { double t; long step; };                // удар поставлен, но ещё не прозвучал: «услышан» — в блоке, где его время
+  Pend pend_[16];
+  int npend_ = 0;
   float pL_[128], pR_[128], cL_[128], cR_[128];
 };
 

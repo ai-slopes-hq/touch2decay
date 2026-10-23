@@ -1,8 +1,11 @@
-// Служба MIDI-часов хоста: сетка долей, раздача пуска/стопа/темпа (host/midi.js, чистый Node).
+// Служба MIDI-часов хоста: сетка долей (ядро, core/sdk/transport.hpp), раздача пуска/стопа/темпа (host/midi.js) — в Node над t2d.wasm.
+// Разбор байтов прежним JS (clockParser) — эталон, с ним ядро сверяет tools/test-transport.mjs; его тесты остались здесь.
 //   node --test tools/test-midi.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clockParser, createMidi, due, stepTime } from '../host/midi.js';
+import { due, stepTime } from '../host/midi.js';
+import { clockParser } from './ref/midi.js';
+import { coreMidi } from './midi-core.mjs';
 
 const fake = (o = {}) => {
   const w = { calls: [], bpm: o.bpm ?? 120, on: !!o.playing };
@@ -15,7 +18,7 @@ const fake = (o = {}) => {
 };
 const rig = (ws = [], cur = null) => {
   const r = { t: 10, cur };
-  r.m = createMidi({ worlds: () => ws, now: () => r.t, current: () => r.cur });
+  r.m = coreMidi({ worlds: () => ws, now: () => r.t, current: () => r.cur });
   return r;
 };
 const beat = (r, n, at, bpm = 120) => { r.t = at; r.m.message({ t: 'beat', n, bpm, ago: 0 }); };

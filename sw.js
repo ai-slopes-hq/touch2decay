@@ -1,7 +1,7 @@
 // Офлайн без залипания старой версии.
 // Код и страница — сначала из сети (мимо HTTP-кеша), кеш — только запасной вариант без сети.
 // Шрифты, иконки и гравюры не меняются — сразу из кеша.
-const CACHE = 't2d-v173';   // при выкладке менять вместе с ?v= у модулей в index.html
+const CACHE = 't2d-v174';   // при выкладке менять вместе с ?v= у модулей в index.html
 const PAGE = ['./', './index.html', './manifest.webmanifest'];
 // ES-модули — те же, что <script type="module"> в index.html, в том же порядке; host/ — их импортирует app.js
 const HOST = ['./host/util.js', './host/fonts.js', './host/draw.js', './host/scale.js', './host/registry.js', './host/undo.js', './host/audio.js',
@@ -14,7 +14,7 @@ const MODULES = [...HOST, './app.js', './worlds/cymatica/index.js', './laborator
   './worlds/natura/model.js', './worlds/natura/engine.js', './worlds/natura/view.js', './worlds/natura/scene.js',
   './worlds/cymatica/core.js', './worlds/cymatica/model.js', './worlds/cymatica/engine.js', './worlds/cymatica/view.js'];   // части миров (worlds/<мир>/) — их импортирует index.js мира
 // модули AudioWorklet — грузятся из миров через addModule(`…?v=`)
-const WORKLETS = ['./plate-worklet.js', './monochord-worklet.js', './horo-worklet.js', './terrain-worklet.js', './clock-worklet.js', './t2d-worklet.js', './t2d.wasm'];   // t2d.wasm — ядро SDK (хост, ревербы, Firmamentum, Goetia, Oceanus), его грузит host/audio.js
+const WORKLETS = ['./plate-worklet.js', './horo-worklet.js', './terrain-worklet.js', './clock-worklet.js', './t2d-worklet.js', './t2d.wasm'];   // t2d.wasm — ядро SDK (хост, ревербы, MIDI-часы, Firmamentum, Goetia, Oceanus, Monochordum), его грузит host/audio.js
 const SHELL = [...PAGE, ...MODULES, ...WORKLETS];
 const STATIC = ['./icon-180.png', './icon-192.png', './icon-512.png',
   './fonts/im-fell-english-latin-400-italic.woff2', './fonts/im-fell-english-latin-400-normal.woff2', './fonts/eb-garamond-latin-400-normal.woff2', './fonts/eb-garamond-latin-400-italic.woff2'];

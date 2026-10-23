@@ -48,7 +48,7 @@ export function sandbox(file, extra = {}) {                    // worklet в vm 
   };
   vm.createContext(ctx);
   vm.runInContext(readFileSync(new URL(file, import.meta.url), 'utf8'), ctx);
-  return { reg, posted };
+  return { reg, posted, ctx };                          // ctx — глобальные worklet (currentTime двигает вызывающий)
 }
 export function loadRef() {
   const { reg, posted } = sandbox('./ref/goetia-worklet.js');

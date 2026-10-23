@@ -59,13 +59,18 @@ export function lfo(rate, depth, ...params) {
 // Порт: send(m) → номер сообщения (фасад модели мира сверяет по нему зеркало: t2d-worklet.js шлёт, сколько сообщений применено);
 // пока узла нет (качается wasm, грузится модуль) — очередь. Не загрузилось — console.error, миры на Web Audio звучат без реверба.
 export const REVS = ['room', 'plate', 'hall', 'cathedral'];
-export const SDK_WORLDS = [10, 15, 8];                   // слоты миров SDK в ядре (номер мира): Firmamentum, Goetia, Oceanus
+export const SDK_WORLDS = [10, 15, 8, 7];                // слоты миров SDK в ядре (номер мира): Firmamentum, Goetia, Oceanus, Monochordum
 let coreVer = '0', coreBytes = null;                     // байты t2d.wasm — качаются один раз, на каждый новый контекст — копия
 export function setCoreVer(v) { coreVer = v; }
 export let core = null;
+// MIDI-часы живут в ядре (core/sdk/transport.hpp): сетка долей {t0, p} (секунды контекста) — в каждом зеркале и с событиями; события
+// часов (пуск, стоп, темп, доля, launch) — подписчикам onClock (host/midi.js решает, кого запускать). Ядра нет / не готово — сетки нет.
+const clockSubs = [];
+export const onClock = (fn) => { clockSubs.push(fn); };
+export const coreGrid = () => (core && core.grid && core.grid.on && core.grid.p > 0 ? core.grid : null);
 let building = null;                                     // мир, чей build идёт сейчас: его посылы — после его фейдера
 function buildCore(c, masterIn) {
-  const k = { ctx: c, node: null, ready: false, sent: 0, queue: [], subs: [], scale: '' };
+  const k = { ctx: c, node: null, ready: false, sent: 0, queue: [], subs: [], scale: '', grid: null };
   k.ins = REVS.map(() => gainNode(1));                   // сумма посылов по типу → вход узла
   k.ret = gainNode(1); k.ret.connect(masterIn);
   k.dry = Object.fromEntries(SDK_WORLDS.map((s) => [s, gainNode(1)]));
@@ -84,7 +89,9 @@ function buildCore(c, masterIn) {
     node.onprocessorerror = () => console.error('t2d core: the worklet failed');
     node.port.onmessage = (e) => {
       const d = e.data;
-      if (d.t === 'm') { for (const fn of k.subs) fn(d); } else if (d.t === 'ready') k.ready = true;
+      if (d.t === 'm') { if (d.host) k.grid = d.host; for (const fn of k.subs) fn(d); }
+      else if (d.t === 'h') { if (d.grid) k.grid = d.grid; if (core === k) for (const fn of clockSubs) { try { fn(d.ev); } catch (err) { console.error('clock:', err); } } }
+      else if (d.t === 'ready') k.ready = true;
       else if (d.t === 'err') console.error('t2d core:', d.msg);
     };
     k.node = node;

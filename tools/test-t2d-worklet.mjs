@@ -117,11 +117,27 @@ test('snap -> restore round trip', async () => {
 
 test('bad wasm: err, silence, no throw', async () => {
   const { sandbox } = await import('./goetia-scenarios.mjs');
-  const { reg, posted } = sandbox('../t2d-worklet.js', { TextDecoder, TextEncoder });
+  const { reg, posted } = sandbox('../t2d-worklet.js', { TextDecoder, TextEncoder, currentTime: 0 });
   const proc = new reg.t2d({ processorOptions: { wasm: new ArrayBuffer(8), worlds: [10] } });
   await new Promise((r) => setTimeout(r, 50));
   assert.ok(posted.some((m) => m.t === 'err'));
   const out = [[new Float32Array(128), new Float32Array(128)], [new Float32Array(128), new Float32Array(128)]];
   proc.process([[], [], [], []], out, {});
   assert.equal(peak(out[1][0]), 0);
+});
+
+test('MIDI clock through the wrapper: bytes in, clock events out right after the block, grid in the mirror', async () => {
+  const w = loadWorklet([10, 7]); await w.ready;
+  const send = (b, at) => w.proc.port.onmessage({ data: { t: 'midi', src: 0, b, at } });
+  let t = 0;
+  const until = (at) => { while (w.ctx.currentTime + BLOCK / SR <= at) block(w); };
+  until(0.5); send(0xFA, w.ctx.currentTime);
+  for (let k = 0; k < 24 * 4; k++) { const at = 0.5 + k / 48; until(at); send(0xF8, at); t = at; }
+  block(w);
+  const h = w.posted.filter((m) => m.t === 'h'), ev = h.flatMap((m) => m.ev.filter((_, i) => i % 2 === 0));
+  assert.ok(ev.includes(1), 'start'); assert.ok(ev.includes(5), 'launch'); assert.ok(ev.filter((e) => e === 4).length >= 3, 'beats');
+  for (let k = 0; k < 40; k++) block(w);
+  const m = [...w.posted].reverse().find((q) => q.t === 'm');
+  assert.ok(m.host && m.host.on && Math.abs(m.host.p - 0.5) < 1e-3, JSON.stringify(m.host));
+  assert.ok(t > 2);
 });

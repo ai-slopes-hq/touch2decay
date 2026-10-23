@@ -1,0 +1,80 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>mono bus</title>
+<!-- Сверка шины Monochordum (дека, хор, выход ×2.2) в браузере: прежний engine.js (tools/ref/monochord-engine.js) с эталонным worklet
+     струн против ядра t2d.wasm (мир VII, сухой выход) — оба в OfflineAudioContext, одни действия, один шум струн (зерно ядра 0 → струны 1,
+     как у эталонного worklet без processorOptions). Запускает tools/mono-bus.py; результат — window.__res. -->
+<script type="module">
+import { createModel } from './monochord-model.js';
+import { createEngine } from './monochord-engine.js';
+import { stepTime, due } from '../../host/midi.js';
+
+const SR = 48000, SEC = 4;
+const CASES = {
+  body: [['fx', 'body', 0.9], ['fx', 'chorus', 0], ['sus', 1, true], ['pluck', 0, 0.2, 0.9], ['pluck', 2, 0.4, 0.7], ['pluck', 3, 0.15, 1]],
+  chorus: [['fx', 'body', 0.4], ['fx', 'chorus', 0.8], ['sus', 2, true], ['wind', 0.3], ['pluck', 0, 0.3, 0.9], ['pluck', 1, 0.25, 0.8]],
+  default: [['sus', 0, true], ['sus', 3, true], ['pluck', 1, 0.2, 0.9], ['bow', 2, 0.5]],
+};
+const FX = ['decay', 'bright', 'body', 'sympathy', 'chorus', 'chance', 'hall'];
+
+async function ref(acts) {
+  const ctx = new OfflineAudioContext(2, SR * SEC, SR);
+  const T = { send: () => ctx.createGain(), onTick() {}, midiGrid: () => null, stepTime, due };
+  const model = createModel(), eng = createEngine(T, model, 'ref');
+  model.listen(eng.on);
+  eng.build(ctx, ctx.destination);
+  eng.start();
+  while (!eng.ready) await new Promise((r) => setTimeout(r, 20));
+  for (const [a, x, y, z] of acts) {
+    if (a === 'fx') model.setFx(x, y); else if (a === 'sus') model.setSus(x, y); else if (a === 'pluck') model.pluck(x, y, z);
+    else if (a === 'wind') model.setWind(x); else if (a === 'bow') model.bow(x, y);
+  }
+  await new Promise((r) => setTimeout(r, 100));           // сообщения дошли до worklet до первого блока (офлайн-рендер быстрее реального)
+  const b = await ctx.startRendering();
+  return [b.getChannelData(0), b.getChannelData(1)];
+}
+
+async function core(acts) {
+  const ctx = new OfflineAudioContext(2, SR * SEC, SR);
+  await ctx.audioWorklet.addModule('../../t2d-worklet.js');
+  const wasm = await (await fetch('../../t2d.wasm')).arrayBuffer();
+  const node = new AudioWorkletNode(ctx, 't2d', { numberOfInputs: 4, numberOfOutputs: 2, outputChannelCount: [2, 2], processorOptions: { wasm, seed: 0, worlds: [7] } });
+  node.connect(ctx.destination, 1);
+  await new Promise((r) => { node.port.onmessage = (e) => { if (e.data.t === 'ready') r(); }; });
+  const act = (kind, i, a) => node.port.postMessage({ t: 'action', slot: 7, kind, i, a });
+  for (const [a, x, y, z] of acts) {
+    if (a === 'fx') act(7, FX.indexOf(x), [y]); else if (a === 'sus') act(3, x, [y ? 1 : 0]); else if (a === 'pluck') act(0, x, [y, z]);
+    else if (a === 'wind') act(6, 0, [x]); else if (a === 'bow') act(2, x, [y]);
+  }
+  await new Promise((r) => setTimeout(r, 100));           // сообщения дошли до ядра до первого блока
+  const b = await ctx.startRendering();
+  return [b.getChannelData(0), b.getChannelData(1)];
+}
+
+const rmsDb = (x) => 10 * Math.log10(x.reduce((s, v) => s + v * v, 0) / x.length + 1e-30);
+function bands(x) {                                       // энергия по октавам: среднее по окнам 4096 (Хann), DFT по бинам октавы
+  const N = 4096, edges = [62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000], out = new Array(edges.length - 1).fill(0);
+  let wins = 0;
+  for (let o = N; o + N <= x.length; o += N * 2) {
+    wins++;
+    const re = new Float64Array(N / 2), im = new Float64Array(N / 2);
+    for (let k = 1; k < N / 2; k++) {
+      const f = (k * SR) / N, bi = edges.findIndex((e, i) => f >= e && f < edges[i + 1]);
+      if (bi < 0) continue;
+      let r = 0, q = 0;
+      for (let n = 0; n < N; n += 2) { const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * n) / N), a = (2 * Math.PI * k * n) / N; r += x[o + n] * w * Math.cos(a); q -= x[o + n] * w * Math.sin(a); }
+      out[bi] += r * r + q * q;
+    }
+  }
+  return out.map((e) => 10 * Math.log10(e / wins + 1e-30));
+}
+
+window.__res = (async () => {
+  const res = {};
+  for (const [name, acts] of Object.entries(CASES)) {
+    const [rL, rR] = await ref(acts), [cL, cR] = await core(acts);
+    res[name] = { rms: [rmsDb(rL), rmsDb(cL), rmsDb(rR), rmsDb(cR)], bandsRef: bands(rL), bandsCore: bands(cL) };
+  }
+  return res;
+})();
+</script>
