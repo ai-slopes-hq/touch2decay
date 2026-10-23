@@ -1190,6 +1190,11 @@ async def sc_oceanus(p):                           # Oceanus: город поё�
     assert await p.js('()=>t2d.ocean.ready'), 'ocean worklet is up'
     a = await p.js('()=>t2d.ocean.at(0.3, 0.85)'); pid = await p.hold(a['x'], a['y'], ms=700)
     assert await p.js('()=>t2d.ocean.voices.length') == 1, 'touch the land — a city sings'
+    for _ in range(30):                              # ядро (ocean.wasm) поднимается вместе с worklet
+        if await p.js("()=>t2d.ocean.core == 'wasm'"): break
+        await p.pg.wait_for_timeout(100)
+    assert await p.js("()=>t2d.ocean.core") == 'wasm', 'the ocean core is up (ocean.wasm)'
+    assert await p.js('()=>Math.max(...t2d.ocean.gains) > 0'), 'the core sounds: a voice has gain'
     lv = await p.js('()=>T2D.level'); print('  oceanus level, one city:', round(lv, 3)); assert lv > 0.03, f'the city is heard: {lv}'
     h0 = await p.js('()=>t2d.ocean.hz(t2d.ocean.voices[0])')
     b = await p.js('()=>t2d.ocean.at(0.3, 0.2)'); await p.drag(pid, a['x'], a['y'], b['x'], b['y'], steps=8)

@@ -1,10 +1,11 @@
-// Oceanus — звук: сканирующий синтез (ocean-worklet.js), шина с залом. События модели → сообщения worklet;
+// Oceanus — звук: сканирующий синтез — ядро C++ (core/worlds/oceanus → ocean.wasm) в ocean-worklet.js, шина с залом. События модели → сообщения worklet;
 // обратно из worklet ~30/с — метры: форма кольца (shape), место луны (moon, доля круга), уровни голосов (gains).
 import { N, VMAX } from './model.js';
 
 export function createEngine(T, model, ver) {
   const { voices, fx, luna } = model.state;
-  let actx = null, node = null, bus = null, ready = false, started = false, lastSound = 0;
+  let actx = null, node = null, bus = null, ready = false, started = false, lastSound = 0, core = null;
+  let bytes = null;                                      // байты ocean.wasm — качаются один раз, на каждый новый контекст — копия
   let shape = new Float32Array(N), moon = 0, gains = new Array(VMAX).fill(0);
   const queue = [];
   const send = (m) => { if (node && ready) node.port.postMessage(m); else queue.push(m); };
@@ -15,21 +16,24 @@ export function createEngine(T, model, ver) {
     const pre = g(1), out = g(1.6), hallSend = g(0), h = T.hall();
     pre.connect(out); pre.connect(hallSend); hallSend.connect(h.input); h.out.connect(g(0.9)).connect(out);
     bus = { pre, out, hallSend, hall: h, input, live: false };
-    ready = false; node = null; started = false;
+    ready = false; node = null; started = false; core = null;
     applyFx();
   }
   function start() {                                     // модуль океана — только когда в мир впервые зашли
     if (started || !actx) return;
     started = true;
-    actx.audioWorklet.addModule(`ocean-worklet.js?v=${ver}`).then(() => {
-      node = new AudioWorkletNode(actx, 'ocean', { numberOfInputs: 0, outputChannelCount: [2] });
+    if (!bytes) bytes = fetch(`ocean.wasm?v=${ver}`).then((r) => { if (!r.ok) throw new Error(`ocean.wasm ${r.status}`); return r.arrayBuffer(); });
+    const c = actx;                                      // пока грузится, звук могли перезапустить (build на новом контексте) — тогда этот запуск лишний
+    Promise.all([c.audioWorklet.addModule(`ocean-worklet.js?v=${ver}`), bytes]).then(([, buf]) => {
+      if (c !== actx) return;
+      node = new AudioWorkletNode(c, 'ocean', { numberOfInputs: 0, outputChannelCount: [2], processorOptions: { wasm: buf.slice(0), seed: (Math.random() * 4294967296) >>> 0 } });
       node.connect(bus.pre);
-      node.port.onmessage = (e) => { const d = e.data; if (d.t === 'shape') { shape = Float32Array.from(d.x); moon = d.moon; gains = d.g; } };
+      node.port.onmessage = (e) => { const d = e.data; if (d.t === 'ready') { core = 'wasm'; return; } if (d.t === 'err') { console.error('ocean core:', d.msg); return; } if (d.t === 'shape') { shape = Float32Array.from(d.x); moon = d.moon; gains = d.g; } };
       ready = true;
       sendParams();
       for (const v of voices) sendVoice(v);
       while (queue.length) node.port.postMessage(queue.shift());
-    }).catch(() => { started = false; });
+    }).catch((err) => { console.error('oceanus:', err); if (c === actx) { started = false; bytes = null; } });
   }
   function setLive(on) {
     if (!bus || bus.live === on) return;
@@ -62,7 +66,7 @@ export function createEngine(T, model, ver) {
 
   return {
     build, start, on,
-    get ready() { return ready; }, get live() { return !!(bus && bus.live); },
+    get ready() { return ready; }, get core() { return core; }, get live() { return !!(bus && bus.live); },
     get shape() { return shape; }, get moon() { return moon; }, get gains() { return gains; },
   };
 }

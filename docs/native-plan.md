@@ -76,6 +76,7 @@ web (как сейчас)            в нативном режиме мир н�
 2. **Хост в ядре** (`core/host`): мастер, микшер, concordia (лад, темп), LFO строк (`host/sl.js`) и тик моделей — до переноса миров, чтобы перенесённый мир сразу жил без кадров.
 3. **Миры с worklet** — Firmamentum, Oceanus, Arcadia, Monochordum, Horologium: worklet → ядро на C++ (WASM в worklet), часы и модель — в ядро.
    **Firmamentum — звук в ядре (23.10, v170):** `core/worlds/firmamentum` → `pulsar.wasm`, `pulsar-worklet.js` — обёртка. Скорость (Node / V8, 60 с, шесть звёзд, crepitus + fulgur): JS 1645 мс, WASM 107 мс — **в ~15 раз**. Эталон — `tools/ref/pulsar-worklet.js` со случайностью от зерна; сверка эталон ↔ render-cli ↔ WASM — `node --test tools/test-firm-core.mjs`. Модель, часы и view пока в вебе.
+   **Oceanus — звук в ядре (23.10, v171):** `core/worlds/oceanus` → `ocean.wasm`, `ocean-worklet.js` — обёртка. Скорость (Node / V8, 60 с звука): JS 6819 мс, WASM 331 мс — **в ~20 раз**. Эталон — `tools/ref/ocean-worklet.js` со случайностью от зерна; сверка эталон ↔ render-cli ↔ WASM — `node --test tools/test-ocean-core.mjs`. Модель и view пока в вебе.
 4. **Миры на узлах** — Inferno, Paradisus, Tria (+ GENDYN из `docs/worlds/tria.md`).
 5. **Секвенсеры** — Portus, Natura, Cymatica.
 6. **Tenebrae** последним.

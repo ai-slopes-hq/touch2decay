@@ -25,7 +25,7 @@ T.registerWorld(8, {
   dice: model.dice, clear: model.clear, snapshot: model.snapshot, restore: model.restore, sounding: model.sounding, mapShot: view.mapShot,
 });
 window.t2d.ocean = {
-  voices: model.state.voices, fx: model.state.fx, geo: () => geo(T), setFx: (k, v) => view.fx.set(k, v), get ready() { return engine.ready; }, get live() { return engine.live; },
+  voices: model.state.voices, fx: model.state.fx, geo: () => geo(T), setFx: (k, v) => view.fx.set(k, v), get ready() { return engine.ready; }, get core() { return engine.core; }, get live() { return engine.live; },
   luna: model.state.luna, moonAt: () => moonPos(geo(T), engine.moon), get shape() { return engine.shape; }, get ripples() { return view.ripples; }, send: (v) => model.setVoice(v, {}), get gains() { return engine.gains; }, hz: model.hz,
   at: (a, rn) => at(geo(T), a, rn * geo(T).Rd), water: (a, k) => { const G = geo(T); return at(G, a, G.Rd + (G.Ro - G.Rd) * k); }, model,
 };

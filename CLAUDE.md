@@ -34,7 +34,7 @@
 | V | Inferno — шумы + резонаторы, девять кругов | `worlds/inferno/` | `docs/worlds/inferno.md` |
 | VI | Paradisus — хор ангелов, форманты, собор | `worlds/paradisus/` | `docs/worlds/paradisus.md` |
 | VII | Monochordum — Карплус — Стронг, страм, ветер, автострам | `worlds/monochord/`, `monochord-worklet.js` | `docs/worlds/monochordum.md` |
-| VIII | Oceanus — сканирующий синтез, карта T-O, луна | `worlds/oceanus/`, `ocean-worklet.js` | `docs/worlds/oceanus.md` |
+| VIII | Oceanus — сканирующий синтез, карта T-O, луна | `worlds/oceanus/`, `ocean-worklet.js` (обёртка), ядро C++ `core/worlds/oceanus` → `ocean.wasm` | `docs/worlds/oceanus.md` |
 | IX | Horologium (Nova) — волшебные числа: кольца II…IX, n ударов за оборот на n-й гармонике (Rhythmicon), унтертоны, фаза, маятник руками, ритм → аккорд за limen | `worlds/horologium/`, `horo-worklet.js` | `docs/worlds/horologium.md` |
 | X | Firmamentum — пульсарный синтез, свод (**образец model / engine / view**) | `worlds/firmamentum/`, `pulsar-worklet.js` (обёртка), ядро C++ `core/worlds/firmamentum` → `pulsar.wasm` | `docs/worlds/firmamentum.md` |
 | XI | Tria corpora — задача трёх тел, FM по кругу | `worlds/tria/` | `docs/worlds/tria.md` |
@@ -104,7 +104,7 @@
 
 `python3 -m http.server 8765` в корне, затем:
 
-- `core/build.sh && node --test tools/test-goetia-core.mjs tools/test-firm-core.mjs` — сверка ядер с эталоном (render-cli и WASM, 1e-6), около минуты.
+- `core/build.sh && node --test tools/test-goetia-core.mjs tools/test-firm-core.mjs tools/test-ocean-core.mjs` — сверка ядер с эталоном (render-cli и WASM, 1e-6), около минуты.
 - `python3 tools/shot.py <сценарий>` (solniger, vol, planets, ring, worlds, sun, hole, legenda, startmap, audio и по сценарию на мир, в том числе arcadia и portus — см. `docs/worlds/`) — сценарии касаний (CDP touch, 390×844) с проверками (провал или ошибка на странице — код выхода 1), скриншоты в `.shots/` — **смотреть их глазами** (Read на png).
 - `python3 tools/render.py ["()=>{…}"] [--world 2] [--onsets]` — офлайн-рендер звука (Tenebrae или удар по пластине Cymatica), RMS и время расчёта; `--onsets` — узор из 4 ударов на 120 BPM, интервалы между ударами и разброс (было 0.68 мс).
 - `node --test tools/test-plate.mjs` — тесты звука пластины в Node (через `vm`, без зависимостей). Помощники секвенсера Cymatica (бывший `test-seq.mjs`) — в `tools/models/cymatica.test.mjs`.
