@@ -61,9 +61,10 @@ export function loadWasm(seed = SEED, sr = SR) {         // обёртка pulsa
   });
   return { proc, posted, ready };
 }
-export function loadOld(sr = SR) {                       // прежняя случайность (Math.random) в том же коде
+export function loadOld(i = 0, sr = SR) {                // прежний код с независимым источником случайности (xorshift32 от номера прогона — не mulberry32 эталона)
   const r = loadRef(1, sr);
-  r.proc.rnd = Math.random;
+  let s = (0x9E3779B9 ^ (i + 1)) >>> 0 || 1;
+  r.proc.rnd = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
   return r;
 }
 

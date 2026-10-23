@@ -14,7 +14,7 @@ const MODULES = [...HOST, './app.js', './worlds/cymatica/index.js', './laborator
   './worlds/natura/model.js', './worlds/natura/engine.js', './worlds/natura/view.js', './worlds/natura/scene.js',
   './worlds/cymatica/core.js', './worlds/cymatica/model.js', './worlds/cymatica/engine.js', './worlds/cymatica/view.js'];   // части миров (worlds/<мир>/) — их импортирует index.js мира
 // модули AudioWorklet — грузятся из миров через addModule(`…?v=`)
-const WORKLETS = ['./plate-worklet.js', './monochord-worklet.js', './ocean-worklet.js', './horo-worklet.js', './pulsar-worklet.js', './pulsar.wasm', './terrain-worklet.js', './goetia-worklet.js', './goetia.wasm', './clock-worklet.js'];   // goetia.wasm — ядро Goetia (core/), его грузит engine
+const WORKLETS = ['./plate-worklet.js', './monochord-worklet.js', './ocean-worklet.js', './horo-worklet.js', './pulsar-worklet.js', './pulsar.wasm', './terrain-worklet.js', './goetia-worklet.js', './goetia.wasm', './clock-worklet.js'];   // goetia.wasm и pulsar.wasm — ядра Goetia и Firmamentum (core/), их грузят engine
 const SHELL = [...PAGE, ...MODULES, ...WORKLETS];
 const STATIC = ['./icon-180.png', './icon-192.png', './icon-512.png',
   './fonts/im-fell-english-latin-400-italic.woff2', './fonts/im-fell-english-latin-400-normal.woff2', './fonts/eb-garamond-latin-400-normal.woff2', './fonts/eb-garamond-latin-400-italic.woff2'];

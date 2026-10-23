@@ -104,6 +104,7 @@
 
 `python3 -m http.server 8765` в корне, затем:
 
+- `core/build.sh && node --test tools/test-goetia-core.mjs tools/test-firm-core.mjs` — сверка ядер с эталоном (render-cli и WASM, 1e-6), около минуты.
 - `python3 tools/shot.py <сценарий>` (solniger, vol, planets, ring, worlds, sun, hole, legenda, startmap, audio и по сценарию на мир, в том числе arcadia и portus — см. `docs/worlds/`) — сценарии касаний (CDP touch, 390×844) с проверками (провал или ошибка на странице — код выхода 1), скриншоты в `.shots/` — **смотреть их глазами** (Read на png).
 - `python3 tools/render.py ["()=>{…}"] [--world 2] [--onsets]` — офлайн-рендер звука (Tenebrae или удар по пластине Cymatica), RMS и время расчёта; `--onsets` — узор из 4 ударов на 120 BPM, интервалы между ударами и разброс (было 0.68 мс).
 - `node --test tools/test-plate.mjs` — тесты звука пластины в Node (через `vm`, без зависимостей). Помощники секвенсера Cymatica (бывший `test-seq.mjs`) — в `tools/models/cymatica.test.mjs`.

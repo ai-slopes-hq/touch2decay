@@ -22,7 +22,7 @@ test('reference is deterministic', () => {
 });
 
 // Треск и вспышки случайны (стайки): у одного прогона разброс ±50 %, поэтому с обеих сторон — среднее по N прогонам
-// (эталон — с разными зёрнами, прежний — на Math.random); допуски из плана — на среднее.
+// (эталон — с разными зёрнами, прежний — на xorshift32 от номера прогона, детерминированно); допуски из плана — на среднее.
 test('reference sounds like the old worklet', () => {
   const RUNS = { all: 8, crepitus: 250 };               // треск дисперсный — ему нужно больше прогонов
   const mean = (load, name) => {
@@ -37,7 +37,7 @@ test('reference sounds like the old worklet', () => {
   };
   const db = (x, y) => Math.abs(20 * Math.log10(x / y));
   for (const name of ['all', 'crepitus']) {
-    const r = mean((i) => loadRef(SEED + i), name), o = mean(() => loadOld(), name);
+    const r = mean((i) => loadRef(SEED + i), name), o = mean((i) => loadOld(i), name);
     assert.ok(db(r.L, o.L) <= 0.5, `${name} L: ${r.L} vs ${o.L}`);
     assert.ok(db(r.R, o.R) <= 0.5, `${name} R: ${r.R} vs ${o.R}`);
     for (const key of ['k', 'f']) assert.ok(Math.abs(r[key] - o[key]) <= 0.25 * Math.max(r[key], o[key], 1), `${name} ${key}: ${r[key]} vs ${o[key]}`);

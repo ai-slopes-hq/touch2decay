@@ -36,18 +36,25 @@ class Pulsar extends AudioWorkletProcessor {
       x.pl_voice(d.i, d.on == null ? -1 : d.on ? 1 : 0, o.fp, o.ff, o.cyc, o.win, o.mask, o.lvl, o.pan);
     } else if (d.t === 'fx') {
       const f = this.fxv;
-      f.jit = d.jit; f.spread = d.spread;
+      if (d.jit != null) f.jit = d.jit;                     // нет поля — прежнее значение (NaN в ядре давал бы «истину»)
+      if (d.spread != null) f.spread = d.spread;
       if (d.crep != null) f.crep = d.crep;
       if (d.fulg != null) f.fulg = d.fulg;
       x.pl_fx(f.jit, f.spread, f.crep, f.fulg);
     }
+  }
+  views(x) {                                            // представления памяти ядра — заново, только когда память выросла
+    if (this.mem && this.mem.buffer === x.memory.buffer) return;
+    this.mem = new Float32Array(x.memory.buffer);
+    this.mem64 = new Float64Array(x.memory.buffer);
+    this.mem32i = new Int32Array(x.memory.buffer);
   }
   process(inputs, outputs) {
     const out = outputs[0], L = out[0], R = out[1], n = L.length, x = this.x;
     if (!x) return true;                                  // выход уже нулевой
     for (let k = 0; k < n; k += 128) {                    // ядро считает не больше 128 за раз
       const m = Math.min(128, n - k), p = x.pl_process(m) >> 2;
-      if (!this.mem || this.mem.buffer !== x.memory.buffer) this.mem = new Float32Array(x.memory.buffer);
+      this.views(x);
       L.set(this.mem.subarray(p, p + m), k);
       if (R) R.set(this.mem.subarray(p + m, p + 2 * m), k);
     }
@@ -57,7 +64,8 @@ class Pulsar extends AudioWorkletProcessor {
       const c = [], g = [], k = [], f = [];
       for (let i = 0; i < VMAX; i++) { c.push(x.pl_count(i)); g.push(x.pl_gain(i)); }
       const nk = x.pl_ck(), kp = x.pl_ck_buf() >> 3, nf = x.pl_fl(), fp = x.pl_fl_buf() >> 2;
-      const f64 = new Float64Array(x.memory.buffer), i32 = new Int32Array(x.memory.buffer);
+      this.views(x);
+      const f64 = this.mem64, i32 = this.mem32i;
       for (let j = 0; j < nk; j++) k.push([f64[kp + 2 * j], f64[kp + 2 * j + 1]]);
       for (let j = 0; j < nf; j++) f.push(i32[fp + j]);
       this.port.postMessage({ t: 'p', c, g, k, f });
