@@ -10,9 +10,9 @@ const node = () => new Proxy(function () {}, {             // любой узе�
   set: (o, k, v) => ((o[k] = v), true),
   apply: () => node(),
 });
-const fakeCtx = (starts) => {
+const fakeCtx = (starts, rec) => {
   const c = { currentTime: 0, sampleRate: 48000, createBuffer: () => ({ getChannelData: () => new Float32Array(8) }) };
-  c.createOscillator = () => { const o = node(); o.start = (t) => { if (typeof t === 'number') starts.push(t); }; return o; };   // когда зазвучали ноты
+  c.createOscillator = () => { const o = node(); o.start = (t) => { if (typeof t === 'number') { starts.push(t); rec.push({ t, now: c.currentTime }); } }; return o; };   // когда зазвучали ноты
   c.getOutputTimestamp = () => ({ contextTime: c.currentTime, performanceTime: 1000 + c.currentTime * 1000 + 30 });   // слышно через 30 мс
   return new Proxy(c, { get: (o, k) => (k in o ? o[k] : () => node()) });
 };
@@ -21,13 +21,13 @@ const engines = { portus: await import('../worlds/portus/engine.js'), natura: aw
 
 // риг мира: world — 'portus' | 'natura'; T — подмена полей хоста (midiGrid и т. п.); grid — сетка теста (null — нет)
 function rig(world, T = {}) {
-  const ticks = [], starts = [];
-  const r = { grid: null, starts };
+  const ticks = [], starts = [], rec = [];
+  const r = { grid: null, starts, rec };
   const host = { onTick: (fn) => ticks.push(fn), hall: () => ({ input: node(), out: node(), lines: [] }), midiGrid: () => r.grid, stepTime, due, ...T };
   const model = models[world].createModel({ scale: { on: false, root: 0, snap: (s) => s } });
   const engine = engines[world].createEngine(host, model);
   model.listen(engine.on);
-  const ctx = fakeCtx(starts);
+  const ctx = fakeCtx(starts, rec);
   engine.build(ctx, node());
   const at = (t) => { ctx.currentTime = t; for (const f of ticks) f(); };
   const run = (from, to) => { for (let t = from; t <= to + 1e-9; t += 0.025) at(t); };
@@ -55,25 +55,28 @@ for (const world of ['portus', 'natura']) {
     assert.ok(Math.abs(ts[0] - 5.005) < 1e-6, `${ts[0]}`);
   });
 
-  test(`${world}: a backward grid jump does not repeat a step`, () => {
+  test(`${world}: a backward grid jump never places a note out of order or in the past`, () => {
     const r = rig(world); r.grid = { t0: 1, p: 0.5 };
-    const calls = [], key = world === 'portus' ? 'step' : 'stepNote', orig = r.model[key];
-    r.model[key] = (j) => { calls.push(j); return orig(j); };
     r.at(0.9); r.model.play(true); r.run(0.9, 2);
-    r.grid = { t0: 0.92, p: 0.5 }; r.run(2, 4);
-    assert.ok(calls.length > 20, `calls ${calls.length}`);
-    const mod = world === 'portus' ? 16 : 1e9;                 // Portus: номер шага по кругу; Natura: абсолютный
-    for (let i = 1; i < calls.length; i++) { const d = (calls[i] - calls[i - 1] + mod) % mod; assert.ok(d >= 1 && d <= 3, `${calls[i - 1]} -> ${calls[i]}`); }
+    r.grid = { t0: 0.8, p: 0.5 }; r.run(2, 4);              // сетка ушла назад больше чем на шаг: шаг k встаёт раньше уже поставленного k−1
+    const order = []; for (const x of r.rec) if (!order.length || order.at(-1).t !== x.t) order.push(x);   // у аккорда голосов много — удар один
+    assert.ok(order.length > 20, `notes ${order.length}`);
+    assert.ok(Math.abs(order[0].t - 1) < 1e-3 && Math.abs(order[1].t - 1.125) < 1e-3, 'followed the grid before the jump');
+    for (let i = 1; i < order.length; i++) assert.ok(order[i].t > order[i - 1].t, `out of order: ${order[i - 1].t} then ${order[i].t}`);
+    for (const x of order) assert.ok(x.t > x.now, `note ${x.t} placed at now ${x.now}`);
   });
 
-  test(`${world}: grid off: the world keeps its tempo`, () => {
-    const r = rig(world); r.model.setBpm(60); r.grid = { t0: 1, p: 0.5 };   // свой шаг 0.25 с, сетка — 0.125 с
+  test(`${world}: grid off: follows the grid first, then keeps its own tempo`, () => {
+    const r = rig(world); r.model.setBpm(60); r.grid = { t0: 1, p: 0.4 };   // свой шаг 0.25 с, сетка — 0.1 с
     r.at(0.9); r.model.play(true); r.run(0.9, 2);
+    const before = times(r.starts);
+    assert.ok(before.length >= 10, `grid notes ${before.length}`);
+    before.forEach((t, k) => assert.ok(Math.abs(t - (1 + k * 0.1)) < 1e-3, `grid step ${k}: ${t}`));
     r.grid = null; r.run(2, 5);
-    const ts = times(r.starts), tail = ts.filter((t) => t >= 2.2);
-    assert.ok(tail.length >= 8, `tail ${tail.length}`);
-    for (let i = 1; i < tail.length; i++) assert.ok(Math.abs(tail[i] - tail[i - 1] - 0.25) < 1e-3, `${tail[i] - tail[i - 1]}`);
-    for (let i = 1; i < ts.length; i++) assert.ok(ts[i] - ts[i - 1] < 0.25 + 1e-3, `gap ${ts[i] - ts[i - 1]}`);   // пауза не больше шага
+    const post = times(r.starts).slice(before.length);
+    assert.ok(post.length >= 8, `free notes ${post.length}`);
+    assert.ok(post[0] - before.at(-1) <= 0.25 + 1e-3, `first gap ${post[0] - before.at(-1)}`);   // без паузы
+    for (let i = 1; i < post.length; i++) assert.ok(Math.abs(post[i] - post[i - 1] - 0.25) < 1e-3, `gap ${post[i] - post[i - 1]}`);   // без пачки
   });
 }
 

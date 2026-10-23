@@ -156,7 +156,7 @@ export function createEngine(T, model) {
   }
 
   // часы — по звуковому времени с запасом вперёд (таймер 25 мс, окно 200 мс)
-  let played = -1;                                     // номер последнего поставленного шага
+  let lastAt = -1;                                     // время последней поставленной ноты: сетка прыгнула назад — шаг, что не позже, пропускаем
   function schedule() {
     if (!seq.playing || !actx) return;
     const now = actx.currentTime, ahead = now + 0.2;     // запас 200 мс: телефон занят картинкой — ноты всё равно вовремя
@@ -165,8 +165,8 @@ export function createEngine(T, model) {
     align();
     while (clock.next < ahead) {
       const t = T.due(clock.next, now, clock.step === 0);   // опоздавшую ноту пропускаем — задним числом она щёлкает (первая после пуска — сразу); пауза и chance — в модели
-      if (t !== null && clock.step > played) {
-        played = clock.step;                              // ушедший шаг не повторяем
+      if (t !== null && t > lastAt) {
+        lastAt = t;
         const v = model.stepNote(clock.step);
         if (v) { playNote(v, t); heard({ played: v.i, at: performance.now() + (t - now) * 1000 }); }
       }
@@ -178,7 +178,7 @@ export function createEngine(T, model) {
   const phase = () => (seq.playing && actx && clock.next ? Math.max(0, clock.step - (clock.next - actx.currentTime) / model.stepSec()) : null);
 
   function on(e) {                                       // событие модели → узлы
-    if (e.t === 'play') { clock.step = 0; clock.next = 0; played = -1; if (e.on) schedule(); }
+    if (e.t === 'play') { clock.step = 0; clock.next = 0; lastAt = -1; if (e.on) schedule(); }
     else if (e.t === 'fx') applyFx();
     else if (e.t === 'hear') { if (bus) playNote(model.voice(e.pd), actx.currentTime); }
     else if (e.t === 'shake') shakeTick(e.v);

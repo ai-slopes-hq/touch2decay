@@ -98,14 +98,14 @@ export function createEngine(T, model) {
     setTimeout(() => { if (!bus) return; bus.dWet.gain.setTargetAtTime(0.9, actx.currentTime, 0.05); applyAll(); }, 350);
   }
   // ПРОБА 0б: часы наружу (оболочка ios/shell — ведущий MIDI): пуск, первый шаг такта, смена темпа, стоп — какой шаг, темп и когда его услышат (epoch, мс)
-  const pulses = []; let pulsed = null, voices = 0;   // voices — живых ударов (лог пробы)                  // pulsed — темп последнего сообщения; null — пуска ещё не было
+  const pulses = []; let pulsed = null, voices = 0;   // pulsed — темп последнего сообщения (null — пуска не было), voices — живых ударов (лог пробы)
   function heardAt(t) {                                  // время ctx → когда прозвучит из динамика, мс epoch (у оболочки — те же часы)
     const o = actx.getOutputTimestamp && actx.getOutputTimestamp();
     const p = o && o.performanceTime > 0 ? o.performanceTime + (t - o.contextTime) * 1000 : performance.now() + (t - actx.currentTime + (actx.outputLatency || actx.baseLatency || 0)) * 1000;
     return performance.timeOrigin + p;
   }
   const pulse = (t, at) => { const m = { t, step: clock.step, bpm: seq.bpm, at: heardAt(at) }; for (const fn of pulses) fn(m); };
-  let played = -1;                                       // номер последнего поставленного шага
+  let lastAt = -1;                                       // время последнего поставленного удара: назад сетка прыгнула — шаг, что не позже его, пропускаем
   function schedule() {
     if (!seq.playing || !actx) return;
     const now = actx.currentTime, ahead = now + 0.2;
@@ -117,7 +117,7 @@ export function createEngine(T, model) {
       else if (clock.step % NSTEP === 0 || pulsed !== seq.bpm) pulse('at', clock.next);
       pulsed = seq.bpm;
       const j = clock.step % NSTEP, t = T.due(clock.next + model.swing(j), now, clock.step === 0);   // опоздавший шаг пропускаем (первый после пуска — сразу)
-      if (t !== null && clock.step > played) { played = clock.step; const h = model.step(j); if (h) stab(t, h.is, h.vel, h.gap); }   // chance — в модели; ушедший шаг не повторяем
+      if (t !== null && t > lastAt) { lastAt = t; const h = model.step(j); if (h) stab(t, h.is, h.vel, h.gap); }   // chance — в модели
       lastSteps.push([clock.next, clock.step]); if (lastSteps.length > 24) lastSteps.shift();
       clock.step++; clock.next += stepSec();
       align();
@@ -126,7 +126,7 @@ export function createEngine(T, model) {
   T.onTick(schedule);                                  // таймер 25 мс + метроном из звукового потока — в фоне шаги не пропадают
   function play(on) {
     if (!on && pulsed !== null && actx) pulse('stop', actx.currentTime);
-    clock.next = 0; pulsed = null; played = -1;
+    clock.next = 0; pulsed = null; lastAt = -1;
     if (on) { clock.step = 0; setLive(true); schedule(); }
   }
   function curStep() {
