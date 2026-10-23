@@ -1435,7 +1435,7 @@ async def sc_audio(p):                             # перезапуск зву
     assert await p.js('()=>t2d.voices.some(v=>v.active&&v.pinned)'), 'the Tenebrae planet survives'
     assert lv1 > 0.02, f'sound comes back after restart: {lv1}'
     assert await p.js('()=>t2d.firm.stars.length') == 1 and await p.js("()=>t2d.firm.fx.hall") == 0.8, 'the Firmamentum star and its hall survive the restart'
-    assert await p.js("()=>t2d.firm.core == 'wasm' && t2d.core.ready && t2d.core.sent < 40"), 'a new SDK core node, ready (fresh message count)'   # счёт с нуля: на мир SDK — сцена при bind и снова при restore хоста, плюс лад и фейдеры (шесть миров — ~20)
+    assert await p.js("()=>t2d.firm.core == 'wasm' && t2d.core.ready && t2d.core.sent < 40"), 'a new SDK core node, ready (fresh message count)'   # счёт с нуля: на мир SDK — сцена при bind и снова при restore хоста, плюс лад и фейдеры (семь миров — ~24)
     assert await p.js('()=>Math.max(...t2d.firm.gains) > 0'), 'the star sounds from the new core'
     print('  SDK core messages: before restart', sent0, 'after', await p.js('()=>t2d.core.sent'))
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
