@@ -1473,18 +1473,22 @@ async def sc_midi(p):                             # ведомый по MIDI: в
     assert not any(await pl()), f'all stopped before the clock: {await pl()}'
     assert await p.js('()=>[13, 4, 2].every(n => t2d.worlds[n].tempo.armed())'), 'dice arms Portus, Natura, Cymatica'
     assert not await p.js('()=>t2d.worlds[9].tempo.armed()'), 'Horologium cleared — not armed'
+    await p.js('()=>t2d.worlds[7].tempo.play(true)'); await p.pg.wait_for_timeout(200)
+    assert (await pl())[4], 'autostrum switched on before Start'
     await p.js("()=>{window.__mn = 0; t2dMidi({t:'start', ago:0}); window.__mi = setInterval(() => t2dMidi({t:'beat', n: ++window.__mn, bpm: 120, ago: 0}), 500)}")
     await p.pg.wait_for_timeout(3000)
     r = await pl(); print('  playing 13/4/2/9/7:', r)
     assert r[:3] == [True, True, True], f'Portus, Natura, Cymatica follow Start: {r}'
     assert r[3] is False, f'Horologium is not armed — it does not start: {r}'
+    assert r[4] is True, f'a running autostrum is restarted on the MIDI Start and keeps playing: {r}'
     d = None
-    for _ in range(6):                         # номера шагов в один момент: сравнить по модулю 4 (шаги — по четыре на долю)
-        d = await p.js('()=>{const a = t2d.portus.stepNow, b = t2d.nat.phase; return b == null ? null : [a, b, (((a - Math.floor(b)) % 4) + 4) % 4]}')
-        if d and d[2] in (0, 1, 3): break
+    for _ in range(8):                         # оба номера — в одном вычислении; шаги по четыре на долю — совпадают по модулю 4
+        d = await p.js('()=>{const a = t2d.portus.stepNow, b = t2d.nat.phase; return b == null ? null : [a, b, (((a - Math.floor(b)) % 4) + 4) % 4, b - Math.floor(b)]}')
+        if d and d[2] == 0: break
         await p.pg.wait_for_timeout(137)
     print('  portus step, natura phase, diff mod 4:', d)
-    assert d and d[2] in (0, 1, 3), f'Portus and Natura steps agree mod 4 (±1 for sampling jitter): {d}'
+    edge = d and (d[3] < 0.1 or d[3] > 0.9)    # на границе шага выборка может разойтись на один
+    assert d and (d[2] == 0 or (edge and d[2] in (1, 3))), f'Portus and Natura steps agree mod 4: {d}'
     lv = await p.js('()=>T2D.level'); print('  level:', round(lv, 3))
     await p.js('()=>t2d.go(13)'); await p.pg.wait_for_timeout(500); await p.shot('midi')   # Portus идёт по чужим часам
     await p.js("()=>{clearInterval(window.__mi); t2dMidi({t:'stop'})}"); await p.pg.wait_for_timeout(600)
