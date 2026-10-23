@@ -1,6 +1,10 @@
-// Arcadia — модель: страна из зерна (genLand — чистая функция зерна) и странники с их путями. Только данные и алгоритм — без DOM, холста и Web Audio.
-// Время — секунды (tick(dt)), случайность — rng (кубик), лад — scale { on, snap, root }. Петли бродят в worklet: где их центры, модели сообщает склейка (track).
-// Что должно прозвучать — события слушателям (listen): { t: 'trav', tr, on, route, added? } — странник целиком (route — путь пересчитан), 'land' — новая страна, 'fx'.
+// Arcadia — фасад модели. Странники, fx, страна, пути и звук живут в ядре (core/worlds/arcadia → t2d.wasm, слот 12); здесь — их зеркало,
+// действия касаний и картинка. Страна нужна картинке сразу и без звука (ядро живёт с первого касания) — фасад растит её сам той же genLand
+// (ядро — ту же самую, бит в бит: tools/test-arcadia-core.mjs); пути (routeOf) и нота (hzOf) — тоже чистые функции, для рисования и t2d.arc.
+// След блуждания — картинка: центры петель приходят в зеркале (sync), отметка раз в 0.12 с (tick). Кубик — здесь (rng), в ядро — действия.
+// API — прежней JS-модели (эталон — tools/ref/arcadia-model.js), без DOM, холста и Web Audio. Действия — сразу в state и в ядро (send →
+// номер сообщения); зеркало ~60/с с числом применённых сообщений не перетирает то, что здесь правили, а ядро ещё не видело.
+// События listen — как у прежней модели: { t: 'trav', tr, on, route, added? }, 'land', 'fx'.
 const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 export const GX = 80, GY = 160, ASP = 3.2, VMAX = 4, SEMIS = 24;   // страна вглубь в 3.2 раза длиннее, чем вширь: в перспективе она сжимается к горизонту
@@ -120,17 +124,25 @@ export function genLand(seed) {
 export const figPt = (fig, a) => (fig === 1 ? [Math.sin(a), 0.55 * Math.sin(2 * a)] : fig === 2 ? [Math.sin(2 * a), 0.8 * Math.sin(3 * a + 0.7)] : [Math.cos(a), Math.sin(a)]);   // петля: круг, восьмёрка, узел 2 : 3
 export const depthOf = (v) => { const q = 1 / (1 + K * (v + 1) / 2); return 1 - (q - Q1) / (1 - Q1); };   // 0 у нижней рамки … 1 на горизонте — ровно по экрану
 
-export function createModel({ scale = { on: false, snap: (s) => s, root: 0 }, rng = Math.random } = {}) {
+// ядро: слот, коды action, раскладка зеркала — core/worlds/arcadia/world.hpp
+export const SLOT = 12;
+export const ACT = { add: 0, drop: 1, move: 2, set: 3, fx: 4, land: 5, clear: 6 };
+export const FX_KEYS = Object.keys(FX_DEF), HEAD = FX_KEYS.length + 2, SLOT_M = 14;   // на слот: есть, T_KEYS, f, cx, cy, rs, уровень
+
+export function createModel({ scale = { on: false, snap: (s) => s, root: 0 }, rng = Math.random, send = () => 0 } = {}) {
   const travellers = [];                                 // {slot, id, u, v (дом), oct, r (орбита), fig, mode (путь), sp (размах), lvl, route, trail}
   const fx = { ...FX_DEF };
-  const state = { travellers, fx, land: genLand(SEED0), time: 0 };
-  let seen = Array.from({ length: VMAX }, () => [0, 0, 0.2]), trailAt = -Infinity, serial = 0;   // seen — центры петель, как их сообщил worklet
+  const loops = { centers: Array.from({ length: VMAX }, () => [0, 0, 0.2]), gains: new Array(VMAX).fill(0), f: new Array(VMAX).fill(0) };   // из зеркала ядра
+  const state = { travellers, fx, land: genLand(SEED0), time: 0, loops };
+  let trailAt = -Infinity, serial = 0, post = send, fxAt = 0, wipe = 0;
+  const tAt = new Array(VMAX).fill(0);
   const listeners = [];
   const emit = (e) => { for (const fn of listeners) fn(e); };
+  const act = (kind, i = 0, a = []) => post({ t: 'action', slot: SLOT, kind, i, a });
 
   const zAt = (u, v) => bil(state.land.z, u, v);
   const lakeAt = (u, v) => bil(state.land.lake, u, v);
-  function routeOf(t) {                                  // путь вниз (к воде) или вверх (к вершине) по склону от дома
+  function routeOf(t) {                                  // путь вниз (к воде) или вверх (к вершине) по склону от дома — для картинки (ядро считает тот же)
     const dir = t.mode === 3 ? -1 : 1, pts = [t.u, t.v];
     let u = t.u, v = t.v;
     for (let k = 0; k < 90; k++) {
@@ -151,7 +163,7 @@ export function createModel({ scale = { on: false, snap: (s) => s, root: 0 }, rn
   }
   const hzOf = (t) => 110 * 2 ** (semiOf(t) / 12) * 2 ** (t.oct || 0);
 
-  function voice(t, on = true, route = true, added = false) {   // странник → звук; route — путь пересчитать (дом, страна или путь сменились)
+  function voice(t, on = true, route = true, added = false) {   // странник → событие; route — путь пересчитан (для картинки)
     if (route) t.route = t.mode >= 3 ? routeOf(t) : null;
     emit(added ? { t: 'trav', tr: t, on, route, added } : { t: 'trav', tr: t, on, route });
   }
@@ -159,26 +171,36 @@ export function createModel({ scale = { on: false, snap: (s) => s, root: 0 }, rn
     const used = new Set(travellers.map((t) => t.slot)), slot = [...Array(VMAX).keys()].find((k) => !used.has(k));
     if (slot == null) return null;
     const t = { slot, id: ++serial, u, v, oct: 0, r: 0.16, fig: 0, mode: 2, sp: 0.22, lvl: 0.8, route: null, trail: [], ...o };
-    travellers.push(t); voice(t, true, true, true);
+    t.slot = slot;
+    travellers.push(t);
+    tAt[slot] = act(ACT.add, slot, T_KEYS.map((k) => t[k]));
+    voice(t, true, true, true);
     return t;
   }
-  function dropT(t) { voice(t, false, false); travellers.splice(travellers.indexOf(t), 1); }
-  function moveT(t, u, v) { t.u = u; t.v = v; t.trail = []; voice(t); }
-  function setT(t, patch, route = false) { if (!travellers.includes(t)) return; Object.assign(t, patch); voice(t, true, route); }
-  function setFx(k, v) { fx[k] = v; emit({ t: 'fx' }); }
-  function loadFx(o) { Object.assign(fx, o); emit({ t: 'fx' }); }
-  function newLand(seed) {
+  function dropT(t) { tAt[t.slot] = act(ACT.drop, t.slot); voice(t, false, false); travellers.splice(travellers.indexOf(t), 1); }
+  function moveT(t, u, v) { t.u = u; t.v = v; t.trail = []; tAt[t.slot] = act(ACT.move, t.slot, [u, v]); voice(t); }
+  function setT(t, patch, route = false) {
+    if (!travellers.includes(t)) return;
+    Object.assign(t, patch);
+    const ks = Object.keys(patch).filter((k) => T_KEYS.includes(k));
+    ks.forEach((k, j) => { tAt[t.slot] = act(ACT.set, t.slot, [T_KEYS.indexOf(k), t[k], route && j === ks.length - 1 ? 1 : 0]); });
+    voice(t, true, route);
+  }
+  function setFx(k, v) { fx[k] = v; const i = FX_KEYS.indexOf(k); if (i >= 0) fxAt = act(ACT.fx, i, [v]); emit({ t: 'fx' }); }
+  function loadFx(o) { Object.assign(fx, o); for (const [k, v] of Object.entries(o || {})) { const i = FX_KEYS.indexOf(k); if (i >= 0) fxAt = act(ACT.fx, i, [v]); } emit({ t: 'fx' }); }
+  function newLand(seed) {                               // картинке — сразу; в ядре страна растёт по кускам и звучит через ~0.16 с
     state.land = genLand(seed);
+    act(ACT.land, 0, [seed]);
     emit({ t: 'land', land: state.land });
     for (const t of travellers) voice(t);
   }
   function clear() { while (travellers.length) dropT(travellers[0]); }
-  function track(c) { seen = c; }                       // где сейчас центры петель (из worklet)
+  function track(c) { for (let i = 0; i < VMAX; i++) if (c[i]) loops.centers[i] = c[i]; }   // где сейчас центры петель (обычно — из зеркала)
   function tick(dt) {                                    // след блуждания — последние ~5 с, отметка раз в 0.12 с
     state.time += dt;
     if (state.time - trailAt <= 0.12) return;
     trailAt = state.time;
-    for (const t of travellers) { const c = seen[t.slot]; if (!c || t.mode !== 2) { t.trail.length = 0; continue; } t.trail.push([c[0], c[1]]); if (t.trail.length > 40) t.trail.shift(); }
+    for (const t of travellers) { const c = loops.centers[t.slot]; if (!c || t.mode !== 2) { t.trail.length = 0; continue; } t.trail.push([c[0], c[1]]); if (t.trail.length > 40) t.trail.shift(); }
   }
   function dice() {                                     // новая страна; два-три странника на ступенях лада, пути и петли — вразброс
     const R = rng;
@@ -200,10 +222,23 @@ export function createModel({ scale = { on: false, snap: (s) => s, root: 0 }, rn
     loadFx(st.fx);
   }
 
+  function sync(m, applied) {                           // зеркало ядра → state; applied — сколько сообщений ядро уже применило
+    if (applied >= fxAt) { let ch = false; FX_KEYS.forEach((k, i) => { if (fx[k] !== m[i]) { fx[k] = m[i]; ch = true; } }); if (ch) emit({ t: 'fx' }); }
+    for (let s = 0; s < VMAX; s++) {
+      const o = HEAD + s * SLOT_M;
+      loops.centers[s] = [m[o + 10], m[o + 11], m[o + 12]]; loops.gains[s] = m[o + 13]; loops.f[s] = m[o + 9];
+      if (applied < tAt[s] || applied < wipe || !m[o]) continue;
+      const t = travellers.find((x) => x.slot === s);
+      if (t) T_KEYS.forEach((k, j) => { t[k] = m[o + 1 + j]; });
+    }
+  }
+  function bind(fn) { post = fn; wipe = fxAt = post({ t: 'restore', slot: SLOT, js: snapshot() }); tAt.fill(wipe); }   // новый узел ядра: сцена целиком
+
   return {
     state, zAt, lakeAt, routeOf, root, semiOf, hzOf,
     addT, dropT, moveT, setT, setFx, loadFx, newLand, clear, dice,
     track, tick, snapshot, restore, sounding: () => travellers.length > 0,
     listen(fn) { listeners.push(fn); },
+    sync, bind,
   };
 }
