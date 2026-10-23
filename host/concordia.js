@@ -3,6 +3,7 @@ import { audioPref, ctx, restartAt, restartAudio } from './audio.js';
 import { mapSunY } from './deck.js';
 import { dot, g, H, hairBox, ink, mapText, paper, ring, safeBot, W } from './draw.js';
 import { reading } from './fonts.js';
+import { midiOn } from './midi.js';
 import { nav, worlds } from './registry.js';
 import { clamp } from './util.js';
 export const link = { clock: false, scale: true };
@@ -43,7 +44,7 @@ function drawSettings0() {
     }
     const on = r.key === 'stable' ? audioPref.stable : link[r.key];
     mapText(r.label, S.x + 16, r.y - 6, 15, on ? 0.95 : 0.6, 'left');
-    mapText(r.sub, S.x + 16, r.y + 10, 11, 0.45, 'left');
+    mapText(r.key === 'clock' && midiOn() ? 'midi clock' : r.sub, S.x + 16, r.y + 10, 11, 0.45, 'left');
     ring(bx, r.y, 9, on ? 0.9 : 0.45, 1.1);
     if (on) dot(bx, r.y, 4.5, 0.9);
   }

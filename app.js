@@ -7,6 +7,7 @@ import { clockLive, onTick, setClockVer } from './host/clock.js';
 import { cellRect, deck, field, panel, setDeck } from './host/deck.js';
 import { BG, cv, diamond, dot, DPR, drawCurve, fitCanvas, g, glowAt, H, hairBox, INK, ink, mapText, paper, quarterSun, ring, safeBot, scopeY, setTheme, sunGlyph, text, W } from './host/draw.js';
 import { MAP, READ, reading } from './host/fonts.js';
+import { createMidi, due, stepTime } from './host/midi.js';
 import { drawLegenda, legenda, legGeo, setLegenda } from './host/legend.js';
 import { drawNav, goMap, navDown, WORLDS_ON } from './host/map.js';
 import { mixGeo, mixMove } from './host/mixer.js';
@@ -2591,7 +2592,12 @@ registerWorld(1, solNiger);
 
 // общее для миров из других файлов (worlds/<мир>/): регистрация и помощники рисования
 // lfoClear(prefix) — снять LFO строк мира (корзина, закрытая звезда) без возврата базы
+// MIDI-часы: оболочка зовёт window.t2dMidi, миры берут сетку через T.midiGrid()
+const midi = createMidi({ worlds: () => Object.values(worlds).filter((w) => w.tempo), now: () => (ctx ? ctx.currentTime : null) });
+window.t2dMidi = midi.message;
+onTick(midi.tick);
 window.T2D = {
+  midiGrid: () => midi.grid(), stepTime, due, onMidi: midi.listen,
   registerWorld, tempoFrom, transportFrom, onTick, get clockLive() { return clockLive(); }, openSheet: (spec) => { setFxSheet({ w: nav.world, spec }); }, lfoBase: (id, key) => { const e = SL.find((q) => q.id === id && q.key === key); return e ? e.base : null; }, lfoClear: (prefix) => { for (const e of [...SL]) if (e.id.startsWith(prefix)) SL.splice(SL.indexOf(e), 1); }, closeSheet: () => { setFxSheet(null); }, get sheetOpen() { return !!fxSheet; }, get link() { return { ...link }; }, get BG() { return BG; }, MAP, ink, paper, sunGlyph, quarterSun, ring, dot, text, glowAt, hairBox,
   get g() { return g; }, get W() { return W; }, get H() { return H; }, get DPR() { return DPR; },
   get topY() { return scopeY + 44; }, get safeBot() { return safeBot; }, get level() { return sunLevel; },

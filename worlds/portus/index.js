@@ -21,7 +21,7 @@ engine.listen(view.heard);
 // ПРОБА 0б (ветка native): MIDI-часы из оболочки ios/shell и обратно — оболочка ведёт MIDI-часы за Portus; лог — в оболочку (t2dLog → файл и Mac)
 const shellLog = window.webkit?.messageHandlers?.t2dLog;
 const log = (o) => shellLog?.postMessage(JSON.stringify({ ms: Math.round(performance.now()), ...o }));
-window.t2dMidi = (m) => { if (m.t !== 'tempo') log({ in: m }); engine.sync(m); };
+T.onMidi((m) => { if (m.t !== 'tempo') log({ in: m }); });        // протокол — в host/midi.js, здесь только лог пробы
 engine.pulse((m) => { log({ out: m.t, step: m.step, bpm: m.bpm, ahead: Math.round(m.at - performance.timeOrigin - performance.now()) }); window.webkit?.messageHandlers?.t2dClock?.postMessage(m); });
 engine.trace((o) => log({ pll: o }));
 if (shellLog) setInterval(() => {                       // раз в секунду: три признака Сатурна, голоса, звук
