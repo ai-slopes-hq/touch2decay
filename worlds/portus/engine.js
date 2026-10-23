@@ -97,8 +97,9 @@ export function createEngine(T, model) {
     for (const g of [bus.fbL.gain, bus.fbR.gain, bus.dWet.gain, bus.dSend.gain]) { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.setTargetAtTime(0, t, 0.02); }
     setTimeout(() => { if (!bus) return; bus.dWet.gain.setTargetAtTime(0.9, actx.currentTime, 0.05); applyAll(); }, 350);
   }
+  let cue = false;                                       // ПРОБА 0б: MIDI start пришёл — шаги ждут первую долю
   function schedule() {
-    if (!seq.playing || !actx) return;
+    if (!seq.playing || !actx || cue) return;
     const now = actx.currentTime, ahead = now + 0.2;
     if (!clock.next) clock.next = now + 0.05;
     while (clock.next < ahead) {
@@ -116,15 +117,23 @@ export function createEngine(T, model) {
     for (const [tt, s] of lastSteps) if (tt <= t) cur = s;
     return cur;
   }
-  // ПРОБА 0б (ветка native): MIDI-часы из оболочки ios/shell — доля n с начала (start) и когда она была (ago, с); темп и фаза шагов — за ними
+  // ПРОБА 0б (ветка native): MIDI-часы из оболочки ios/shell — доля n с начала (start) и когда она была (ago, с); темп и фаза шагов — за ними.
+  // Пуск и стоп — только start / stop: часы Elektron идут и на стопе (доли без start — лишь темп). Темп — с порогом: дрожь ±0.2 BPM не трогает эхо.
   function sync(m) {
-    if (m.t === 'stop') { if (seq.playing) model.play(false); return; }
-    if (m.t === 'start') { if (!seq.playing) model.play(true); return; }
-    if (!actx || m.t !== 'beat') return;
-    if (m.bpm && Math.abs(m.bpm - seq.bpm) > 0.05) model.setBpm(Math.round(m.bpm * 10) / 10);
-    if (!seq.playing) model.play(true);
+    if (m.bpm && Math.abs(m.bpm - seq.bpm) > 0.3) model.setBpm(Math.round(m.bpm * 10) / 10);
+    if (m.t === 'stop') { cue = false; if (seq.playing) model.play(false); return; }
+    if (m.t === 'start') { cue = true; if (!seq.playing) model.play(true); return; }
+    if (!actx || m.t !== 'beat' || !seq.playing) return;
+    const s = stepSec(), now = actx.currentTime, at = now - m.ago + (m.off || 0);   // когда доля прозвучит у нас
+    if (cue) {                                                           // первая доля после start — шаг 4n на неё, сетка — от доли
+      cue = false; clock.step = 4 * m.n; clock.next = at;
+      if (at < now + 0.005) {                                            // доля опоздала на доставку — её удар сразу, не пропускаем
+        const h = model.step(clock.step % NSTEP); if (h) stab(now + 0.005, h.is, h.vel, h.gap);
+        lastSteps.push([now + 0.005, clock.step]); clock.step++; clock.next += s;
+      }
+      schedule(); return;
+    }
     if (!clock.next) schedule();
-    const s = stepSec(), at = actx.currentTime - m.ago + (m.off || 0);   // когда доля прозвучит у нас
     let e = at - (clock.next + (4 * m.n - clock.step) * s);              // доля n — шаг 4n; ошибка фазы
     e -= Math.round(e / (16 * s)) * 16 * s;                              // по модулю такта: номер шага с начала не важен
     clock.next += Math.abs(e) > 0.05 ? e : e * 0.5;                      // далеко — сразу, близко — мягко

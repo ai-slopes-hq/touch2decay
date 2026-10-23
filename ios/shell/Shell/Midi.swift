@@ -10,8 +10,10 @@ final class Midi: ObservableObject {
   @Published var last = "—"
 
   private var client = MIDIClientRef(), port = MIDIPortRef()
-  private var ticks: [UInt64] = []                      // время последних тиков часов (mach)
+  private var ticks: [UInt64] = []                      // время последних тиков часов (mach): 4 доли — BPM без дрожи
   private var count = 0                                 // тиков с start: каждый 24-й — доля
+  private var run = false                               // между start/continue и stop; Elektron шлёт часы и на стопе
+  private var total = 0                                 // тиков всего — для плашки
   var send: ((String) -> Void)?                         // в страницу: window.t2dMidi({...})
 
   init() {
@@ -48,17 +50,22 @@ final class Midi: ObservableObject {
 
   private func handle(_ status: UInt8, at t: UInt64) {
     switch status {
-    case 0xF8:
-      ticks.append(t); if ticks.count > 25 { ticks.removeFirst(ticks.count - 25) }
-      let b = ticks.count == 25 ? 60 / Midi.seconds(ticks[24] - ticks[0]) : 0
-      if count % 24 == 0 { emit("{t:'beat',n:\(count / 24),bpm:\(b),ago:%AGO%}", at: t) }
+    case 0xF8:                                          // 24 на долю: на поток страницы и плашки — только раз в долю, иначе главный поток захлёбывается
+      if let p = ticks.last, Midi.seconds(t &- p) > 0.5 { ticks = [] }   // часы прерывались (Ableton на стопе молчит) — темп заново
+      ticks.append(t); if ticks.count > 97 { ticks.removeFirst(ticks.count - 97) }
+      let n = ticks.count - 1, b = n >= 24 ? 60 * Double(n) / 24 / Midi.seconds(ticks[n] - ticks[0]) : 0
+      total += 1
+      if count % 24 == 0 {
+        emit(run ? "{t:'beat',n:\(count / 24),bpm:\(b),ago:%AGO%}" : "{t:'tempo',bpm:\(b)}", at: t)
+        let k = total; DispatchQueue.main.async { self.clocks = k; if b > 0 { self.bpm = b } }
+      }
       count += 1
-      DispatchQueue.main.async { self.clocks += 1; if b > 0 { self.bpm = b } }
     case 0xFA, 0xFB:
-      ticks = []; if status == 0xFA { count = 0 }
+      run = true; if status == 0xFA { count = 0 }
       emit("{t:'start',ago:%AGO%}", at: t)
       DispatchQueue.main.async { self.running = true; self.last = status == 0xFA ? "start" : "continue" }
     case 0xFC:
+      run = false
       emit("{t:'stop',ago:%AGO%}", at: t)
       DispatchQueue.main.async { self.running = false; self.last = "stop" }
     default: break
@@ -73,8 +80,6 @@ final class Midi: ObservableObject {
     }
   }
 
-  static func seconds(_ ticks: UInt64) -> Double {
-    var tb = mach_timebase_info_data_t(); mach_timebase_info(&tb)
-    return Double(ticks) * Double(tb.numer) / Double(tb.denom) / 1e9
-  }
+  private static let tb: mach_timebase_info_data_t = { var t = mach_timebase_info_data_t(); mach_timebase_info(&t); return t }()
+  static func seconds(_ ticks: UInt64) -> Double { Double(ticks) * Double(tb.numer) / Double(tb.denom) / 1e9 }
 }
