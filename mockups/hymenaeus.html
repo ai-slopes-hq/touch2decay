@@ -77,6 +77,9 @@ function cloud(cx, cy, scale, a, hatch = true, frozen = false) {
   }
   C.push([cx - 25 * scale, cy + 8 * scale, 20 * scale], [cx + 22 * scale, cy + 9 * scale, 19 * scale]);
   const inside = (x, y, j) => C.some(([X, Y, R], k) => k !== j && (x - X) ** 2 + (y - Y) ** 2 < R * R - .5);
+  if (hatch) {                                  // облако закрывает лучи солнца; призраки эха — прозрачные
+    g.fillStyle = BG; g.beginPath(); for (const [X, Y, R] of C) { g.moveTo(X + R, Y); g.arc(X, Y, R, 0, TAU); } g.fill();
+  }
   // штриховка снизу (тень) — клип по облаку
   if (hatch) {
     g.save(); g.beginPath(); for (const [X, Y, R] of C) { g.moveTo(X + R, Y); g.arc(X, Y, R, 0, TAU); } g.clip();
@@ -113,7 +116,7 @@ function rice(x, y, n, spread, a) {             // зёрна — рисинки
 
 function clouds() {
   // буфер: левее — старее, правее — свежее; бледные повторы правее — эхо (feedback)
-  cloud(105 * S, 175 * S, 1.0 * S, .55);
+  cloud(150 * S, 185 * S, 1.0 * S, .55);
   cloud(285 * S, 250 * S, 1.15 * S, .8);
   cloud(310 * S, 254 * S, 1.15 * S, .16, false);             // эхо
   cloud(335 * S, 258 * S, 1.15 * S, .07, false);
@@ -211,7 +214,43 @@ function necklace() {
   }
 }
 
-// ---------- предмет в углу (выход на карту) — на выбор автора ----------
+// ---------- солнце (выход на карту): четверть Таро из угла, как quarterSun в Natura, с ореолом, как свет Paradisus ----------
+function sun() {
+  const ox = 0, oy = 66 * S, r = 46 * S, col = GOLD, ink2 = (a) => `rgba(${col},${a})`, N = 28, rot = .11;
+  g.save(); g.beginPath(); g.rect(ox, oy, W, H); g.clip(); g.translate(ox, oy);
+  for (const [rr, op] of [[r * 2.6, .22], [r * 3.2, .12], [r * 4.1, .06]]) { g.strokeStyle = ink2(op); g.lineWidth = 1; g.beginPath(); g.arc(0, 0, rr, 0, Math.PI / 2); g.stroke(); }
+  const gr = g.createRadialGradient(0, 0, r, 0, 0, r * 3.4); gr.addColorStop(0, ink2(.16)); gr.addColorStop(1, ink2(0));
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, r * 3.4, 0, TAU); g.fill();
+  for (let k = 0; k < N; k++) {
+    const a = (k / N) * TAU + rot, aa = ((a % TAU) + TAU) % TAU;
+    if (aa > Math.PI / 2 + .1) continue;
+    const cs = Math.cos(a), sn = Math.sin(a), px = -sn, py = cs;
+    if (k % 2) {
+      const l = r * 2.05, w = 5;
+      g.strokeStyle = ink2(.8); g.lineWidth = 1.1; g.fillStyle = BG;
+      g.beginPath(); g.moveTo(cs * r + px * w, sn * r + py * w); g.lineTo(cs * l, sn * l); g.lineTo(cs * r - px * w, sn * r - py * w); g.fill(); g.stroke();
+    } else {
+      const l = r * 1.65; g.strokeStyle = ink2(.6); g.lineWidth = 1; g.beginPath();
+      for (let i = 0; i <= 18; i++) { const t = i / 18, rr = r + t * (l - r), wv = Math.sin(t * Math.PI * 3) * 3.5 * (1 - t * .5), X = cs * rr + px * wv, Y = sn * rr + py * wv; i ? g.lineTo(X, Y) : g.moveTo(X, Y); }
+      g.stroke();
+    }
+  }
+  g.fillStyle = BG; g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill();
+  g.fillStyle = ink2(.12); g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill();
+  g.strokeStyle = ink2(.95); g.lineWidth = 1.6; g.beginPath(); g.arc(0, 0, r, 0, TAU); g.stroke();
+  g.strokeStyle = ink2(.5); g.lineWidth = .9; g.beginPath(); g.arc(0, 0, r - 5, 0, TAU); g.stroke();
+  const f0 = r * .46, k = r / 46;                // лицо в видимой четверти
+  g.lineWidth = 1.1; g.strokeStyle = ink2(.9); g.beginPath();
+  g.moveTo(f0 - 11 * k, f0 - 2 * k); g.quadraticCurveTo(f0 - 8 * k, f0 + 1 * k, f0 - 5 * k, f0 - 2 * k);
+  g.moveTo(f0 + 5 * k, f0 - 2 * k); g.quadraticCurveTo(f0 + 8 * k, f0 + 1 * k, f0 + 11 * k, f0 - 2 * k);
+  g.moveTo(f0 - 12 * k, f0 - 7 * k); g.quadraticCurveTo(f0 - 8 * k, f0 - 10 * k, f0 - 4 * k, f0 - 7 * k);
+  g.moveTo(f0 + 4 * k, f0 - 7 * k); g.quadraticCurveTo(f0 + 8 * k, f0 - 10 * k, f0 + 12 * k, f0 - 7 * k);
+  g.moveTo(f0, f0 - 4 * k); g.lineTo(f0 - 2 * k, f0 + 5 * k); g.lineTo(f0 + 1.5 * k, f0 + 5.5 * k);
+  g.moveTo(f0 - 7 * k, f0 + 11 * k); g.quadraticCurveTo(f0, f0 + 15 * k, f0 + 7 * k, f0 + 11 * k);
+  g.stroke();
+  g.strokeStyle = ink2(.85); g.lineWidth = 1.2; g.beginPath(); g.moveTo(0, .5); g.lineTo(r * 2.1, .5); g.stroke();   // кромка
+  g.restore();
+}
 
 // ---------- подписи макета (в игре — только пока тянешь) ----------
 function labels() {
@@ -228,7 +267,7 @@ function draw() {
   cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.fillStyle = BG; g.fillRect(0, 0, W, H);
   g.save(); g.translate((W - 390 * S) / 2, (H - 844 * S) / 2);   // сцена по центру на широком экране
-  clouds(); threads(); necklace(); rings(); labels();
+  sun(); clouds(); threads(); necklace(); rings(); labels();
   g.restore();
   topBar();
 }
