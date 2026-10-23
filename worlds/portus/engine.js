@@ -105,12 +105,13 @@ export function createEngine(T, model) {
     return performance.timeOrigin + p;
   }
   const pulse = (t, at) => { const m = { t, step: clock.step, bpm: seq.bpm, at: heardAt(at) }; for (const fn of pulses) fn(m); };
+  const grid = () => { const g = T.midiGrid(); return g && g.p > 0 ? g : null; };   // сетка с нулевым или отрицательным периодом — не сетка (ни прыжков, ни зависания)
   let lastAt = -1;                                       // время последнего поставленного удара: назад сетка прыгнула — шаг, что не позже его, пропускаем
   function schedule() {
     if (!seq.playing || !actx) return;
     const now = actx.currentTime, ahead = now + 0.2;
     if (!clock.next) clock.next = now + 0.05;
-    const align = () => { const g = T.midiGrid(); if (g) clock.next = T.stepTime(g, clock.step, 4); };   // сетка MIDI-часов ведёт шаги; пропала — идём дальше своим темпом
+    const align = () => { const g = grid(); if (g) { clock.step = Math.max(clock.step, Math.floor(((now - g.t0) / g.p) * 4) - 1); clock.next = T.stepTime(g, clock.step, 4); } };   // сетка MIDI-часов ведёт шаги (мир запущен поздно — сразу к нынешнему шагу, не по одному); пропала — идём дальше своим темпом
     align();
     while (clock.next < ahead) {
       if (pulsed === null) pulse('start', clock.next);

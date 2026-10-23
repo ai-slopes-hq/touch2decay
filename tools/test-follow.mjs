@@ -160,3 +160,72 @@ test('monochord: a backward grid jump never places a note out of order, a new Au
   r.rebuild(0.5); await r.ready; r.plucks.length = 0; r.model.setAuto(true); r.run(0.5, 1);
   assert.ok(r.plucks.length >= 2 && r.plucks[0] < 0.5 + 0.35, `resumes: ${r.plucks[0]}`);
 });
+
+// ---------- защита от плохой сетки: период ≤ 0 не сетка ----------
+for (const world of ['portus', 'natura', 'monochord']) {
+  for (const p of [0, -0.5]) {
+    test(`${world}: a grid with p = ${p} is ignored, the scheduler ends and keeps its own tempo`, async () => {
+      const r = rig(world); await r.ready;
+      r.grid = { t0: 1, p };
+      r.at(1);
+      if (world === 'monochord') r.model.setAuto(true); else r.model.play(true);
+      r.run(1, 3);
+      const ts = world === 'monochord' ? [...new Set(r.plucks)].sort((a, b) => a - b) : times(r.starts);
+      assert.ok(ts.length >= 6, `notes ${ts.length}`);
+      for (let i = 1; i < ts.length; i++) assert.ok(ts[i] > ts[i - 1], 'in order');
+    });
+  }
+}
+
+// ---------- Monochordum: смена доли на ходу под сеткой, старт автострама на ходу ----------
+test('monochord: changing the division mid-run keeps the autostrum playing', async () => {
+  const r = rig('monochord'); await r.ready;
+  r.model.setAutoPar('div', 3); r.grid = { t0: 1, p: 0.5 };       // 1/16
+  r.at(0.9); r.model.setAuto(true); r.run(0.9, 61);
+  r.model.setAutoPar('div', 0);                                   // 1/4: шаг — целая доля
+  r.plucks.length = 0; r.run(61, 63);
+  assert.ok(r.plucks.length >= 2, `plucks ${r.plucks.length}`);
+  assert.ok(r.plucks[0] < 61 + 0.5 + 0.2, `first pluck after the switch at ${r.plucks[0]}`);
+  const g = (r.plucks[0] - 1) / 0.5; assert.ok(Math.abs(g - Math.round(g)) < 1e-3, 'on the new beat grid');
+});
+
+test('monochord: autostrum started right after the downbeat plays step 0 at once', async () => {
+  const r = rig('monochord'); await r.ready;
+  r.grid = { t0: 4.98, p: 0.5 };
+  r.at(5); r.model.setAuto(true);                                 // без следующего тика
+  assert.ok(r.plucks.length >= 1, 'played synchronously');
+  assert.ok(Math.abs(r.plucks[0] - 5.005) < 1e-6, `${r.plucks[0]}`);
+});
+
+// ---------- мир запущен через час после MIDI Start: без прохода по всем шагам ----------
+for (const world of ['portus', 'natura', 'monochord']) {
+  test(`${world}: started an hour after MIDI Start it does bounded work and lands on the grid`, async () => {
+    let dues = 0;
+    const r = rig(world, { due: (...a) => { dues++; return due(...a); } }); await r.ready;
+    r.grid = { t0: 0.013, p: 0.5 };
+    r.at(3600);
+    if (world === 'monochord') r.model.setAuto(true); else r.model.play(true);
+    r.run(3600, 3601);
+    assert.ok(dues < 100, `loop iterations ${dues}`);
+    const ts = world === 'monochord' ? [...new Set(r.plucks)] : times(r.starts);
+    assert.ok(ts.length >= 3, `notes ${ts.length}`);
+    for (const t of ts) { const k = ((t - 0.013) / 0.5) * (world === 'monochord' ? r.model.perBeat() : 4); assert.ok(Math.abs(k - Math.round(k)) < 0.01, `off grid: ${t}`); assert.ok(t >= 3600, 'not in the past'); }
+    if (world === 'portus') assert.ok(r.out.length <= 2, `pulses ${r.out.length}`);   // start и не больше одного такта
+  });
+}
+
+// ---------- Cymatica: сетка уходит в worklet раньше узора (пуск встаёт на узел) ----------
+test('cymatica: play sends the lock before the seq message', async () => {
+  const sent = [];
+  globalThis.AudioWorkletNode = class { constructor() { this.port = { postMessage: (m) => sent.push(m) }; } connect() {} };
+  const cym = { model: await import('../worlds/cymatica/model.js'), engine: await import('../worlds/cymatica/engine.js') };
+  const ticks = [], grid = { t0: 1, p: 0.5 };
+  const T = { onTick: (fn) => ticks.push(fn), hall: () => ({ input: node(), out: node(), lines: [] }), midiGrid: () => grid, ctx: { currentTime: 1 } };
+  const model = cym.model.createModel(), engine = cym.engine.createEngine(T, model, 'test');
+  model.listen(engine.on);
+  engine.build(fakeCtx([], []), node()); engine.start();
+  await new Promise((ok) => setTimeout(ok, 0));
+  sent.length = 0; model.play(true);
+  const i = sent.findIndex((m) => m.t === 'lock'), j = sent.findIndex((m) => m.t === 'seq');
+  assert.ok(i >= 0 && j >= 0 && i < j, `lock at ${i}, seq at ${j}`);
+});

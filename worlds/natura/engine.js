@@ -161,7 +161,8 @@ export function createEngine(T, model) {
     if (!seq.playing || !actx) return;
     const now = actx.currentTime, ahead = now + 0.2;     // запас 200 мс: телефон занят картинкой — ноты всё равно вовремя
     if (!clock.next) clock.next = now + 0.05;
-    const align = () => { const g = T.midiGrid(); if (g) clock.next = T.stepTime(g, clock.step, 4); };   // сетка MIDI-часов ведёт шаги; пропала — идём дальше своим темпом
+    const grid = () => { const g = T.midiGrid(); return g && g.p > 0 ? g : null; };   // сетка с нулевым или отрицательным периодом — не сетка (ни прыжков, ни зависания)
+    const align = () => { const g = grid(); if (g) { clock.step = Math.max(clock.step, Math.floor(((now - g.t0) / g.p) * 4) - 1); clock.next = T.stepTime(g, clock.step, 4); } };   // сетка MIDI-часов ведёт шаги (мир запущен поздно — сразу к нынешнему шагу); пропала — идём дальше своим темпом
     align();
     while (clock.next < ahead) {
       const t = T.due(clock.next, now, clock.step === 0);   // опоздавшую ноту пропускаем — задним числом она щёлкает (первая после пуска — сразу); пауза и chance — в модели
