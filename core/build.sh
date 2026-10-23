@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 mkdir -p core/build
 clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/render-cli core/render-cli/main.cpp core/worlds/goetia/goetia.cpp core/worlds/firmamentum/pulsar.cpp core/worlds/oceanus/ocean.cpp
 echo "core/build/render-cli"
-clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/sdk-test core/tests/sdk_test.cpp core/sdk/reverb.cpp
+clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/sdk-test core/tests/sdk_test.cpp core/sdk/reverb.cpp core/host/host.cpp core/host/scale.cpp
 echo "core/build/sdk-test"
 emcc -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --no-entry \
   -sEXPORTED_FUNCTIONS=_gt_init,_gt_prog_buf,_gt_prog,_gt_voice,_gt_fx,_gt_process,_gt_t0,_gt_gv,_gt_set_t \

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <string>
 #include <vector>
 #include "../sdk/biquad.hpp"
 #include "../sdk/clip.hpp"
@@ -14,6 +15,9 @@
 #include "../sdk/reverb.hpp"
 #include "../sdk/rng.hpp"
 #include "../sdk/smooth.hpp"
+#include "../sdk/world.hpp"
+#include "../host/host.hpp"
+#include "../host/scale.hpp"
 
 static int fails = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -208,8 +212,149 @@ static void reverb() {
   }
 }
 
-int main() {
-  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb();
+// ---- хост: тестовый мир отдаёт 1.0 в сухой и посыл (по умолчанию 0.5) в ревербер rev ----
+struct TestWorld : sdk::World {
+  sdk::Rev r = sdk::Rev::plate;
+  float send = 0.5f;
+  int acts = 0, lastKind = -1;
+  void prepare(double, uint32_t) override {}
+  void action(int kind, int, const double*, int) override { acts++; lastKind = kind; }
+  void process(const sdk::Out& o, int n) override {
+    for (int i = 0; i < n; i++) { o.L[i] = 1.f; o.R[i] = 1.f; o.sL[i] = send; o.sR[i] = send; }
+  }
+  sdk::Rev rev() const override { return r; }
+  int mirror(double*, int) const override { return 0; }
+  int heard(double*, int) override { return 0; }
+  std::string snapshot() const override { return "{}"; }
+  void restore(const std::string&) override {}
+  bool sounding() const override { return true; }
+};
+
+static Host H;                                          // ~1.2 МБ — не на стек
+static TestWorld TW;
+
+static double hostBlocks(int blocks, double* tailMax) {   // гонит блоки, → сумма |ret|; tailMax — максимум на последнем блоке
+  double sum = 0, mx = 0;
+  for (int b = 0; b < blocks; b++) {
+    H.process(128);
+    mx = 0;
+    for (int c = 0; c < 2; c++) for (int i = 0; i < 128; i++) { double v = std::fabs(H.ret(c)[i]); sum += v; mx = std::fmax(mx, v); }
+  }
+  if (tailMax) *tailMax = mx;
+  return sum;
+}
+
+static void host() {
+  const double sr = 48000;
+  const uint32_t seed = 7;
+  H.prepare(sr, seed);
+  H.add(3, &TW);
+  H.fader(3, 1.0);
+  // сухой — ровно 1.0, остальные слоты тихие
+  H.process(128);
+  bool dryOk = true, otherOk = true;
+  for (int c = 0; c < 2; c++) for (int i = 0; i < 128; i++) { dryOk = dryOk && H.dry(3, c)[i] == 1.f; otherOk = otherOk && H.dry(4, c)[i] == 0.f; }
+  CHECK(dryOk); CHECK(otherOk);
+  // action доходит до мира; пустой слот — игнор
+  double a[1] = {1};
+  H.action(3, 9, 2, a, 1); H.action(5, 9, 2, a, 1);
+  CHECK(TW.acts == 1 && TW.lastKind == 9);
+  // посыл идёт только в plate: возврат = 0.9 × чистый plate с тем же сидом (seed + 1)
+  H.prepare(sr, seed);
+  static sdk::Reverb ref;
+  ref.prepare(sr, sdk::Rev::plate, seed + 1);
+  float in[128], zl[128], zr[128];
+  for (int i = 0; i < 128; i++) in[i] = 0.5f;
+  double maxDiff = 0, peak = 0;
+  for (int b = 0; b < 40; b++) {
+    H.process(128);
+    ref.process(in, in, zl, zr, 128);
+    for (int i = 0; i < 128; i++) {
+      maxDiff = std::fmax(maxDiff, std::fabs(H.ret(0)[i] - 0.9f * zl[i]));
+      maxDiff = std::fmax(maxDiff, std::fabs(H.ret(1)[i] - 0.9f * zr[i]));
+      peak = std::fmax(peak, std::fabs(H.ret(0)[i]));
+    }
+  }
+  CHECK(peak > 1e-3);                                   // возврат не нулевой
+  CHECK(maxDiff < 1e-6);                                // и это именно plate, другие типы не получили посыла
+  // фейдер 0: посыл не идёт, хвост затухает, сухой не трогается хостом
+  H.prepare(sr, seed);
+  H.fader(3, 0.0);
+  double tail;
+  double sum0 = hostBlocks(40, &tail);
+  CHECK(sum0 == 0 && tail == 0);
+  CHECK(H.dry(3, 0)[0] == 1.f);
+  // фейдер 0.5 — вдвое меньше посыла, ревербер линеен: возврат вдвое меньше
+  H.prepare(sr, seed); H.fader(3, 1.0);
+  double s1 = hostBlocks(40, nullptr);
+  H.prepare(sr, seed); H.fader(3, 0.5);
+  double s2 = hostBlocks(40, nullptr);
+  NEAR(s2 / s1, 0.5, 1e-4);
+  // ext(hall) → ненулевой возврат; ext после process обнулён; посыл мира не нужен
+  H.prepare(sr, seed); H.fader(3, 0.0);
+  double hp = 0;
+  for (int b = 0; b < 100; b++) {                       // 0.27 с: дольше предзадержки зала
+    for (int c = 0; c < 2; c++) for (int i = 0; i < 128; i++) H.ext(sdk::Rev::hall, c)[i] = 0.25f;
+    H.process(128);
+    for (int c = 0; c < 2; c++) for (int i = 0; i < 128; i++) hp = std::fmax(hp, std::fabs(H.ret(c)[i]));
+  }
+  std::printf("host ext(hall) peak %.3g\n", hp);
+  CHECK(hp > 1e-4);
+  bool zeroed = true;
+  for (int r = 0; r < 4; r++) for (int c = 0; c < 2; c++) for (int i = 0; i < 128; i++) zeroed = zeroed && H.ext(static_cast<sdk::Rev>(r), c)[i] == 0.f;
+  CHECK(zeroed);
+  // после прекращения ext хвост затухает (не бесконечный) и конечен
+  double t2; hostBlocks(2000, &t2);
+  CHECK(t2 < hp);                                       // хвост ниже пика
+  // NaN/inf во внешнем посыле не отравляют ревербер: после него возврат конечен и снова работает
+  H.prepare(sr, seed); H.fader(3, 0.0);
+  for (int i = 0; i < 128; i++) { H.ext(sdk::Rev::room, 0)[i] = NAN; H.ext(sdk::Rev::room, 1)[i] = INFINITY; H.ext(sdk::Rev::hall, 0)[i] = -INFINITY; }
+  H.process(128);
+  bool fin = true;
+  for (int b = 0; b < 100; b++) {
+    for (int c = 0; c < 2; c++) for (int i = 0; i < 128; i++) H.ext(sdk::Rev::room, c)[i] = 0.25f;
+    H.process(128);
+    for (int c = 0; c < 2; c++) for (int i = 0; i < 128; i++) fin = fin && std::isfinite(H.ret(c)[i]);
+  }
+  CHECK(fin);
+  double rp = 0;
+  for (int c = 0; c < 2; c++) for (int i = 0; i < 128; i++) rp = std::fmax(rp, std::fabs(H.ret(c)[i]));
+  CHECK(rp > 1e-4);
+  // NaN из самого мира (посыл) — тоже
+  H.prepare(sr, seed); H.fader(3, 1.0);
+  TW.send = NAN; hostBlocks(2, nullptr);
+  TW.send = 0.5f;
+  fin = true;
+  for (int b = 0; b < 100; b++) { H.process(128); for (int c = 0; c < 2; c++) for (int i = 0; i < 128; i++) fin = fin && std::isfinite(H.ret(c)[i]); }
+  CHECK(fin);
+  // лад хоста
+  H.scale(true, 1, 14);
+  CHECK(H.scale().on && H.scale().idx == 1 && H.scale().root == 2);
+  H.scale(false, 99, -1);
+  CHECK(!H.scale().on && H.scale().idx == 5 && H.scale().root == 11);
+}
+
+static void scaleTable() {                              // для tools/test-scale.mjs: те же числа считает host/scale.js
+  Scale sc;
+  for (int idx = 0; idx < Scale::kScales; idx++) for (int root = 0; root < 12; root++) for (int on = 0; on < 2; on++) {
+    sc.idx = idx; sc.root = root; sc.on = on != 0;
+    std::printf("%d %d %d", idx, root, on);
+    for (int k = 0; -3 + k * 0.13 <= 90; k++) std::printf(" %.17g", sc.snapSemi(-3 + k * 0.13));
+    std::printf("\n");
+  }
+}
+
+static void scaleBasics() {
+  Scale sc; sc.on = true; sc.idx = 0; sc.root = 0;       // major от A
+  CHECK(sc.inScale(0) && sc.inScale(2) && !sc.inScale(1) && sc.inScale(12) && sc.inScale(-5));
+  NEAR(sc.snapSemi(1.0), 0.0, 0);                        // равноудалены 0 и 2 — нижняя, как в JS
+  NEAR(sc.snapSemi(3.4), 4, 0);
+  sc.on = false; NEAR(sc.snapSemi(1.3), 1.3, 0);
+}
+
+int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
+  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb(); scaleBasics(); host();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
