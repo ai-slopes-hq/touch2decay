@@ -9,7 +9,7 @@ export const LATE_FIRST = 0.03;    // первый шаг после Start, оп
 export function nextBeat(grid, n, at, bpm) {
   if (!grid) return { t0: at - n * (60 / bpm), p: 60 / bpm, last: at, n, ints: [] };
   const ints = grid.ints.slice();
-  if (n > grid.n) ints.push((at - grid.last) / (n - grid.n));
+  if (n > grid.n) { const iv = (at - grid.last) / (n - grid.n); if (iv >= 0.5 * grid.p && iv <= 2 * grid.p) ints.push(iv); }   // правдоподобный интервал; остальное (пауза, новый контекст) среднее не портит
   if (ints.length > 4) ints.shift();
   const p = ints.length ? ints.reduce((a, b) => a + b, 0) / ints.length : grid.p;
   const e = at - (grid.t0 + n * grid.p);
@@ -42,6 +42,7 @@ export function createMidi({ worlds, now }) {
     const t = now();
     if (t == null) return;
     const at = t - (m.ago || 0);
+    if (grid && t < grid.last - 0.05) { grid = null; }                // время пошло назад — новый AudioContext (restartAudio): сетка старых часов не годится, следующая доля встанет заново
     if (m.t === 'start') { cue = true; halted = false; grid = null; }
     else if (m.t === 'stop') {
       const was = new Set();                                          // Elektron шлёт Stop 2–3 раза: пустой повтор прежний набор не затирает
@@ -64,7 +65,7 @@ export function createMidi({ worlds, now }) {
       }
     }
   }
-  function tick() { const t = now(); if (grid && t != null && t > grid.last + LOST) grid = null; }
+  function tick() { const t = now(); if (grid && t != null && t < grid.last - 0.05) grid = null; if (grid && t != null && t > grid.last + LOST) grid = null; }
   inst = { message, tick, grid: () => grid, listen: (f) => { subs.push(f); } };
   return inst;
 }

@@ -153,3 +153,30 @@ test('beats after stop are ignored until the next start', () => {
   beat(r, 0, 11);
   assert.ok(r.m.grid()); assert.equal(a.on, true);
 });
+
+// ---------- новый AudioContext (restartAudio): время пошло назад ----------
+test('a new AudioContext (time goes back) rebuilds the grid in the new time with p > 0', () => {
+  const r = rig();
+  for (let i = 0; i < 40; i++) beat(r, i, 100 + i * 0.5);
+  assert.ok(Math.abs(r.m.grid().p - 0.5) < 1e-9);
+  r.t = 0.2; r.m.tick();                                   // контекст пересоздан: currentTime ≈ 0
+  assert.equal(r.m.grid(), null);
+  for (let i = 0; i < 6; i++) beat(r, 40 + i, 0.3 + i * 0.5);
+  const g = r.m.grid();
+  assert.ok(g.p > 0 && Math.abs(g.p - 0.5) < 1e-9, `p ${g.p}`);
+  assert.ok(Math.abs(stepTime(g, 4 * 45, 4) - (0.3 + 5 * 0.5)) < 1e-6, 'beat 45 at its new-time moment');
+});
+
+test('a beat arriving after the time went back drops the old grid without tick', () => {
+  const r = rig();
+  for (let i = 0; i < 10; i++) beat(r, i, 100 + i * 0.5);
+  beat(r, 10, 0.3);
+  assert.ok(r.m.grid().p > 0 && Math.abs(r.m.grid().t0 - (0.3 - 10 * 0.5)) < 1e-6);
+});
+
+test('an implausible beat interval does not change p', () => {
+  const r = rig();
+  for (let i = 0; i < 8; i++) beat(r, i, 10 + i * 0.5);
+  beat(r, 8, 17.5);                                      // пауза 4 с на одну долю
+  assert.ok(Math.abs(r.m.grid().p - 0.5) < 1e-9, `p ${r.m.grid().p}`);
+});
