@@ -109,3 +109,12 @@ test('Horologium: кубик с зерном повторяем — волшеб
     assert.ok(m.state.rings.filter((r) => r.phi > 0).length <= 1);
   }
 });
+
+test('Horologium: после броска u доходит до uT точно (замок к такту MIDI ждёт clock.u === 0)', () => {
+  const m = createModel(), { clock } = m.state;
+  m.setRun(true, 3); m.state.clock.uT = 0;
+  for (let k = 0; k < 6000; k++) m.tick(0.01);          // 60 с
+  assert.equal(clock.u, clock.uT);
+  m.setRun(true, -2); for (let k = 0; k < 3000; k++) m.tick(0.01);
+  assert.equal(clock.u, clock.uT);
+});

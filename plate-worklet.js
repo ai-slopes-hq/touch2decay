@@ -220,7 +220,13 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
           return { s: m.s, x: m.x, y: m.y, g: old && old.x === m.x && old.y === m.y ? old.g : strikeGains(m.x, m.y) };
         }) },
       };
-      if (this.seq.playing && !was) { this.r = -1; this.m = -1; this.toNext = 0; }
+      if (this.seq.playing && !was) {
+        this.r = -1; this.m = -1; this.toNext = 0;
+        if (this.lock) {                             // пуск при сетке: шаг 0 — на узле; опоздал меньше 30 мс — сразу, иначе на следующем (полшага-защита не сдвинет шаг 1 на лишний узел)
+          const q = this.lock.p / 4, ph = (currentTime - this.lock.t0) - Math.floor((currentTime - this.lock.t0) / q) * q;
+          if (ph >= 0.03) this.toNext = nextTickFrame(currentTime, this.lock.t0, this.lock.p, this.fs);
+        }
+      }
       else if (this.seq.playing && !this.lock && stepN !== this.stepN) this.toNext = Math.max(0, stepN - (this.t - this.lastTick));
       this.stepN = stepN;
     }
@@ -228,7 +234,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
     // Не раньше полушага после прошлого тика — иначе сдвиг сетки на ε дал бы двойной тик
     setLock(d) {
       const was = this.lock;
-      this.lock = d.off ? null : { t0: d.t0, p: d.p };
+      this.lock = d.off || !(d.p > 0) ? null : { t0: d.t0, p: d.p };
       this.stepN = stepSamples(this.lock ? 60 / this.lock.p : this.seq.bpm, this.fs);
       if (!this.seq.playing || this.r < 0) return;
       if (!this.lock) { if (was) this.toNext = Math.max(0, this.stepN - (this.t - this.lastTick)); return; }

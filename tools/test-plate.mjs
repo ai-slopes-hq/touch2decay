@@ -397,3 +397,34 @@ test('lock half-step guard: a new grid right after a tick does not double it', (
   for (let i = 2; i < t.length; i++) assert.ok(t[i] - t[i - 1] >= 0.5 / 8 - 1 / FS, `tick ${i} gap ${t[i] - t[i - 1]}`);
   st.forEach((m, i) => assert.equal(m.r, i % 5, 'r counted without loss'));
 });
+
+// старт при сетке: сетка пришла раньше узора — шаг 0 встаёт на узел (опоздал меньше 30 мс — сразу), дальше узлы подряд
+test('start under a lock: r0 on a node, later ticks on consecutive nodes', () => {
+  for (const ago of [0.01, 0.07, 0.11]) {
+    const { ctx, proc, send, posted } = plate();
+    runT(ctx, proc, 1);
+    const t0 = ctx.currentTime - ago;
+    send({ t: 'lock', t0, p: 0.5 });
+    send(seqMsg({ rhythm: { len: 16, steps: slots(() => hit) } }));
+    runT(ctx, proc, 1);
+    const st = stepsOf(posted).slice(0, 6), q = st.map((m) => (m.time - t0) / 0.125);
+    assert.ok(st.length >= 6, `ago ${ago}: ticks ${st.length}`);
+    const n1 = Math.round(q[1]);
+    for (let i = 1; i < q.length; i++) assert.ok(Math.abs(q[i] - (n1 + i - 1)) < 2e-3, `ago ${ago}: tick ${i} at ${q[i]} q, want node ${n1 + i - 1}`);   // дальше — узлы подряд
+    assert.ok(n1 > q[0] && n1 - q[0] <= 1 + 1e-6, `ago ${ago}: r1 a node after r0 (${q[0]} -> ${n1})`);   // без лишнего узла между r0 и r1
+    if (ago >= 0.03) assert.ok(Math.abs(q[0] - Math.round(q[0])) < 2e-3, `ago ${ago}: r0 on a node ${q[0]}`);
+    else assert.ok(Math.abs(q[0] - ago / 0.125) < 0.05, `ago ${ago}: r0 right away ${q[0]}`);
+  }
+});
+
+test('a lock with p <= 0 is ignored: the plate ticks at its own tempo', () => {
+  for (const p of [0, -0.5]) {
+    const { ctx, proc, send, posted } = plate();
+    send(seqMsg({ rhythm: { len: 16, steps: slots(() => hit) } }));
+    send({ t: 'lock', t0: 0, p });
+    runT(ctx, proc, 1);
+    const t = stepsOf(posted).map((m) => m.time);
+    assert.ok(t.length >= 7, `p ${p}: ticks ${t.length}`);
+    for (let i = 1; i < t.length; i++) close(t[i] - t[i - 1], 0.125, 2 / FS, `p ${p}: own tempo`);
+  }
+});

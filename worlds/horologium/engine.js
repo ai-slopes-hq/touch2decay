@@ -15,7 +15,7 @@ export function createEngine(T, model, ver) {
   let lockSent = null;
   function syncLock() {
     if (!ready) return;                                    // узла ещё нет — после запуска досылаем (см. start)
-    const g = clock.run && clock.u === 0 && !pend.held ? T.midiGrid() : null, a = lockSent;
+    const g0 = clock.run && clock.u === 0 && !pend.held ? T.midiGrid() : null, g = g0 && g0.p > 0 ? g0 : null, a = lockSent;   // сетка с p ≤ 0 — не сетка
     if (g ? a && a.t0 === g.t0 && a.p === g.p : !a) return;
     lockSent = g ? { t0: g.t0, p: g.p } : null;
     send(g ? { t: 'lock', t0: g.t0, bar: 4 * g.p } : { t: 'lock', off: true });

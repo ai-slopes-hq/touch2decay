@@ -11,7 +11,7 @@
 // Наверх ~30/с: {t:'p', P, F, hits: [номера колец, ударившие с прошлого раза]}.
 const NR = 8;
 function wrap1(x) { return x - Math.floor(x + 0.5); }    // в [−0.5, 0.5)
-function lockRate(P, t, lock) { return 1 + Math.max(-0.03, Math.min(0.03, wrap1((t - lock.t0) / lock.bar - P))); }   // множитель скорости колеса
+function lockRate(err) { return 1 + Math.max(-0.03, Math.min(0.03, err)); }   // множитель скорости колеса по ошибке фазы err (доля оборота)
 class Horo extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -28,7 +28,7 @@ class Horo extends AudioWorkletProcessor {
         if (d.rings) d.rings.forEach((q, i) => Object.assign(this.r[i], q));
       } else if (d.t === 'step') { this.glide += d.d; this.glideN = Math.round(0.04 * sampleRate); }
       else if (d.t === 'lock') {
-        if (d.off) this.lock = null;
+        if (d.off || !(d.bar > 0)) this.lock = null;
         else { if (!this.lock) this.snap = true; this.lock = { t0: d.t0, bar: d.bar }; }
       }
       else if (d.t === 'stop') { this.Ft = 0; this.F = 0; }
@@ -51,7 +51,7 @@ class Horo extends AudioWorkletProcessor {
       if (this.lock) {
         const t = currentTime + k / sr, err = wrap1((t - this.lock.t0) / this.lock.bar - this.P);
         if (this.snap || Math.abs(err) > 0.1) { this.P += err; this.snap = false; }
-        else dP *= lockRate(this.P, t, this.lock);
+        else dP *= lockRate(err);
       }
       if (this.glideN > 0) { const g = this.glide / this.glideN; dP += g; this.glide -= g; this.glideN--; }
       const P0 = this.P; this.P += dP;

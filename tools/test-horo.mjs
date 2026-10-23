@@ -43,12 +43,12 @@ const wrap = (x) => x - Math.floor(x + 0.5);
 const hitsPerRing = (h) => { const c = Array(8).fill(0); for (const m of h.posted) if (m.t === 'p') for (const i of m.hits) c[i]++; return c; };
 
 test('lockRate pulls the wheel phase to the bar', () => {
-  const { ctx } = load(), lock = { t0: 0, bar: 2 };
-  assert.ok(ctx.lockRate(0.48, 1, lock) > 1, 'behind -> faster');
-  assert.ok(ctx.lockRate(0.52, 1, lock) < 1, 'ahead -> slower');
-  assert.equal(ctx.lockRate(0.5, 1, lock), 1);
-  assert.equal(ctx.lockRate(0.1, 1, lock), 1.03, 'clamped');
-  assert.equal(ctx.lockRate(0.9, 1, lock), 0.97, 'clamped');
+  const { ctx } = load(), lock = { t0: 0, bar: 2 }, rate = (P) => ctx.lockRate(wrap((1 - lock.t0) / lock.bar - P));   // ошибка фазы считается один раз (в процессоре), здесь — как там
+  assert.ok(rate(0.48) > 1, 'behind -> faster');
+  assert.ok(rate(0.52) < 1, 'ahead -> slower');
+  assert.equal(rate(0.5), 1);
+  assert.equal(rate(0.1), 1.03, 'clamped');
+  assert.equal(rate(0.9), 0.97, 'clamped');
 });
 
 test('lock-on snaps the phase once; small t0 updates and tempo nudges do not jump P', () => {
@@ -99,4 +99,13 @@ test('ring ratios hold under the lock', () => {
   const c = hitsPerRing(h);
   for (const n of [2, 3, 5, 7]) assert.ok(Math.abs(c[n - 2] - n * 4) <= 1, `ring ${n}: ${c[n - 2]}`);
   assert.ok(Math.abs(c[2] - 12) <= 1, `12/4: ${c[2]}`);
+});
+
+test('a lock with bar <= 0 is ignored (wheel phase stays finite)', () => {
+  for (const bar of [0, -2]) {
+    const h = horo([2], [], 0.5);
+    h.send({ t: 'lock', t0: 0, bar });
+    run(h, 0.2);
+    assert.ok(Number.isFinite(h.proc.P) && h.proc.lock === null, `bar ${bar}: P ${h.proc.P}`);
+  }
 });

@@ -14,7 +14,7 @@ export function createEngine(T, model, ver) {
   let lockSent = null;
   function syncLock() {
     if (!started) return;                        // модуль пластины не заведён — слать некому (очередь не копим)
-    const g = T.midiGrid(), a = lockSent;
+    const g0 = T.midiGrid(), g = g0 && g0.p > 0 ? g0 : null, a = lockSent;   // сетка с p ≤ 0 — не сетка
     if (g ? a && a.t0 === g.t0 && a.p === g.p : !a) return;
     lockSent = g ? { t0: g.t0, p: g.p } : null;
     send(g ? { t: 'lock', t0: g.t0, p: g.p } : { t: 'lock', off: true });
@@ -134,6 +134,7 @@ export function createEngine(T, model, ver) {
   }
   function on(e) {                               // событие модели → worklet
     if (e.t === 'seq') {
+      syncLock();                                // сетка — раньше узора: пуск в worklet сразу встаёт на узел (не ждёт следующих 25 мс)
       send(e.msg);
       if (nodes && echoBpm !== seq.bpm) { echoBpm = seq.bpm; applyFx(); }   // эхо идёт за темпом
     } else if (e.t === 'f0') send({ t: 'f0', hz: e.hz });

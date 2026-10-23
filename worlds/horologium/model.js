@@ -67,6 +67,7 @@ export function createModel({ scale = { on: false, root: 0 }, rng = Math.random 
       if (clock.strip) { /* палец на шкале — скорость стоит */ }
       else if (d > 0) clock.u -= d * dt / 6;               // раскачанный — медленно успокаивается к своей скорости
       else clock.u -= d * dt / 1.5;                        // слабый — спуск подталкивает
+      if (!clock.strip && Math.abs(clock.u - clock.uT) < 1e-3) clock.u = clock.uT;   // экспонента не доходит до цели — без этого `u === 0` (замок к такту MIDI) не наступил бы и за час
       const e = eOfU(clock.u), F = Fnow();
       if (e < 1.95) {
         const A = Math.acos(1 - e);
