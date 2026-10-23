@@ -1,8 +1,11 @@
-// Firmamentum — мир SDK: модель (model.hpp) + звук. Звук пока — тишина (задача 5 SDK A); время модели идёт в process.
-// Коды action и раскладка зеркала — здесь; фасад в JS (tools/models/firmamentum-core.mjs, потом worlds/firmamentum/model.js) — те же.
+// Firmamentum — мир SDK: модель (model.hpp) + звук (sound.hpp). События модели правят голоса, как sendStar в worlds/firmamentum/engine.js:
+// звезда целиком (lvl·0.55, pan = u·0.8), одна частота (fp / ff), fx → jit, spread, crep, fulg. В process — блок звука, потом шаг модели.
+// Посыл — сухой × fx.hall²·1.5, ревербер — hall. Коды action и раскладки зеркала и услышанного — здесь; фасад в JS
+// (tools/models/firmamentum-core.mjs, потом worlds/firmamentum/model.js) — те же.
 #pragma once
 #include "../../sdk/world.hpp"
 #include "model.hpp"
+#include "sound.hpp"
 
 namespace firmamentum {
 
@@ -19,9 +22,15 @@ enum Act { ADD, CLOSE, MOVE, SET, FX, CLEAR, DICE, LAUNCH };
 // затем на звезду STAR_N чисел: slot, id, h, u, cyc, win, mask, lvl, dr, cm, fp, ff
 constexpr int MIRROR_HEAD = 2 + 7 + NFX + 1, STAR_N = 12, MIRROR_MAX = MIRROR_HEAD + SMAX * STAR_N;
 
+// услышанное с прошлого вызова (как {pulsed, dust, bolts} у engine.js): np, слоты звёзд с новым пульсаретом (по порядку звёзд),
+// nd, пары (pan, a) щелчков треска, nb, слоты вспышек
+constexpr int HEARD_MAX = 1 + SMAX + 1 + Sound::CKMAX * 2 + 1 + Sound::FLMAX;
+static_assert(SMAX == Sound::VMAX, "звезда — голос");
+constexpr uint32_t SOUND_SEED = 0x9E3779B9u;            // зерно звука — зерно мира ^ это (у модели — само зерно)
+
 class Firmamentum : public sdk::World {
  public:
-  explicit Firmamentum(const Scale& scale) : model_(scale) {}
+  explicit Firmamentum(const Scale& scale) : model_(scale) { model_.listen(&Firmamentum::onEvent, this); }
   void prepare(double sr, uint32_t seed) override;
   void action(int kind, int i, const double* a, int n) override;
   void process(const sdk::Out& out, int n) override;
@@ -34,8 +43,14 @@ class Firmamentum : public sdk::World {
   const Model& model() const { return model_; }
 
  private:
+  static void onEvent(void* self, const Ev& e) { static_cast<Firmamentum*>(self)->on(e); }
+  void on(const Ev& e);                                 // событие модели → голоса
+  void applyFx();
+
   Model model_;
+  Sound sound_;
   double sr_ = 48000;
+  double counts_[SMAX] = {};                            // счётчики пульсаретов на прошлом heard
 };
 
 }  // namespace firmamentum

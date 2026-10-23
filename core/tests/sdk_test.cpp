@@ -353,7 +353,7 @@ static void scaleBasics() {
   sc.on = false; NEAR(sc.snapSemi(1.3), 1.3, 0);
 }
 
-// Firmamentum (мир SDK) нативно: модель в хосте, действия, зеркало, снимок → restore; звук пока тишина
+// Firmamentum (мир SDK) нативно: модель в хосте, действия, зеркало, снимок → restore
 static Host fhost;
 static void firm() {
   using namespace firmamentum;
@@ -370,7 +370,9 @@ static void firm() {
   const int n = w.mirror(m, MIRROR_MAX);
   CHECK(n == MIRROR_HEAD + w.model().count() * STAR_N);
   CHECK(std::fabs(m[0] - 12800 / 48000.0) < 1e-12);
-  CHECK(fhost.dry(10, 0)[5] == 0.f && fhost.ret(1)[5] == 0.f);
+  float dp = 0;
+  for (int k = 0; k < 128; k++) dp = std::fmax(dp, std::fabs(fhost.dry(10, 0)[k]) + std::fabs(fhost.dry(10, 1)[k]));
+  CHECK(dp > 0);                                        // кубик звучит
   const std::string js = w.snapshot();
   static Firmamentum w2(fhost.scale());
   w2.prepare(48000, 3);
@@ -381,9 +383,36 @@ static void firm() {
   CHECK(!w.sounding());
 }
 
+// Firmamentum: посыл мира (sL, sR) = сухой × fx.hall²·1.5 по каждому сэмплу; сценарий tone (звезда-тон), потом hall 0.9
+static void firmSend() {
+  using namespace firmamentum;
+  static Scale sc;
+  static Firmamentum w(sc);
+  w.prepare(48000, 12345);
+  const double a[] = {0.85, 0.3};
+  w.action(ADD, 0, a, 2);
+  static float L[128], R[128], sL[128], sR[128];
+  const sdk::Out out{L, R, sL, sR};
+  double peak = 0, err = 0;
+  for (int pass = 0; pass < 2; pass++) {
+    const double hall = pass ? 0.9 : FX_DEF[HALL], g = hall * hall * 1.5;
+    if (pass) { const double v[] = {0.9}; w.action(FX, HALL, v, 1); }
+    for (int b = 0; b < 375; b++) {
+      w.process(out, 128);
+      for (int k = 0; k < 128; k++) {
+        peak = std::fmax(peak, std::fabs(L[k]));
+        err = std::fmax(err, std::fmax(std::fabs(sL[k] - L[k] * g), std::fabs(sR[k] - R[k] * g)));
+      }
+    }
+  }
+  CHECK(peak > 1e-3);                                   // звучит
+  CHECK(err <= 1e-6);
+  CHECK(w.rev() == sdk::Rev::hall);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb(); scaleBasics(); host(); firm();
+  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

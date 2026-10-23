@@ -1,12 +1,31 @@
 // Firmamentum — мир SDK, см. world.hpp.
 #include "world.hpp"
-#include <cstring>
 
 namespace firmamentum {
 
 void Firmamentum::prepare(double sr, uint32_t seed) {
   sr_ = sr > 0 ? sr : 48000;
   model_.reset(seed);
+  sound_.prepare(sr_, seed ^ SOUND_SEED);
+  for (double& c : counts_) c = 0;
+  applyFx();                                            // как build у engine.js: fx — до первой звезды
+}
+
+void Firmamentum::applyFx() {
+  sound_.fx(model_.fx(SCINTILLA), model_.fx(SPREAD), model_.fx(CREPITUS), model_.fx(FULGUR));
+}
+
+void Firmamentum::on(const Ev& e) {
+  switch (e.t) {
+    case Ev::STAR: {
+      const Star& s = *e.s;
+      sound_.voice(s.slot, e.on ? 1 : 0, model_.fp(s), model_.ff(s), s.cyc, s.win, s.mask, s.lvl * 0.55, s.u * 0.8);
+      break;
+    }
+    case Ev::FP: sound_.fp(e.s->slot, model_.fp(*e.s)); break;
+    case Ev::FF: sound_.ff(e.s->slot, model_.ff(*e.s)); break;
+    case Ev::FX: applyFx(); break;
+  }
 }
 
 void Firmamentum::action(int kind, int i, const double* a, int n) {
@@ -26,10 +45,10 @@ void Firmamentum::action(int kind, int i, const double* a, int n) {
 
 void Firmamentum::process(const sdk::Out& out, int n) {
   if (n <= 0) return;
-  const size_t bytes = sizeof(float) * static_cast<size_t>(n);
-  std::memset(out.L, 0, bytes); std::memset(out.R, 0, bytes);   // звук — в задаче 5; пока тишина
-  std::memset(out.sL, 0, bytes); std::memset(out.sR, 0, bytes);
-  model_.tick(n / sr_);                                 // шаг модели — раз в блок
+  sound_.process(out.L, out.R, n);
+  const double h = model_.fx(HALL), g = h * h * 1.5;    // посыл в зал
+  for (int k = 0; k < n; k++) { out.sL[k] = static_cast<float>(out.L[k] * g); out.sR[k] = static_cast<float>(out.R[k] * g); }
+  model_.tick(n / sr_);                                 // шаг модели — раз в блок, после звука: события — к следующему блоку
 }
 
 int Firmamentum::mirror(double* buf, int cap) const {
@@ -52,6 +71,21 @@ int Firmamentum::mirror(double* buf, int cap) const {
   return need;
 }
 
-int Firmamentum::heard(double*, int) { return 0; }      // пульсареты, треск, вспышки — со звуком (задача 5)
+int Firmamentum::heard(double* buf, int cap) {
+  if (!buf || cap < HEARD_MAX) return 0;
+  double* p = buf;
+  double* np = p++;
+  *np = 0;
+  for (int i = 0; i < model_.count(); i++) {            // звезда вспыхнет: у её голоса прибавились пульсареты (как pulsed в engine.js)
+    const int slot = model_.star(i).slot;
+    if (sound_.count(slot) != counts_[slot]) { *p++ = slot; (*np)++; }
+  }
+  for (int v = 0; v < SMAX; v++) counts_[v] = sound_.count(v);
+  const int nd = sound_.ck(p + 1);
+  *p = nd; p += 1 + nd * 2;
+  const int nb = sound_.fl(p + 1);
+  *p = nb; p += 1 + nb;
+  return static_cast<int>(p - buf);
+}
 
 }  // namespace firmamentum

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SCENARIOS, SEED, SR, BLOCK, toScript, loadRef, loadOld, loadWasm, play, WASM } from './firm-scenarios.mjs';
+import { SCENARIOS, SEED, SR, BLOCK, toScript, loadRef, loadOld, loadWasm, play, WASM, ACTS, refPath, corePath } from './firm-scenarios.mjs';
 
 const rms = (a) => Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length);
 const run = (load, name, steps = SCENARIOS[name]) => { const { proc, posted } = load(); return play(proc, steps, posted); };
@@ -138,3 +138,30 @@ test('speed: 60 s, six stars, crepitus and fulgur', async () => {
   const ms = time(w.proc);
   console.log(`  speed, 60 s of sound: JS ${js.toFixed(0)} ms, WASM ${ms.toFixed(0)} ms (x${(js / ms).toFixed(2)})`);
 });
+
+// ---------- SDK: мир X в t2d.wasm (модель ядра + звук на блоках SDK) против эталона: JS-модель → engine.js → pulsar-worklet.js ----------
+// Сухой L/R — 1e-6 на сэмпл; услышанное (pulsed, dust, bolts) — те же сообщения, в том же порядке, теми же значениями.
+const ACT_SANITY = {                                   // сценарий что-то проверяет: звук, треск, вспышки, кометы
+  fx: (r) => r.heard.some((h) => h.dust.length) && r.heard.some((h) => h.bolts.length),
+  all: (r) => r.heard.some((h) => h.dust.length) && r.heard.some((h) => h.bolts.length) && r.comets >= 2,
+  comet: (r) => r.comets >= 2,
+};
+for (const name of Object.keys(ACTS)) {
+  test(`sdk: dry output matches the reference: ${name}`, () => {
+    const r = refPath(ACTS[name]), c = corePath(ACTS[name]);
+    assert.ok(rms(r.L) + rms(r.R) > 1e-3, `${name}: reference is silent`);
+    if (ACT_SANITY[name]) assert.ok(ACT_SANITY[name](r), `${name}: scenario does not exercise what it should`);
+    same(c.L, r.L, `${name} L`); same(c.R, r.R, `${name} R`);
+    assert.equal(c.heard.length, r.heard.length, `${name}: heard count`);
+    r.heard.forEach((h, k) => {
+      const q = c.heard[k], at = `${name} heard #${k} (block ${h.at})`;
+      assert.equal(q.at, h.at, `${at}: block`);
+      assert.deepEqual(q.pulsed, h.pulsed, `${at}: pulsed`);
+      assert.equal(q.dust.length, h.dust.length, `${at}: dust count`);
+      h.dust.forEach((p, j) => same(q.dust[j], p, `${at}: dust ${j}`));
+      assert.deepEqual(q.bolts, h.bolts, `${at}: bolts`);
+    });
+    assert.ok(r.heard.some((h) => h.pulsed.length), `${name}: no pulsed`);
+    assert.equal(c.comets, r.comets, `${name}: comets`);
+  });
+}

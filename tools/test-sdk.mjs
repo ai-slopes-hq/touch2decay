@@ -34,6 +34,8 @@ test('t2d.wasm: standalone, exports, Firmamentum in slot 10', async (t) => {
   for (let k = 0; k < 10; k++) c.process(128);
   const m = c.mirror(10);
   assert.equal(m[16], 1); assert.ok(Math.abs(m[0] - 1280 / 48000) < 1e-12, `time ${m[0]}`);
-  assert.ok(c.dry(10, 0).every((x) => x === 0) && c.ret(0).every((x) => x === 0), 'silence for now');
+  let dry = 0, ret = 0;                                 // звезда звучит, её посыл доходит до зала
+  for (let k = 0; k < 200; k++) { c.process(128); dry = Math.max(dry, ...c.dry(10, 0).map(Math.abs)); ret = Math.max(ret, ...c.ret(0).map(Math.abs)); }
+  assert.ok(dry > 1e-3 && ret > 1e-5, `dry ${dry}, return ${ret}`);
   assert.match(c.snapshot(10), /^\{"s":\[\{"h":0\.5,"u":0,/);
 });
