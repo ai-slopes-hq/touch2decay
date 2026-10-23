@@ -19,6 +19,7 @@ inline double jsHypot(double a, double b) {
   return std::sqrt(sum) * m;
 }
 
+inline double jsRound(double x) { const double r = std::floor(x); return x - r >= 0.5 ? r + 1 : r; }   // Math.round
 inline double jsClamp(double x, double a = 0, double b = 1) { return x < a ? a : x > b ? b : x; }   // Math.min(b, Math.max(a, x))
 
 }  // namespace sdk

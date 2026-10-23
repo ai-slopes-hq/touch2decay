@@ -1,5 +1,5 @@
 // Мост ядра SDK для WASM (t2d.wasm): хост и все миры SDK в одном модуле, его крутит t2d-worklet.js (в Node — tools/t2d-core.mjs).
-// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Monochordum — 7, Oceanus — 8, Horologium — 9, Firmamentum — 10, Arcadia — 12, Goetia — 15.
+// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Monochordum — 7, Oceanus — 8, Horologium — 9, Firmamentum — 10, Tria — 11, Arcadia — 12, Goetia — 15.
 // Обмен — через буферы ядра: аргументы action (t2d_args), зеркало и услышанное (t2d_mbuf), строка снимка (t2d_str_buf + длина).
 #include <cstring>
 #include <string>
@@ -11,6 +11,7 @@
 #include "../worlds/monochord/world.hpp"
 #include "../worlds/horologium/world.hpp"
 #include "../worlds/arcadia/world.hpp"
+#include "../worlds/tria/world.hpp"
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
@@ -19,9 +20,10 @@ static goetia::World goe(host.scale());
 static monochord::World mono(host.scale());
 static horologium::World horo(host.scale());
 static arcadia::World arc(host.scale());
+static tria::World tria3(host.scale());
 static sdk::World* worlds[Host::SLOTS] = {};
 static double args[64];
-static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59, Monochordum — 52, Horologium — 47, Arcadia — 65
+static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59, Monochordum — 52, Horologium — 47, Tria — 47, Arcadia — 65
 static constexpr int STR_CAP = 1 << 16;
 static char str[STR_CAP];
 
@@ -55,6 +57,9 @@ API void t2d_init(double sr, unsigned seed) {
   arc.prepare(sr, seed);
   worlds[12] = &arc;
   host.add(12, &arc);
+  tria3.prepare(sr, seed);
+  worlds[11] = &tria3;
+  host.add(11, &tria3);
 }
 API double* t2d_args() { return args; }
 API void t2d_action(int slot, int kind, int i, const double* a, int n) {
