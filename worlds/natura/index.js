@@ -29,7 +29,7 @@ T.registerWorld(4, {
   build: engine.build,
   tick(now) { model.tick((now - last) / 1000); last = now; view.tick(now); },   // время модели — без обрезки (утки); дерево затихает с шагом ≤ 0.1 с, как было
   draw: view.draw, down: view.down, move: view.move, up: view.up,
-  tempo: { get: () => S.seq.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => { if (on !== S.seq.playing) model.play(on); }, playing: () => S.seq.playing },   // общие часы (карта → concordia)
+  tempo: { get: () => S.seq.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => { if (on !== S.seq.playing) model.play(on); }, playing: () => S.seq.playing, armed: () => S.pads.at.some(Boolean) },   // общие часы (карта → concordia)
   mapShot: view.mapShot,
   dice() { const was = S.seq.playing; model.dice(); if (!was) T.transportFrom(4, true); },   // кубик заводит реку
   clear: () => model.clear(), snapshot: model.snapshot, restore: model.restore, sounding: model.sounding,

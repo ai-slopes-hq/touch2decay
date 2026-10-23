@@ -156,23 +156,29 @@ export function createEngine(T, model) {
   }
 
   // часы — по звуковому времени с запасом вперёд (таймер 25 мс, окно 200 мс)
+  let played = -1;                                     // номер последнего поставленного шага
   function schedule() {
     if (!seq.playing || !actx) return;
     const now = actx.currentTime, ahead = now + 0.2;     // запас 200 мс: телефон занят картинкой — ноты всё равно вовремя
     if (!clock.next) clock.next = now + 0.05;
+    const align = () => { const g = T.midiGrid(); if (g) clock.next = T.stepTime(g, clock.step, 4); };   // сетка MIDI-часов ведёт шаги; пропала — идём дальше своим темпом
+    align();
     while (clock.next < ahead) {
-      if (clock.next > now + 0.003) {                    // опоздавшую ноту пропускаем — задним числом она щёлкает; пауза и chance — в модели
+      const t = T.due(clock.next, now, clock.step === 0);   // опоздавшую ноту пропускаем — задним числом она щёлкает (первая после пуска — сразу); пауза и chance — в модели
+      if (t !== null && clock.step > played) {
+        played = clock.step;                              // ушедший шаг не повторяем
         const v = model.stepNote(clock.step);
-        if (v) { playNote(v, clock.next); heard({ played: v.i, at: performance.now() + (clock.next - now) * 1000 }); }
+        if (v) { playNote(v, t); heard({ played: v.i, at: performance.now() + (t - now) * 1000 }); }
       }
       clock.step++; clock.next += model.stepSec();
+      align();
     }
   }
   T.onTick(schedule);                                  // таймер 25 мс + метроном из звукового потока — в фоне шаги не пропадают
   const phase = () => (seq.playing && actx && clock.next ? Math.max(0, clock.step - (clock.next - actx.currentTime) / model.stepSec()) : null);
 
   function on(e) {                                       // событие модели → узлы
-    if (e.t === 'play') { clock.step = 0; clock.next = 0; if (e.on) schedule(); }
+    if (e.t === 'play') { clock.step = 0; clock.next = 0; played = -1; if (e.on) schedule(); }
     else if (e.t === 'fx') applyFx();
     else if (e.t === 'hear') { if (bus) playNote(model.voice(e.pd), actx.currentTime); }
     else if (e.t === 'shake') shakeTick(e.v);

@@ -23,7 +23,6 @@ const shellLog = window.webkit?.messageHandlers?.t2dLog;
 const log = (o) => shellLog?.postMessage(JSON.stringify({ ms: Math.round(performance.now()), ...o }));
 T.onMidi((m) => { if (m.t !== 'tempo') log({ in: m }); });        // протокол — в host/midi.js, здесь только лог пробы
 engine.pulse((m) => { log({ out: m.t, step: m.step, bpm: m.bpm, ahead: Math.round(m.at - performance.timeOrigin - performance.now()) }); window.webkit?.messageHandlers?.t2dClock?.postMessage(m); });
-engine.trace((o) => log({ pll: o }));
 if (shellLog) setInterval(() => {                       // раз в секунду: три признака Сатурна, голоса, звук
   const st = window.t2d.strain, c = window.t2d.ctx;
   log({ lvl: +st.lvl.toFixed(2), work: +st.work.toFixed(1), drift: +st.drift.toFixed(3), ctx: c && c.state, ct: c && +c.currentTime.toFixed(2),
@@ -38,7 +37,7 @@ T.registerWorld(13, {
   tick(now) { model.tick(last ? (now - last) / 1000 : 0); last = now; view.tick(now); engine.poll(now); },
   draw: view.draw, down: view.down, move: view.move, up: view.up,
   dice: model.dice, clear: model.clear, snapshot: model.snapshot, restore: model.restore, sounding: model.sounding,
-  tempo: { get: () => seq.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => model.play(on), playing: () => seq.playing, min: 60, max: 180 },
+  tempo: { get: () => seq.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => model.play(on), playing: () => seq.playing, armed: () => isles.length > 0, min: 60, max: 180 },
   mapShot: view.mapShot,
 });
 const G = () => geo(T, S);
