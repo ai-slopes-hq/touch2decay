@@ -31,6 +31,7 @@ class Sound {
     int n = 2; bool on = false, under = false; double phi = 0, lvl = 0.8;
     double y1 = 0, y2 = 0, ea = 0, pan = 0, m = 2, rate = 0;
     int nz = 0, ek = 0, eN = 1;
+    double cf = -1, cmat = -1, crate = -1, crr = 0, csw = 0, ccw = 1, cnorm = 0;   // кеш коэффициентов резонатора
   };
   double mOf(const O& o) const;
   double rnd() { return rng_.next(); }

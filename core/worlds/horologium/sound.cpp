@@ -49,9 +49,10 @@ void Sound::process(float* L, float* R, int n, double now) {
   int na = 0;
   for (O& o : r_) if (o.on) { o.m = mOf(o); act[na++] = &o; }
   const double kF = 1 - std::exp(-1 / (0.06 * sr));
-  bool quiet = na == 0 && std::fabs(dc_[0]) < 1e-9 && std::fabs(dc_[1]) < 1e-9;
-  for (const O& o : r_) if (std::fabs(o.y1) > 1e-12 || std::fabs(o.y2) > 1e-12 || o.ek > 0) quiet = false;
-  if (quiet) {                                          // колец нет, всё отзвучало: идёт только колесо (его видно и по нему — замок)
+  const bool still = Ft_ == 0 && std::fabs(F_) < 1e-12 && glideN_ == 0 && !lockOn_;   // колесо стоит — ударов не будет
+  bool quiet = (na == 0 || still) && std::fabs(dc_[0]) < 1e-9 && std::fabs(dc_[1]) < 1e-9;
+  for (const O& o : r_) if (std::fabs(o.y1) > 1e-12 || std::fabs(o.y2) > 1e-12 || o.ek > 0 || o.nz > 0) quiet = false;
+  if (quiet) {                                          // колец нет или колесо стоит, всё отзвучало: идёт только колесо (его видно и по нему — замок)
     for (int k = 0; k < n; k++) {
       F_ += (Ft_ - F_) * kF;
       double dP = F_ / sr;
@@ -107,13 +108,18 @@ void Sound::process(float* L, float* R, int n, double now) {
         if (nh_ < HMAX) hit_[nh_++] = o.n - 2;
       }
       const double f = std::fmin(sr * 0.42, o.m * std::fmax(B_, std::fmin(Fe, 400)));
-      const double T = 0.012 * std::pow(50.0, mat_) * std::sqrt(std::fmin(4, 220 / f));
-      const double rr = std::exp(-1 / (T * sr)), w = (TAU * f) / sr, sw = std::sin(w);
-      const double norm = 1 - std::exp(-1 / (T * std::fmax(1, o.rate != 0 ? o.rate : 1)));   // часто — сумма не растёт без меры
+      if (f != o.cf || mat_ != o.cmat || o.rate != o.crate) {   // коэффициенты — только когда сменились (на ровном ходу — раз): те же числа, без exp / sin / cos на сэмпл
+        const double T = 0.012 * std::pow(50.0, mat_) * std::sqrt(std::fmin(4, 220 / f));
+        const double w = (TAU * f) / sr;
+        o.crr = std::exp(-1 / (T * sr)); o.csw = std::sin(w); o.ccw = std::cos(w);
+        o.cnorm = 1 - std::exp(-1 / (T * std::fmax(1, o.rate != 0 ? o.rate : 1)));   // часто — сумма не растёт без меры
+        o.cf = f; o.cmat = mat_; o.crate = o.rate;
+      }
+      const double rr = o.crr, sw = o.csw, norm = o.cnorm;
       if (o.ek > 0) { const int j = o.eN - o.ek; const double w2 = std::sin((M_PI * (j + 0.5)) / o.eN); ex = (o.ea * 2 * w2 * w2) / o.eN; o.ek--; }
       double xin = ex * sw * norm * 0.55;
       if (o.nz > 0) { xin += (rnd() * 2 - 1) * 0.02 * sw * o.lvl * norm * (o.nz / 72.0); o.nz--; }
-      const double y = 2 * rr * std::cos(w) * o.y1 - rr * rr * o.y2 + xin;
+      const double y = 2 * rr * o.ccw * o.y1 - rr * rr * o.y2 + xin;
       o.y2 = o.y1; o.y1 = y;
       const double pl = (1 - o.pan) * 0.5, pr = (1 + o.pan) * 0.5;
       yl += y * pl; yr += y * pr;

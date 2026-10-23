@@ -59,7 +59,7 @@ export function lfo(rate, depth, ...params) {
 // Порт: send(m) → номер сообщения (фасад модели мира сверяет по нему зеркало: t2d-worklet.js шлёт, сколько сообщений применено);
 // пока узла нет (качается wasm, грузится модуль) — очередь. Не загрузилось — console.error, миры на Web Audio звучат без реверба.
 export const REVS = ['room', 'plate', 'hall', 'cathedral'];
-export const SDK_WORLDS = [10, 15, 8, 7];                // слоты миров SDK в ядре (номер мира): Firmamentum, Goetia, Oceanus, Monochordum
+export const SDK_WORLDS = [10, 15, 8, 7, 9];             // слоты миров SDK в ядре (номер мира): Firmamentum, Goetia, Oceanus, Monochordum, Horologium
 let coreVer = '0', coreBytes = null;                     // байты t2d.wasm — качаются один раз, на каждый новый контекст — копия
 export function setCoreVer(v) { coreVer = v; }
 export let core = null;
