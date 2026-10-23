@@ -9,6 +9,7 @@
 #include "../sdk/biquad.hpp"
 #include "../sdk/clip.hpp"
 #include "../sdk/dc.hpp"
+#include "../sdk/echo.hpp"
 #include "../sdk/delay.hpp"
 #include "../sdk/json.hpp"
 #include "../sdk/pan.hpp"
@@ -431,9 +432,43 @@ static void firmIds() {
   for (int i = 0; i < m.count(); i++) CHECK(m.star(i).id > 50);
 }
 
+static sdk::TapeEcho<48000> tape;                       // ~190 КБ — не на стеке
+static void echo() {                                    // импульс → повторы через time, каждый слабее и мягче; тишина — ровный 0
+  const double sr = 48000;
+  const int D = 18000, N = 128;
+  tape.prepare(sr, 0.375, 2600);
+  tape.set(0.8, 0.5);
+  float in[N] = {}, out[N];
+  for (int b = 0; b < 400; b++) tape.process(in, out, N);   // ~1 с: ручки дошли до цели
+  NEAR(tape.send(), 0.8, 1e-6); NEAR(tape.fb(), 0.5, 1e-6);
+  std::vector<float> y;
+  for (int b = 0; b < 600; b++) {
+    for (float& v : in) v = 0;
+    if (b == 0) in[0] = 1;
+    tape.process(in, out, N);
+    y.insert(y.end(), out, out + N);
+  }
+  double before = 0, peak[3] = {};
+  int at[3] = {};
+  for (int k = 0; k < D; k++) before = std::fmax(before, std::fabs(y[k]));
+  CHECK(before == 0);                                   // до первого повтора — тишина
+  for (int r = 0; r < 3; r++)
+    for (int k = (r + 1) * D; k < (r + 1) * D + 200; k++) if (std::fabs(y[k]) > peak[r]) { peak[r] = std::fabs(y[k]); at[r] = k - (r + 1) * D; }
+  CHECK(peak[0] > 0.05 && peak[1] > 0 && peak[2] > 0);
+  CHECK(peak[1] < peak[0] * 0.6 && peak[2] < peak[1] * 0.6);   // каждый повтор × fb и через LP
+  CHECK(at[0] < 20 && at[1] < 40);                      // пик — сразу за временем задержки
+  double rest = 0;
+  for (int b = 0; b < 9000; b++) { for (float& v : in) v = 0; tape.process(in, out, N); for (float v : out) rest = std::fmax(rest, std::fabs(v)); }
+  bool zero = true;
+  for (int b = 0; b < 2000; b++) { tape.process(in, out, N); for (float v : out) if (v != 0 || !std::isfinite(v)) zero = false; }
+  CHECK(zero);                                          // хвост погас в ровный 0
+  tape.set(0, 0);
+  CHECK(std::isfinite(rest));
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds();
+  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
