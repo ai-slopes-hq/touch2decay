@@ -24,7 +24,7 @@ class T2d extends AudioWorkletProcessor {
       this.port.postMessage({ t: 'ready' });
     }).catch((err) => this.port.postMessage({ t: 'err', msg: String(err) }));
   }
-  nums(n) { return Array.from(new Float64Array(this.x.memory.buffer, this.x.t2d_mbuf(), n)); }
+  nums(n) { this.views(this.x); return Array.from(this.mb.subarray(0, n)); }
   apply(d) {
     const x = this.x;
     if (d.t === 'action') {
@@ -43,27 +43,45 @@ class T2d extends AudioWorkletProcessor {
       x.t2d_restore(d.slot, b.length);
     }
   }
+  views(x) {                                            // представления памяти ядра — кэш; заново, только когда память выросла (в process без выделений)
+    if (this.buf === x.memory.buffer) return;
+    const b = this.buf = x.memory.buffer;
+    this.ext = []; this.ret = []; this.dry = [];
+    for (let r = 0; r < REVS; r++) this.ext.push([new Float32Array(b, x.t2d_ext(r, 0), 128), new Float32Array(b, x.t2d_ext(r, 1), 128)]);
+    for (let c = 0; c < 2; c++) this.ret.push(new Float32Array(b, x.t2d_ret(c), 128));
+    for (const s of this.slots) this.dry.push([new Float32Array(b, x.t2d_dry(s, 0), 128), new Float32Array(b, x.t2d_dry(s, 1), 128)]);
+    this.mb = new Float64Array(b, x.t2d_mbuf(), 512);
+  }
   process(inputs, outputs) {
     const x = this.x;
     if (!x) return true;                                  // выходы уже нулевые
-    const n = outputs[0][0].length;
+    this.views(x);
+    const out0 = outputs[0], n = out0[0].length, ns = this.slots.length;
     for (let k = 0; k < n; k += 128) {
       const m = Math.min(128, n - k);
       for (let r = 0; r < REVS; r++) {                    // посылы извне; нет входа — тишина
         const inp = inputs[r];
         for (let c = 0; c < 2; c++) {
-          const dst = new Float32Array(x.memory.buffer, x.t2d_ext(r, c), m), src = inp && (inp[c] || inp[0]);
-          if (src && src.length >= k + m) dst.set(src.subarray(k, k + m)); else dst.fill(0);
+          const dst = this.ext[r][c], src = inp && (inp[c] || inp[0]);
+          if (src && src.length >= k + m) for (let i = 0; i < m; i++) dst[i] = src[k + i];
+          else for (let i = 0; i < m; i++) dst[i] = 0;
         }
       }
       x.t2d_process(m);
+      this.views(x);
       for (let c = 0; c < 2; c++) {
-        if (outputs[0][c]) outputs[0][c].set(new Float32Array(x.memory.buffer, x.t2d_ret(c), m), k);
-        this.slots.forEach((s, j) => { const o = outputs[1 + j]; if (o && o[c]) o[c].set(new Float32Array(x.memory.buffer, x.t2d_dry(s, c), m), k); });
+        const o = out0[c], rt = this.ret[c];
+        if (o) for (let i = 0; i < m; i++) o[k + i] = rt[i];
+        for (let j = 0; j < ns; j++) {
+          const w = outputs[1 + j], d = this.dry[j][c];
+          if (w && w[c]) for (let i = 0; i < m; i++) w[c][k + i] = d[i];
+        }
       }
-      for (const s of this.slots) {                       // услышанное очищается при чтении — копим до отправки
-        const h = this.nums(x.t2d_heard(s));
-        if (h.some((v) => v !== 0)) this.heard[s].push(h);
+      for (let j = 0; j < ns; j++) {                      // услышанное очищается при чтении — копим до отправки; в массив — только если что-то было
+        const s = this.slots[j], h = x.t2d_heard(s), mb = this.mb;
+        let any = false;
+        for (let i = 0; i < h; i++) if (mb[i] !== 0) { any = true; break; }
+        if (any) this.heard[s].push(Array.from(mb.subarray(0, h)));
       }
     }
     this.count += n;
