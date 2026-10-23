@@ -7,14 +7,19 @@ export const LATE_FIRST = 0.03;    // первый шаг после Start, оп
 
 // подстройка сетки по доле n, пришедшей в момент at; не мутирует. p — среднее по последним 4 интервалам долей
 export function nextBeat(grid, n, at, bpm) {
-  if (!grid) return { t0: at - n * (60 / bpm), p: 60 / bpm, last: at, n, ints: [] };
-  const ints = grid.ints.slice();
-  if (n > grid.n) { const iv = (at - grid.last) / (n - grid.n); if (iv >= 0.5 * grid.p && iv <= 2 * grid.p) ints.push(iv); }   // правдоподобный интервал; остальное (пауза, новый контекст) среднее не портит
+  if (!grid) return { t0: at - n * (60 / bpm), p: 60 / bpm, last: at, n, ints: [], rej: null };
+  let ints = grid.ints.slice(), rej = null;
+  if (n > grid.n) {
+    const iv = (at - grid.last) / (n - grid.n);
+    if (iv >= 0.5 * grid.p && iv <= 2 * grid.p) ints.push(iv);        // правдоподобный интервал; остальное (пауза, новый контекст) среднее не портит
+    else if (grid.rej && Math.abs(iv - grid.rej) < 0.1 * iv) ints = [grid.rej, iv];   // два выброса подряд согласны — это новый темп (прыжок больше чем вдвое), а не сбой
+    else rej = iv;
+  }
   if (ints.length > 4) ints.shift();
   const p = ints.length ? ints.reduce((a, b) => a + b, 0) / ints.length : grid.p;
   const e = at - (grid.t0 + n * grid.p);
   const target = Math.abs(e) > JUMP ? at : at - e / 2;                // где сетка стоит на этой доле
-  return { t0: target - n * p, p, last: at, n, ints };                // t0 пересчитан под новый p: сетка на доле n не прыгает
+  return { t0: target - n * p, p, last: at, n, ints, rej };                // t0 пересчитан под новый p: сетка на доле n не прыгает
 }
 export const stepTime = (grid, k, perBeat) => grid.t0 + (k / perBeat) * grid.p;
 // когда играть шаг со временем t: в будущем — как есть; первый после Start, чуть опоздавший, — сейчас; иначе пропустить

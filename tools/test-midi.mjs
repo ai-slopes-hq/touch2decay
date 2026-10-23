@@ -202,3 +202,25 @@ test('an implausible beat interval does not change p', () => {
   beat(r, 8, 17.5);                                      // пауза 4 с на одну долю
   assert.ok(Math.abs(r.m.grid().p - 0.5) < 1e-9, `p ${r.m.grid().p}`);
 });
+
+// ---------- резкий прыжок темпа больше чем вдвое (шаг темпа в DAW) ----------
+const jump = (from, to) => {
+  const r = rig();
+  let t = 10, n = 0;
+  for (; n < 8; n++, t += 60 / from) beat(r, n, t, from);
+  for (let k = 0; k < 3; k++, n++, t += 60 / to) beat(r, n, t, to);
+  return { r, n, t };
+};
+test('an abrupt tempo jump over 2x is picked up within 3 beats', () => {
+  for (const [from, to] of [[120, 250], [200, 86]]) {
+    const { r, n, t } = jump(from, to);
+    assert.ok(Math.abs(r.m.grid().p - 60 / to) < 1e-6, `${from}→${to}: p ${r.m.grid().p}`);
+    assert.ok(Math.abs(stepTime(r.m.grid(), 4 * n, 4) - t) < 1e-6, `${from}→${to}: next beat on the grid`);
+  }
+});
+test('two outliers that disagree do not change p', () => {
+  const r = rig();
+  for (let i = 0; i < 8; i++) beat(r, i, 10 + i * 0.5);
+  beat(r, 8, 15.5); beat(r, 9, 15.6);                      // пауза 2 с, потом 0.1 с — не новый темп
+  assert.ok(Math.abs(r.m.grid().p - 0.5) < 1e-9, `p ${r.m.grid().p}`);
+});
