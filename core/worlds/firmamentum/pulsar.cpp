@@ -14,6 +14,7 @@ double jsRound(double x) { return std::floor(x + 0.5); }      // Math.round
 Pulsar::Pulsar(double sr, uint32_t seed) : sr_(sr), rng_(seed) {}
 
 void Pulsar::voice(int i, int on, double fp, double ff, double cyc, double win, double mask, double lvl, double pan) {
+  if (i < 0 || i >= VMAX) return;                       // чужой номер голоса — мимо
   Voice& o = vo_[i];
   if (on != -1) o.on = on != 0;
   o.fp = fp; o.ff = ff; o.cyc = cyc; o.win = win; o.mask = mask; o.lvl = lvl; o.pan = pan;

@@ -10,3 +10,8 @@ emcc -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --
   -sFILESYSTEM=0 -sINITIAL_MEMORY=1MB -sSTACK_SIZE=64KB -sALLOW_MEMORY_GROWTH=0 \
   -o goetia.wasm core/worlds/goetia/wasm.cpp core/worlds/goetia/goetia.cpp
 echo "goetia.wasm ($(wc -c < goetia.wasm | tr -d ' ') bytes)"
+emcc -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --no-entry \
+  -sEXPORTED_FUNCTIONS=_pl_init,_pl_voice,_pl_fx,_pl_process,_pl_count,_pl_gain,_pl_ck,_pl_ck_buf,_pl_fl,_pl_fl_buf \
+  -sFILESYSTEM=0 -sINITIAL_MEMORY=1MB -sSTACK_SIZE=64KB -sALLOW_MEMORY_GROWTH=0 \
+  -o pulsar.wasm core/worlds/firmamentum/wasm.cpp core/worlds/firmamentum/pulsar.cpp
+echo "pulsar.wasm ($(wc -c < pulsar.wasm | tr -d ' ') bytes)"

@@ -18,8 +18,8 @@ class Pulsar {
   void voice(int i, int on, double fp, double ff, double cyc, double win, double mask, double lvl, double pan);
   void fx(double jit, double spread, double crep, double fulg);
   void process(float* L, float* R, int n);              // R == nullptr — моно
-  double count(int i) const { return vo_[i].n; }
-  double gain(int i) const { return vo_[i].g; }
+  double count(int i) const { return i < 0 || i >= VMAX ? 0 : vo_[i].n; }
+  double gain(int i) const { return i < 0 || i >= VMAX ? 0 : vo_[i].g; }
   int ck(double* out);                                  // пары (pan, a) накопленных щелчков; возвращает число пар, очищает
   int fl(int* out);                                     // номера голосов накопленных вспышек; возвращает число, очищает
 
