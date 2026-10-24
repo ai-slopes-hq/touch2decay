@@ -79,8 +79,10 @@ function cat(L, R) {
 // ---------- render-cli: текст команд ----------
 const num = (x) => (Number.isNaN(x) ? 'nan' : Number(x).toPrecision(17));
 export function bowIds() { const m = new Map(); return (id) => { if (!m.has(id)) m.set(id, m.size + 1); return m.get(id); }; }
+// сверка звука пластины — без эха и гула (их у эталона нет): ручка echo в 0, гул выключен
+const PRE = [{ kind: ACT.SET_FX, i: 4, a: [0] }, { kind: ACT.HUM, i: 0, a: [0] }];
 export function toScript(steps, sr = SR, seed = SEED) {
-  const out = ['world cymatica', `init ${sr} ${seed}`], idOf = bowIds();
+  const out = ['world cymatica', `init ${sr} ${seed}`, ...PRE.map((a) => `act ${a.kind} ${a.i} ${a.a.length} ${a.a.map(num).join(' ')}`)], idOf = bowIds();
   for (const s of steps) {
     if (s.run) { out.push(`run ${s.run}`); continue; }
     const a = toAction(s, idOf);
@@ -93,6 +95,7 @@ export function toScript(steps, sr = SR, seed = SEED) {
 export function playCore(steps, seed = SEED) {
   const c = loadT2d();
   c.init(SR, seed);
+  for (const a of PRE) c.action(SLOT, a.kind, a.i, a.a);
   const idOf = bowIds(), L = [], R = [], heard = [];
   for (const s of steps) {
     if (!s.run) { const a = toAction(s, idOf); if (a) c.action(SLOT, a.kind, a.i, a.a); continue; }

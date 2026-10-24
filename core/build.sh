@@ -14,10 +14,10 @@ clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/sdk-test co
 echo "core/build/sdk-test"
 clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/param-cli core/tests/param_cli.cpp
 echo "core/build/param-cli"
-# t2d.wasm — хост SDK и все миры SDK (Monochordum, Oceanus, Horologium, Firmamentum, Tria, Arcadia, Goetia) одним модулем (core/bridge/wasm.cpp); хост ~1.2 МБ статики — память 4 МБ; em++ — нужен libc++ (std::string снимка)
+# t2d.wasm — хост SDK и все миры SDK (Monochordum, Oceanus, Horologium, Firmamentum, Tria, Arcadia, Goetia) одним модулем (core/bridge/wasm.cpp); хост ~1.2 МБ статики — память 16 МБ (линии эха Cymatica ~7 МБ); em++ — нужен libc++ (std::string снимка)
 em++ -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --no-entry \
   -sEXPORTED_FUNCTIONS=_t2d_init,_t2d_args,_t2d_action,_t2d_process,_t2d_dry,_t2d_ret,_t2d_ext,_t2d_mbuf,_t2d_mirror,_t2d_heard,_t2d_str_buf,_t2d_str_cap,_t2d_snapshot,_t2d_restore,_t2d_fader,_t2d_scale,_t2d_time,_t2d_midi_byte,_t2d_midi_msg,_t2d_hmirror,_t2d_hevents,_t2d_arc_land \
-  -sFILESYSTEM=0 -sINITIAL_MEMORY=4MB -s$STACK=64KB -sALLOW_MEMORY_GROWTH=0 \
+  -sFILESYSTEM=0 -sINITIAL_MEMORY=16MB -s$STACK=64KB -sALLOW_MEMORY_GROWTH=0 \
   -o t2d.wasm core/bridge/wasm.cpp core/sdk/reverb.cpp core/host/host.cpp core/host/scale.cpp \
   core/worlds/firmamentum/model.cpp core/worlds/firmamentum/world.cpp core/worlds/firmamentum/sound.cpp \
   core/worlds/oceanus/model.cpp core/worlds/oceanus/world.cpp core/worlds/oceanus/ocean.cpp \

@@ -10,6 +10,12 @@ void Cymatica::prepare(double sr, uint32_t seed) {
   plate_.prepare(sr, seed);
   model_.reset(seed + 1);                               // ГСЧ модели (луна random) — своё, у пластины (шанс удара, шум смычка) — зерно мира
   nAns_ = 0;
+  humOn_ = true;
+  time_ = 0; echoAt_ = -1e9; humAt_ = -1e9; pairSerial_ = 0;
+  gateC_ = 1 - std::exp(-1 / (0.01 * sr_));
+  echoSend_ = sdk::OnePole();
+  for (Pair& p : pairs_) { p.used = p.live = false; }
+  for (Hum& h : hum_) h.env = sdk::AD();
   send_ = sdk::OnePole();
   hall_ = 0.25;
   sendC_ = 1 - std::exp(-1 / (SEND_TAU * sr_));
@@ -50,20 +56,109 @@ void Cymatica::action(int kind, int i, const double* a, int n) {
     case DICE: if (n >= 1) model_.dice(static_cast<uint32_t>(a[0])); break;
     case CLEAR: model_.clear(); break;
     case LOAD: if (n >= 3 + SLOTS * 7) model_.load(a); break;
+    case BOW_ADD: if (n >= 2) model_.addBow(a[0], a[1]); break;
+    case BOW_SET: if (n >= 5) model_.setBow(i, a[0], a[1], a[2], a[3], a[4]); break;
+    case BOW_DROP: model_.dropBow(i); break;
+    case HUM: humOn_ = n < 1 || a[0] != 0; break;
     default: break;
   }
+}
+
+// ---------- эхо: на каждую долю — своя пара линий; сменил долю или темп — звук идёт в новую пару с точным временем, старая не принимает ----------
+// и дозванивает своим (время не едет — нет скрежета); живёт до 6 с, не больше 4 живых пар; смена доли не чаще 11 раз в секунду
+double Cymatica::echoSec() const {
+  static const double DIV[9] = {1.0 / 6, 1.0 / 4, 1.0 / 3, 3.0 / 8, 1.0 / 2, 2.0 / 3, 3.0 / 4, 1, 3.0 / 2};   // ECHO_DIVS в core.js
+  const int i = static_cast<int>(sdk::jsRound(model_.fx(TIME) * 8));
+  return DIV[i < 0 ? 0 : i > 8 ? 8 : i] * 60 / model_.bpm();
+}
+Cymatica::Pair* Cymatica::curPair() {
+  Pair* c = nullptr;
+  for (Pair& p : pairs_) if (p.used && p.live && (!c || p.serial > c->serial)) c = &p;
+  return c;
+}
+void Cymatica::dropPair(Pair& p, double fade) {
+  if (!p.live) return;
+  p.live = false;
+  p.gateTo = 0; p.outTo = 0; p.outC = 1 - std::exp(-1 / (fade * sr_));
+  p.dieAt = time_ + fade * 6;
+}
+void Cymatica::retime() {
+  const double sec = echoSec();
+  Pair* cur = curPair();
+  if (cur && std::fabs(cur->sec - sec) < 1e-4) return;
+  if (cur && time_ - echoAt_ < 0.09) return;
+  echoAt_ = time_;
+  if (cur) { cur->gateTo = 0; cur->retireAt = time_ + 6; }
+  for (;;) {
+    int live = 0;
+    Pair* oldest = nullptr;
+    for (Pair& p : pairs_) if (p.used && p.live) { live++; if (!oldest || p.serial < oldest->serial) oldest = &p; }
+    if (live < ECHO_LIVE) break;
+    dropPair(*oldest, 0.02);
+  }
+  Pair* slot = nullptr;
+  for (Pair& p : pairs_) if (!p.used) { slot = &p; break; }
+  if (!slot) for (Pair& p : pairs_) if (!p.live && (!slot || p.dieAt < slot->dieAt)) slot = &p;   // пул занят затухающими — вытесняем ближайшую к концу
+  if (!slot) return;
+  slot->pp.prepare(sr_, sec, 3000, 1, echoFb());
+  slot->gate = sdk::OnePole(); slot->gateTo = 1;
+  slot->out.y = 1; slot->outTo = 1; slot->outC = 0;
+  slot->sec = sec; slot->retireAt = -1; slot->dieAt = -1; slot->serial = ++pairSerial_;
+  slot->used = slot->live = true;
+}
+
+// ---------- гул резонатора: две синусоиды (f/2 и f, detune 4 цента) под AD 0.15 с вверх, до 1.6 с вниз; не чаще раза в 0.25 с ----------
+void Cymatica::answer(int semi) {
+  if (nAns_ < ANSWER_CAP) ans_[nAns_++] = semi;           // подпись ноты и вспышка — у картинки
+  if (!humOn_ || time_ - humAt_ < 0.25) return;
+  Hum* h = nullptr;
+  for (Hum& v : hum_) if (!v.env.active()) { h = &v; break; }
+  if (!h) return;
+  humAt_ = time_;
+  const double hz = F_MIN * std::pow(2.0, sdk::jsRound(model_.fs()) / 12);
+  h->f1 = hz / 2; h->f2 = hz * std::pow(2.0, 4.0 / 1200);
+  h->a.reset(); h->b.reset();
+  h->env.start(sr_, 0.05, 0.15, 1.45, 0.0001, 0.02);
+}
+
+bool Cymatica::sounding() const {
+  if (plate_.sounding()) return true;
+  for (const Hum& h : hum_) if (h.env.active()) return true;
+  return false;
 }
 
 void Cymatica::process(const sdk::Out& out, int n) {
   if (n <= 0) return;
   model_.tick(n / sr_);                                 // время модели — звуковой поток: луна и запись игрой идут и без окна
   plate_.process(out.L, out.R, n);
-  const double target = hall_ * hall_ * SEND_K;
+  retime();
+  for (Pair& p : pairs_) {
+    if (!p.used) continue;
+    if (p.live && p.retireAt >= 0 && time_ >= p.retireAt) dropPair(p, 0.3);
+    if (!p.live && time_ >= p.dieAt) p.used = false;
+  }
+  if (Pair* c = curPair()) c->pp.setFb(echoFb());
+  const double target = hall_ * hall_ * SEND_K, echoTo = model_.fx(ECHO) * 0.8;
   for (int k = 0; k < n; k++) {
     const double g = send_.step(target, sendC_);
-    out.sL[k] = static_cast<float>(out.L[k] * g);
-    out.sR[k] = static_cast<float>(out.R[k] * g);
+    const double pl = out.L[k], pr = out.R[k];
+    double h = 0;
+    for (Hum& v : hum_) if (v.env.active()) h += (v.a.sine(v.f1 / sr_) + v.b.sine(v.f2 / sr_)) * v.env.step();
+    out.sL[k] = static_cast<float>(pl * g + h * g / 2.5);   // гул — в зал с прежним hall²·1.4 (сухой идёт ×2.5 в канале, посыл гула — без)
+    out.sR[k] = static_cast<float>(pr * g + h * g / 2.5);
+    const double in = 0.5 * (pl + pr) * echoSend_.step(echoTo, sendC_);   // сухой — ChannelMerger у Web Audio сводил стерео в моно
+    double el = 0, er = 0;
+    for (Pair& p : pairs_) {
+      if (!p.used) continue;
+      const double gt = p.gate.step(p.gateTo, gateC_), og = p.out.step(p.outTo, p.live ? gateC_ : p.outC);
+      double yl, yr;
+      p.pp.step(in * gt, yl, yr);
+      el += yl * og; er += yr * og;
+    }
+    out.L[k] = static_cast<float>(pl + el + h);
+    out.R[k] = static_cast<float>(pr + er + h);
   }
+  time_ += n / sr_;
 }
 
 int Cymatica::mirror(double* buf, int cap) const {
@@ -87,6 +182,18 @@ int Cymatica::mirror(double* buf, int cap) const {
   buf[M_DRIFT + 4] = m.driftK();
   buf[M_MISC] = m.grid(); buf[M_MISC + 1] = m.lastHitX(); buf[M_MISC + 2] = m.lastHitY(); buf[M_MISC + 3] = m.cursor();
   buf[M_MISC + 4] = m.stepRec() ? 1 : 0; buf[M_MISC + 5] = m.stepRecR(); buf[M_MISC + 6] = m.stepRecM();
+  int ne = 0;
+  double secs[ECHO_LIVE] = {};
+  long ser[ECHO_LIVE] = {};
+  for (const Pair& p : pairs_) {                      // живые пары — по рождению
+    if (!p.used || !p.live || ne >= ECHO_LIVE) continue;
+    int at = ne++;
+    while (at > 0 && ser[at - 1] > p.serial) { secs[at] = secs[at - 1]; ser[at] = ser[at - 1]; at--; }
+    secs[at] = p.pp.sec(); ser[at] = p.serial;
+  }
+  buf[M_ECHO] = ne;
+  for (int k = 0; k < ECHO_LIVE; k++) buf[M_ECHO + 1 + k] = k < ne ? secs[k] : 0;
+  buf[M_ECHO + 1 + ECHO_LIVE] = ECHO_MAXD / sr_;
   return MIRROR_N;
 }
 

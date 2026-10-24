@@ -68,6 +68,7 @@ void Model::reset(uint32_t seed) {
   bpm_ = 96; playing_ = false; rec_ = false; rlen_ = 16; mlen_ = 7;
   for (int i = 0; i < SLOTS; i++) { rhythm_[i] = RStep(); melody_[i] = MStep(); }
   driftOn_ = false; depth_ = 0.3; rate_ = 0.5; shape_ = 0; t0_ = 0; driftK_ = 0; driftRk_ = 0; driftLast_ = -1;
+  nBows_ = 0; bowSerial_ = 0;
   grid_ = 1; hitX_ = 0.3; hitY_ = 0; cursor_ = -1; sr_ = false; srR_ = srM_ = 0; time_ = 0; sentKey_ = 0;
 }
 
@@ -319,7 +320,7 @@ void Model::setFx(int k, double t) {
   fx_[k] = t;
   if (k == CHANCE) sendSeq();
   else if (k == HALL) { if (sink_) sink_->hall(t); }
-  else if (k == ECHO || k == TIME) {}                      // эхо — у engine (Web Audio, этап 3)
+  else if (k == ECHO || k == TIME) {}                      // эхо читает мир из fx на каждом блоке
   else sendParams();
 }
 void Model::loadFx(const double* a) {
@@ -373,7 +374,32 @@ void Model::dice(uint32_t seed) {                         // генератив�
   sendSeq();
 }
 
-void Model::clear() {                                     // узор — прочь; длины колец и часы остаются
+void Model::bowsOff() {
+  for (int i = 0; i < nBows_; i++) if (sink_) sink_->bow(bows_[i].pid, false, bows_[i].x, bows_[i].y, bows_[i].exciter, bows_[i].pressure, bows_[i].amp);
+  nBows_ = 0;
+}
+void Model::addBow(double x, double y) {
+  if (nBows_ >= MAX_PBOWS) return;
+  PBow& b = bows_[nBows_++];
+  b = PBow(); b.pid = 1000 + bowSerial_++; b.x = x; b.y = y;
+  bowOn(b);
+}
+void Model::setBow(int i, double x, double y, double ex, double pr, double amp) {
+  if (i < 0 || i >= nBows_) return;
+  PBow& b = bows_[i];
+  b.x = x; b.y = y; b.exciter = ex; b.pressure = pr; b.amp = amp;
+  bowOn(b);
+}
+void Model::dropBow(int i) {
+  if (i < 0 || i >= nBows_) return;
+  const PBow b = bows_[i];
+  if (sink_) sink_->bow(b.pid, false, b.x, b.y, b.exciter, b.pressure, b.amp);
+  for (int k = i; k + 1 < nBows_; k++) bows_[k] = bows_[k + 1];
+  nBows_--;
+}
+
+void Model::clear() {                                     // узор и смычки — прочь; длины колец и часы остаются
+  bowsOff();
   for (int i = 0; i < SLOTS; i++) { rhythm_[i] = RStep(); melody_[i] = MStep(); }
   sendSeq();
 }
@@ -396,7 +422,14 @@ std::string Model::snapshot() const {
   st.set("f0", Json::num(r4(f0_)));
   for (int k = 0; k < NFX; k++) fx.set(FX_NAMES[k], Json::num(r4(fx_[k])));
   st.set("fx", std::move(fx));
-  st.set("bows", Json::array());                          // закреплённые смычки (выключены BOWS_ON) пока ведёт фасад
+  Json bw = Json::array();
+  for (int i = 0; i < nBows_; i++) {
+    Json o = Json::object();
+    o.set("x", Json::num(r4(bows_[i].x))); o.set("y", Json::num(r4(bows_[i].y)));
+    o.set("exciter", Json::num(r4(bows_[i].exciter))); o.set("pressure", Json::num(r4(bows_[i].pressure))); o.set("amp", Json::num(r4(bows_[i].amp)));
+    bw.push(std::move(o));
+  }
+  st.set("bows", std::move(bw));
   Json rh = Json::object(), me = Json::object(), rs = Json::array(), ms = Json::array();
   for (int i = 0; i < SLOTS; i++) {
     if (!rhythm_[i].on) { rs.push(Json()); continue; }
@@ -427,6 +460,7 @@ void Model::restore(const std::string& js) {
   if (!ok || st.type != Json::Obj) return;
   const auto num = [](const Json& o, const char* k, double& v) { const Json* x = o.get(k); if (x && x->type == Json::Num) v = x->n; };
   const auto flag = [](const Json& o, const char* k, bool& v) { const Json* x = o.get(k); if (x && x->type == Json::Bool) v = x->b; };
+  bowsOff();
   num(st, "f0", f0_);
   fx_[CHANCE] = 1;                                        // старый снимок без chance — 1
   if (const Json* fx = st.get("fx"); fx && fx->type == Json::Obj) for (int k = 0; k < NFX; k++) num(*fx, FX_NAMES[k], fx_[k]);
@@ -457,9 +491,19 @@ void Model::restore(const std::string& js) {
     };
     ring("rhythm", rlen_, true); ring("melody", mlen_, false);
   }
+  if (const Json* bw = st.get("bows"); bw && bw->type == Json::Arr) {
+    for (size_t i = 0; i < bw->a.size() && nBows_ < MAX_PBOWS; i++) {
+      const Json& o = bw->a[i];
+      if (o.type != Json::Obj) continue;
+      PBow& b = bows_[nBows_++];
+      b = PBow(); b.pid = 1000 + bowSerial_++;
+      num(o, "x", b.x); num(o, "y", b.y); num(o, "exciter", b.exciter); num(o, "pressure", b.pressure); num(o, "amp", b.amp);
+    }
+  }
   sendF0(); sendParams();
   if (sink_) sink_->hall(fx_[HALL]);
   sendSeq();
+  for (int i = 0; i < nBows_; i++) bowOn(bows_[i]);
 }
 
 }  // namespace cymatica

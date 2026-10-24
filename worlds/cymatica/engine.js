@@ -1,15 +1,14 @@
 // Cymatica — звук: модель, пластина и часы секвенсера живут в ядре SDK (core/worlds/cymatica → t2d.wasm, узел хоста T.core, слот 2).
-// Здесь: сухой выход ×2.5 — в канал микшера (посыл в пластинчатый зал и фейдер — в ядре, hall²·1.4·2.5), эхо по долям темпа и гул резонатора
-// (пока на Web Audio, этап 3). Порт ядра отдаётся фасаду модели (bind), зеркало — ему (sync); удары по меткам и смычки — action пластины
-// (bridge.js; пока узла нет, ждут в очереди хоста). Метры — energy, voices, level из зеркала (~60/с). Обратно (listen) — что услышано:
+// Здесь: сухой выход ×2.5 — в канал микшера (посыл в пластинчатый зал и фейдер, эхо по долям темпа и гул резонатора — в ядре). Порт ядра
+// отдаётся фасаду модели (bind), зеркало — ему (sync); удары по меткам и живые смычки под пальцем — action пластины (bridge.js; пока узла нет,
+// ждут в очереди хоста). Метры — energy, voices, level из зеркала (~60/с). Обратно (listen) — что услышано:
 // { t: 'step', r, m, time, hit } — играет шаг; { t: 'answer', note, at } — резонатор отзывается (ядро решает, отзывается ли: класс высоты ноты = основной тон).
 import { F_MIN, noteName } from './core.js';
-import { SLOT, M, toAction, parseHeard, parseAnswers, parseMirror } from './bridge.js';
+import { SLOT, M, toAction, parseHeard, parseAnswers, parseMirror, parseEcho } from './bridge.js';
 
 export function createEngine(T, model, ver) {
-  const { plate, seq } = model.state;
-  let k = null, nodes = null, actx = null;
-  let energy = new Float32Array(24), level = 0, voices = [], echoBpm = 0;
+  let k = null, echo = { chains: [], max: 0 };
+  let energy = new Float32Array(24), level = 0, voices = [];
   const listeners = [], bowId = new Map();
   const heard = (e) => { for (const fn of listeners) fn(e); };
   const idOf = (id) => { if (!bowId.has(id)) bowId.set(id, bowId.size + 1); return bowId.get(id); };
@@ -28,103 +27,32 @@ export function createEngine(T, model, ver) {
   }
   T.onTick(syncLock);                            // таймер 25 мс + метроном из звукового потока
   model.onAct(syncLock);                         // и перед каждым действием модели: сетка — раньше пуска часов
-  function applyFx() {
-    if (!nodes) return;
-    const t = T.ctx.currentTime;
-    nodes.hallSend.gain.setTargetAtTime(plate.fx.hall * plate.fx.hall * 1.4, t, 0.05);   // только гул резонатора: звук пластины в зал шлёт ядро
-    nodes.echoSend.gain.setTargetAtTime(plate.fx.echo * 0.8, t, 0.05);
-    const cur = echoes[echoes.length - 1];
-    if (cur) for (const f of cur.fb) f.gain.setTargetAtTime(model.echoFb(), t, 0.05);
-    retime();
-  }
-  // эхо: на каждую долю — своя пара линий крест-накрест. Сменил долю или темп — звук идёт в новую пару с точным временем,
-  // старая больше не принимает и дозванивает своим (время задержки не едет — нет скрежета); живёт до 6 с, не больше 4 пар
-  let echoes = [], echoAt = 0, echoTimer = 0;
-  function echoPair(sec) {
-    const ctx = actx, g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const inp = g(0), dL = ctx.createDelay(3), dR = ctx.createDelay(3), merge = ctx.createChannelMerger(2), outG = g(1);
-    dL.delayTime.value = dR.delayTime.value = sec;
-    const lp = (n) => { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3000; n.connect(f); return f; };
-    const fb = [g(model.echoFb()), g(model.echoFb())], fL = lp(dL), fR = lp(dR);
-    inp.connect(dL); fL.connect(fb[0]).connect(dR); fR.connect(fb[1]).connect(dL);
-    dL.connect(merge, 0, 0); dR.connect(merge, 0, 1); merge.connect(outG).connect(nodes.out);
-    nodes.echoSend.connect(inp);
-    inp.gain.setTargetAtTime(1, ctx.currentTime, 0.01);
-    return { sec, inp, dL, dR, fb, outG, all: [inp, dL, dR, merge, outG, fL, fR, ...fb] };
-  }
-  function dropPair(p, fade) {
-    const i = echoes.indexOf(p);
-    if (i >= 0) echoes.splice(i, 1);
-    if (p.gone) return;
-    p.gone = true; clearTimeout(p.timer);
-    p.inp.gain.setTargetAtTime(0, actx.currentTime, 0.01);
-    p.outG.gain.setTargetAtTime(0, actx.currentTime, fade);
-    setTimeout(() => { for (const n of p.all) n.disconnect(); }, fade * 6000);
-  }
-  function retime() {
-    if (!nodes) return;
-    const cur = echoes[echoes.length - 1], sec = model.echoSec(), now = performance.now();
-    if (cur && Math.abs(cur.sec - sec) < 1e-4) return;
-    clearTimeout(echoTimer);
-    if (cur && now - echoAt < 90) { echoTimer = setTimeout(retime, 90 - (now - echoAt)); return; }   // тянешь луч или темп — не чаще 11 раз в секунду
-    echoAt = now;
-    if (cur) {
-      cur.inp.gain.setTargetAtTime(0, actx.currentTime, 0.01);
-      cur.timer = setTimeout(() => dropPair(cur, 0.3), 6000);
-    }
-    while (echoes.length >= 4) dropPair(echoes[0], 0.02);
-    echoes.push(echoPair(sec));
-  }
   function build(ctx, input) {
-    const g = (v) => { const n = ctx.createGain(); n.gain.value = v; return n; };
-    const out = g(2.5);                          // +8 дБ: пластина вровень с планетами Tenebrae (пики ловит общий ограничитель)
+    const out = ctx.createGain();
+    out.gain.value = 2.5;                        // +8 дБ: пластина вровень с планетами Tenebrae (пики ловит общий ограничитель)
     out.connect(input);
-    // посыл — в пластинчатый ревербер ядра (T.send('plate')); прежний ×2.5 стоял после возврата зала (out) — он и здесь: hall²·1.4·2.5
-    const hallSend = g(0);
-    hallSend.connect(g(2.5)).connect(T.send('plate'));
-    const echoSend = g(0);                       // эхо — пары линий в retime(), доля темпа с луча time (1/4d на 40 BPM — 2.25 с)
-    nodes = { out, hallSend, echoSend };
-    actx = ctx; echoes = [];                     // новый звуковой контекст — пары эха заводятся заново
-    k = T.core; lockSent = null; bowId.clear();   // новый контекст — новый узел ядра, модель в нём с нуля (перезапуск звука после смены выхода)
-    k.dry[SLOT].connect(out); k.dry[SLOT].connect(echoSend);
+    k = T.core; lockSent = null; bowId.clear();  // новый контекст — новый узел ядра, модель в нём с нуля (перезапуск звука после смены выхода)
+    k.dry[SLOT].connect(out);
     k.listen(heardFrom);
-    applyFx();
-    model.bind(k.send);                          // сцена — в новый узел целиком (высота, ручки тела, узор, ход)
+    model.bind(k.send);                          // сцена — в новый узел целиком (высота, ручки тела, узор, смычки, ход)
     syncLock();                                  // новый узел — сетка заново
-    for (const b of plate.bows) send(model.bowMsg(b, true));
   }
   function heardFrom(d) {                        // ~60 раз в секунду: зеркало и услышанное
     const w = d.w && d.w[SLOT];
     if (!w) return;
     if (w.mirror.length >= 32) { const m = parseMirror(w.mirror); energy = m.energy; voices = m.voices; level = m.level; }
-    if (w.mirror.length >= M.N) model.sync(w.mirror, d.n);   // модель — в фасад (что ядро уже применило — по номеру сообщения)
+    if (w.mirror.length >= M.N) { model.sync(w.mirror, d.n); echo = parseEcho(w.mirror); }   // модель — в фасад (что ядро уже применило — по номеру сообщения)
     if (w.heard.length) {
       for (const e of parseHeard(w.heard)) heard(e);          // играет шаг — view мигает удар и ноту
       for (const e of parseAnswers(w.heard)) answer(e.semi);  // нота удара совпала с основным тоном — резонатор отзывается
     }
   }
-  // резонатор отзывается (ядро решило: класс высоты ноты удара = основной тон пластины) — тихий гул и подпись ноты
-  let answerLast = 0;
-  function answer(semi) {
-    const own = Math.round(model.fs());
-    const now = performance.now();
-    heard({ t: 'answer', note: noteName(F_MIN * 2 ** (semi / 12)), at: now });
-    if (!nodes || !actx || now - answerLast < 250) return;
-    answerLast = now;
-    const t = actx.currentTime, o = actx.createOscillator(), o2 = actx.createOscillator(), gn = actx.createGain();
-    const hz = F_MIN * 2 ** (own / 12);
-    o.frequency.value = hz / 2; o2.frequency.value = hz; o2.detune.value = 4;
-    gn.gain.setValueAtTime(0, t); gn.gain.linearRampToValueAtTime(0.05, t + 0.15); gn.gain.exponentialRampToValueAtTime(0.0001, t + 1.6); gn.gain.linearRampToValueAtTime(0, t + 1.62);
-    o.connect(gn); o2.connect(gn); gn.connect(nodes.out); gn.connect(nodes.hallSend);
-    o.start(t); o2.start(t); o.stop(t + 1.65); o2.stop(t + 1.65);
-    o.onended = () => { o.disconnect(); o2.disconnect(); gn.disconnect(); };
-  }
+  // резонатор отзывается (ядро решило: класс высоты ноты удара = основной тон пластины; гул звучит там же) — подпись ноты
+  const answer = (semi) => heard({ t: 'answer', note: noteName(F_MIN * 2 ** (semi / 12)), at: performance.now() });
   function on(e) {                               // событие модели → ядро
     if (e.t === 'seq') {
       syncLock();                                // сетка — раньше действий узора: пуск часов сразу встаёт на узел (не ждёт следующих 25 мс)
-      if (nodes && echoBpm !== seq.bpm) { echoBpm = seq.bpm; applyFx(); }   // эхо идёт за темпом
-    } else if (e.t === 'fx') applyFx();
-    else if (e.t === 'bow' || e.t === 'strike') send(e.msg);   // смычки и удар по метке места — на уровне пластины; узор, высота и ручки — в ядре, у модели
+    } else if (e.t === 'bow' || e.t === 'strike') send(e.msg);   // живой смычок под пальцем и удар по метке места — на уровне пластины; узор, высота, ручки, эхо, закреплённые смычки — в ядре, у модели
   }
 
   return {
@@ -132,7 +60,6 @@ export function createEngine(T, model, ver) {
     start() {},                                    // ядро всегда в сборке — заводить нечего
     listen(fn) { listeners.push(fn); },
     get ready() { return !!(k && k.ready); }, get energy() { return energy; }, get voices() { return voices; }, get level() { return level; },
-    get echoMax() { return echoes.length ? echoes[echoes.length - 1].dL.delayTime.maxValue : 0; },
-    get echoChains() { return echoes.map((p) => ({ sec: p.sec, real: p.dL.delayTime.value })); },
+    get echoMax() { return echo.max; }, get echoChains() { return echo.chains; },
   };
 }

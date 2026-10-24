@@ -451,3 +451,92 @@ test('Cymatica [core]: без лада и с ладом хост и ядро в�
   assert.ok(m.noteList().includes(Math.round(12 * Math.log2(m.state.plate.f0 / 55))));
   assert.equal(m.coreSnapshot(), m.snapshot());
 });
+
+// ---------- этап 3: смычки, эхо и гул — в ядре ----------
+import { parseEcho, parseAnswers } from '../../worlds/cymatica/bridge.js';
+const dryOf = (m, blocks) => {                              // сухой выход слота: блоки по 128, L
+  const out = new Float32Array(blocks * 128);
+  for (let b = 0; b < blocks; b++) { m.core.process(128); out.set(m.core.dry(2, 0), b * 128); }
+  return out;
+};
+const humOff = (m) => m.core.action(2, 35, 0, [0]);
+
+test('Cymatica [core]: закреплённые смычки — ядро и эталон приходят к одному снимку, перезапуск звука смычки сохраняет', () => {
+  const j = jsModel({ rng: seeded(1) }), c = coreModel({ seed: 1, rng: seeded(1) });
+  const bj = [], bc = [];
+  for (const [m, bs] of [[j, bj], [c, bc]]) {
+    bs.push(m.addBow(0.2, 0.3), m.addBow(-0.4, 0.1), m.addBow(0.1, -0.6));
+    m.moveBow(bs[0], 0.25, 0.35); m.setBow(bs[1], { exciter: 0.6, pressure: 0.7, amp: 1 }); m.dropBow(bs[2]);
+  }
+  assert.equal(c.state.plate.bows.length, 2);
+  snapNear(j.snapshot(), c.snapshot(), 'bows facade vs reference');
+  snapNear(c.coreSnapshot(), c.snapshot(), 'bows core vs facade');
+  assert.equal(JSON.parse(c.coreSnapshot()).bows.length, 2);
+  c.rebind(5);                                              // новый узел: снимок — в ядро целиком, смычки — на пластину
+  snapNear(c.coreSnapshot(), c.snapshot(), 'bows after rebind');
+  c.dropBow(c.state.plate.bows[0]);                         // гнёзда сошлись: роняем первый — в ядре остаётся второй
+  snapNear(c.coreSnapshot(), c.snapshot(), 'bows after drop');
+  assert.equal(JSON.parse(c.coreSnapshot()).bows.length, 1);
+  c.addBow(0.3, 0.3); c.clear();                            // clear — прочь и узор, и смычки
+  assert.equal(c.state.plate.bows.length, 0);
+  assert.equal(JSON.parse(c.coreSnapshot()).bows.length, 0);
+});
+
+test('Cymatica [core]: смычок звучит в ядре и замолкает, когда его сняли', () => {
+  const m = coreModel(); humOff(m); m.setFx('echo', 0);
+  const b = m.addBow(0.2, 0.3);
+  const on = dryOf(m, 300);
+  assert.ok(Math.sqrt(on.reduce((s, x) => s + x * x, 0) / on.length) > 1e-3, 'смычок ведёт пластину');
+  m.dropBow(b);
+  dryOf(m, 600);
+  const off = dryOf(m, 50);
+  assert.ok(off.every((x) => Math.abs(x) < 1e-3), 'снят — звук ушёл');
+});
+
+test('Cymatica [core]: эхо — пара по доле темпа: возврат через время доли, смена доли — новая пара, старая звенит своим временем', () => {
+  const mk = (echo) => { const m = coreModel({ seed: 9 }); humOff(m); m.setFx('echo', echo); m.setBpm(120); m.setFx('time', 0.5); return m; };   // 1/8 при 120 — 0.25 с
+  const a = mk(0.6), b = mk(0);
+  const p = { x: 0.3, y: 0.1 };
+  a.strikeAt(p, 0, null); b.strikeAt(p, 0, null);
+  const A = dryOf(a, 200), B = dryOf(b, 200);
+  let first = -1;
+  for (let k = 0; k < A.length; k++) if (Math.abs(A[k] - B[k]) > 1e-9) { first = k; break; }
+  const d = Math.round(0.25 * 48000);
+  assert.ok(first >= d - 2 && first <= d + 2, `первый возврат эха на ${first}, ждали ~${d}`);
+  let ch = parseEcho(a.mirror()).chains;
+  assert.equal(ch.length, 1); assert.ok(Math.abs(ch[0].sec - 0.25) < 1e-6);
+  a.setFx('time', 1); dryOf(a, 10);                         // 1/4d: 3/2 доли — 0.75 с
+  ch = parseEcho(a.mirror()).chains;
+  assert.equal(ch.length, 2, 'новая пара, старая живёт');
+  assert.ok(Math.abs(ch[0].sec - 0.25) < 1e-6 && Math.abs(ch[1].sec - 0.75) < 1e-6, JSON.stringify(ch));
+  a.setBpm(40); a.setFx('time', 1); dryOf(a, 50);           // самая длинная доля помещается в линию: 1/4d на 40 BPM — 2.25 с
+  ch = parseEcho(a.mirror()).chains;
+  assert.ok(Math.abs(ch[ch.length - 1].sec - 2.25) < 1e-6 && parseEcho(a.mirror()).max >= 3, JSON.stringify(ch));
+});
+
+test('Cymatica [core]: эхо — до четырёх живых пар, смена доли не чаще 11 раз в секунду', () => {
+  const m = coreModel({ seed: 9 }); humOff(m); m.setFx('echo', 0.5);
+  dryOf(m, 40);
+  for (let i = 0; i < 8; i++) { m.setFx('time', (i % 2 ? 0.25 : 0.75)); m.setBpm(100 + i); dryOf(m, 12); }   // 8 смен за 0.26 с
+  assert.ok(parseEcho(m.mirror()).chains.length <= 4, `8 смен за 0.26 с склеиваются: ${parseEcho(m.mirror()).chains.length}`);   // первая пара + не больше трёх (0.09 с между сменами)
+  for (let i = 0; i < 8; i++) { m.setBpm(80 + 10 * i); dryOf(m, 40); }                  // смена раз в 0.107 с — каждая рождает пару, живых не больше четырёх
+  assert.equal(parseEcho(m.mirror()).chains.length, 4);
+});
+
+test('Cymatica [core]: гул резонатора — звучит при отзыве, затихает за 1.7 с, не чаще раза в 0.25 с', () => {
+  const mk = () => { const m = coreModel({ seed: 3 }); m.setFx('echo', 0); return m; };
+  const a = mk(), b = mk(); humOff(b);
+  const n = a.degPerOct(), own = C.cellCenter(0, 0, n);     // нота основного тона — отзыв
+  a.strikeAt(own, 0, null); b.strikeAt(own, 0, null);
+  const A = dryOf(a, 80), B = dryOf(b, 80);
+  const hum = A.map((x, k) => x - B[k]);
+  const peak = hum.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+  assert.ok(peak > 0.02 && peak < 0.12, `гул: пик ${peak}`);
+  a.strikeAt(own, 0, null); b.strikeAt(own, 0, null);       // второй удар вплотную — гул не удваивается (раз в 0.25 с)
+  const A2 = dryOf(a, 30), B2 = dryOf(b, 30);
+  assert.ok(A2.every((x, k) => Math.abs(x - B2[k]) < 0.12), 'второй гул не накладывается');
+  dryOf(a, 600); dryOf(b, 600);
+  const A3 = dryOf(a, 20), B3 = dryOf(b, 20);
+  assert.ok(A3.every((x, k) => Math.abs(x - B3[k]) < 1e-6), 'гул ушёл');
+  assert.ok(parseAnswers([a.core.heard(2)]).length >= 2, 'отзыв слышен и картинке');
+});

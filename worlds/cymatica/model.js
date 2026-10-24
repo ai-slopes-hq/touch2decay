@@ -76,10 +76,8 @@ export function createModel({ scale = { on: false, pcs: null, snap: (s) => s }, 
     sent.r = seq.rhythm.steps.slice(); sent.o = offs; sentKey = scaleKey();
     const msg = seqMessage(seq, notes, plate.fx.chance);
     state.sentSeq = { rhythm: msg.rhythm, melody: msg.melody };
-    emit({ t: 'seq', msg, born });               // engine: эхо идёт за темпом; view: вспышки
+    emit({ t: 'seq', msg, born });               // view: вспышки
   }
-  const bowMsg = (b, on) => ({ t: 'bow', id: b.id, x: b.x, y: b.y, on, exciter: b.exciter, pressure: b.pressure, amp: b.amp });
-  const sendBow = (b, on) => emit({ t: 'bow', msg: bowMsg(b, on) });
   const sendF0 = () => emit({ t: 'f0', hz: effF0() });
   const anyMark = () => seq.melody.steps.some(Boolean);
 
@@ -180,11 +178,13 @@ export function createModel({ scale = { on: false, pcs: null, snap: (s) => s }, 
   function toggleDrift() { drift.on = !drift.on; drift.k = 0; go(ACT.DRIFT_TOGGLE); sendF0(); sendSeq(); }
   function setDrift(k, t) { drift[k] = t; drift.on = true; go(ACT.DRIFT_SET, DRIFT_KEYS.indexOf(k), [t]); }
 
-  // ---------- смычки (выключены во view флагом BOWS_ON; пока на уровне пластины, в ядре модели их нет) ----------
-  function addBow(x, y) { const b = { id: `b${bowId++}`, x, y, exciter: 0, pressure: 0.5, amp: 0.8 }; plate.bows.push(b); sendBow(b, true); return b; }
-  function moveBow(b, x, y) { b.x = x; b.y = y; sendBow(b, true); }
-  function setBow(b, patch) { Object.assign(b, patch); sendBow(b, true); }
-  function dropBow(b) { sendBow(b, false); plate.bows = plate.bows.filter((q) => q !== b); }
+  // ---------- закреплённые смычки (выключены во view флагом BOWS_ON): в ядре; гнездо — по порядку списка, у фасада тот же порядок ----------
+  const BOWS_MAX = 6;                            // MAX_PBOWS ядра
+  const bowSet = (b) => { const i = plate.bows.indexOf(b); if (i >= 0) go(ACT.BOW_SET, i, [b.x, b.y, b.exciter, b.pressure, b.amp]); };
+  function addBow(x, y) { if (plate.bows.length >= BOWS_MAX) return null; const b = { id: `b${bowId++}`, x, y, exciter: 0, pressure: 0.5, amp: 0.8 }; plate.bows.push(b); go(ACT.BOW_ADD, 0, [x, y]); return b; }
+  function moveBow(b, x, y) { b.x = x; b.y = y; bowSet(b); }
+  function setBow(b, patch) { Object.assign(b, patch); bowSet(b); }
+  function dropBow(b) { const i = plate.bows.indexOf(b); if (i < 0) return; go(ACT.BOW_DROP, i); plate.bows.splice(i, 1); }
   // живой смычок под пальцем: id — палец
   const bowStart = (id, x, y) => emit({ t: 'bow', msg: { t: 'bow', id, x, y, on: true, exciter: 0, pressure: 0.5, amp: 0.8 } });
   const bowMove = (id, x, y) => emit({ t: 'bow', msg: { t: 'bow', id, x, y, on: true } });
@@ -224,7 +224,7 @@ export function createModel({ scale = { on: false, pcs: null, snap: (s) => s }, 
     sendSeq();
   }
   function clear() {                             // узор и смычки — прочь; длины колец и часы остаются
-    for (const b of plate.bows) sendBow(b, false); plate.bows = [];
+    plate.bows = [];
     seq.rhythm.steps.fill(null); seq.melody.steps.fill(null);
     go(ACT.CLEAR); sendSeq();
   }
@@ -237,16 +237,14 @@ export function createModel({ scale = { on: false, pcs: null, snap: (s) => s }, 
   });
   function restore(js) {                         // как прежняя модель — здесь; в ядро — одним restore (там то же самое)
     const st = JSON.parse(js);
-    for (const b of plate.bows) sendBow(b, false);
     plate.f0 = st.f0; Object.assign(plate.fx, { chance: 1 }, st.fx);
     if (st.drift) Object.assign(drift, st.drift); drift.k = 0; state.stepRec = null;
-    plate.bows = st.bows.map((b) => ({ ...b, id: `b${bowId++}` }));
+    plate.bows = st.bows.slice(0, BOWS_MAX).map((b) => ({ ...b, id: `b${bowId++}` }));
     seq.bpm = st.seq.bpm;
     seq.rhythm = { len: st.seq.rhythm.len, steps: st.seq.rhythm.steps.slice() };
     seq.melody = { len: st.seq.melody.len, steps: st.seq.melody.steps.slice() };
     at = post({ t: 'restore', slot: SLOT, js });
     sendF0(); emit({ t: 'params' }); emit({ t: 'fx' }); sendSeq();
-    for (const b of plate.bows) sendBow(b, true);
   }
   function load(o) {                             // готовый узор (рендер, отладка)
     const pad = (a) => Array.from({ length: SLOTS }, (_, i) => (a[i] === undefined ? null : a[i]));
@@ -299,7 +297,7 @@ export function createModel({ scale = { on: false, pcs: null, snap: (s) => s }, 
   }
 
   return {
-    state, noteList, degPerOct, scaleSemis, effF0, fs, base, notesOf, driftRate, driftDepth, echoDiv, echoSec, echoFb, bowMsg,
+    state, noteList, degPerOct, scaleSemis, effF0, fs, base, notesOf, driftRate, driftDepth, echoDiv, echoSec, echoFb,
     fillMelody, fillRhythm, play, rec, stepRecToggle, setCursor, cycleGrid, setF0, stepScale,
     strikeAt, markStrike, skipStep, setBpm, setLen, setChance, toggleBeat, nudgeNote, moveMark, dropMark, comb, turn,
     toggleDrift, setDrift, addBow, moveBow, setBow, dropBow, bowStart, bowMove, bowOff, setFx, loadFx,

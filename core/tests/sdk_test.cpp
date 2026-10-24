@@ -22,6 +22,8 @@
 #include "../sdk/world.hpp"
 #include "../host/host.hpp"
 #include "../host/scale.hpp"
+#include "../sdk/ad.hpp"
+#include "../sdk/pingpong.hpp"
 #include "../worlds/cymatica/world.hpp"
 #include "../worlds/firmamentum/world.hpp"
 
@@ -613,6 +615,8 @@ struct MockSink : cymatica::Sink {
   void hall(double) override {}
   void strike(double, double, double, bool) override { strikes++; }
   void answer(int semi) override { answers.push_back(semi); }
+  int bowOn = 0, bowOff = 0;
+  void bow(int, bool on, double, double, double, double, double) override { (on ? bowOn : bowOff)++; }
 };
 }  // namespace
 static void cymModel() {
@@ -655,9 +659,41 @@ static void cymModel() {
   CHECK(d.seqs == s1);
 }
 
+// PingPong: импульс на входе — левая линия отвечает через d сэмплов, правая — через 2d (через lowpass), выход затухает с fb; AD — вершина, экспонента, хвост, конец
+static void pingpongAd() {
+  static sdk::PingPong<4000> pp;
+  pp.prepare(48000, 0.01, 3000, 1, 0.5);                // 480 сэмплов
+  double l = 0, r = 0, firstL = -1, firstR = -1, peakL = 0, peakR = 0;
+  for (int k = 0; k < 4000; k++) {
+    pp.step(k == 0 ? 1 : 0, l, r);
+    if (firstL < 0 && std::fabs(l) > 1e-9) firstL = k;
+    if (firstR < 0 && std::fabs(r) > 1e-9) firstR = k;
+    peakL = std::fmax(peakL, std::fabs(l)); peakR = std::fmax(peakR, std::fabs(r));
+  }
+  CHECK(firstL == 480);
+  CHECK(firstR >= 960 && firstR <= 962);               // lowpass в петле чуть сдвигает фронт
+  CHECK(peakL > 0.99 && peakL < 1.01);                 // первый возврат — сам импульс
+  CHECK(peakR < 0.6 && peakR > 0.1);                   // второй — через lowpass и fb 0.5
+  pp.prepare(48000, 0.0, 3000, 1, 0.5);
+  CHECK(std::fabs(pp.sec() - 128.0 / 48000) < 1e-12);           // не короче блока Web Audio
+  pp.prepare(48000, 99, 3000, 1, 0.5);
+  CHECK(pp.sec() <= 4000.0 / 48000 + 1e-12);                       // не длиннее линии
+
+  sdk::AD ad;
+  CHECK(!ad.active());
+  ad.start(1000, 0.05, 0.15, 1.45, 0.0001, 0.02);
+  double v = 0, at15 = 0, at80 = 0, last = 1;
+  int n = 0;
+  while (ad.active() && n < 5000) { v = ad.step(); if (n == 150) at15 = v; if (n == 875) at80 = v; last = v; n++; }
+  CHECK(std::fabs(at15 - 0.05) < 1e-12);               // вершина в конце атаки
+  CHECK(std::fabs(at80 - 0.05 * std::pow(0.0001 / 0.05, 725.0 / 1450)) < 1e-12);   // экспонента: середина — среднее геометрическое
+  CHECK(n >= 1620 && n <= 1622 && last == 0);          // 1.62 с и тишина
+  CHECK(ad.step() == 0);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel();
+  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

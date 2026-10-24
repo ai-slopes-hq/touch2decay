@@ -5,12 +5,12 @@ export const SLOT = 2;
 export const ACT = {
   PARAMS: 0, F0: 1, STRIKE: 2, SEQ: 3, LOCK: 4, BOW: 5, FX: 6,                         // уровень пластины
   STRIKE_AT: 7, PLAY: 8, REC: 9, STEPREC: 10, SKIP: 11, CURSOR: 12, GRID: 13, BPM: 14, LEN: 15, CHANCE_AT: 16, BEAT: 17, NUDGE: 18, MOVE_MARK: 19,
-  DROP_MARK: 20, COMB: 21, TURN: 22, DRIFT_TOGGLE: 23, DRIFT_SET: 24, SET_F0: 25, STEP_SCALE: 26, SET_FX: 27, LOAD_FX: 28, DICE: 29, CLEAR: 30, LOAD: 31,   // уровень модели
+  DROP_MARK: 20, COMB: 21, TURN: 22, DRIFT_TOGGLE: 23, DRIFT_SET: 24, SET_F0: 25, STEP_SCALE: 26, SET_FX: 27, LOAD_FX: 28, DICE: 29, CLEAR: 30, LOAD: 31, BOW_ADD: 32, BOW_SET: 33, BOW_DROP: 34, HUM: 35,   // уровень модели
 };
 export const FX_KEYS = ['structure', 'damping', 'brightness', 'hall', 'echo', 'time', 'chance'];   // Fx в model.hpp
 export const DRIFT_KEYS = ['depth', 'rate', 'shape'];                                              // DriftKey
 // зеркало: 24 энергии, 4 × (hz, level), затем модель — те же смещения, что M_* в world.hpp
-export const M = { F0: 32, FX: 33, SEQ: 40, RHY: 45, MEL: 109, DRIFT: 157, MISC: 162, N: 169 };
+export const M = { F0: 32, FX: 33, SEQ: 40, RHY: 45, MEL: 109, DRIFT: 157, MISC: 162, ECHO: 169, N: 175 };
 const SLOTS = 16;                                          // гнёзд узора — как SLOTS в core.js
 const num = (x, d = NaN) => (x == null ? d : x);
 
@@ -62,6 +62,12 @@ export function parseModel(mb) {
   o.grid = mb[M.MISC]; o.lastHit = { x: mb[M.MISC + 1], y: mb[M.MISC + 2] }; o.cursor = mb[M.MISC + 3] < 0 ? null : mb[M.MISC + 3];
   o.stepRec = mb[M.MISC + 4] !== 0 ? { r: mb[M.MISC + 5], m: mb[M.MISC + 6] } : null;
   return o;
+}
+// эхо из зеркала: живые пары (время задержки, с) в порядке рождения и длина линии
+export function parseEcho(mb) {
+  const n = mb[M.ECHO], chains = [];
+  for (let i = 0; i < n; i++) chains.push({ sec: mb[M.ECHO + 1 + i], real: mb[M.ECHO + 1 + i] });
+  return { chains, max: mb[M.ECHO + 5] };
 }
 // зеркало: энергии 24 мод, затем (hz, level) четырёх голосов
 export function parseMirror(mb) {

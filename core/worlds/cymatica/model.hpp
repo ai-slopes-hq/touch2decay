@@ -35,7 +35,11 @@ struct Sink {
   virtual void hall(double h) = 0;
   virtual void strike(double x, double y, double hz, bool rec) = 0;
   virtual void answer(int semi) = 0;                     // нота удара = основной тон пластины по классу высоты — резонатор отзовётся
+  virtual void bow(int id, bool on, double x, double y, double exciter, double pressure, double amp) = 0;   // закреплённый смычок
 };
+
+constexpr int MAX_PBOWS = 6;                              // закреплённых смычков (view держит три); у пластины гнёзд 8 — остальное живым пальцам
+struct PBow { int pid = 0; double x = 0, y = 0, exciter = 0, pressure = 0.5, amp = 0.8; };
 
 struct Note { bool ok = false; int semi = 0; };
 
@@ -103,6 +107,11 @@ class Model {
   void loadFx(const double* a);                          // NFX значений (chance сбрасывается, как Object.assign({chance: 1}, o))
   void dice(uint32_t seed);
   void clear();
+  void addBow(double x, double y);                       // закреплённый смычок: гнездо — по порядку списка (как plate.bows у фасада)
+  void setBow(int i, double x, double y, double exciter, double pressure, double amp);
+  void dropBow(int i);
+  int nBows() const { return nBows_; }
+  const PBow& bowAt(int i) const { return bows_[i]; }
   void load(const double* a);                            // готовый узор: bpm, rlen, mlen, 16 × (on, vel, chance, has), 16 × (on, x, y)
   void tick(double dt);                                  // луна; лад сменили — ноты в пластину заново
   void answerCheck(int semi);                            // нота удара совпала с основным тоном пластины по классу высоты — слушателю «отзыв»
@@ -136,6 +145,10 @@ class Model {
   double depth_ = 0.3, rate_ = 0.5, shape_ = 0, t0_ = 0;
   int driftK_ = 0, driftRk_ = 0;
   long driftLast_ = -1;
+  PBow bows_[MAX_PBOWS];
+  int nBows_ = 0, bowSerial_ = 0;                        // номер для id у пластины (1000 + …: id живых пальцев — мелкие)
+  void bowOn(const PBow& b) { if (sink_) sink_->bow(b.pid, true, b.x, b.y, b.exciter, b.pressure, b.amp); }
+  void bowsOff();
   int grid_ = 1;
   double hitX_ = 0.3, hitY_ = 0;
   int cursor_ = -1;
