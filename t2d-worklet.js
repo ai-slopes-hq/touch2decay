@@ -1,5 +1,5 @@
 // t2d — один узел AudioWorklet на хост и все миры SDK (ядро core/bridge → t2d.wasm; байты приходят в processorOptions.wasm, зерно — processorOptions.seed).
-// processorOptions.worlds — слоты миров SDK (Firmamentum — 10). Входы: четыре стерео-посыла извне в ревербы room, plate, hall, cathedral.
+// processorOptions.worlds — слоты миров SDK (Cymatica — 2, Firmamentum — 10). Входы: четыре стерео-посыла извне в ревербы room, plate, hall, cathedral.
 // Выходы: [возврат ревербов, сухой звук каждого мира — в порядке worlds], все стерео. Ядро считает кусками по 128.
 // Внутрь: {t:'action', slot, kind, i, a}, {t:'fader', slot, g}, {t:'scale', on, idx, root}, {t:'snap', slot, id} → {t:'snap', id, js}, {t:'restore', slot, js}.
 // Наружу ~60 раз в секунду: {t:'m', n, w: {слот: {mirror, heard}}} — n: сколько сообщений порта уже применено (по нему фасад в вебе
@@ -30,15 +30,18 @@ function unutf8(b) {
   }
   return s;
 }
+// сборка без emscripten (core/build-wasi.sh) просит три функции WASI от stdio — не вызываются; emcc-сборке импорты не нужны
+const WASI_STUBS = { wasi_snapshot_preview1: { fd_close: () => 0, fd_seek: () => 0, fd_write: () => 0 } };
 class T2d extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const po = options.processorOptions || {};
     this.slots = po.worlds || [];
+    this.base = null; this.pend = [];                       // base — время контекста, с которого пошёл счёт ядра (первый блок); до него действия ждут
     this.x = null; this.queue = []; this.count = 0; this.applied = 0; this.every = Math.round(sampleRate / 60);
     this.heard = {}; for (const s of this.slots) this.heard[s] = [];
     this.port.onmessage = (e) => { if (this.x) this.apply(e.data); else this.queue.push(e.data); };
-    WebAssembly.instantiate(po.wasm, {}).then(({ instance }) => {
+    WebAssembly.instantiate(po.wasm, WASI_STUBS).then(({ instance }) => {
       const x = instance.exports;
       if (x._initialize) x._initialize();
       x.t2d_init(sampleRate, po.seed == null ? 1 : po.seed >>> 0);
@@ -51,9 +54,13 @@ class T2d extends AudioWorkletProcessor {
   nums(n) { this.views(this.x); return Array.from(this.mb.subarray(0, n)); }
   apply(d) {
     const x = this.x;
+    if (d.abs && this.base == null) { this.pend.push(d); return; }   // время контекста пока не с чем сверить: счёт ядра начнётся с первого блока
     this.applied++;
     if (d.t === 'action') {
-      const a = d.a || [], n = Math.min(a.length, 64);
+      const a = d.a ? d.a.slice() : [], n = Math.min(a.length, 256);
+      if (d.abs) {                                        // числа во времени контекста (сетка MIDI-часов) → во время ядра (секунды от старта счёта)
+        for (const k of d.abs) if (k < n) a[k] -= this.base;
+      }
       new Float64Array(x.memory.buffer, x.t2d_args(), n).set(a.slice(0, n));
       x.t2d_action(d.slot, d.kind, d.i | 0, x.t2d_args(), n);
     } else if (d.t === 'fader') x.t2d_fader(d.slot, d.g);
@@ -81,6 +88,7 @@ class T2d extends AudioWorkletProcessor {
     const x = this.x;
     if (!x) return true;                                  // выходы уже нулевые
     this.views(x);
+    if (this.base == null) { this.base = typeof currentTime === 'number' ? currentTime : 0; const p = this.pend; this.pend = []; for (const d of p) this.apply(d); }
     const out0 = outputs[0], n = out0[0].length, ns = this.slots.length;
     for (let k = 0; k < n; k += 128) {
       const m = Math.min(128, n - k);

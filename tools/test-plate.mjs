@@ -1,11 +1,11 @@
-// Тесты звука пластины без браузера: plate-worklet.js грузится в vm с заглушками AudioWorklet.
+// Тесты звука пластины без браузера: эталон tools/ref/plate-worklet.js (копия прежнего worklet, звук теперь в ядре) грузится в vm с заглушками AudioWorklet.
 //   node --test tools/test-plate.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const SRC = readFileSync(new URL('../plate-worklet.js', import.meta.url), 'utf8');
+const SRC = readFileSync(new URL('./ref/plate-worklet.js', import.meta.url), 'utf8');
 const FS = 48000;
 
 // шум смычка — Math.random: в тестах с фиксированным зерном, чтобы проверки не плавали
@@ -157,15 +157,6 @@ test('center vs edge', () => {
   run(e.proc, 0.2);
   const ee = lastEnergy(e.posted), me = Math.max(...ee);
   assert.ok(ee[1] > 1e-2 * me, 'edge wakes (1,1)');
-});
-
-test('shapes posted once', () => {
-  const { proc, posted } = plate();
-  run(proc, 0.1);
-  const s = posted.filter((m) => m.t === 'shapes');
-  assert.equal(s.length, 1);
-  assert.equal(s[0].n, 96);
-  assert.equal(s[0].grid.length, 24 * 96 * 96);
 });
 
 test('first process is cheap', () => {          // сетка форм мод не считается целиком в одном блоке звука

@@ -11,13 +11,17 @@
 #include "../sdk/dc.hpp"
 #include "../sdk/delay.hpp"
 #include "../sdk/json.hpp"
+#include "../sdk/knee.hpp"
 #include "../sdk/pan.hpp"
+#include "../sdk/resonator.hpp"
 #include "../sdk/reverb.hpp"
 #include "../sdk/rng.hpp"
 #include "../sdk/smooth.hpp"
+#include "../sdk/stepclock.hpp"
 #include "../sdk/world.hpp"
 #include "../host/host.hpp"
 #include "../host/scale.hpp"
+#include "../worlds/cymatica/world.hpp"
 #include "../worlds/firmamentum/world.hpp"
 
 static int fails = 0, checks = 0;
@@ -431,9 +435,134 @@ static void firmIds() {
   for (int i = 0; i < m.count(); i++) CHECK(m.star(i).id > 50);
 }
 
+// Knee: числа посчитаны в Node по формулам старого кода — outKnee пластины (прямая до 0.8) и knee() мастера хоста (k 2.6/tanh 2.6, kn 0.6, top 0.98)
+static void knee() {
+  const sdk::Knee o;                                    // умолчания — outKnee Cymatica
+  NEAR(o(0.5), 0.5, 0); NEAR(o(-0.5), -0.5, 0); NEAR(o(0.8), 0.80000000000000004, 0);
+  NEAR(o(1.0), 0.99593492992296739, 1e-15); NEAR(o(2.0), 1.5241186029158933, 1e-15); NEAR(o(-3.0), -1.5934877796545663, 1e-15);
+  NEAR(o(0), 0, 0);
+  const sdk::Knee m{2.6 / std::tanh(2.6), 0.6, 0.98 - 0.6};
+  NEAR(m(0.1), 0.26288452617325375, 1e-15); NEAR(m(0.3), 0.77454389743456264, 1e-15);
+  NEAR(m(-0.25), -0.65678292690523377, 1e-15); NEAR(m(0.9), 0.97993014290861091, 1e-15);
+  CHECK(m(5) <= 0.98 && m(5) > 0.97);                   // потолок не пробивается
+}
+
+// Resonator: коэффициенты и импульсная характеристика — из старого resCoefs (T60) и из HO (tau), 440 Гц, 48 кГц
+static void resonator() {
+  const sdk::ResCoef a = sdk::ResCoef::t60(440, 1.5, 48000), b = sdk::ResCoef::tau(440, 0.3, 48000);
+  NEAR(a.b1, 1.9964920785017966, 1e-15); NEAR(a.b2, -0.9998081363171082, 1e-15);
+  NEAR(b.b1, 1.9965449794568386, 1e-15); NEAR(b.b2, -0.9998611207557264, 1e-15);
+  const double want[6] = {0.057564026959567284, 0.11492612383143994, 0.17189611332903365, 0.22828515490460163, 0.28390637069893720, 0.33857546486259060};
+  const double g = std::sin(2 * 3.141592653589793 * 440 / 48000);
+  sdk::Resonator r;
+  for (int i = 0; i < 6; i++) NEAR(r.step(a, g, i == 0 ? 1 : 0), want[i], 1e-15);
+  r.reset();
+  NEAR(r.y1, 0, 0); NEAR(r.y2, 0, 0);
+  double y = 0;                                         // T60: через 1.5 с огибающая −60 дБ
+  sdk::Resonator q;
+  double peak1 = 0, peak2 = 0;
+  for (int i = 0; i < 72000; i++) { y = q.step(a, g, i == 0 ? 1 : 0); if (i > 100 && i < 4000) peak1 = std::fmax(peak1, std::fabs(y)); if (i > 68000) peak2 = std::fmax(peak2, std::fabs(y)); }
+  CHECK(peak2 < peak1 * 2e-3 && peak2 > peak1 * 8e-4);
+}
+
+// StepClock: stepSamples / nextTickFrame — как в старом plate-worklet.js (Math.round: половина вверх); ход часов по темпу и по сетке
+static void stepclock() {
+  CHECK(sdk::stepSamples(120, 48000) == 6000); CHECK(sdk::stepSamples(97.3, 48000) == 7400);
+  CHECK(sdk::stepSamples(60, 44100) == 11025); CHECK(sdk::stepSamples(133.7, 48000) == 5385);
+  CHECK(sdk::nextTickFrame(0, 0, 0.5, 48000) == 6000); CHECK(sdk::nextTickFrame(0.1, 0.013, 0.5, 48000) == 1824);
+  CHECK(sdk::nextTickFrame(0.2, 0.9, 0.4, 48000) == 4800); CHECK(sdk::nextTickFrame(1.234, 0.37, 0.48, 44100) == 4234);
+  CHECK(sdk::nextTickFrame(5, 0.1, 0.5, 48000) == 4800);
+  CHECK(sdk::jsRound(2.5) == 3 && sdk::jsRound(-2.5) == -2 && sdk::jsRound(0.49999) == 0);
+  const auto ticks = [](sdk::StepClock& c, int blocks) {         // сэмплы (от старта часов), на которых был шаг
+    std::vector<long> at;
+    for (int b = 0; b < blocks; b++) {
+      c.begin();
+      for (int k = 0; k < 128; k++, c.advance()) if (c.due()) { at.push_back(static_cast<long>(c.t())); c.rearm(k); }
+    }
+    return at;
+  };
+  sdk::StepClock c;
+  c.prepare(48000);
+  CHECK(!c.playing());
+  CHECK(ticks(c, 10).empty());                          // стоят — не тикают
+  const long t0 = static_cast<long>(c.t());
+  CHECK(c.set(true, 120));                              // пуск: первый шаг сразу
+  CHECK(!c.set(true, 120));                             // тот же вызов — не пуск
+  std::vector<long> a = ticks(c, 190);                  // ~24320 сэмплов: 0, 6000, 12000, 18000, 24000
+  CHECK(a.size() == 5);
+  if (a.size() == 5) for (int i = 0; i < 5; i++) CHECK(a[i] == t0 + 6000 * i);
+  c.set(true, 60);                                      // темп вдвое ниже на ходу: шаг от последнего тика, не от нуля
+  std::vector<long> b2 = ticks(c, 190);
+  CHECK(!b2.empty() && b2[0] > a.back() && b2[0] - a.back() <= 12000 + 128);
+  // сетка MIDI-часов: пуск при сетке — на узле (t0 = 0.013 с — сэмпл 624), дальше через p/4 = 6000 (за 12800 сэмплов — три шага)
+  sdk::StepClock d;
+  d.prepare(48000);
+  d.lock(false, 0.013, 0.5);
+  CHECK(d.locked());
+  CHECK(d.set(true, 120));
+  std::vector<long> g = ticks(d, 100);
+  CHECK(g.size() == 3);
+  if (g.size() == 3) { CHECK(g[0] == 624); CHECK(g[1] == 6624); CHECK(g[2] == 12624); }
+  d.lock(true, 0, 0);                                   // сетку сняли — снова по темпу
+  CHECK(!d.locked());
+}
+
+// Cymatica (слот 2): удар звучит, выход не выше колена 1.6, посыл в plate = L·hall²·1.4·2.5 с tau 0.05 с, часы дают шаги
+static void cymWorld() {
+  using namespace cymatica;
+  static Cymatica w;
+  w.prepare(48000, 7);
+  CHECK(w.rev() == sdk::Rev::plate);
+  CHECK(!w.sounding());
+  float L[128], R[128], sL[128], sR[128];
+  const sdk::Out out{L, R, sL, sR};
+  const double fx[1] = {1.0};
+  w.action(FX, 0, fx, 1);
+  const double hit[6] = {0.3, 0.1, 220, 1, 0.5, 0};
+  w.action(STRIKE, 0, hit, 6);
+  CHECK(w.sounding());
+  sdk::OnePole e;
+  const double target = 1.0 * SEND_K, c = 1 - std::exp(-1 / (SEND_TAU * 48000));
+  double peak = 0, err = 0;
+  for (int b = 0; b < 100; b++) {
+    w.process(out, 128);
+    for (int k = 0; k < 128; k++) {
+      peak = std::fmax(peak, std::fmax(std::fabs(L[k]), std::fabs(R[k])));
+      const double g = e.step(target, c);
+      err = std::fmax(err, std::fmax(std::fabs(sL[k] - L[k] * g), std::fabs(sR[k] - R[k] * g)));
+    }
+  }
+  CHECK(peak > 1e-3 && peak < 1.6);
+  CHECK(err <= 1e-6);
+  double m[64];
+  CHECK(w.mirror(m, 64) == MIRROR_N);
+  double e0 = 0;
+  for (int k = 0; k < NM; k++) e0 += m[k];
+  CHECK(e0 > 0);                                        // энергия мод есть
+  CHECK(m[NM] > 0 && m[NM + 1] > 0);                    // голос: hz и уровень
+  double hb[HEARD_MAX];
+  CHECK(w.heard(hb, HEARD_MAX) == 0);                   // часы стоят — шагов нет
+  // узор: 4 удара в ритме из 4 на 120 BPM, одно место мелодии
+  double sq[SEQ_N];
+  for (double& x : sq) x = 0;
+  sq[0] = 120; sq[1] = 1; sq[2] = 1; sq[3] = 4; sq[4] = 1;
+  for (int i = 0; i < 4; i++) { sq[5 + 3 * i] = 1; sq[6 + 3 * i] = 1; sq[7 + 3 * i] = 1; }
+  sq[5 + 3 * SLOTS] = 1; sq[6 + 3 * SLOTS] = 12; sq[7 + 3 * SLOTS] = 0.3; sq[8 + 3 * SLOTS] = 0.2;
+  w.action(SEQ, 0, sq, SEQ_N);
+  int steps = 0;
+  for (int b = 0; b < 375; b++) {                       // 1 с: шестнадцатые по 0.125 с — шаги на 0, 0.125, … 0.875
+    w.process(out, 128);
+    const int n = w.heard(hb, HEARD_MAX);
+    CHECK(n % HEARD_REC == 0);
+    for (int i = 0; i < n; i += HEARD_REC) { CHECK(hb[i] == 1); CHECK(hb[i + 4] == 1); steps++; }
+  }
+  CHECK(steps == 8);
+  CHECK(w.sounding());
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds();
+  rng(); onepole(); dc(); clip(); pan(); delay(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

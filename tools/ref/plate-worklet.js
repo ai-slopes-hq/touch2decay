@@ -1,4 +1,6 @@
-// Пластина Cymatica — AudioWorklet: 24 моды круглой пластины, удар / смычок / шум, 4 голоса-пластины.
+// Эталон для сверки ядра Cymatica (core/worlds/cymatica): копия прежнего plate-worklet.js (24 моды круглой пластины, удар / смычок /
+// шум, 4 голоса-пластины, часы секвенсера). Отличия: ГСЧ с зерном (mulberry32, processorOptions.seed) вместо Math.random — иначе
+// не с чем сверять шанс удара и шум смычка; песка (сетка форм мод, сообщение shapes) нет — звук от него не зависит.
 // Чистые функции — на верхнем уровне (их проверяет tools/test-plate.mjs через vm), процессор — внизу.
 // Спека: docs/superpowers/specs/2026-10-20-cymatica-design.md, часть 2.
 
@@ -153,8 +155,9 @@ function bowTable(d) { return Math.min(1, (Math.abs(d) * 5 + 0.75) ** -4); }
 
 if (typeof AudioWorkletProcessor !== 'undefined') {
   class PlateProcessor extends AudioWorkletProcessor {
-    constructor() {
+    constructor(options) {
       super();
+      this.seed = (options?.processorOptions?.seed ?? 1) >>> 0;   // зерно mulberry32
       this.fs = sampleRate;
       this.fx = { structure: 0.66, damping: 0.5, brightness: 0.5 };
       this.f0 = 110;
@@ -166,7 +169,6 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       this.strikes = [];
       this.bows = new Map();
       this.lp = 0;                                   // шум для возбудителя «дыхание»
-      this.grid = new Float32Array(NM * GRID_N * GRID_N); this.gridK = 0;   // сетка форм мод — по одной моде за блок
       this.count = 0; this.every = Math.round(this.fs / 30);
       this.enA = 1 - Math.exp(-1 / (0.05 * this.fs));
       // секвенсер: узор целиком из основного потока; r, m — текущие шаги ритма и мелодии; toNext — отсчётов до тика
@@ -177,6 +179,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       this.retune();
       this.port.onmessage = (e) => this.msg(e.data);
     }
+    rnd() { let t = (this.seed = (this.seed + 0x6D2B79F5) >>> 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
     retune() {
       this.ratios = modeRatios(this.fx.structure);
       this.t60 = t60s(this.ratios, this.fx.damping, this.fx.brightness);
@@ -246,7 +249,7 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
       this.r = (this.r + 1) % sq.rhythm.len;
       this.m = (this.m + 1) % sq.melody.len;
       this.lastTick = this.t;
-      const st0 = sq.rhythm.steps[this.r], hit = !!st0 && Math.random() < (st0.chance == null ? 1 : st0.chance) * (sq.chance == null ? 1 : sq.chance);   // шанс удара: свой у шага × общий
+      const st0 = sq.rhythm.steps[this.r], hit = !!st0 && this.rnd() < (st0.chance == null ? 1 : st0.chance) * (sq.chance == null ? 1 : sq.chance);   // шанс удара: свой у шага × общий
       this.port.postMessage({ t: 'step', r: this.r, m: this.m, time: this.t / this.fs, hit });
       const st = hit ? st0 : null, mel = sq.melody.steps[this.m];
       const at = mel && mel.g ? mel : st, semi = mel == null || typeof mel === 'number' ? mel : mel.s;
@@ -273,10 +276,6 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
     }
     process(inputs, outputs) {
       const out = outputs[0], L = out[0], R = out[1] || out[0], N = L.length, fs = this.fs;
-      if (this.gridK < NM) {
-        this.grid.set(modeGrid(this.gridK, GRID_N), this.gridK * GRID_N * GRID_N);
-        if (++this.gridK === NM) this.port.postMessage({ t: 'shapes', n: GRID_N, grid: this.grid });
-      }
       // смычки звучат на текущей высоте: голос этой ноты (или самый тихий, перестроенный)
       let bi = -1;
       if (this.bows.size) {
@@ -306,12 +305,12 @@ if (typeof AudioWorkletProcessor !== 'undefined') {
         }
         if (bi >= 0) {
           const v = this.voices[bi];
-          this.lp += 0.1 * (Math.random() * 2 - 1 - this.lp);
+          this.lp += 0.1 * (this.rnd() * 2 - 1 - this.lp);
           for (const b of this.bows.values()) {
             let vp = 0;                               // скорость пластины в точке смычка
             for (let k = 0; k < NM; k++) vp += b.g[k] * (v.y1[k] - v.y2[k]);
             const vb = 0.25, fric = bowTable(vb - vp) / bowTable(vb);
-            const bow = (Math.random() * 2 - 1) * fric, breath = this.lp * 3;
+            const bow = (this.rnd() * 2 - 1) * fric, breath = this.lp * 3;
             const e = ((1 - b.exciter) * bow + b.exciter * breath) * b.amp * (0.5 + b.pressure) * BOW_GAIN;
             for (let k = 0; k < NM; k++) v.x[k] += b.g[k] * e * v.wb[k];
           }

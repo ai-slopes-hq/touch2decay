@@ -28,7 +28,7 @@
 | № | Мир | Код | Заметки |
 |---|---|---|---|
 | I | Tenebrae — планеты вокруг солнца, морф-таблицы, связи, LFO | `app.js` | `docs/worlds/tenebrae.md` |
-| II | Cymatica — пластина/ханг, полиритм ритм × места | `worlds/cymatica/`, `plate-worklet.js` | `docs/worlds/cymatica.md` |
+| II | Cymatica — пластина/ханг, полиритм ритм × места | `worlds/cymatica/`, звук и часы — ядро C++ `core/worlds/cymatica` → `t2d.wasm` (слот 2) | `docs/worlds/cymatica.md` |
 | III | **выключен** (`HIDDEN` в `app.js`) · Laboratorium — FM-дрон как Lyra-8, колбы и трубки | `laboratorium.js` | `docs/worlds/laboratorium.md` |
 | IV | Natura — секвенсер-река, кувшинки | `worlds/natura/` | `docs/worlds/natura.md` |
 | V | Inferno — шумы + резонаторы, девять кругов | `worlds/inferno/` | `docs/worlds/inferno.md` |
@@ -36,7 +36,7 @@
 | VII | Monochordum — Карплус — Стронг, страм, ветер, автострам | `worlds/monochord/`, `monochord-worklet.js` | `docs/worlds/monochordum.md` |
 | VIII | Oceanus — сканирующий синтез, карта T-O, луна | `worlds/oceanus/`, `ocean-worklet.js` (обёртка), ядро C++ `core/worlds/oceanus` → `ocean.wasm` | `docs/worlds/oceanus.md` |
 | IX | Horologium (Nova) — волшебные числа: кольца II…IX, n ударов за оборот на n-й гармонике (Rhythmicon), унтертоны, фаза, маятник руками, ритм → аккорд за limen | `worlds/horologium/`, `horo-worklet.js` | `docs/worlds/horologium.md` |
-| X | Firmamentum — пульсарный синтез, свод (**образец model / engine / view**) | `worlds/firmamentum/` (model.js — фасад, engine.js — склейка), модель и звук — ядро SDK C++ `core/worlds/firmamentum` → `t2d.wasm` (слот 10 в `t2d-worklet.js`) | `docs/worlds/firmamentum.md` |
+| X | Firmamentum — пульсарный синтез, свод (**образец model / engine / view**) | `worlds/firmamentum/` (model.js — фасад, engine.js — склейка), модель и звук — ядро SDK C++ `core/worlds/firmamentum` → `t2d.wasm` (слот 10 в `t2d-worklet.js`; Cymatica — слот 2) | `docs/worlds/firmamentum.md` |
 | XI | Tria corpora — задача трёх тел, FM по кругу | `worlds/tria/` | `docs/worlds/tria.md` |
 | XII | Arcadia — wave terrain, страна в псевдоперспективе, кубик — новая страна | `worlds/arcadia/`, `terrain-worklet.js` | `docs/worlds/arcadia.md` |
 | XIII | Portus — dub techno: одна дорожка-фарватер на 16 шагов (кораблик — удар, поперёк — нота), аккорд и октава −2…+2 у маяка, луна-фильтр, буй-эхо, туман-ревер, небо гасит эхо | `worlds/portus/` | `docs/worlds/portus.md` |
@@ -87,7 +87,7 @@
 
 **Не класть**: «нет» / «своё» из §6 (пластина Cymatica, bytebeat, окна пульсаров, мост струн…) — в `core/worlds/<мир>/`; паритет-хелперы (`jsRound`, `f32()`) — не в блоки (§7); картинку и раскладку `mirror` — у мира; блоки выключенных миров (III, XVII, XVIII) — отложены (решение 8). Сомнение «блок или мир» — спросить автора вариантами.
 
-**В `core/sdk/` сейчас (23.10):** `Biquad` (семантика Web Audio, Q в дБ у LP/HP), `DcBlock{R}`, `OnePole` (сглаживание / гейн голоса вверх-вниз), `softclip(x, k)` = tanh, `panLin(p, spread)`, `Delay` + `Allpass` (внешний буфер, линейная интерполяция), `Rng` (mulberry32, бит в бит с эталоном JS), `Reverb` = `Fdn4` (room / hall / cathedral) + `Plate` (Dattorro), `Json` (снимки, не для `process`), интерфейс `World` (`prepare / action / process / rev / mirror / heard / snapshot / restore / sounding`). Хост (`core/host/`): миры по слотам, посыл × фейдер → четыре ревербера, `Scale`. **Ещё нет** (кандидаты из инвентаризации): `Resonator`/модальный банк, `BpBank`, `Phasor` и чтение таблиц, `WaveTables` (морф 9 таблиц), `DetuneStack`, `Shaper`/`Knee`, `AD`/`Param` (таймлайн AudioParam), `PingPong`/лента/хорус, `KsLoop`, `EnergyMeter`/`BlockTimer`, `Transport` + планировщик, `RowLfo`. Добавил или убрал блок — поправь этот список.
+**В `core/sdk/` сейчас (23.10):** `Biquad` (семантика Web Audio, Q в дБ у LP/HP), `DcBlock{R}`, `OnePole` (сглаживание / гейн голоса вверх-вниз), `softclip(x, k)` = tanh, `panLin(p, spread)`, `Delay` + `Allpass` (внешний буфер, линейная интерполяция), `Rng` (mulberry32, бит в бит с эталоном JS), `Reverb` = `Fdn4` (room / hall / cathedral) + `Plate` (Dattorro), `Resonator` (двухполюсный, `ResCoef` по T60 / τ), `Knee` (колено выхода), `StepClock` (часы секвенсера в сэмплах: шаг, MIDI-замок, пропуск), `Json` (снимки, не для `process`), интерфейс `World` (`prepare / action / process / rev / mirror / heard / snapshot / restore / sounding`). Хост (`core/host/`): миры по слотам, посыл × фейдер → четыре ревербера, `Scale`. **Ещё нет** (кандидаты из инвентаризации): модальный банк, `BpBank`, `Phasor` и чтение таблиц, `WaveTables` (морф 9 таблиц), `DetuneStack`, `Shaper`, `AD`/`Param` (таймлайн AudioParam), `PingPong`/лента/хорус, `KsLoop`, `EnergyMeter`/`BlockTimer`, `Transport`, `RowLfo`. Добавил или убрал блок — поправь этот список.
 
 ## LFO в плашках миров (хост: модель — `host/sl.js`, плашка и панель — `host/sheet.js`)
 

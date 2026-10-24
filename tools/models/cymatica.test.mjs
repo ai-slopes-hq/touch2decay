@@ -1,5 +1,5 @@
 // Тесты модели Cymatica (worlds/cymatica/core.js, model.js) в Node: помощники секвенсера и раскладки ханга (бывший tools/test-seq.mjs),
-// полиритм (узор модели → часы plate-worklet.js), сообщение seq, луна, снимок, кубик с зерном.
+// полиритм (узор модели → часы ядра), сообщение seq, луна, снимок, кубик с зерном.
 //   node --test tools/models/cymatica.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -115,9 +115,9 @@ test('transposeHits: k steps up, hit moves to the new cell, clamped to the rings
 });
 
 // ---------- модель ----------
-// часы секвенсера — в plate-worklet.js: грузим его в vm (как tools/test-plate.mjs) и гоним узор модели по шагам
+// часы секвенсера — в ядре (эталон — tools/ref/plate-worklet.js): грузим его в vm (как tools/test-plate.mjs) и гоним узор модели по шагам
 function plateProc() {
-  const SRC = readFileSync(new URL('../../plate-worklet.js', import.meta.url), 'utf8'), posted = [], reg = {};
+  const SRC = readFileSync(new URL('../ref/plate-worklet.js', import.meta.url), 'utf8'), posted = [], reg = {};
   const ctx = {
     sampleRate: 48000, currentTime: 0, Math, Float32Array, Float64Array, Array, Object, Number, JSON,
     AudioWorkletProcessor: class { constructor() { this.port = { postMessage: (m) => posted.push(m), onmessage: null }; } },
