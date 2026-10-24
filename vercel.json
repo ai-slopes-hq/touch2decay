@@ -1,3 +1,4 @@
 {
-  "buildCommand": "sh tools/build-info.sh"
+  "buildCommand": "sh tools/build-info.sh",
+  "outputDirectory": "."
 }
