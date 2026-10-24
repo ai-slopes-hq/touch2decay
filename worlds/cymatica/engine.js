@@ -1,9 +1,10 @@
-// Cymatica — звук: пластина и часы секвенсера живут в ядре SDK (core/worlds/cymatica → t2d.wasm, узел хоста T.core, слот 2).
+// Cymatica — звук: модель, пластина и часы секвенсера живут в ядре SDK (core/worlds/cymatica → t2d.wasm, узел хоста T.core, слот 2).
 // Здесь: сухой выход ×2.5 — в канал микшера (посыл в пластинчатый зал и фейдер — в ядре, hall²·1.4·2.5), эхо по долям темпа и гул резонатора
-// (пока на Web Audio, этап 3). События модели → action ядра (bridge.js; пока узла нет, ждут в очереди хоста). Метры — energy, voices, level
-// из зеркала (~60/с). Обратно (listen) — что услышано: { t: 'step', r, m, time, hit } — играет шаг; { t: 'answer', note, at } — резонатор отзывается.
+// (пока на Web Audio, этап 3). Порт ядра отдаётся фасаду модели (bind), зеркало — ему (sync); удары по меткам и смычки — action пластины
+// (bridge.js; пока узла нет, ждут в очереди хоста). Метры — energy, voices, level из зеркала (~60/с). Обратно (listen) — что услышано:
+// { t: 'step', r, m, time, hit } — играет шаг; { t: 'answer', note, at } — резонатор отзывается (ядро решает, отзывается ли: класс высоты ноты = основной тон).
 import { F_MIN, noteName } from './core.js';
-import { SLOT, toAction, parseHeard, parseMirror } from './bridge.js';
+import { SLOT, M, toAction, parseHeard, parseAnswers, parseMirror } from './bridge.js';
 
 export function createEngine(T, model, ver) {
   const { plate, seq } = model.state;
@@ -26,15 +27,11 @@ export function createEngine(T, model, ver) {
     send(g ? { t: 'lock', t0: g.t0, p: g.p } : { t: 'lock', off: true });
   }
   T.onTick(syncLock);                            // таймер 25 мс + метроном из звукового потока
-  function sendParams() {
-    const { structure, damping, brightness } = plate.fx;
-    send({ t: 'params', structure, damping, brightness });
-  }
+  model.onAct(syncLock);                         // и перед каждым действием модели: сетка — раньше пуска часов
   function applyFx() {
     if (!nodes) return;
     const t = T.ctx.currentTime;
     nodes.hallSend.gain.setTargetAtTime(plate.fx.hall * plate.fx.hall * 1.4, t, 0.05);   // только гул резонатора: звук пластины в зал шлёт ядро
-    send({ t: 'hall', hall: plate.fx.hall });
     nodes.echoSend.gain.setTargetAtTime(plate.fx.echo * 0.8, t, 0.05);
     const cur = echoes[echoes.length - 1];
     if (cur) for (const f of cur.fb) f.gain.setTargetAtTime(model.echoFb(), t, 0.05);
@@ -88,12 +85,11 @@ export function createEngine(T, model, ver) {
     const echoSend = g(0);                       // эхо — пары линий в retime(), доля темпа с луча time (1/4d на 40 BPM — 2.25 с)
     nodes = { out, hallSend, echoSend };
     actx = ctx; echoes = [];                     // новый звуковой контекст — пары эха заводятся заново
-    k = T.core; lockSent = null; bowId.clear();   // новый контекст — новый узел ядра, пластина в нём с нуля (перезапуск звука после смены выхода)
+    k = T.core; lockSent = null; bowId.clear();   // новый контекст — новый узел ядра, модель в нём с нуля (перезапуск звука после смены выхода)
     k.dry[SLOT].connect(out); k.dry[SLOT].connect(echoSend);
     k.listen(heardFrom);
     applyFx();
-    send({ t: 'f0', hz: model.effF0() });
-    sendParams();
+    model.bind(k.send);                          // сцена — в новый узел целиком (высота, ручки тела, узор, ход)
     syncLock();                                  // новый узел — сетка заново
     for (const b of plate.bows) send(model.bowMsg(b, true));
   }
@@ -101,23 +97,16 @@ export function createEngine(T, model, ver) {
     const w = d.w && d.w[SLOT];
     if (!w) return;
     if (w.mirror.length >= 32) { const m = parseMirror(w.mirror); energy = m.energy; voices = m.voices; level = m.level; }
-    if (w.heard.length) for (const e of parseHeard(w.heard)) onMsg(e);
-  }
-  function onMsg(d) {
-    if (d.t === 'step') {                        // играет шаг — view мигает удар и ноту; нота своя — резонатор отзывается
-      heard(d);
-      if (seq.rhythm.steps[d.r] && d.hit !== false && seq.melody.steps[d.m]) {
-        const n = model.state.sentSeq && model.state.sentSeq.melody.steps[d.m];
-        if (n) answer(n.s);
-      }
-      return;
+    if (w.mirror.length >= M.N) model.sync(w.mirror, d.n);   // модель — в фасад (что ядро уже применило — по номеру сообщения)
+    if (w.heard.length) {
+      for (const e of parseHeard(w.heard)) heard(e);          // играет шаг — view мигает удар и ноту
+      for (const e of parseAnswers(w.heard)) answer(e.semi);  // нота удара совпала с основным тоном — резонатор отзывается
     }
   }
-  // резонатор отзывается: нота удара совпала с его собственной (класс высоты основного тона пластины) — тихий гул и подпись ноты
+  // резонатор отзывается (ядро решило: класс высоты ноты удара = основной тон пластины) — тихий гул и подпись ноты
   let answerLast = 0;
   function answer(semi) {
     const own = Math.round(model.fs());
-    if (((semi - own) % 12 + 12) % 12 !== 0) return;
     const now = performance.now();
     heard({ t: 'answer', note: noteName(F_MIN * 2 ** (semi / 12)), at: now });
     if (!nodes || !actx || now - answerLast < 250) return;
@@ -132,14 +121,10 @@ export function createEngine(T, model, ver) {
   }
   function on(e) {                               // событие модели → ядро
     if (e.t === 'seq') {
-      syncLock();                                // сетка — раньше узора: пуск в worklet сразу встаёт на узел (не ждёт следующих 25 мс)
-      send(e.msg);
+      syncLock();                                // сетка — раньше действий узора: пуск часов сразу встаёт на узел (не ждёт следующих 25 мс)
       if (nodes && echoBpm !== seq.bpm) { echoBpm = seq.bpm; applyFx(); }   // эхо идёт за темпом
-    } else if (e.t === 'f0') send({ t: 'f0', hz: e.hz });
-    else if (e.t === 'params') sendParams();
-    else if (e.t === 'fx') applyFx();
-    else if (e.t === 'bow') send(e.msg);
-    else if (e.t === 'strike') { send(e.msg); if (e.answer != null) answer(e.answer); }
+    } else if (e.t === 'fx') applyFx();
+    else if (e.t === 'bow' || e.t === 'strike') send(e.msg);   // смычки и удар по метке места — на уровне пластины; узор, высота и ручки — в ядре, у модели
   }
 
   return {

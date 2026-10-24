@@ -550,7 +550,8 @@ static void stepclock() {
 // Cymatica (слот 2): удар звучит, выход не выше колена 1.6, посыл в plate = L·hall²·1.4·2.5 с tau 0.05 с, часы дают шаги
 static void cymWorld() {
   using namespace cymatica;
-  static Cymatica w;
+  static Scale sc;
+  static Cymatica w(sc);
   w.prepare(48000, 7);
   CHECK(w.rev() == sdk::Rev::plate);
   CHECK(!w.sounding());
@@ -574,8 +575,8 @@ static void cymWorld() {
   }
   CHECK(peak > 1e-3 && peak < 1.6);
   CHECK(err <= 1e-6);
-  double m[64];
-  CHECK(w.mirror(m, 64) == MIRROR_N);
+  double m[256];
+  CHECK(w.mirror(m, 256) == MIRROR_N);
   double e0 = 0;
   for (int k = 0; k < NM; k++) e0 += m[k];
   CHECK(e0 > 0);                                        // энергия мод есть
@@ -594,15 +595,69 @@ static void cymWorld() {
     w.process(out, 128);
     const int n = w.heard(hb, HEARD_MAX);
     CHECK(n % HEARD_REC == 0);
-    for (int i = 0; i < n; i += HEARD_REC) { CHECK(hb[i] == 1); CHECK(hb[i + 4] == 1); steps++; }
+    for (int i = 0; i < n; i += HEARD_REC) if (hb[i] == 1) { CHECK(hb[i + 4] == 1); steps++; }   // тип 2 — резонатор отзывается
   }
   CHECK(steps == 8);
   CHECK(w.sounding());
 }
 
+// Модель Cymatica без пластины: кубик с зерном — один узор, снимок → restore → тот же снимок, смена лада шлёт узор заново, удар по ноте основного тона — отзыв
+namespace {
+struct MockSink : cymatica::Sink {
+  int seqs = 0, strikes = 0;
+  std::vector<int> answers;
+  double lastF0 = 0;
+  void seq(const double*) override { seqs++; }
+  void f0(double hz) override { lastF0 = hz; }
+  void params(double, double, double) override {}
+  void hall(double) override {}
+  void strike(double, double, double, bool) override { strikes++; }
+  void answer(int semi) override { answers.push_back(semi); }
+};
+}  // namespace
+static void cymModel() {
+  using namespace cymatica;
+  Scale sc;
+  MockSink a, b;
+  Model ma(sc), mb(sc);
+  ma.bind(&a); mb.bind(&b);
+  ma.reset(1); mb.reset(2);
+  ma.dice(42); mb.dice(42);                             // зерно кубика — своё, не от reset
+  CHECK(ma.snapshot() == mb.snapshot());
+  CHECK(ma.playing() && a.seqs > 0);
+  const std::string s0 = ma.snapshot();
+  Model mc(sc);
+  MockSink c;
+  mc.bind(&c);
+  mc.reset(3);
+  mc.restore(s0);
+  CHECK(mc.snapshot() == s0);
+  mc.dice(43);
+  CHECK(mc.snapshot() != s0);
+  ma.clear();
+  bool any = false;                                     // clear: узор прочь, ход и длины остаются
+  for (int i = 0; i < SLOTS; i++) any = any || ma.rhythm(i).on || ma.melody(i).on;
+  CHECK(!any && ma.playing());
+  // смена лада: узор с местами мелодии уходит пластине заново
+  MockSink d;
+  Scale sc2;
+  Model md(sc2);
+  md.bind(&d);
+  md.reset(5);
+  md.dice(7);
+  const int before = d.seqs;
+  sc2.on = true; sc2.idx = 1; sc2.root = 3;
+  md.tick(0.01);
+  CHECK(d.seqs > before);
+  // время ядра: тик без игры ничего не шлёт
+  const int s1 = d.seqs;
+  md.tick(0.01);
+  CHECK(d.seqs == s1);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld();
+  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

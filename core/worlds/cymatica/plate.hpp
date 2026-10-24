@@ -10,15 +10,15 @@
 #include "../../sdk/resonator.hpp"
 #include "../../sdk/rng.hpp"
 #include "../../sdk/stepclock.hpp"
+#include "model.hpp"
 
 namespace cymatica {
 
-constexpr int NM = 24, NV = 4, SLOTS = 16, MAX_STRIKES = 16, MAX_BOWS = 8, HEARD_CAP = 8;
+constexpr int NM = 24, NV = 4, MAX_STRIKES = 16, MAX_BOWS = 8, HEARD_CAP = 8;   // SLOTS и SEQ_N — в model.hpp
 // узор — плоский массив чисел (сообщение action SEQ): bpm, playing, chance, rhythm.len, melody.len,
 // затем SLOTS шагов ритма (on, vel, chance) и SLOTS шагов мелодии (on, s, x, y); пустое поле (NaN) — по умолчанию
-constexpr int SEQ_N = 5 + SLOTS * 3 + SLOTS * 4;
 
-struct StepEvent { int r, m; double time; bool hit; };
+struct StepEvent { int r, m; double time; bool hit; double note; };   // note — нота (полутоны от 55 Гц) удара шага мелодии, NaN — удара нет или место молчит
 
 class Plate {
  public:
@@ -36,6 +36,8 @@ class Plate {
   double voiceHz(int i) const { return v_[i].hz; }
   double voiceLevel(int i) const { return v_[i].level; }
   int events(StepEvent* out, int cap);                     // шаги, сыгранные с прошлого вызова; очищает
+  // последний тик часов: шаги ритма и мелодии и сколько шагов прошло с него (дробно) — модель привязывает к нему удар при записи игрой
+  bool phase(int& r, int& m, double& steps) const;
 
  private:
   struct Voice {

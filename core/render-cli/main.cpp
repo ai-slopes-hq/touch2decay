@@ -25,6 +25,7 @@ int main() {
   std::unique_ptr<firmamentum::Sound> firm;
   std::unique_ptr<oceanus::Ocean> ocean;
   std::unique_ptr<cymatica::Cymatica> cym;
+  Scale scale;                                          // лад хоста для моделей миров SDK (без лада)
   bool isFirm = false, isOcean = false, isCym = false;
   float L[BLOCK], R[BLOCK];
   std::string line;
@@ -34,7 +35,7 @@ int main() {
     if (!(in >> cmd)) continue;
     if (cmd == "world") { std::string w; in >> w; isFirm = w == "firmamentum"; isOcean = w == "oceanus"; isCym = w == "cymatica"; if (!isFirm && !isOcean && !isCym && w != "goetia") { std::fprintf(stderr, "unknown world: %s\n", w.c_str()); return 1; } continue; }
     if (isCym) {
-      if (cmd == "init") { double sr; uint32_t seed; in >> sr >> seed; cym = std::make_unique<cymatica::Cymatica>(); cym->prepare(sr, seed); continue; }
+      if (cmd == "init") { double sr; uint32_t seed; in >> sr >> seed; cym = std::make_unique<cymatica::Cymatica>(scale); cym->prepare(sr, seed); continue; }
       if (!cym) { std::fprintf(stderr, "init first\n"); return 1; }
       if (cmd == "act") {
         int kind, i, n; in >> kind >> i >> n;

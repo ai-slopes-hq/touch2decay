@@ -16,7 +16,7 @@
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
-static cymatica::Cymatica cym;
+static cymatica::Cymatica cym(host.scale());
 static oceanus::Oceanus ocean(host.scale());
 static goetia::World goe(host.scale());
 static monochord::World mono(host.scale());

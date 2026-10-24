@@ -1,7 +1,16 @@
-// Cymatica ↔ ядро: сообщения формата прежнего worklet (их шлёт модель, они же — сценарии сверки) → action мира SDK (слот 2).
-// Коды и раскладка чисел — core/worlds/cymatica/world.hpp; пустое поле — NaN (Float64Array его сохраняет). Без DOM и Web Audio.
+// Cymatica ↔ ядро: сообщения формата прежнего worklet (они же — сценарии сверки) → action мира SDK (слот 2); действия модели (ACT от STRIKE_AT)
+// шлёт фасад (model.js) — модель в ядре. Коды и раскладка чисел — core/worlds/cymatica/world.hpp; пустое поле — NaN (Float64Array его сохраняет).
+// Без DOM и Web Audio.
 export const SLOT = 2;
-export const ACT = { PARAMS: 0, F0: 1, STRIKE: 2, SEQ: 3, LOCK: 4, BOW: 5, FX: 6 };
+export const ACT = {
+  PARAMS: 0, F0: 1, STRIKE: 2, SEQ: 3, LOCK: 4, BOW: 5, FX: 6,                         // уровень пластины
+  STRIKE_AT: 7, PLAY: 8, REC: 9, STEPREC: 10, SKIP: 11, CURSOR: 12, GRID: 13, BPM: 14, LEN: 15, CHANCE_AT: 16, BEAT: 17, NUDGE: 18, MOVE_MARK: 19,
+  DROP_MARK: 20, COMB: 21, TURN: 22, DRIFT_TOGGLE: 23, DRIFT_SET: 24, SET_F0: 25, STEP_SCALE: 26, SET_FX: 27, LOAD_FX: 28, DICE: 29, CLEAR: 30, LOAD: 31,   // уровень модели
+};
+export const FX_KEYS = ['structure', 'damping', 'brightness', 'hall', 'echo', 'time', 'chance'];   // Fx в model.hpp
+export const DRIFT_KEYS = ['depth', 'rate', 'shape'];                                              // DriftKey
+// зеркало: 24 энергии, 4 × (hz, level), затем модель — те же смещения, что M_* в world.hpp
+export const M = { F0: 32, FX: 33, SEQ: 40, RHY: 45, MEL: 109, DRIFT: 157, MISC: 162, N: 169 };
 const SLOTS = 16;                                          // гнёзд узора — как SLOTS в core.js
 const num = (x, d = NaN) => (x == null ? d : x);
 
@@ -31,8 +40,28 @@ export function toAction(m, idOf = (id) => id) {
 // «услышанное» ядра: записи по 5 — [1, r, m, time, hit] на каждый сыгранный шаг
 export function parseHeard(recs) {
   const out = [];
-  for (const h of recs) for (let p = 0; p + 4 < h.length; p += 5) out.push({ t: 'step', r: h[p + 1], m: h[p + 2], time: h[p + 3], hit: h[p + 4] !== 0 });
+  for (const h of recs) for (let p = 0; p + 4 < h.length; p += 5) if (h[p] === 1) out.push({ t: 'step', r: h[p + 1], m: h[p + 2], time: h[p + 3], hit: h[p + 4] !== 0 });
   return out;
+}
+// резонатор отзывается: записи [2, нота] — нота удара совпала с основным тоном пластины по классу высоты
+export function parseAnswers(recs) {
+  const out = [];
+  for (const h of recs) for (let p = 0; p + 4 < h.length; p += 5) if (h[p] === 2) out.push({ t: 'answer', semi: h[p + 1] });
+  return out;
+}
+// модель из зеркала: числа как в M_*; шаги — { on, … } как есть (пустые — on: false)
+export function parseModel(mb) {
+  const o = { f0: mb[M.F0], fx: {}, bpm: mb[M.SEQ], playing: mb[M.SEQ + 1] !== 0, rec: mb[M.SEQ + 2] !== 0, rlen: mb[M.SEQ + 3], mlen: mb[M.SEQ + 4], rhythm: [], melody: [] };
+  FX_KEYS.forEach((k, i) => { o.fx[k] = mb[M.FX + i]; });
+  for (let i = 0; i < 16; i++) {
+    const r = M.RHY + i * 4, m = M.MEL + i * 3;
+    o.rhythm.push({ on: mb[r] !== 0, vel: mb[r + 1], chance: mb[r + 2], has: mb[r + 3] !== 0 });
+    o.melody.push({ on: mb[m] !== 0, x: mb[m + 1], y: mb[m + 2] });
+  }
+  o.drift = { on: mb[M.DRIFT] !== 0, depth: mb[M.DRIFT + 1], rate: mb[M.DRIFT + 2], shape: mb[M.DRIFT + 3], k: mb[M.DRIFT + 4] };
+  o.grid = mb[M.MISC]; o.lastHit = { x: mb[M.MISC + 1], y: mb[M.MISC + 2] }; o.cursor = mb[M.MISC + 3] < 0 ? null : mb[M.MISC + 3];
+  o.stepRec = mb[M.MISC + 4] !== 0 ? { r: mb[M.MISC + 5], m: mb[M.MISC + 6] } : null;
+  return o;
 }
 // зеркало: энергии 24 мод, затем (hz, level) четырёх голосов
 export function parseMirror(mb) {

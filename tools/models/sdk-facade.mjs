@@ -5,20 +5,21 @@
 // tick(dt) → tick фасада и process на round(dt·sr) сэмплов кусками ≤ 128 (в асинхронном — сначала flush), потом зеркало.
 // Так же устроен tools/models/firmamentum-core.mjs (Firmamentum — первым, со своими помощниками).
 import { loadT2d } from '../t2d-core.mjs';
-import { scl, snapSemi } from '../../host/scale.js';
+import { scl, snapSemi, SCALES } from '../../host/scale.js';
 import { seeded } from './util.mjs';
 
 export const SR = 48000;
 // лад хоста {on, idx, root} для фасада: snapSemi из host/scale.js (у него общее состояние scl — ставим на время вызова)
 export const hostScale = (sc) => ({
   get on() { return sc.on; }, get root() { return sc.root; },
+  get pcs() { return sc.on ? SCALES[sc.idx].steps.map((x) => (x + sc.root) % 12) : null; },   // классы высот лада, как scalePCs в host/scale.js
   snap(s) { const keep = { ...scl }; Object.assign(scl, sc); const r = snapSemi(s); Object.assign(scl, keep); return r; },
 });
 
 // facade — createModel мира, slot — его слот в ядре, actions — методы фасада, после которых синхронный порт сразу шлёт зеркало
 // wake — код action, которым мир просыпается при входе (Oceanus), — шлётся сразу после init, как enter у вошедшего мира;
-// heard — фасаду нужно услышанное ядра (sync(mirror, applied, [запись])) — Tria: вспышки
-export function sdkFacade(facade, slot, actions, { seed = 1, scale = null, rng = seeded(seed), async = false, wake = null, heard = false, ...opts } = {}) {
+// heard — фасаду нужно услышанное ядра (sync(mirror, applied, [запись])) — Tria: вспышки; chunk(core) — после каждого куска process (Cymatica собирает услышанное)
+export function sdkFacade(facade, slot, actions, { seed = 1, scale = null, rng = seeded(seed), async = false, wake = null, heard = false, chunk = null, ...opts } = {}) {
   const sc = scale ? { ...scale } : { on: false, idx: 0, root: 0 };
   let core = null, sent = 0, applied = 0;
   const queue = [];
@@ -40,7 +41,7 @@ export function sdkFacade(facade, slot, actions, { seed = 1, scale = null, rng =
     if (async) flush();
     m.tick(dt);
     let n = Math.round(dt * SR);
-    while (n > 0) { const k = Math.min(128, n); core.process(k); n -= k; }
+    while (n > 0) { const k = Math.min(128, n); core.process(k); if (chunk) chunk(core); n -= k; }
     deliver();
   };
   Object.defineProperty(out, 'core', { get: () => core });

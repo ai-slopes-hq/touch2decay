@@ -241,8 +241,8 @@ void Plate::tick() {
   m_ = (m_ + 1) % mlen_;
   const RStep& st0 = rhythm_[r_];
   const bool hit = st0.on && rng_.next() < st0.chance * chance_;   // шанс удара: свой у шага × общий
-  if (nEv_ < HEARD_CAP) ev_[nEv_++] = {r_, m_, static_cast<double>(clock_.t()) / fs_, hit};
   const MStep& mel = melody_[m_];
+  if (nEv_ < HEARD_CAP) ev_[nEv_++] = {r_, m_, static_cast<double>(clock_.t()) / fs_, hit, hit && mel.on ? mel.s : std::nan("")};
   if (!hit || !mel.on || static_cast<double>(clock_.t()) - lastLive_ < static_cast<double>(clock_.stepN()) / 2) return;   // шаг мелодии без места — пауза
   doStrike(mel.g, F_LO * std::pow(2.0, mel.s / 12), st0.vel, 0.5);
 }
@@ -329,6 +329,12 @@ bool Plate::sounding() const {
   if (clock_.playing() || nStrikes_ > 0 || nBows_ > 0) return true;
   for (const Voice& v : v_) if (v.awake) return true;
   return false;
+}
+
+bool Plate::phase(int& r, int& m, double& steps) const {
+  if (!clock_.playing() || r_ < 0 || clock_.stepN() <= 0) return false;
+  r = r_; m = m_; steps = static_cast<double>(clock_.sinceTick()) / static_cast<double>(clock_.stepN());
+  return true;
 }
 
 int Plate::events(StepEvent* out, int cap) {
