@@ -1,19 +1,25 @@
-// Cymatica — звук: пластина в plate-worklet.js (часы секвенсера — тоже там), зал, эхо по долям темпа, гул резонатора.
-// События модели → сообщения worklet (пока узел грузится, ждут в очереди). Метры — energy, voices, level (из сообщения energy ~30/с).
-// Обратно (listen) — что услышано: сообщение worklet { t: 'step', r, m, time, hit } — играет шаг; { t: 'answer', note, at } — резонатор отозвался.
+// Cymatica — звук: пластина и часы секвенсера живут в ядре SDK (core/worlds/cymatica → t2d.wasm, узел хоста T.core, слот 2).
+// Здесь: сухой выход ×2.5 — в канал микшера (посыл в пластинчатый зал и фейдер — в ядре, hall²·1.4·2.5), эхо по долям темпа и гул резонатора
+// (пока на Web Audio, этап 3). События модели → action ядра (bridge.js; пока узла нет, ждут в очереди хоста). Метры — energy, voices, level
+// из зеркала (~60/с). Обратно (listen) — что услышано: { t: 'step', r, m, time, hit } — играет шаг; { t: 'answer', note, at } — резонатор отзывается.
 import { F_MIN, noteName } from './core.js';
+import { SLOT, toAction, parseHeard, parseMirror } from './bridge.js';
 
 export function createEngine(T, model, ver) {
   const { plate, seq } = model.state;
-  let node = null, ready = false, nodes = null, actx = null, entered = false, started = false;
+  let k = null, nodes = null, actx = null;
   let energy = new Float32Array(24), level = 0, voices = [], echoBpm = 0;
-  const queue = [], listeners = [];
+  const listeners = [], bowId = new Map();
   const heard = (e) => { for (const fn of listeners) fn(e); };
-  function send(msg) { if (ready) node.port.postMessage(msg); else queue.push(msg); }
-  // сетка MIDI-часов — в worklet (там тики секвенсера); шлём при смене, не каждые 25 мс
+  const idOf = (id) => { if (!bowId.has(id)) bowId.set(id, bowId.size + 1); return bowId.get(id); };
+  function send(msg) {                           // сообщение формата прежнего worklet → action ядра (t0 сетки — во времени контекста, abs)
+    const a = toAction(msg, idOf);
+    if (a && k) k.send({ t: 'action', slot: SLOT, kind: a.kind, i: a.i, a: a.a, abs: a.abs });
+  }
+  // сетка MIDI-часов — в ядре (там тики секвенсера); шлём при смене, не каждые 25 мс
   let lockSent = null;
   function syncLock() {
-    if (!started) return;                        // модуль пластины не заведён — слать некому (очередь не копим)
+    if (!k) return;                              // ядра ещё нет (до первого build)
     const g0 = T.midiGrid(), g = g0 && g0.p > 0 ? g0 : null, a = lockSent;   // сетка с p ≤ 0 — не сетка
     if (g ? a && a.t0 === g.t0 && a.p === g.p : !a) return;
     lockSent = g ? { t0: g.t0, p: g.p } : null;
@@ -27,7 +33,8 @@ export function createEngine(T, model, ver) {
   function applyFx() {
     if (!nodes) return;
     const t = T.ctx.currentTime;
-    nodes.hallSend.gain.setTargetAtTime(plate.fx.hall * plate.fx.hall * 1.4, t, 0.05);
+    nodes.hallSend.gain.setTargetAtTime(plate.fx.hall * plate.fx.hall * 1.4, t, 0.05);   // только гул резонатора: звук пластины в зал шлёт ядро
+    send({ t: 'hall', hall: plate.fx.hall });
     nodes.echoSend.gain.setTargetAtTime(plate.fx.echo * 0.8, t, 0.05);
     const cur = echoes[echoes.length - 1];
     if (cur) for (const f of cur.fb) f.gain.setTargetAtTime(model.echoFb(), t, 0.05);
@@ -81,28 +88,21 @@ export function createEngine(T, model, ver) {
     const echoSend = g(0);                       // эхо — пары линий в retime(), доля темпа с луча time (1/4d на 40 BPM — 2.25 с)
     nodes = { out, hallSend, echoSend };
     actx = ctx; echoes = [];                     // новый звуковой контекст — пары эха заводятся заново
-    started = false; ready = false; node = null; lockSent = null;  // и модуль пластины — заново (перезапуск звука после смены выхода)
+    k = T.core; lockSent = null; bowId.clear();   // новый контекст — новый узел ядра, пластина в нём с нуля (перезапуск звука после смены выхода)
+    k.dry[SLOT].connect(out); k.dry[SLOT].connect(echoSend);
+    k.listen(heardFrom);
     applyFx();
-    if (entered) start();
     send({ t: 'f0', hz: model.effF0() });
     sendParams();
     syncLock();                                  // новый узел — сетка заново
     for (const b of plate.bows) send(model.bowMsg(b, true));
   }
-  // модуль пластины — только когда в Cymatica впервые зашли и звук уже есть: тем, кто играет лишь в Tenebrae, он ничего не стоит
-  function start() {
-    if (started || !actx) return;
-    started = true;
-    const ctx = actx;
-    ctx.audioWorklet.addModule(`plate-worklet.js?v=${ver}`).then(() => {
-      node = new AudioWorkletNode(ctx, 'plate', { numberOfInputs: 0, outputChannelCount: [2] });
-      node.connect(nodes.out); node.connect(nodes.hallSend); node.connect(nodes.echoSend);
-      node.port.onmessage = (e) => onMsg(e.data);
-      ready = true;
-      for (const m of queue.splice(0)) node.port.postMessage(m);
-    });
+  function heardFrom(d) {                        // ~60 раз в секунду: зеркало и услышанное
+    const w = d.w && d.w[SLOT];
+    if (!w) return;
+    if (w.mirror.length >= 32) { const m = parseMirror(w.mirror); energy = m.energy; voices = m.voices; level = m.level; }
+    if (w.heard.length) for (const e of parseHeard(w.heard)) onMsg(e);
   }
-  function enter() { entered = true; start(); }  // вход в мир: модуль пластины заводится (и после перезапуска звука — тоже)
   function onMsg(d) {
     if (d.t === 'step') {                        // играет шаг — view мигает удар и ноту; нота своя — резонатор отзывается
       heard(d);
@@ -112,7 +112,6 @@ export function createEngine(T, model, ver) {
       }
       return;
     }
-    if (d.t === 'energy') { voices = d.voices; energy = d.e; level = d.voices.reduce((s, v) => s + v.level, 0); }   // формы мод (shapes) больше не нужны: песка нет
   }
   // резонатор отзывается: нота удара совпала с его собственной (класс высоты основного тона пластины) — тихий гул и подпись ноты
   let answerLast = 0;
@@ -131,7 +130,7 @@ export function createEngine(T, model, ver) {
     o.start(t); o2.start(t); o.stop(t + 1.65); o2.stop(t + 1.65);
     o.onended = () => { o.disconnect(); o2.disconnect(); gn.disconnect(); };
   }
-  function on(e) {                               // событие модели → worklet
+  function on(e) {                               // событие модели → ядро
     if (e.t === 'seq') {
       syncLock();                                // сетка — раньше узора: пуск в worklet сразу встаёт на узел (не ждёт следующих 25 мс)
       send(e.msg);
@@ -145,9 +144,9 @@ export function createEngine(T, model, ver) {
 
   return {
     build, on, send,                               // send — только для отладки (t2d.cym.strike, bow)
-    start: enter,
+    start() {},                                    // ядро всегда в сборке — заводить нечего
     listen(fn) { listeners.push(fn); },
-    get ready() { return ready; }, get energy() { return energy; }, get voices() { return voices; }, get level() { return level; },
+    get ready() { return !!(k && k.ready); }, get energy() { return energy; }, get voices() { return voices; }, get level() { return level; },
     get echoMax() { return echoes.length ? echoes[echoes.length - 1].dL.delayTime.maxValue : 0; },
     get echoChains() { return echoes.map((p) => ({ sec: p.sec, real: p.dL.delayTime.value })); },
   };

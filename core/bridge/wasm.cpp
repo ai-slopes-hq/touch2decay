@@ -1,10 +1,11 @@
 // Мост ядра SDK для WASM (t2d.wasm): хост и все миры SDK в одном модуле, его крутит t2d-worklet.js (в Node — tools/t2d-core.mjs).
-// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Monochordum — 7, Oceanus — 8, Horologium — 9, Firmamentum — 10, Tria — 11, Arcadia — 12, Goetia — 15.
+// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Cymatica — 2, Monochordum — 7, Oceanus — 8, Horologium — 9, Firmamentum — 10, Tria — 11, Arcadia — 12, Goetia — 15.
 // Обмен — через буферы ядра: аргументы action (t2d_args), зеркало и услышанное (t2d_mbuf), строка снимка (t2d_str_buf + длина).
 #include <cstring>
 #include <string>
 
 #include "../host/host.hpp"
+#include "../worlds/cymatica/world.hpp"
 #include "../worlds/firmamentum/world.hpp"
 #include "../worlds/oceanus/world.hpp"
 #include "../worlds/goetia/world.hpp"
@@ -15,6 +16,7 @@
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
+static cymatica::Cymatica cym;
 static oceanus::Oceanus ocean(host.scale());
 static goetia::World goe(host.scale());
 static monochord::World mono(host.scale());
@@ -22,15 +24,19 @@ static horologium::World horo(host.scale());
 static arcadia::World arc(host.scale());
 static tria::World tria3(host.scale());
 static sdk::World* worlds[Host::SLOTS] = {};
-static double args[64];
+static constexpr int ARGS_CAP = 256;                    // узор Cymatica — 117 чисел
+static double args[ARGS_CAP];
 static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59, Monochordum — 52, Horologium — 47, Tria — 47, Arcadia — 65
 static constexpr int STR_CAP = 1 << 16;
 static char str[STR_CAP];
 
-// libc++ при сбое (нет памяти под строку снимка) печатает в stderr — это тянуло бы импорты WASI (fd_write …); у нас — просто ловушка
+// libc++ при сбое (нет памяти под строку снимка) печатает в stderr — это тянуло бы импорты WASI (fd_write …); у нас — просто ловушка.
+// Только для emscripten (inline-пространство __2 у его libc++); без него (core/build-wasi.sh) то же — в core/bridge/wasi.cpp
+#ifdef __EMSCRIPTEN__
 namespace std { inline namespace __2 {
 [[noreturn]] void __libcpp_verbose_abort(const char*, ...) noexcept { __builtin_trap(); }
 } }
+#endif
 // старый emscripten (3.1.6): abort → _Exit → импорт WASI proc_exit; модуль без импортов — тоже ловушка
 extern "C" void _Exit(int) { __builtin_trap(); }
 
@@ -42,6 +48,9 @@ API void t2d_init(double sr, unsigned seed) {
   firm.prepare(sr, seed);                               // зерно мира — то же (Rng модели; у ревербов — seed + тип)
   worlds[10] = &firm;
   host.add(10, &firm);
+  cym.prepare(sr, seed);                                // Cymatica: шанс удара и шум смычка — от зерна
+  worlds[2] = &cym;
+  host.add(2, &cym);
   ocean.prepare(sr, seed);
   worlds[8] = &ocean;
   host.add(8, &ocean);
@@ -64,7 +73,7 @@ API void t2d_init(double sr, unsigned seed) {
 API double* t2d_args() { return args; }
 API void t2d_action(int slot, int kind, int i, const double* a, int n) {
   if (n < 0) n = 0;
-  if (n > 64) n = 64;
+  if (n > ARGS_CAP) n = ARGS_CAP;
   host.action(slot, kind, i, a, n);
 }
 API void t2d_process(int n) { host.process(n); }

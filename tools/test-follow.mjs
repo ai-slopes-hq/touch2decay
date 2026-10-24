@@ -170,18 +170,20 @@ for (const world of ['portus', 'natura']) {
   });
 }
 
-// ---------- Cymatica: сетка уходит в worklet раньше узора (пуск встаёт на узел) ----------
+// ---------- Cymatica: сетка уходит в ядро раньше узора (пуск встаёт на узел) ----------
 test('cymatica: play sends the lock before the seq message', async () => {
   const sent = [];
-  globalThis.AudioWorkletNode = class { constructor() { this.port = { postMessage: (m) => sent.push(m) }; } connect() {} };
   const cym = { model: await import('../worlds/cymatica/model.js'), engine: await import('../worlds/cymatica/engine.js') };
-  const ticks = [], grid = { t0: 1, p: 0.5 };
-  const T = { onTick: (fn) => ticks.push(fn), send: () => node(), midiGrid: () => grid, ctx: { currentTime: 1 } };
+  let grid = null;                                      // сетки при сборке нет — появляется к пуску
+  const ticks = [];
+  const core = { dry: { 2: node() }, ready: true, listen() {}, send: (m) => { sent.push(m); return sent.length; } };
+  const T = { onTick: (fn) => ticks.push(fn), send: () => node(), core, midiGrid: () => grid, ctx: { currentTime: 1 } };
   const model = cym.model.createModel(), engine = cym.engine.createEngine(T, model, 'test');
   model.listen(engine.on);
   engine.build(fakeCtx([], []), node()); engine.start();
-  await new Promise((ok) => setTimeout(ok, 0));
-  sent.length = 0; model.play(true);
-  const i = sent.findIndex((m) => m.t === 'lock'), j = sent.findIndex((m) => m.t === 'seq');
+  sent.length = 0; grid = { t0: 1, p: 0.5 }; model.play(true);
+  const LOCK = 4, SEQ = 3;                              // коды action — worlds/cymatica/bridge.js
+  const i = sent.findIndex((m) => m.t === 'action' && m.kind === LOCK), j = sent.findIndex((m) => m.t === 'action' && m.kind === SEQ);
   assert.ok(i >= 0 && j >= 0 && i < j, `lock at ${i}, seq at ${j}`);
+  assert.deepEqual(sent[i].abs, [1]);                   // t0 — во времени контекста: worklet переведёт во время ядра
 });

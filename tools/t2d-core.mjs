@@ -7,7 +7,7 @@ let mod = null;
 
 export function loadT2d() {
   if (!mod) mod = new WebAssembly.Module(readFileSync(WASM));
-  const x = new WebAssembly.Instance(mod, {}).exports;
+  const x = new WebAssembly.Instance(mod, { wasi_snapshot_preview1: { fd_close: () => 0, fd_seek: () => 0, fd_write: () => 0 } }).exports;
   if (x._initialize) x._initialize();
   const f64 = (p, n) => new Float64Array(x.memory.buffer, p, n);
   const f32 = (p, n) => new Float32Array(x.memory.buffer, p, n);

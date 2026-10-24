@@ -28,7 +28,7 @@
 | № | Мир | Код | Заметки |
 |---|---|---|---|
 | I | Tenebrae — планеты вокруг солнца, морф-таблицы, связи, LFO | `app.js` | `docs/worlds/tenebrae.md` |
-| II | Cymatica — пластина/ханг, полиритм ритм × места | `worlds/cymatica/`, `plate-worklet.js` | `docs/worlds/cymatica.md` |
+| II | Cymatica — пластина/ханг, полиритм ритм × места | `worlds/cymatica/`, звук и часы — ядро C++ `core/worlds/cymatica` → `t2d.wasm` (слот 2) | `docs/worlds/cymatica.md` |
 | III | **выключен** (`HIDDEN` в `app.js`) · Laboratorium — FM-дрон как Lyra-8, колбы и трубки | `laboratorium.js` | `docs/worlds/laboratorium.md` |
 | IV | Natura — секвенсер-река, кувшинки | `worlds/natura/` | `docs/worlds/natura.md` |
 | V | Inferno — шумы + резонаторы, девять кругов | `worlds/inferno/` | `docs/worlds/inferno.md` |
@@ -73,6 +73,21 @@
 - **Отклонения, принятые на шаге 5:** у мира без «услышанного» engine может не иметь `listen` (Goetia, Oceanus — view читает метры); что пришло из worklet и нужно модели, кладёт в модель **склейка** (`engine.listen(h => model.…)`), а не engine (у миров SDK — зеркало ядра: энергия струн Monochordum, центры петель Arcadia); состояние касания (рисуемая печать Goetia) — во view, склейка сбрасывает его в `clear` / `restore`.
 - **Миры на узлах (шаг 6, Inferno, Paradisus):** узлы — только в engine (`N[k]`, `Map` голосов), не в состоянии модели; «голос собран» модель узнаёт от склейки (Paradisus: `a.sung` через `model.voiced` — от него Gloria, chime, свечение). Где мир шагал по `dt` кадра с обрезкой 0.05 с, так и осталось (иначе после паузы Gloria сыпала бы пачку зёрен). То, что раньше пересчитывалось раз в N мс каждый кадр (буря, лёд Inferno, дрейф гласной Paradisus), — событие модели раз в N с её времени.
 - **Секвенсеры (шаг 7, Horologium, Portus, Natura, Cymatica):** модель говорит, *что* играет шаг и *сколько* он длится (как автострам Monochordum: `autoStep(step)` / `stepDur(step)`; Portus — `nextGap`, swing; Natura — `stepNote(step)`, `voice(pd)`; шанс — через `rng`), **часы — в engine** (`ctx.currentTime`, `T.onTick` — таймер 25 мс и метроном из worklet, запас 200 мс, опоздавший шаг пропускается) или **в worklet**, где они уже были (Cymatica — узор целиком сообщением `seq`, его собирает чистая `seqMessage` в `worlds/cymatica/core.js`) или **в ядре** (Monochordum с D1: `sdk::Steps` по часам хоста; Horologium с D2: колесо и замок к такту по сетке хоста — так переедут и остальные секвенсеры). `seq.next` / `seq.step` — в engine (`t2d.<мир>.seq` — геттеры), бегунок на экране — метр engine. Сыгранный шаг (`step` из worklet, `{note, at}`, удар эха) — «услышано» → view (вспышки, утки, лягушка); время касания для записи игрой (`recordHit`, `nearestStep`) view передаёт в модель параметром.
+
+## SDK звука: что взять, что положить (лукап перед работой со звуком)
+
+Перед любой работой со звуком мира (перенос в C++, баг в DSP, новый блок) — сверка с SDK, до кода:
+1. **Что уже есть** — `core/sdk/` (список ниже) и `core/host/`. Решения автора и вопросы — `docs/sdk-inventory.md` §8–9.
+2. **Что у мира** — строка мира в матрице `docs/sdk-inventory.md` §6 и его блоки в §2 (колонка «один блок?»).
+3. В ответе автору — коротко: **берём** из SDK …, **кладём** в SDK …, **остаётся** в мире ….
+
+**Брать** (не копировать формулу в мир): блок есть в `core/sdk/` — использовать его; близкие константы мира — параметрами блока, звук не меняется (решение 4). Зал — только посыл в общий ревербер хоста (`Out.sL/sR` + `rev()` у мира SDK, `T.send(rev)` на Web Audio), своего `hall()` нет. Лад — `const Scale&` хоста. Случайность — `sdk::Rng` от зерна (`prepare(sr, seed)`), никакого `Math.random`/`rand()`.
+
+**Класть** в SDK: блок помечен в инвентаризации «да» / «да·п», нужен 2+ мирам (или общий для хоста), в `core/sdk/` его нет. Правила блока: header в `core/sdk/`, `namespace sdk`, без аллокаций в `process` (память — внешний буфер или внутри объекта), без DOM / Web Audio / UI; константы — параметры конструктора, умолчание — как у первого мира; тест в `core/tests/sdk_test.cpp`; миры, которые на него переходят, проходят свою сверку 1e-6 без изменений. Потом — строка в список ниже и в `core/README.md`.
+
+**Не класть**: «нет» / «своё» из §6 (пластина Cymatica, bytebeat, окна пульсаров, мост струн…) — в `core/worlds/<мир>/`; паритет-хелперы (`jsRound`, `f32()`) — не в блоки (§7); картинку и раскладку `mirror` — у мира; блоки выключенных миров (III, XVII, XVIII) — отложены (решение 8). Сомнение «блок или мир» — спросить автора вариантами.
+
+**В `core/sdk/` сейчас (24.10):** `Biquad` (семантика Web Audio, Q в дБ у LP/HP), `DcBlock{R}`, `OnePole` (сглаживание / гейн голоса вверх-вниз), `softclip(x, k)` = tanh, `panLin(p, spread)`, `Delay` + `Allpass` (внешний буфер, линейная интерполяция), `Rng` (mulberry32, бит в бит с эталоном JS), `Reverb` = `Fdn4` (room / hall / cathedral) + `Plate` (Dattorro), `Resonator` (двухполюсный, `ResCoef` по T60 / τ), `Knee` (колено выхода), `StepClock` (часы секвенсера в сэмплах: шаг, MIDI-замок, пропуск), эхо `TapeEcho`, струна `KsLoop`, хор `Chorus`, фейзер `Phaser`, `panEq` / `PanStereo`, `Param` (таймлайн AudioParam), `Osc`, `Shaper`, `jsmath.hpp` (`jsHypot`, `jsRound`, `jsClamp`), транспорт (`ClockParser`, `Follower`, `Steps`), `Json` (снимки, не для `process`), интерфейс `World` (`prepare / action / process / rev / mirror / heard / snapshot / restore / sounding`). Хост (`core/host/`): миры по слотам, посыл × фейдер → четыре ревербера, `Scale`. **Ещё нет** (кандидаты из инвентаризации): модальный банк, `BpBank`, `Phasor` и чтение таблиц, `WaveTables` (морф 9 таблиц), `DetuneStack`, `AD`, `PingPong`, `EnergyMeter`/`BlockTimer`, `RowLfo`. Добавил или убрал блок — поправь этот список.
 
 ## LFO в плашках миров (хост: модель — `host/sl.js`, плашка и панель — `host/sheet.js`)
 

@@ -22,7 +22,7 @@ test('t2d.wasm: standalone, exports, Firmamentum in slot 10', async (t) => {
   if (!existsSync(WASM)) return t.skip('t2d.wasm не собран (core/build.sh)');
   const { readFileSync } = await import('node:fs');
   const mod = new WebAssembly.Module(readFileSync(WASM));
-  assert.deepEqual(WebAssembly.Module.imports(mod), []);
+  assert.ok(WebAssembly.Module.imports(mod).every((i) => i.module === 'wasi_snapshot_preview1'));   // emcc — ни одного, wasi-sdk — fd_*
   const names = WebAssembly.Module.exports(mod).map((e) => e.name);
   for (const n of ['init', 'args', 'action', 'process', 'dry', 'ret', 'ext', 'mbuf', 'mirror', 'heard', 'str_buf', 'str_cap', 'snapshot', 'restore', 'fader', 'scale'])
     assert.ok(names.includes(`t2d_${n}`), `t2d_${n}`);

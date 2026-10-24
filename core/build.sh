@@ -6,11 +6,11 @@ mkdir -p core/build
 # emcc до 3.1.25 (например, 3.1.6 из apt) знает размер стека как TOTAL_STACK, новые — как STACK_SIZE
 STACK=STACK_SIZE
 if [ "$(printf '%s\n' "$(emcc -dumpversion)" 3.1.25 | sort -V | head -1)" != 3.1.25 ]; then STACK=TOTAL_STACK; fi
-clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/render-cli core/render-cli/main.cpp core/worlds/goetia/goetia.cpp core/worlds/firmamentum/sound.cpp core/worlds/oceanus/ocean.cpp
+clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/render-cli core/render-cli/main.cpp core/worlds/goetia/goetia.cpp core/worlds/firmamentum/sound.cpp core/worlds/oceanus/ocean.cpp core/worlds/cymatica/plate.cpp core/worlds/cymatica/world.cpp
 echo "core/build/render-cli"
 clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/sdk-test core/tests/sdk_test.cpp core/sdk/reverb.cpp core/host/host.cpp core/host/scale.cpp \
   core/worlds/firmamentum/model.cpp core/worlds/firmamentum/world.cpp core/worlds/firmamentum/sound.cpp \
-  core/worlds/monochord/model.cpp core/worlds/monochord/world.cpp core/worlds/monochord/sound.cpp
+  core/worlds/monochord/model.cpp core/worlds/monochord/world.cpp core/worlds/monochord/sound.cpp core/worlds/cymatica/plate.cpp core/worlds/cymatica/world.cpp
 echo "core/build/sdk-test"
 clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/param-cli core/tests/param_cli.cpp
 echo "core/build/param-cli"
@@ -25,5 +25,6 @@ em++ -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --
   core/worlds/monochord/model.cpp core/worlds/monochord/world.cpp core/worlds/monochord/sound.cpp \
   core/worlds/horologium/model.cpp core/worlds/horologium/world.cpp core/worlds/horologium/sound.cpp \
   core/worlds/arcadia/land.cpp core/worlds/arcadia/model.cpp core/worlds/arcadia/world.cpp core/worlds/arcadia/sound.cpp \
-  core/worlds/tria/model.cpp core/worlds/tria/world.cpp
+  core/worlds/tria/model.cpp core/worlds/tria/world.cpp \
+  core/worlds/cymatica/plate.cpp core/worlds/cymatica/world.cpp
 echo "t2d.wasm ($(wc -c < t2d.wasm | tr -d ' ') bytes)"
