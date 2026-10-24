@@ -31,7 +31,7 @@
 | II | Cymatica — пластина/ханг, полиритм ритм × места | `worlds/cymatica/`, `plate-worklet.js` | `docs/worlds/cymatica.md` |
 | III | **выключен** (`HIDDEN` в `app.js`) · Laboratorium — FM-дрон как Lyra-8, колбы и трубки | `laboratorium.js` | `docs/worlds/laboratorium.md` |
 | IV | Natura — секвенсер-река, кувшинки | `worlds/natura/` | `docs/worlds/natura.md` |
-| V | Inferno — шумы + резонаторы, девять кругов | `worlds/inferno/` | `docs/worlds/inferno.md` |
+| V | Inferno — шумы + резонаторы, девять кругов | `worlds/inferno/` (model.js — фасад, engine.js — сухой выход и зеркало), модель и звук — ядро SDK C++ `core/worlds/inferno` → `t2d.wasm` (слот 5) | `docs/worlds/inferno.md` |
 | VI | Paradisus — хор ангелов, форманты, собор | `worlds/paradisus/` | `docs/worlds/paradisus.md` |
 | VII | Monochordum — Карплус — Стронг, страм, ветер, автострам | `worlds/monochord/`, `monochord-worklet.js` | `docs/worlds/monochordum.md` |
 | VIII | Oceanus — сканирующий синтез, карта T-O, луна | `worlds/oceanus/`, `ocean-worklet.js` (обёртка), ядро C++ `core/worlds/oceanus` → `ocean.wasm` | `docs/worlds/oceanus.md` |
@@ -87,7 +87,7 @@
 
 **Не класть**: «нет» / «своё» из §6 (пластина Cymatica, bytebeat, окна пульсаров, мост струн…) — в `core/worlds/<мир>/`; паритет-хелперы (`jsRound`, `f32()`) — не в блоки (§7); картинку и раскладку `mirror` — у мира; блоки выключенных миров (III, XVII, XVIII) — отложены (решение 8). Сомнение «блок или мир» — спросить автора вариантами.
 
-**В `core/sdk/` сейчас (23.10):** `Biquad` (семантика Web Audio, Q в дБ у LP/HP), `DcBlock{R}`, `OnePole` (сглаживание / гейн голоса вверх-вниз), `softclip(x, k)` = tanh, `panLin(p, spread)`, `Delay` + `Allpass` (внешний буфер, линейная интерполяция), `Rng` (mulberry32, бит в бит с эталоном JS), `Reverb` = `Fdn4` (room / hall / cathedral) + `Plate` (Dattorro), `Json` (снимки, не для `process`), интерфейс `World` (`prepare / action / process / rev / mirror / heard / snapshot / restore / sounding`). Хост (`core/host/`): миры по слотам, посыл × фейдер → четыре ревербера, `Scale`. **Ещё нет** (кандидаты из инвентаризации): `Resonator`/модальный банк, `BpBank`, `Phasor` и чтение таблиц, `WaveTables` (морф 9 таблиц), `DetuneStack`, `Shaper`/`Knee`, `AD`/`Param` (таймлайн AudioParam), `PingPong`/лента/хорус, `KsLoop`, `EnergyMeter`/`BlockTimer`, `Transport` + планировщик, `RowLfo`. Добавил или убрал блок — поправь этот список.
+**В `core/sdk/` сейчас (23.10):** `Biquad` (семантика Web Audio, Q в дБ у LP/HP), `DcBlock{R}`, `OnePole` (сглаживание / гейн голоса вверх-вниз), `softclip(x, k)` = tanh, `panLin(p, spread)`, `Delay` + `Allpass` (внешний буфер, линейная интерполяция), `Shaper` (нормированный tanh, k, oversample 2×), `BpBank<N>` (банк полос BP с плавными целями; закон Q и нормировка гейна — снаружи), `Noise` (white, pink, brown, crackle, grain — на лету от `Rng`), `Rng` (mulberry32, бит в бит с эталоном JS), `Reverb` = `Fdn4` (room / hall / cathedral) + `Plate` (Dattorro), `Json` (снимки, не для `process`), интерфейс `World` (`prepare / action / process / rev / mirror / heard / snapshot / restore / sounding`). Хост (`core/host/`): миры по слотам, посыл × фейдер → четыре ревербера, `Scale`. **Ещё нет** (кандидаты из инвентаризации): `Resonator`/модальный банк, `Phasor` и чтение таблиц, `WaveTables` (морф 9 таблиц), `DetuneStack`, `Knee`, `AD`/`Param` (таймлайн AudioParam), `PingPong`/лента/хорус, `KsLoop`, `EnergyMeter`/`BlockTimer`, `Transport` + планировщик, `RowLfo`. Добавил или убрал блок — поправь этот список.
 
 ## LFO в плашках миров (хост: модель — `host/sl.js`, плашка и панель — `host/sheet.js`)
 
@@ -121,6 +121,7 @@
 
 `python3 -m http.server 8765` в корне, затем:
 
+- Без emscripten (облачная сессия, прокси режет его скачивание): `pip install ziglang` → `python -m ziglang c++ -target wasm32-wasi … -mexec-model=reactor` собирает `t2d.wasm` для проверки (импорты WASI — заглушки); тесты берут его через `T2D_WASM=/путь/t2d.wasm`, в прод идёт только сборка `core/build.sh` (emcc). `tools/inferno-compare.py` — сверка звука Inferno с прежним JS (RMS, полосы).
 - `core/build.sh && node --test tools/test-goetia-core.mjs tools/test-firm-core.mjs tools/test-ocean-core.mjs` — сверка ядер с эталоном (render-cli и WASM, 1e-6), около минуты.
 - `python3 tools/shot.py <сценарий>` (solniger, vol, planets, ring, worlds, sun, hole, legenda, startmap, audio и по сценарию на мир, в том числе arcadia и portus — см. `docs/worlds/`) — сценарии касаний (CDP touch, 390×844) с проверками (провал или ошибка на странице — код выхода 1), скриншоты в `.shots/` — **смотреть их глазами** (Read на png).
 - `python3 tools/render.py ["()=>{…}"] [--world 2] [--onsets]` — офлайн-рендер звука (Tenebrae или удар по пластине Cymatica), RMS и время расчёта; `--onsets` — узор из 4 ударов на 120 BPM, интервалы между ударами и разброс (было 0.68 мс).

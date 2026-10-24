@@ -1,14 +1,16 @@
 // Мост ядра SDK для WASM (t2d.wasm): хост и все миры SDK в одном модуле, его крутит t2d-worklet.js (в Node — tools/t2d-core.mjs).
-// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Firmamentum — 10.
+// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Inferno — 5, Firmamentum — 10.
 // Обмен — через буферы ядра: аргументы action (t2d_args), зеркало и услышанное (t2d_mbuf), строка снимка (t2d_str_buf + длина).
 #include <cstring>
 #include <string>
 
 #include "../host/host.hpp"
 #include "../worlds/firmamentum/world.hpp"
+#include "../worlds/inferno/world.hpp"
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
+static inferno::Inferno inf(host.scale());
 static sdk::World* worlds[Host::SLOTS] = {};
 static double args[64];
 static double mbuf[512];                                // зеркало Firmamentum — до 101 числа
@@ -28,6 +30,9 @@ API void t2d_init(double sr, unsigned seed) {
   firm.prepare(sr, seed);                               // зерно мира — то же (Rng модели; у ревербов — seed + тип)
   worlds[10] = &firm;
   host.add(10, &firm);
+  inf.prepare(sr, seed);                                // Inferno — слот 5
+  worlds[5] = &inf;
+  host.add(5, &inf);
 }
 API double* t2d_args() { return args; }
 API void t2d_action(int slot, int kind, int i, const double* a, int n) {
