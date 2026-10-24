@@ -18,7 +18,7 @@ import { depthY, drawFxSheet, fxGeo, fxSheet, PAD_IN, padDepth, padRate, rateX, 
 import { LFO_RATE_MAX, LFO_RATE_MIN, SL, slAdd, slTick } from './host/sl.js';
 import { drawStrain, measureStrain, setGraphLoad, strain } from './host/strain.js';
 import { DTAP_MS, F, HOLD_MOVE, HOLD_MS, TAP_MOVE, TAP_MS } from './host/touch.js';
-import { backPos, btnHit, btnPos, drawUI, headHit, ITEM_H, markDice, rootAt, sclList, titleW } from './host/ui-top.js';
+import { backPos, btnHit, btnPos, drawBuild, drawUI, headHit, ITEM_H, markDice, rootAt, sclList, titleW } from './host/ui-top.js';
 import { commit, hists, undo } from './host/undo.js';
 import { clamp, inBox, invLog, lerpLog } from './host/util.js';
 import { morphFn, morphName, NW, WAVES, weight } from './host/waves.js';
@@ -2348,7 +2348,7 @@ function frame(now) {
   syncScale();                                           // лад сменился — в ядро SDK
   readLevel();
   if (audioPanel && (nav.view !== 'play' || audioPanel.w !== nav.world || fxSheet || legenda)) setAudioPanel(null);
-  if ((nav.view !== 'play' || nav.anim) && drawNav(now)) { measureStrain(now, performance.now() - t0); return; }
+  if ((nav.view !== 'play' || nav.anim) && drawNav(now)) { drawBuild(); measureStrain(now, performance.now() - t0); return; }
   setTheme(cur().theme);
   cur().draw(now, dt);
   drawUI();
@@ -2358,6 +2358,7 @@ function frame(now) {
   if (legenda && legenda.w !== nav.world) setLegenda(null);
   if (legenda) drawLegenda();
   drawStrain();
+  drawBuild();
   measureStrain(now, performance.now() - t0);
 }
 

@@ -1,6 +1,7 @@
 // ---------- кнопки — в верхней строке: слева заголовок, справа громкость, лад, FX, кубик, отмена, убрать всё ----------
 import { vol, VOL_DEF, VOL_HI, VOL_LO, VOL_TRAVEL, volText } from './audio.js';
 import { BG, dot, g, hairBox, ink, mapText, paper, ring, scopeY, text, W } from './draw.js';
+import { BUILD } from './build.js';
 import { MAP } from './fonts.js';
 import { cur, nav } from './registry.js';
 import { NOTES, SCALES, scl } from './scale.js';
@@ -81,6 +82,11 @@ function drawVol(held, dim) {
   g.strokeStyle = ink(1); g.lineWidth = 2;
   g.beginPath(); g.moveTo(b.x - 9, sy(vol)); g.lineTo(b.x + 9, sy(vol)); g.stroke();
   text(volText(vol), b.x + 14, sy(vol), 14, 0.95);
+}
+
+// ветка и коммит деплоя — мелко в левом верхнем углу, над стрелкой; на main и локально нет
+export function drawBuild() {
+  if (BUILD.ref && BUILD.ref !== 'main') text(`${BUILD.ref} · ${BUILD.sha}`, 12, scopeY - 8, 10, 0.45);
 }
 
 export function drawUI() {
