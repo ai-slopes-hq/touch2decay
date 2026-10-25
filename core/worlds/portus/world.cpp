@@ -181,7 +181,6 @@ void World::process(const sdk::Out& out, int n) {
     if (gRev_.y < 0.02) { rev_ = wantRev_; gRev_.set(REVK, 0.017, sr_); }
   } else gRev_.set(REVK, 0.017, sr_);
   for (auto& v : voices_) if (v.on && v.started) voiceCoefs(v, v.n / sr_);              // срез — раз в блок (k-rate, как у BiquadFilterNode)
-  echo_.setSec(gTime_.y);
   echo_.setLp(gLpL_.y, gLpR_.y, 0.7);
   for (int k = 0; k < n; k++) {
     const double tk = now + k / sr_;
@@ -207,7 +206,8 @@ void World::process(const sdk::Out& out, int n) {
     }
     const double post = gPost_.step();
     const double pl = drive_.step(sl) * post, pr = drive_.step(sr) * post;
-    gTime_.step(); gLpL_.step(); gLpR_.step();
+    echo_.setSec(gTime_.step());                         // время ленты — на каждом сэмпле (a-rate, как delayTime): раз в блок давало ступеньки и хрип при перетаскивании буя
+    gLpL_.step(); gLpR_.step();
     const double wowAmp = gWow_.step();
     double eL, eR;
     echo_.step((pl + pr) * 0.5 * gSend_.step(), eL, eR, wowAmp * wow_.sine(0.55 / sr_));
