@@ -13,6 +13,7 @@
 #include "../worlds/horologium/world.hpp"
 #include "../worlds/arcadia/world.hpp"
 #include "../worlds/tria/world.hpp"
+#include "../worlds/portus/world.hpp"
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
@@ -23,6 +24,7 @@ static monochord::World mono(host.scale());
 static horologium::World horo(host.scale());
 static arcadia::World arc(host.scale());
 static tria::World tria3(host.scale());
+static portus::World port(host.scale());
 static sdk::World* worlds[Host::SLOTS] = {};
 static constexpr int ARGS_CAP = 256;                    // узор Cymatica — 117 чисел
 static double args[ARGS_CAP];
@@ -69,6 +71,9 @@ API void t2d_init(double sr, unsigned seed) {
   tria3.prepare(sr, seed);
   worlds[11] = &tria3;
   host.add(11, &tria3);
+  port.prepare(sr, seed);
+  worlds[13] = &port;
+  host.add(13, &port);
 }
 API double* t2d_args() { return args; }
 API void t2d_action(int slot, int kind, int i, const double* a, int n) {

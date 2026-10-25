@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>portus bus</title>
+<!-- Сверка звука Portus в браузере: прежний engine.js (tools/ref/portus-engine.js — стабы, шина, эхо, туман, море на узлах Web Audio, часы по suspend каждые 25 мс)
+     в OfflineAudioContext на 48 кГц. Состояние для ядра (STATE, 83 числа) считает фасад worlds/portus/engine.js из той же модели. Страница отдаёт: state и
+     4 канала (L, R, посыл L, посыл R) каждого случая float32 в base64. Запускает tools/portus-bus.py; результат — window.__res. -->
+<script type="module">
+import { createModel } from '../../worlds/portus/model.js';
+import { createEngine } from './portus-engine.js';
+import { stateArgs } from '../../worlds/portus/engine.js';
+import { stepTime, due } from '../../host/midi.js';
+
+const SR = 48000, SEC = 6;
+const seeded = (seed) => () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+const PAT = [[0, 0], [2, 7], [4, 3], [6, 10], [8, 0], [10, 7], [12, 5], [14, 12]];   // шаг, нота
+const CASES = {
+  default: (m) => {},
+  bright: (m) => { m.setLuna('cut', 0.8); m.setLuna('res', 0.6); m.setPharos('len', 0.6); m.setPharos('chord', 4); m.setPharos('lvl', 0.9); },
+  echo: (m) => { m.setEcho('time', 2); m.setEcho('tone', 0.7); m.setEcho('mix', 0.9); m.setBuoy(0.5, 0.8); m.setFx('wow', 0.6); m.setPharos('oct', -1); },
+  sea: (m) => { m.setFx('mare', 0.5); m.setFx('drive', 0.7); m.setFog('size', 0.2); m.setFog('amt', 0.7); m.setPharos('chord', 0); m.setPharos('swing', 0.4); },
+};
+const b64 = (f) => { const u = new Uint8Array(f.buffer); let s = ''; for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); };
+
+async function one(name, setup) {
+  const ctx = new OfflineAudioContext(4, SR * SEC, SR);
+  const ticks = [];
+  const sendSum = ctx.createGain();
+  const T = { send: () => { const g = ctx.createGain(); g.connect(sendSum); return g; }, onTick: (fn) => ticks.push(fn), midiGrid: () => null, stepTime, due };
+  const model = createModel({ rng: seeded(7) });
+  for (const [j, p] of PAT) model.place(j, p);
+  setup(model);
+  const eng = createEngine(T, model);
+  model.listen(eng.on);
+  const dry = ctx.createGain(), mg = ctx.createChannelMerger(4), ds = ctx.createChannelSplitter(2), ss = ctx.createChannelSplitter(2);
+  dry.connect(ds); sendSum.connect(ss);
+  ds.connect(mg, 0, 0); ds.connect(mg, 1, 1); ss.connect(mg, 0, 2); ss.connect(mg, 1, 3);
+  mg.connect(ctx.destination);
+  const state = stateArgs(model);
+  eng.build(ctx, dry);
+  model.play(true);
+  for (let t = 0.025; t < SEC - 0.05; t += 0.025) ctx.suspend(t).then(() => { for (const f of ticks) f(); ctx.resume(); });
+  const buf = await ctx.startRendering();
+  return { state, ch: [0, 1, 2, 3].map((c) => b64(buf.getChannelData(c))) };
+}
+
+window.__res = (async () => { const o = {}; for (const [n, s] of Object.entries(CASES)) o[n] = await one(n, s); return o; })();
+</script>

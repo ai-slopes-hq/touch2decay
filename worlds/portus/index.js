@@ -14,15 +14,15 @@ import { createView, geo, P, slotPt, markPt } from './view.js';
 
 const T = window.T2D;
 const model = createModel({ scale: { get on() { return T.scaleOn; }, get root() { return T.scaleRoot; }, snap: (s) => T.snapSemi(s) } });
-const engine = createEngine(T, model);                  // worklet нет — обычные узлы
+const engine = createEngine(T, model);                  // звук и часы — в ядре SDK (t2d.wasm, слот 13), здесь только склейка
 const view = createView(T, model, engine);
 model.listen(engine.on);
 engine.listen(view.heard);
-// ПРОБА 0б (ветка native): MIDI-часы из оболочки ios/shell и обратно — оболочка ведёт MIDI-часы за Portus; лог — в оболочку (t2dLog → файл и Mac)
+// ПРОБА 0б (ветка native): лог MIDI из оболочки ios/shell (t2dLog → файл и Mac); ведущий (часы наружу) отсюда убран — звук Portus в ядре
 const shellLog = window.webkit?.messageHandlers?.t2dLog;
 const log = (o) => shellLog?.postMessage(JSON.stringify({ ms: Math.round(performance.now()), ...o }));
 T.onMidi((m) => { if (m.t !== 'tempo') log({ in: m }); });        // протокол — в host/midi.js, здесь только лог пробы
-engine.pulse((m) => { log({ out: m.t, step: m.step, bpm: m.bpm, ahead: Math.round(m.at - performance.timeOrigin - performance.now()) }); window.webkit?.messageHandlers?.t2dClock?.postMessage(m); });
+// ведущий (pulse → t2dClock) снят при переносе звука в ядро: t2d — ведомый (решение 23.10), часы в ядре сами идут от MIDI-сетки хоста
 if (shellLog) setInterval(() => {                       // раз в секунду: три признака Сатурна, голоса, звук
   const st = window.t2d.strain, c = window.t2d.ctx;
   log({ lvl: +st.lvl.toFixed(2), work: +st.work.toFixed(1), drift: +st.drift.toFixed(3), ctx: c && c.state, ct: c && +c.currentTime.toFixed(2),

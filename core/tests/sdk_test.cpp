@@ -24,12 +24,155 @@
 #include "../host/scale.hpp"
 #include "../sdk/ad.hpp"
 #include "../sdk/pingpong.hpp"
+#include "../sdk/saw.hpp"
 #include "../worlds/cymatica/world.hpp"
 #include "../worlds/firmamentum/world.hpp"
+#include "../worlds/portus/world.hpp"
 
 static int fails = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); } } while (0)
 #define NEAR(a, b, eps) do { double a_ = (a), b_ = (b); checks++; if (!(std::fabs(a_ - b_) <= (eps))) { fails++; std::printf("FAIL %s:%d  %s = %.17g, want %.17g\n", __FILE__, __LINE__, #a, a_, b_); } } while (0)
+
+// Saw: band-limited пила. Периодический сигнал ровно в N сэмплов (m периодов, m нечётное): гармоники — биты j·m, всё остальное — алиасинг.
+static void fftInPlace(std::vector<std::complex<double>>& a) {
+  const int n = static_cast<int>(a.size());
+  for (int i = 1, j = 0; i < n; i++) { int b = n >> 1; for (; j & b; b >>= 1) j ^= b; j ^= b; if (i < j) std::swap(a[i], a[j]); }
+  for (int len = 2; len <= n; len <<= 1) {
+    const std::complex<double> w(std::cos(-2 * M_PI / len), std::sin(-2 * M_PI / len));
+    for (int i = 0; i < n; i += len) { std::complex<double> c(1); for (int k = 0; k < len / 2; k++) { auto u = a[i + k], v = a[i + k + len / 2] * c; a[i + k] = u + v; a[i + k + len / 2] = u - v; c *= w; } }
+  }
+}
+static void saw() {
+  const int N = 32768;
+  for (int m : {683, 2797, 6001, 9001}) {                // 1.0, 4.1, 8.8, 13.2 кГц при 48 кГц
+    sdk::Saw s; s.reset(0);
+    const double dt = static_cast<double>(m) / N;
+    for (int i = 0; i < 200; i++) s.step(dt);
+    std::vector<std::complex<double>> x(N);
+    double mn = 9, mx = -9, sum = 0;
+    for (int i = 0; i < N; i++) { const double y = s.step(dt); x[i] = y; mn = std::fmin(mn, y); mx = std::fmax(mx, y); sum += y; }
+    fftInPlace(x);
+    double alias = 0;
+    for (int b = 1; b <= N / 2; b++) if (b % m) alias += std::norm(x[b]);
+    CHECK(10 * std::log10(alias / std::norm(x[m])) < -85);                 // алиасинг и шум — ниже −85 дБ к основной
+    CHECK(std::fabs(sum / N) < 1e-6);                                       // без постоянной составляющей
+    CHECK(mx < 1.2 && mn > -1.2);                                           // звон Гиббса у разрыва — до ~12 %
+    for (int j = 1; j * m < N / 2; j++) {
+      if (j * m > 0.29 * N) break;                                          // до 0.29·fs (13.9 кГц) — ровно, как у sawtooth: 2/(π·j)
+      NEAR(20 * std::log10(std::abs(x[j * m]) / (N / 2) / (2 / (M_PI * j))), 0, 0.01);
+    }
+  }
+  sdk::Saw a; a.reset(0.1);                                                 // низкая частота: вдали от разрыва выход = наивная пила, отстающая на latency()
+  const double dt = 0.002;
+  for (int i = 0; i < 700; i++) {
+    const double y = a.step(dt);
+    if (i == 120 || i == 300) {                                             // фаза 0.1 + (i − 16)·dt = 0.308 и 0.668 — не у разрыва (0.5 ± 16·dt)
+      const double ph = 0.1 + (i - sdk::Saw::latency()) * dt;
+      NEAR(y, 2 * (ph - std::floor(ph + 0.5)), 1e-3);
+    }
+  }
+  CHECK(sdk::Saw::latency() == 16);
+}
+
+static void pingpongPortus() {                           // HP, насыщение, wow и скольжение времени — то, что берёт Portus; по умолчанию всё выключено
+  static sdk::PingPong<4000> pp;
+  auto run = [&](bool hp, bool sat, double mod, double sec, double& sumR, double& peakR, int& firstL) {
+    static sdk::Shaper<1024> sh; sh.build([](double x) { return std::tanh(1.4 * x) / std::tanh(1.4); });
+    pp.prepare(48000, 0.01, 3000, 1, 0.5);
+    pp.setHp(hp ? 240 : 0, 0.7); pp.setSat(sat ? &sh : nullptr); pp.setSec(sec);
+    double l = 0, r = 0; sumR = 0; peakR = 0; firstL = -1;
+    for (int k = 0; k < 4000; k++) { pp.step(k == 0 ? 1 : 0, l, r, mod); sumR += r; peakR = std::fmax(peakR, std::fabs(r)); if (firstL < 0 && std::fabs(l) > 1e-9) firstL = k; }
+  };
+  double s0, p0, s1, p1, s2, p2, s3, p3; int f0, f1, f2, f3;
+  run(false, false, 0, 0.01, s0, p0, f0);
+  run(true, false, 0, 0.01, s1, p1, f1);
+  run(false, true, 0, 0.01, s2, p2, f2);
+  run(false, false, 0.001, 0.01, s3, p3, f3);
+  CHECK(f0 == 480 && f1 == 480 && f2 == 480);           // по умолчанию и с HP / sat — время то же
+  CHECK(std::fabs(s0) > 0.05);                           // без HP через lowpass проходит постоянная составляющая
+  CHECK(std::fabs(s1) < 0.35 * std::fabs(s0));           // HP 240 её срезает
+  CHECK(p2 / p0 > 1.3 && p2 / p0 < 1.7);                 // tanh(1.4x)/tanh(1.4) у малых сигналов усиливает ×1.58
+  CHECK(f3 == 528);                                      // wow +1 мс — на 48 сэмплов позже
+}
+
+// Portus (слот 13): часы по шагам, свой темп и сетка MIDI, chance, смена зала, kill эха, аудиция
+static void portusWorld() {
+  using namespace portus;
+  static Scale sc;
+  static World w(sc);
+  w.prepare(48000, 5);
+  sdk::Clock clk; clk.sr = 48000; w.attach(&clk);
+  float L[128], R[128], sL[128], sR[128];
+  const sdk::Out out{L, R, sL, sR};
+  double st[STATE_N] = {120, 1, 0, 2, 0.8, 0.25, 3000, 0.35, 0.45, 3, 0.45, 0.6, 0.5, 0.45, 0.7, 0.25, 0.25, 0, 0.6};
+  auto slot = [&](int j, double hz) { double* s = st + S_HEAD + 4 * j; s[0] = 1; s[1] = hz; s[2] = 6; s[3] = 1; };
+  slot(0, 110); slot(8, 220);
+  w.action(STATE, 0, st, STATE_N);
+  CHECK(w.rev() == sdk::Rev::cathedral);                  // size 0.7 ≥ 0.66 — собор; первый STATE ставит сразу, без перехода
+  CHECK(!w.sounding());
+  const double on[1] = {1}, off[1] = {0};
+  w.action(PLAY, 0, on, 1);
+  CHECK(w.sounding());
+  std::vector<std::pair<double, int>> hits;             // (время блока, шаг)
+  double peak = 0, sendPeak = 0;
+  bool finite = true;
+  double hb[64];
+  auto run = [&](double sec) {
+    const int blocks = static_cast<int>(sec * 48000 / 128);
+    for (int b = 0; b < blocks; b++) {
+      const double t0 = clk.now;
+      w.process(out, 128);
+      clk.now += 128 / 48000.0;
+      const int m = w.heard(hb, 64);
+      for (int i = 0; i + 1 < m; i += 2) hits.push_back({t0, static_cast<int>(hb[i + 1])});
+      for (int k = 0; k < 128; k++) {
+        if (!std::isfinite(L[k]) || !std::isfinite(R[k]) || !std::isfinite(sL[k]) || !std::isfinite(sR[k])) finite = false;
+        peak = std::fmax(peak, std::fmax(std::fabs(L[k]), std::fabs(R[k]))); sendPeak = std::fmax(sendPeak, std::fmax(std::fabs(sL[k]), std::fabs(sR[k])));
+      }
+    }
+  };
+  run(3.0);
+  CHECK(finite);
+  CHECK(peak > 0.02 && peak < 3);                        // стабы звучат, не за колено
+  CHECK(sendPeak > 1e-3);                                // и туман слышит
+  CHECK(hits.size() == 4);                               // шаги 0, 8, 0, 8 за 3 с: на 120 BPM шестнадцатая 0.125 с, восемь шагов — 1 с
+  CHECK(hits.size() >= 2 && hits[0].second == 0 && hits[1].second == 8);
+  CHECK(hits.size() >= 2 && std::fabs((hits[1].first - hits[0].first) - 1.0) < 0.01);   // 1 с между ударами, до блока
+  double mir[8];
+  CHECK(w.mirror(mir, 8) == MIRROR_N);
+  CHECK(mir[1] == 1 && mir[0] >= 0 && mir[0] < 16);
+  st[S_SIZE] = 0.2; w.action(STATE, 0, st, STATE_N);     // туман меньше — комната, переключение через затухание посыла
+  run(0.4);
+  CHECK(w.rev() == sdk::Rev::room);
+  st[S_SIZE] = 0.5; w.action(STATE, 0, st, STATE_N);
+  run(0.4);
+  CHECK(w.rev() == sdk::Rev::hall);
+  const size_t n0 = hits.size();                         // chance 0 — удары пропущены, хвосты дозвучивают без ошибок
+  st[S_CHANCE] = 0; w.action(STATE, 0, st, STATE_N);
+  run(2.2);
+  CHECK(hits.size() <= n0 + 1);                          // не больше одного уже стоявшего в очереди
+  w.action(KILL, 0, nullptr, 0);
+  run(1.0);
+  CHECK(finite);
+  w.action(PLAY, 0, off, 1);
+  CHECK(w.mirror(mir, 8) == MIRROR_N && mir[1] == 0 && mir[0] == -1);
+  run(6.0);                                              // всё затихло: нет голосов, эхо кончилось
+  CHECK(!w.sounding());
+  const double aud[4] = {220, 6, 1, 8};
+  w.action(AUDITION, 0, aud, 4);
+  CHECK(w.sounding());
+  const size_t n1 = hits.size();
+  run(0.3);
+  CHECK(hits.size() == n1 + 1 && hits.back().second == 8);   // аудиция тоже «услышана» — кораблик вспыхивает
+  CHECK(finite);
+  // сетка MIDI-часов 150 BPM (p = 0.4 с на долю): шаг 0.1 с — восемь шагов за 0.8 с
+  w.prepare(48000, 5); clk.now = 0; clk.grid.on = true; clk.grid.t0 = 0.0; clk.grid.p = 0.4;
+  st[S_CHANCE] = 1; w.action(STATE, 0, st, STATE_N);
+  w.action(PLAY, 0, on, 1);
+  hits.clear();
+  run(2.0);
+  CHECK(hits.size() == 3 && std::fabs((hits[1].first - hits[0].first) - 0.8) < 0.01);   // шаги 0, 8, 0 (круг — 1.6 с)
+}
 
 static void rng() {
   const double w1[5] = {0.62707394058816135, 0.0027357211802154779, 0.52744703995995224, 0.98105096747167408, 0.96837789821438491};
@@ -693,7 +836,7 @@ static void pingpongAd() {
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd();
+  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusWorld();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

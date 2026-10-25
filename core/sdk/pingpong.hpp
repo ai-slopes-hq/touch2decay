@@ -5,11 +5,16 @@
 //         └── LP ← fb ← dR ──→ выход R
 // Выход — сами линии (до фильтров), как ChannelMerger у Web Audio. Время — дробное число сэмплов (линейная интерполяция, как у DelayNode),
 // не короче блока (128): в петле Web Audio короче не бывает. fb идёт к цели за ~0.05 с (setTargetAtTime(·, t, 0.05)), начальное значение — сразу.
+// Что нужно Portus (всё выключено по умолчанию — Cymatica и прежние пары звучат как были):
+//   setSec — время «лентой»: скользит снаружи (setTargetAtTime τ 0.08), блок берёт готовое число; step(…, mod) — wow: добавка к времени, секунды;
+//   setHp — highpass в обеих петлях до lowpass (срез низа повторов); setLp — свои срезы у левой и правой петли;
+//   setSat — кривая насыщения в петле L → R (WaveShaperNode без oversample: у Portus tanh(1.4x)/tanh(1.4) только на одной ноге).
 // Память линий — внутри объекта (MAX сэмплов на линию), в step аллокаций нет.
 #pragma once
 #include <cmath>
 #include "biquad.hpp"
 #include "delay.hpp"
+#include "shaper.hpp"
 #include "smooth.hpp"
 
 namespace sdk {
@@ -27,13 +32,20 @@ class PingPong {
     const double d = sec * sr_;
     d_ = d < 128 ? 128 : d > MAX ? MAX : d;
   }
-  void setFb(double target) { fbTo_ = target; }
+  void setFb(double target, double tau = 0.05) { fbTo_ = target; c_ = 1 - std::exp(-1 / (tau * sr_)); }   // tau — setTargetAtTime: 0.05 с у прежних пар, 0.02 — у killEcho Portus
+  void setSec(double sec) { const double d = sec * sr_; d_ = d < 128 ? 128 : d > MAX ? MAX : d; }
+  void setHp(double hz, double q) { hp_ = hz > 0; if (hp_) { hpL_.set(Biquad::highpass, hz, q, sr_); hpR_.set(Biquad::highpass, hz, q, sr_); } }
+  void setLp(double hzL, double hzR, double q) { lpL_.set(Biquad::lowpass, hzL, q, sr_); lpR_.set(Biquad::lowpass, hzR, q, sr_); }
+  void setSat(const Shaper<1024>* sat) { sat_ = sat; }
   double sec() const { return d_ / sr_; }
   double fb() const { return fb_.y; }
-  void step(double in, double& outL, double& outR) {
-    const double yl = l_.read(d_), yr = r_.read(d_);
+  void step(double in, double& outL, double& outR, double mod = 0) {
+    double d = d_ + mod * sr_;                            // wow: дробная добавка; в петле Web Audio не бывает короче блока
+    d = d < 128 ? 128 : d > MAX ? MAX : d;
+    const double yl = l_.read(d), yr = r_.read(d);
     const double f = fb_.step(fbTo_, c_);
-    const double fl = lpL_.step(yl), fr = lpR_.step(yr);
+    double fl = lpL_.step(hp_ ? hpL_.step(yl) : yl), fr = lpR_.step(hp_ ? hpR_.step(yr) : yr);
+    if (sat_) fl = sat_->step(fl);
     double wl = in + fr * f, wr = fl * f;
     if (std::fabs(wl) < 1e-12) wl = 0;                    // хвост гаснет в ровный 0, без денормалов
     if (std::fabs(wr) < 1e-12) wr = 0;
@@ -44,7 +56,9 @@ class PingPong {
  private:
   float memL_[MAX + 2], memR_[MAX + 2];
   Delay l_, r_;
-  Biquad lpL_, lpR_;
+  Biquad lpL_, lpR_, hpL_, hpR_;
+  const Shaper<1024>* sat_ = nullptr;
+  bool hp_ = false;
   OnePole fb_;
   double sr_ = 48000, c_ = 0, d_ = 128, fbTo_ = 0;
 };
