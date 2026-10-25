@@ -24,6 +24,7 @@
 #include "../../sdk/osc.hpp"
 #include "../../sdk/saw.hpp"
 #include "../../sdk/shaper.hpp"
+#include "../../sdk/smooth.hpp"
 #include "../../sdk/transport.hpp"
 #include "../../sdk/world.hpp"
 #include "model.hpp"
@@ -53,12 +54,7 @@ class World : public sdk::World {
   const Model& model() const { return model_; }
 
  private:
-  struct Glide {                                        // setTargetAtTime: y идёт к to по экспоненте с τ
-    double y = 0, to = 0, c = 0;
-    void set(double v, double tau, double sr) { to = v; c = 1 - std::exp(-1 / (tau * sr)); }
-    void jump(double v) { y = to = v; }
-    double step() { y += (to - y) * c; return y; }
-  };
+  using Glide = sdk::Glide;
   struct Voice {
     bool on = false, started = false;
     double ts = 0;                                      // когда начать (время хоста, с)

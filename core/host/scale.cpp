@@ -11,6 +11,8 @@ static const int kSteps[Scale::kScales][7] = {
   {0, 2, 4, 5, 7, 9, 10},                               // mixolydian
 };
 
+const int* Scale::stepsOf(int idx) { return kSteps[idx < 0 || idx >= kScales ? 0 : idx]; }
+
 bool Scale::inScale(int n) const {
   const int pc = (((n - root) % 12) + 12) % 12;
   for (int s : kSteps[idx]) if (s == pc) return true;

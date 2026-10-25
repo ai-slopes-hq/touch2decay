@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include "../sdk/biquad.hpp"
+#include "../sdk/chorus.hpp"
 #include "../sdk/clip.hpp"
 #include "../sdk/dc.hpp"
 #include "../sdk/echo.hpp"
@@ -28,6 +29,7 @@
 #include "../worlds/cymatica/world.hpp"
 #include "../worlds/firmamentum/world.hpp"
 #include "../worlds/portus/world.hpp"
+#include "../worlds/natura/world.hpp"
 
 static int fails = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -237,6 +239,244 @@ static void portusWorld() {
   sc.on = true; sc.idx = 1; sc.root = 0;
   CHECK(std::fabs(w.model().hzOf(0) - hz0) > 1e-9 || sc.inScale(1));
   sc.on = false;
+}
+
+
+// Chorus mono (Natura): линии берут только левый вход, без панорамы, выход L = R = wet · Σ линий; правый буфер не нужен
+static void chorusMono() {
+  static sdk::Chorus<2, 4096> ch;
+  const sdk::Chorus<2, 4096>::Line lines[2] = {{0.01, 0.3, 0}, {0.02, 0.4, 0}};
+  ch.prepare(48000, lines, 0, true);
+  ch.set(1, 0);
+  static float zero[128], junk[128], oL[128], oR[128], imp[128];
+  for (int k = 0; k < 128; k++) junk[k] = 0.7f;           // правый вход игнорируется
+  for (int b = 0; b < 200; b++) ch.process(zero, junk, true, oL, oR, 128);   // wet доходит до 1 (τ 0.05 с)
+  static float out[2][1024];
+  for (int b = 0; b < 8; b++) {
+    for (int k = 0; k < 128; k++) imp[k] = (b == 0 && k == 0) ? 1.f : 0.f;
+    ch.process(imp, junk, true, oL, oR, 128);
+    for (int k = 0; k < 128; k++) { out[0][b * 128 + k] = oL[k]; out[1][b * 128 + k] = oR[k]; }
+  }
+  bool same = true; for (int k = 0; k < 1024; k++) if (out[0][k] != out[1][k]) same = false;
+  CHECK(same);                                             // моно: L = R
+  NEAR(out[0][480], 1, 1e-3); NEAR(out[0][960], 1, 1e-3);  // линии 10 и 20 мс
+  double rest = 0; for (int k = 0; k < 1024; k++) if (k != 480 && k != 960) rest += std::fabs(out[0][k]);
+  CHECK(rest < 1e-3);
+}
+
+// TapeEcho.glideTo (Natura, delayTime.setTargetAtTime): время идёт к цели с постоянной τ, не короче блока; тихая ветка доводит его разом
+static void tapeGlide() {
+  static sdk::TapeEcho<20000> e;
+  e.prepare(48000, 0, 2800, 1);
+  e.glideTo(0.1, 0.15);
+  CHECK(e.timeSec() == 0);                                 // начало — 0 (новый DelayNode)
+  static float zero[128], out[128];
+  for (int b = 0; b < 3; b++) e.process(zero, out, 128);   // 384 сэмпла = 8 мс: 1 − e^(−0.008/0.15)
+  NEAR(e.timeSec(), 0.1 * (1 - std::exp(-384.0 / (0.15 * 48000))), 1e-6);
+  for (int b = 0; b < 750; b++) e.process(zero, out, 128); // 2 s ≈ 13 τ
+  NEAR(e.timeSec(), 0.1, 1e-5);
+  e.glideTo(1e9, 0.15);                                    // не дальше линии
+  for (int b = 0; b < 3000; b++) e.process(zero, out, 128);
+  CHECK(e.timeSec() * 48000 <= 20000);
+  // импульс идёт через ленту: эхо приходит через time (после установки), потом каждое слабее
+  e.prepare(48000, 0, 20000, 1);
+  e.set(1, 0.5); e.glideTo(0.05, 1e-9);                    // τ → 0: время сразу 0.05 с
+  for (int b = 0; b < 100; b++) e.process(zero, out, 128);
+  static float imp[128]; imp[0] = 1;
+  double first = -1, p1 = 0, p2 = 0;
+  for (int b = 0; b < 60; b++) {
+    e.process(b == 0 ? imp : zero, out, 128);
+    for (int k = 0; k < 128; k++) { const double t = (b * 128 + k) / 48000.0; if (first < 0 && std::fabs(out[k]) > 0.1) first = t; if (t > 0.04 && t < 0.06) p1 = std::fmax(p1, std::fabs(out[k])); if (t > 0.09 && t < 0.11) p2 = std::fmax(p2, std::fabs(out[k])); }
+  }
+  NEAR(first, 0.05, 0.001);
+  CHECK(p1 > 0.1 && p2 > 0.05 && p2 < p1);
+}
+
+// Glide (setTargetAtTime по сэмплам): y → to с постоянной τ
+static void glideBlock() {
+  sdk::Glide g; g.jump(2); g.set(5, 0.05, 48000);
+  for (int i = 0; i < 2400; i++) g.step();                 // 50 мс = τ
+  NEAR(g.y, 5 + (2 - 5) * std::exp(-1.0), 1e-3);
+  g.jump(7); CHECK(g.y == 7 && g.to == 7);
+}
+
+// Natura.Wave: пять волн — band-limited; sharp — таблицы без постоянной, пик 1
+static void naturaWave() {
+  natura::Wave::prepare(48000);
+  const int N = 32768;
+  for (int type : {natura::SINE, natura::SQUARE, natura::TRIANGLE, natura::SAW, natura::SHARP}) {
+    for (int m : {61, 683, 2797}) {                        // 90 Гц, 1.0 кГц, 4.1 кГц
+      natura::Wave w; w.set(type);
+      const double dt = static_cast<double>(m) / N;
+      for (int i = 0; i < 300; i++) w.step(dt);
+      std::vector<std::complex<double>> x(N);
+      double mn = 9, mx = -9, sum = 0, e2 = 0;
+      for (int i = 0; i < N; i++) { const double y = w.step(dt); x[i] = y; mn = std::fmin(mn, y); mx = std::fmax(mx, y); sum += y; e2 += y * y; }
+      fftInPlace(x);
+      double alias = 0, main = 0;
+      for (int b = 1; b <= N / 2; b++) { if (b % m) alias += std::norm(x[b]); else main += std::norm(x[b]); }
+      CHECK(10 * std::log10(alias / main) < (type == natura::TRIANGLE ? -40 : -70));   // всё, кроме гармоник, — ниже −70 дБ (треугольник — Osc с PolyBLAMP, его алиасинг у 4 кГц −45 дБ)
+      CHECK(std::fabs(sum / N) < 2e-3);                    // без постоянной составляющей
+      CHECK(mx < 1.25 && mn > -1.25 && mx > 0.5 && mn < -0.5);
+      if (type == natura::SINE) { NEAR(std::sqrt(e2 / N), std::sqrt(0.5), 1e-3); }
+      if (type == natura::SQUARE && m < 2000) { NEAR(std::sqrt(e2 / N), 1, 0.05); }
+      if (type == natura::TRIANGLE) { NEAR(std::sqrt(e2 / N), std::sqrt(1.0 / 3), 0.02); }
+      if (type == natura::SHARP) { CHECK(mn > -1.03 && mn < -0.97 && std::fabs(mx - 0.776) < 0.01); }   // tanh(2.6·tri + 0.35) несимметричен: низ −1 (пик нормирован, как у PeriodicWave), верх 0.776
+    }
+  }
+  natura::Wave a, b; a.set(natura::SAW); b.set(natura::SAW);
+  for (int i = 0; i < 50; i++) a.step(0.01);
+  a.restart(natura::SAW);                                  // новый генератор — фаза с нуля, даже если волна та же
+  for (int i = 0; i < 50; i++) NEAR(a.step(0.01), b.step(0.01), 1e-12);
+}
+
+// Natura (слот 4): часы шагов — свой темп и сетка MIDI (как прежний test-follow), chance, послушать, кораблик, дерево, испуг, зеркало
+static void naturaWorld() {
+  using namespace natura;
+  static Scale sc;
+  static World w(sc);
+  w.prepare(48000, 5);
+  sdk::Clock clk; clk.sr = 48000; w.attach(&clk);
+  float L[128], R[128], sL[128], sR[128];
+  const sdk::Out out{L, R, sL, sR};
+  const auto act = [&](int kind, int i, std::initializer_list<double> a) { std::vector<double> v(a); w.action(kind, i, v.data(), static_cast<int>(v.size())); };
+  const auto state = [&](double bpm, int len, int pads, double chance, double delay) {   // кувшинка на каждом из первых `pads` мест
+    std::vector<double> a = {bpm, static_cast<double>(len)};
+    const double fx[9] = {0.4, delay, 0.5, 0.4, 0.62, 0.25, 0.08, 0.45, chance};
+    for (double v : fx) a.push_back(v);
+    for (int i = 0; i < 16; i++) {
+      if (i < pads) { const double p[9] = {1, static_cast<double>(i % 8), 0, 0, -1, -1, -1, -1, -1}; for (double v : p) a.push_back(v); }
+      else { const double p[9] = {0, 0, 0, 0, -1, -1, -1, -1, -1}; for (double v : p) a.push_back(v); }
+    }
+    w.action(STATE, 0, a.data(), static_cast<int>(a.size()));
+  };
+  std::vector<std::pair<double, int>> hits, notes;       // (время блока, место): шаг сыгран / нота ударила
+  double peak = 0, sendPeak = 0, energy = 0;
+  bool finite = true;
+  double hb[128];
+  const auto run = [&](double sec) {
+    const int blocks = static_cast<int>(sec * 48000 / 128);
+    for (int b = 0; b < blocks; b++) {
+      const double t0 = clk.now;
+      w.process(out, 128);
+      clk.now += 128 / 48000.0;
+      const int m = w.heard(hb, 128);
+      for (int i = 0; i + 1 < m; i += 2) (hb[i] == 1 ? hits : notes).push_back({t0, static_cast<int>(hb[i + 1])});
+      for (int k = 0; k < 128; k++) {
+        if (!std::isfinite(L[k]) || !std::isfinite(R[k]) || !std::isfinite(sL[k]) || !std::isfinite(sR[k])) finite = false;
+        peak = std::fmax(peak, std::fmax(std::fabs(L[k]), std::fabs(R[k]))); sendPeak = std::fmax(sendPeak, std::fabs(sL[k]));
+        energy += static_cast<double>(L[k]) * L[k];
+      }
+    }
+  };
+  const double BLK = 128 / 48000.0 + 1e-9;
+  state(120, 12, 12, 1, 0);                              // 120 BPM: шаг 0.125 с, кувшинка на каждом месте, эха нет
+  CHECK(w.rev() == sdk::Rev::hall && !w.sounding());
+  act(PLAY, 0, {1});
+  CHECK(w.sounding());
+  run(2.0);
+  CHECK(finite && peak > 0.02 && peak < 3 && sendPeak > 1e-3);
+  CHECK(hits.size() >= 15);                              // свой темп: 16 шагов за 2 с, петля 12
+  bool order = true; for (size_t i = 0; i < hits.size(); i++) if (hits[i].second != static_cast<int>(i % 12)) order = false;
+  CHECK(order);
+  CHECK(hits.size() > 2 && std::fabs((hits[2].first - hits[1].first) - 0.125) < BLK);
+  CHECK(notes.size() == hits.size());                    // каждый шаг — и нота ударила (утки)
+  double mir[MIRROR_N];
+  CHECK(w.mirror(mir, MIRROR_N) == MIRROR_N && mir[1] == 1 && mir[0] >= 0 && mir[2] >= 1 && mir[3] == 0);
+  act(PLAY, 0, {0});
+  CHECK(w.mirror(mir, MIRROR_N) == MIRROR_N && mir[1] == 0 && mir[0] == -1);
+  // сетка MIDI-часов {t0 = 1, p = 0.5}: шаг k — в 1 + 0.125·k (±блок)
+  w.prepare(48000, 5); clk.now = 0.9; clk.grid.on = true; clk.grid.t0 = 1; clk.grid.p = 0.5;
+  state(96, 12, 12, 1, 0); act(PLAY, 0, {1}); hits.clear(); notes.clear();
+  run(2.1);
+  CHECK(hits.size() >= 14);
+  bool onGrid = true; for (size_t k = 0; k < hits.size(); k++) if (std::fabs(hits[k].first - (1 + 0.125 * k)) > BLK) onGrid = false;
+  CHECK(onGrid);
+  // первый шаг на 20 мс опоздал — играет сразу
+  w.prepare(48000, 5); clk.now = 5; clk.grid.t0 = 4.98; clk.grid.p = 0.5;
+  state(96, 12, 12, 1, 0); act(PLAY, 0, {1}); hits.clear(); notes.clear();
+  run(0.1);
+  CHECK(!hits.empty() && std::fabs(hits[0].first - 5.0) < BLK);
+  // сетка ушла назад больше чем на шаг: порядок не нарушен, в прошлое ничего не ставится
+  w.prepare(48000, 5); clk.now = 0.9; clk.grid.t0 = 1; clk.grid.p = 0.5;
+  state(96, 12, 12, 1, 0); act(PLAY, 0, {1}); hits.clear(); notes.clear();
+  run(1.1); clk.grid.t0 = 0.8; run(2.0);
+  CHECK(hits.size() > 20);
+  bool increasing = true; for (size_t i = 1; i < hits.size(); i++) if (!(hits[i].first > hits[i - 1].first)) increasing = false;
+  CHECK(increasing);
+  // сетка пропала: идёт дальше своим темпом без паузы и пачки (60 BPM → шаг 0.25 с; сетка p = 0.4 → шаг 0.1 с)
+  w.prepare(48000, 5); clk.now = 0.9; clk.grid.on = true; clk.grid.t0 = 1; clk.grid.p = 0.4;
+  state(60, 12, 12, 1, 0); act(PLAY, 0, {1}); hits.clear(); notes.clear();
+  run(1.1);
+  const size_t gridN = hits.size();
+  CHECK(gridN >= 10);
+  bool g1 = true; for (size_t k = 0; k < gridN; k++) if (std::fabs(hits[k].first - (1 + 0.1 * k)) > BLK) g1 = false;
+  CHECK(g1);
+  clk.grid.on = false; run(2.5);
+  CHECK(hits.size() >= gridN + 8);
+  CHECK(hits[gridN].first - hits[gridN - 1].first <= 0.25 + BLK);
+  bool own = true; for (size_t i = gridN + 1; i < hits.size(); i++) if (std::fabs(hits[i].first - hits[i - 1].first - 0.25) > BLK) own = false;
+  CHECK(own);
+  // сетка с p ≤ 0 — не сетка
+  w.prepare(48000, 5); clk.now = 1; clk.grid.on = true; clk.grid.t0 = 1; clk.grid.p = 0;
+  state(120, 12, 12, 1, 0); act(PLAY, 0, {1}); hits.clear();
+  run(1.5);
+  CHECK(hits.size() >= 10 && finite);
+  // мир запущен через час после MIDI Start: сразу на сетку, без прохода по всем шагам
+  w.prepare(48000, 5); clk.now = 3600; clk.grid.on = true; clk.grid.t0 = 0.013; clk.grid.p = 0.5;
+  state(120, 12, 12, 1, 0); act(PLAY, 0, {1}); hits.clear();
+  run(1.5);
+  CHECK(hits.size() >= 8);
+  bool late = true; for (auto& h : hits) { const double kk = (h.first - 0.013) / 0.125; if (h.first < 3600 || std::fabs(kk - std::round(kk)) > 0.03) late = false; }
+  CHECK(late);
+  // chance 0 — молчит; слот уже готов, эха нет
+  w.prepare(48000, 5); clk.grid.on = false; clk.now = 0;
+  state(120, 12, 12, 0, 0); act(PLAY, 0, {1}); hits.clear(); notes.clear();
+  run(1.0);
+  CHECK(hits.empty() && notes.empty());
+  act(PLAY, 0, {0});
+  // послушать: нота ударяет, шаг не сыгран; пустое место молчит
+  state(120, 12, 3, 1, 0);
+  hits.clear(); notes.clear(); energy = 0;
+  act(HEAR, 9, {});
+  run(0.2);
+  CHECK(energy == 0 && notes.empty());
+  act(HEAR, 1, {});
+  run(0.3);
+  CHECK(energy > 1e-4 && notes.size() == 1 && notes[0].second == 1 && hits.empty());
+  // дерево: шелест листвы звучит, пока тормошат, и умолкает
+  w.prepare(48000, 5); clk.now = 0;
+  state(120, 12, 0, 1, 0);
+  energy = 0; act(SHAKE, 0, {0.9}); run(0.5);
+  CHECK(energy > 1e-5);
+  act(SHAKE, 0, {0.0}); run(0.5); energy = 0; run(0.2);
+  CHECK(energy == 0);
+  // испуг: огибающая открыта 4 с
+  CHECK(!w.model().envOpen());
+  act(SCARE, 0, {});
+  CHECK(w.model().envOpen());
+  run(4.5);
+  CHECK(!w.model().envOpen());
+  // кораблик, лягушка, лазер звучат; отпущенный кораблик гаснет и снимается
+  energy = 0; act(SKIFF, 0, {0.1, 0.5, 1}); run(0.3);
+  CHECK(energy > 1e-4 && w.mirror(mir, MIRROR_N) == MIRROR_N && mir[3] == 1);
+  act(WAVE, 0, {3}); run(0.1);
+  act(SKIFF_OFF, 0, {}); CHECK(w.mirror(mir, MIRROR_N) == MIRROR_N && mir[3] == 0);
+  run(3.0); energy = 0; run(0.2);
+  CHECK(energy < 1e-9);
+  energy = 0; act(CROAK, 0, {5}); run(0.4);
+  CHECK(energy > 1e-4);
+  run(0.5); energy = 0; act(LASER, 0, {}); run(0.6);
+  CHECK(energy > 1e-4 && finite);
+  // пул голосов: много «послушать» подряд — не больше 32 нот, всё конечно
+  state(120, 16, 16, 1, 0.9);
+  for (int r = 0; r < 100; r++) { act(HEAR, r % 16, {}); run(0.01); }
+  CHECK(w.mirror(mir, MIRROR_N) == MIRROR_N && mir[2] <= 32 && finite);
+  run(8.0);                                              // всё стихло, хвост эха (9 с после последнего звука) кончается
+  run(8.0);
+  CHECK(!w.sounding());
+  // эхо идёт «лентой»: время растёт с нуля до цели (60/120·0.75 = 0.375 с у time 0.5 → 1/4 при 120 BPM = 0.5 с)
+  CHECK(w.model().delaySec() > 0.1 && w.model().delaySec() < 4);
 }
 
 static void rng() {
@@ -901,7 +1141,7 @@ static void pingpongAd() {
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld();
+  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

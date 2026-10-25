@@ -4,6 +4,8 @@
 // wet и depth сглаживаются как setTargetAtTime(·, 0.05); feed = false — на вход линиям идёт тишина (хор отцеплен от mix),
 // хвост задержек дозвучивает. Совсем пусто (вход молчит дольше всей задержки и сглаживания) — блок не считается, выход — 0.
 // Чтение задержки — линейное между соседними (как DelayNode в Chromium). Память — внутри объекта; в process аллокаций нет.
+// mono = true (Natura): линии берут только inL, без панорамы, outL = outR = wet · Σ линий — как DelayNode → общий GainNode без StereoPannerNode;
+// правый буфер не пишется и не читается.
 #pragma once
 #include <cmath>
 #include "pan.hpp"
@@ -14,8 +16,8 @@ template <int NL, int SIZE>
 class Chorus {
  public:
   struct Line { double d0, rate, pan, k = 1; };
-  void prepare(double sr, const Line* lines, double depth0) {
-    sr_ = sr; c_ = 1 - std::exp(-1 / (0.05 * sr));
+  void prepare(double sr, const Line* lines, double depth0, bool mono = false) {
+    sr_ = sr; c_ = 1 - std::exp(-1 / (0.05 * sr)); mono_ = mono;
     for (int i = 0; i < NL; i++) {
       ln_[i] = lines[i]; ph_[i] = 0; ps_[i].set(lines[i].pan);
       for (int k = 0; k < SIZE; k++) bL_[i][k] = bR_[i][k] = 0;
@@ -38,13 +40,19 @@ class Chorus {
         double d = (ln_[i].d0 + depth_ * ln_[i].k * std::sin(2 * M_PI * ph_[i])) * sr_;
         if (d < 1) d = 1;
         if (d > SIZE - 2) d = SIZE - 2;
-        double l, r;
-        ps_[i].step(read(bL_[i], d), read(bR_[i], d), l, r);
-        sl += l; sr += r;
-        bL_[i][w_] = static_cast<float>(xl); bR_[i][w_] = static_cast<float>(xr);
+        if (mono_) {
+          sl += read(bL_[i], d);
+          bL_[i][w_] = static_cast<float>(xl);
+        } else {
+          double l, r;
+          ps_[i].step(read(bL_[i], d), read(bR_[i], d), l, r);
+          sl += l; sr += r;
+          bL_[i][w_] = static_cast<float>(xl); bR_[i][w_] = static_cast<float>(xr);
+        }
         advance(i, 1);
       }
       w_ = (w_ + 1) % SIZE;
+      if (mono_) sr = sl;
       outL[k] = static_cast<float>(sl * wet_); outR[k] = static_cast<float>(sr * wet_);
     }
     if (feed) quiet_ = 0; else if (quiet_ < SIZE) quiet_ += n;
@@ -65,6 +73,7 @@ class Chorus {
   double ph_[NL] = {};
   float bL_[NL][SIZE] = {}, bR_[NL][SIZE] = {};
   int w_ = 0, quiet_ = SIZE;
+  bool mono_ = false;
   double sr_ = 48000, c_ = 0, wet_ = 0, depth_ = 0, wetTo_ = 0, depthTo_ = 0;
 };
 
