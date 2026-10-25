@@ -18,7 +18,7 @@ void World::prepare(double sr, uint32_t seed) {
   sr_ = sr > 0 ? sr : 48000;
   rng_ = sdk::Rng(seed ^ 0x4e41u);                       // chance шага — от зерна мира
   nz_ = sdk::Rng(seed ^ 0x5253u);                        // шелест
-  steps_.reset(); npend_ = 0; nHeard_ = 0; now_ = 0; phase_ = -1; tick_ = 0; lastSound_ = -1e9;
+  steps_.reset(); npend_ = 0; nHeard_ = 0; now_ = 0; phase_ = -1; tick_ = 0; lastSound_ = -1e9; shake_ = 0;
   playing_ = false; rustle_ = false;
   for (auto& v : notes_) v.on = false;
   for (auto& v : sk_) v.on = false;
@@ -42,6 +42,15 @@ void World::applyFx() {
   echo_.set(d * 0.7, 0.2 + 0.55 * d);
   echo_.glideTo(std::min(model_.delaySec(), 4.0), 0.15);   // DelayNode(4)
   rs_.set(r * r * 1.3, 0.05, sr_);
+}
+
+void World::shakeTo(double v) {                          // срез дерева 20 Гц … 10 кГц и шелест, пока тормошат
+  hpG_.set(20 * std::pow(2.0, v * 9), 0.05, sr_);
+  if (v > 0.03 && !rustle_) { rustle_ = true; rbp_ = sdk::Biquad(); rbp_.set(sdk::Biquad::bandpass, 3500, 0.6, sr_); rg_.jump(0); }
+  if (rustle_) {
+    rg_.set(std::min(0.06, v * 0.06), 0.05, sr_);
+    if (v < 0.01) rustle_ = false; else lastSound_ = nowT();
+  }
 }
 
 void World::noteCoefs(NoteV& v, double tr) {             // срез: от base к пику за attack, дальше к base с τ
@@ -92,16 +101,8 @@ void World::action(int kind, int i, const double* a, int n) {
     case HEAR:                                           // послушать кувшинку сейчас
       if (i >= 0 && i < NPAD && model_.pad(i).on) startNote(now, model_.voice(model_.pad(i)), i, false);
       return;
-    case SHAKE: {                                        // дерево: срез вверх + шелест листвы
-      const double v = arg(0, 0);
-      hpG_.set(20 * std::pow(2.0, v * 9), 0.05, sr_);
-      if (v > 0.03 && !rustle_) { rustle_ = true; rbp_ = sdk::Biquad(); rbp_.set(sdk::Biquad::bandpass, 3500, 0.6, sr_); rg_.jump(0); }
-      if (rustle_) {
-        rg_.set(std::min(0.06, v * 0.06), 0.05, sr_);
-        if (v < 0.01) rustle_ = false; else lastSound_ = now;
-      }
-      return;
-    }
+    case SHAKE: shake_ = clampd(arg(0, 0), 0, 1); shakeTo(shake_); return;      // уровень сразу
+    case SHAKEBY: shake_ = std::min(1.0, shake_ + arg(0, 0)); shakeTo(shake_); return;   // тормошат дерево
     case SKIFF: {                                        // a = [q, t, wave]: поперёк — высота, вниз по течению — ярче
       const double q = arg(0, 0), t = arg(1, 0);
       const int w = static_cast<int>(clampd(std::floor(arg(2, 0) + 0.5), 0, 4));
@@ -152,6 +153,19 @@ void World::action(int kind, int i, const double* a, int n) {
       return;
     }
     case SCARE: model_.scare(); return;
+    case PLANT: model_.plant(i, static_cast<int>(arg(0, 0)), static_cast<int>(arg(1, 0))); return;
+    case REMOVE: model_.remove(i); return;
+    case MOVE: model_.move(i, static_cast<int>(arg(0, i))); return;
+    case NOTE: model_.setNote(i, static_cast<int>(arg(0, 0))); return;
+    case LEN: model_.setLen(static_cast<int>(arg(0, 12))); return;
+    case PGLIDE: model_.setGlide(i, arg(0, 0) != 0); return;
+    case PWAVE: model_.setWave(i, static_cast<int>(arg(0, 0))); return;
+    case PCHANCE: model_.setChance(i, arg(0, 1)); return;
+    case PLOCK: model_.setLock(i, static_cast<int>(arg(0, 0)), arg(1, 0)); return;
+    case PUNLOCK: model_.unlock(i, static_cast<int>(arg(0, 0))); return;
+    case SETFX: model_.setFx(i, arg(0, 0)); applyFx(); return;
+    case SETBPM: model_.setBpm(arg(0, 96)); applyFx(); return;       // время задержки — доля темпа
+    case CLEAR: model_.clear(); return;
     default: return;
   }
 }
@@ -162,6 +176,11 @@ void World::process(const sdk::Out& out, int n) {
   const double now = nowT(), end = now + n / sr_;
   now_ = end;
   model_.advance(n / sr_);
+  if (shake_ > 0) {                                      // дерево затихает τ 1.4 с
+    shake_ *= std::exp(-(n / sr_) / 1.4);
+    if (shake_ < 1e-5) shake_ = 0;
+    shakeTo(shake_);
+  }
   if (playing_) {
     static const sdk::Grid none;
     steps_.run(now, end, clk_ ? clk_->grid : none, 4,
@@ -265,7 +284,15 @@ int World::mirror(double* buf, int cap) const {
   int live = 0, held = 0;
   for (const auto& v : notes_) live += v.on ? 1 : 0;
   for (const auto& v : sk_) held += (v.on && v.held) ? 1 : 0;
-  buf[0] = playing_ ? phase_ : -1; buf[1] = playing_ ? 1 : 0; buf[2] = live; buf[3] = held;
+  double* p = buf;
+  *p++ = playing_ ? phase_ : -1; *p++ = playing_ ? 1 : 0; *p++ = live; *p++ = held;
+  *p++ = model_.bpm(); *p++ = model_.len(); *p++ = shake_;
+  for (int k = 0; k < NFX; k++) *p++ = model_.fx(k);
+  for (int i = 0; i < NPAD; i++) {
+    const Pad& d = model_.pad(i);
+    *p++ = d.on ? 1 : 0; *p++ = d.on ? d.note : 0; *p++ = d.on ? d.wave : 0; *p++ = d.glide ? 1 : 0; *p++ = d.on ? d.chance : -1;
+    for (int l = 0; l < NLOCK; l++) *p++ = d.on ? d.lock[l] : -1;
+  }
   return MIRROR_N;
 }
 

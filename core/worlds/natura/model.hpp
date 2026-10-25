@@ -1,10 +1,11 @@
 // Natura — модель (порт worlds/natura/model.js, эталон — tools/ref/natura-model.js): секвенсер-река. Кувшинки на 16 местах (место — шаг,
 // нота — ступень лада поперёк, цветок — голос), длина петли, общие fx и свои значения кувшинки (lock). Только данные и алгоритм —
 // без звука. Что играет шаг и сколько он длится — stepNote / stepSec; высота — noteHz по ладу хоста (const Scale&).
-// Этап 1 (звук и часы в ядре): состояние приходит от веба целиком (setState); этап 2 — модель в ядре, действия по одному.
+// Состояние целиком (setState) — для проверок и первой загрузки; действия по одному (plant, remove, move …), снимок и restore — тот же JSON, что у model.js.
 #pragma once
 #include <cmath>
 #include "../../host/scale.hpp"
+#include <string>
 #include "../../sdk/rng.hpp"
 
 namespace natura {
@@ -34,6 +35,22 @@ class Model {
   // состояние целиком (этап 1): [bpm, len, fx×9, 16 × (занято, note, wave, glide, chance, cutoff, res, att, rel)]
   static constexpr int STATE_N = 2 + NFX + NPAD * 9;
   bool setState(const double* a, int n);
+  // действия фасада (worlds/natura/model.js) — по одному, как методы прежней JS-модели; нет места / нет кувшинки — молча
+  void plant(int i, int note, int wave);                                       // на свободное место
+  void remove(int i);
+  void move(int i, int j);                                                     // на свободное место j
+  void setNote(int i, int n);
+  void setLen(int n);
+  void setGlide(int i, bool on);
+  void setWave(int i, int w);
+  void setChance(int i, double v);
+  void setLock(int i, int k, double v);
+  void unlock(int i, int k);                                                   // k = 0…3 — снова общее значение; 4 — шанс снова 1
+  void setFx(int k, double v);
+  void setBpm(double b);
+  void clear();
+  std::string snapshot() const;                                                // {fx, len, at, bpm} — как JSON.stringify модели
+  void restore(const std::string& js);
 
   double fx(int k) const { return fx_[k]; }
   double bpm() const { return bpm_; }

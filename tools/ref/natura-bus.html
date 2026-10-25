@@ -8,7 +8,7 @@
 <script type="module">
 import { createModel } from './natura-model.js';
 import { createEngine } from './natura-engine.js';
-import { stateArgs } from '../../worlds/natura/engine.js';
+import { stateArgs } from './natura-state.js';
 import { stepTime, due } from '../../host/midi.js';
 
 const SR = 48000, SEC = 6;
@@ -18,8 +18,8 @@ const PAT = [[0, 2], [2, 7], [4, 5], [6, 11], [8, 4], [10, 9], [12, 0], [14, 12]
 // сцена с одним цветком; fx — поверх демо
 const wave = (w, fx = {}) => (m) => { for (let i = 0; i < 16; i++) m.state.pads.at[i] = null; m.state.pads.len = 16; for (const [j, n] of PAT) m.state.pads.at[j] = { note: n, wave: w }; Object.assign(m.state.fx, { chance: 1 }, fx); };
 // действия вне шагов: [время, событие модели, вид (ACT) , i, a] — в ядро идёт то же по номеру действия (tools/natura-bus.py)
-const EXTRA = [[1.0, { t: 'laser' }, 8, 0, []], [2.0, { t: 'croak', pd: { note: 5 } }, 7, 0, [5]], [3.0, { t: 'shake', v: 0.8 }, 3, 0, [0.8]], [3.5, { t: 'shake', v: 0.3 }, 3, 0, [0.3]],
-  [4.0, { t: 'shake', v: 0 }, 3, 0, [0]], [4.5, { t: 'skiff', o: { t: 0.5, q: 0.1 } }, 4, 0, [0.1, 0.5, 0]], [5.4, { t: 'skiff', o: null }, 5, 0, []]];
+const EXTRA = [[1.0, { t: 'laser' }, 8, 0, []], [2.0, { t: 'croak', pd: { note: 5 } }, 7, 0, [5]], [3.0, { shakeBy: 0.8 }, 22, 0, [0.8]],
+  [4.5, { t: 'skiff', o: { t: 0.5, q: 0.1 } }, 4, 0, [0.1, 0.5, 0]], [5.4, { t: 'skiff', o: null }, 5, 0, []]];
 const CASES = {
   sine: { setup: wave(0) }, square: { setup: wave(1) }, triangle: { setup: wave(2) }, saw: { setup: wave(3) }, sharp: { setup: wave(4) },
   mixed: { setup: (m) => { m.state.pads.len = 16; for (const [j, n] of PAT) m.state.pads.at[j] = { note: n, wave: (j / 2) % 5, glide: j % 4 === 2 }; } },
@@ -46,7 +46,8 @@ async function one(name, { setup, extra }) {
   const todo = extra ? EXTRA.map((e) => e.slice()) : [];
   for (let t = 0.025; t < SEC - 0.05; t += 0.025) ctx.suspend(t).then(() => {
     for (const f of ticks) f();
-    for (const e of todo) if (!e.done && ctx.currentTime >= e[0] - 1e-6) { e.done = true; eng.on(e[1]); }
+    model.tick(0.025);                                   // дерево затихает (τ 1.4 с) и шлёт события в прежний engine
+    for (const e of todo) if (!e.done && ctx.currentTime >= e[0] - 1e-6) { e.done = true; if (e[1].shakeBy) model.shakeBy(e[1].shakeBy); else eng.on(e[1]); }
     ctx.resume();
   });
   const buf = await ctx.startRendering();

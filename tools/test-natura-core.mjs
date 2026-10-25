@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { loadT2d } from './t2d-core.mjs';
 import { createModel } from './ref/natura-model.js';
-import { stateArgs, SLOT, ACT } from '../worlds/natura/engine.js';
+import { stateArgs } from './ref/natura-state.js';
+import { SLOT, ACT, MIRROR_N } from '../worlds/natura/model.js';
 import { seeded } from './models/util.mjs';
 
 const SR = 48000, SECS = 4, BLOCKS = Math.floor(SECS * SR / 128);
@@ -57,7 +58,7 @@ for (const [name, [S, acts]] of Object.entries(CASES)) {
     assert.deepEqual(notes.map((s) => s[1]).slice(0, 4), [0, 2, 4, 6], 'и каждая нота «ударила»');
     assert.ok(Math.abs(played[1][0] - played[0][0] - 0.3125) < 0.003, `шаг 0 → 2 — 0.3125 с: ${played[1][0] - played[0][0]}`);
     const mir = k.mirror(SLOT);
-    assert.equal(mir.length, 4);
+    assert.equal(mir.length, MIRROR_N);
     assert.equal(mir[1], 1); assert.ok(mir[0] >= 0);
     k.action(SLOT, ACT.PLAY, 0, [0]);
     k.process(128);

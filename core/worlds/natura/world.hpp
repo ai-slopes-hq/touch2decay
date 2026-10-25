@@ -1,4 +1,4 @@
-// Natura — мир SDK (этап 1: звук и часы в ядре; модель пока в вебе — состояние приходит целиком, STATE).
+// Natura — мир SDK (этап 2: модель, звук и часы в ядре; в вебе — фасад worlds/natura/model.js, картинка и касания).
 // Звук — как worlds/natura/engine.js до SDK: нота = волна (sine / square / triangle / saw / sharp — настоящие band-limited, wave.hpp) →
 // lowpass с огибающей (срез от base к пику за attack, дальше к base с τ) → громкость AD → шина: срез дерева (highpass) → хор птиц (sdk::Chorus,
 // моно) и лента-задержка (sdk::TapeEcho, время скользит τ 0.15 с) и посыл в общий ревербер хоста (hall). Кораблик на воде — непрерывный голос,
@@ -6,10 +6,13 @@
 // шанс шага — sdk::Rng от зерна мира; нота, сыгранная шагом, — «услышана» (утки, лягушка, стрекозы).
 //
 // action(kind, i, a, n):
-//   STATE a = [bpm, len, fx×9, 16 × (занято, note, wave, glide, chance, cutoff, res, att, rel)]  (−1 — общее значение / не задан)
+//   STATE a = [bpm, len, fx×9, 16 × (занято, note, wave, glide, chance, cutoff, res, att, rel)]  (−1 — общее значение / не задан) — сцена целиком
+//   PLANT i = место, a = [note, wave];  REMOVE i;  MOVE i = откуда, a = [куда];  NOTE i, a = [n];  LEN a = [n];  PGLIDE i, a = [on];  PWAVE i, a = [w];
+//   PCHANCE i, a = [v];  PLOCK i, a = [ключ (0 cutoff, 1 res, 2 att, 3 rel), v];  PUNLOCK i, a = [ключ, 4 — шанс снова 1];  SETFX i = ключ (reverb … chance), a = [v];
+//   SETBPM a = [bpm];  SHAKEBY a = [добавка] (дерево затухает τ 1.4 с в ядре);  CLEAR
 //   PLAY a = [on];  HEAR i = место (послушать кувшинку сейчас);  SHAKE a = [v] (дерево);  SKIFF a = [q, t, wave];  SKIFF_OFF;  WAVE a = [w] (кораблик);
 //   CROAK a = [note];  LASER;  SCARE (кораблик в заводи: утки улетели)
-// Зеркало: [бегунок (шагов с начала петли, −1 — стоит), играет, голосов, кораблик держится]
+// Зеркало: см. MIRROR_*: [бегунок (шагов с начала петли, −1 — стоит), играет, голосов, кораблик держится, bpm, len, дерево, fx×9, 16 × кувшинка]
 // Услышано: пары [вид, место]: 1 — шаг сыгран (лягушка, стрекозы), 2 — нота ударила (утки; и от шага, и от «послушать»)
 #pragma once
 #include <cmath>
@@ -27,10 +30,11 @@
 
 namespace natura {
 
-enum Act { STATE, PLAY, HEAR, SHAKE, SKIFF, SKIFF_OFF, WAVE, CROAK, LASER, SCARE };
+enum Act { STATE, PLAY, HEAR, SHAKE, SKIFF, SKIFF_OFF, WAVE, CROAK, LASER, SCARE,
+           PLANT, REMOVE, MOVE, NOTE, LEN, PGLIDE, PWAVE, PCHANCE, PLOCK, PUNLOCK, SETFX, SETBPM, SHAKEBY, CLEAR };
 constexpr int NNOTE = 32, NSKIFF = 4, NCROAK = 4, NLASER = 3;                  // голосов: ноты (самый старый уступает), кораблики, лягушки, лазеры
 constexpr int ECHO_MAX = 200000;                                               // линия ленты: 4.1 с при 48 кГц (DelayNode(4)); на 96 кГц время упрётся в потолок
-constexpr int MIRROR_N = 4;
+constexpr int MIRROR_HEAD = 16, MIRROR_PAD = 9, MIRROR_N = MIRROR_HEAD + NPAD * MIRROR_PAD;   // шапка: бегунок, играет, голосов, кораблик, bpm, len, дерево, fx×9; затем 16 × (занято, note, wave, glide, chance, cutoff, res, att, rel)
 
 class World : public sdk::World {
  public:
@@ -41,8 +45,8 @@ class World : public sdk::World {
   sdk::Rev rev() const override { return sdk::Rev::hall; }
   int mirror(double* buf, int cap) const override;
   int heard(double* buf, int cap) override;
-  std::string snapshot() const override { return "{}"; }                       // этап 1: снимок у веба
-  void restore(const std::string&) override {}
+  std::string snapshot() const override { return model_.snapshot(); }
+  void restore(const std::string& js) override { model_.restore(js); applyFx(); }
   bool sounding() const override;
   void attach(const sdk::Clock* c) override { clk_ = c; }
   const Model& model() const { return model_; }
@@ -85,6 +89,7 @@ class World : public sdk::World {
     sdk::AD env;
   };
   void applyFx();
+  void shakeTo(double v);                                // дерево: срез вверх и шелест листвы
   void startNote(double t, const Note& v, int pad, bool played);
   void noteCoefs(NoteV& v, double tr);
   void laserCoefs(LaserV& v, double t);
@@ -103,7 +108,7 @@ class World : public sdk::World {
   SkiffV sk_[NSKIFF];
   CroakV cr_[NCROAK];
   LaserV ls_[NLASER];
-  double sr_ = 48000, now_ = 0, phase_ = -1, lastSound_ = -1e9;
+  double sr_ = 48000, now_ = 0, phase_ = -1, lastSound_ = -1e9, shake_ = 0;
   long tick_ = 0;                                       // сэмплов с начала
   bool playing_ = false, rustle_ = false;
   struct Pend { double t; int kind, pad; };             // kind 1 — шаг сыгран, 2 — нота ударила (послушали)

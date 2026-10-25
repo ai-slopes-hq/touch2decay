@@ -708,8 +708,8 @@ async def sc_handpan(p):                           # нота — от клет�
 
 async def sc_sketches(p):                         # эскизы миров III и IV: картинка, FX меняют пейзаж, солнце — на карту
     await p.js('()=>t2d.go(4)'); await p.pg.wait_for_timeout(900); await p.shot('natura')
-    await p.js("()=>Object.assign(t2d.nat.fx,{reverb:1,delay:1,time:1,chorus:1,cutoff:1,env:0.9})"); await p.pg.wait_for_timeout(500); await p.shot('natura-fx')
-    await p.js("()=>Object.assign(t2d.nat.fx,{reverb:0,delay:0,time:0,chorus:0,cutoff:0})"); await p.pg.wait_for_timeout(500); await p.shot('natura-clear')
+    await p.js("()=>t2d.nat.model.loadFx({reverb:1,delay:1,time:1,chorus:1,cutoff:1})"); await p.pg.wait_for_timeout(500); await p.shot('natura-fx')
+    await p.js("()=>t2d.nat.model.loadFx({reverb:0,delay:0,time:0,chorus:0,cutoff:0})"); await p.pg.wait_for_timeout(500); await p.shot('natura-clear')
     await p.tap(30, H - 30); await p.pg.wait_for_timeout(300)            # надгробие — пока ни к чему не ведёт
     assert await p.js('()=>t2d.view') == 'play', 'Natura tombstone does nothing yet'
     s = await p.js('()=>t2d.nat.geo().sun'); await p.tap(s['x'] + 25, s['y'] + 25); await p.pg.wait_for_timeout(900)
@@ -803,7 +803,7 @@ async def sc_natura(p):                           # Natura: лодочка — �
     lv = await p.js('()=>T2D.level'); assert lv > 0.01, f'notes are heard: {lv}'
     await p.shot('natura-play')
     await p.js("()=>{t2d.nat.setFx('chorus', 1); t2d.nat.setFx('rel', 1); t2d.nat.setFx('reverb', 0.8)}"); await p.pg.wait_for_timeout(700); await p.shot('natura-candies')
-    s0 = await p.js('()=>t2d.nat.sun().y'); await p.js('()=>{t2d.nat.seq.bpm = 45}'); s1 = await p.js('()=>t2d.nat.sun().y'); await p.js('()=>{t2d.nat.seq.bpm = 96}')
+    s0 = await p.js('()=>t2d.nat.sun().y'); await p.js('()=>t2d.nat.model.setBpm(45)'); s1 = await p.js('()=>t2d.nat.sun().y'); await p.js('()=>t2d.nat.model.setBpm(96)')
     assert s1 > s0 + 40, f'slow tempo — the sun sinks: {s0} → {s1}'
     b = await p.js('()=>t2d.nat.boat()'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(200)
     assert not await p.js('()=>t2d.nat.seq.playing'), 'tap the boat — it stops'
@@ -847,14 +847,14 @@ async def sc_natura(p):                           # Natura: лодочка — �
     pid = await p.hold(60, g['hor'] - 20, ms=60); await p.drag(pid, 60, g['hor'] - 20, 60, g['hor'] - 80, steps=8); await p.shot('natura-mountains'); await p.up()
     assert await p.js('()=>t2d.nat.fx.res') > 0.4, 'mountains up — more resonance'
     pads0 = await p.js('()=>JSON.stringify(t2d.nat.pads.at)')
-    await p.js("()=>{const a=t2d.nat.pads.at; for (let i=0;i<16;i++) a[i]=null; a[5]={note:3,wave:0}; a[6]={note:9,wave:0}}")
+    await p.js("()=>{const m=t2d.nat.model; m.clear(); m.plant(5,3); m.plant(6,9); for (const i of [5,6]) m.setWave(m.state.pads.at[i],0)}")
     p0 = await p.js('()=>t2d.nat.slot(4, 6)'); p5 = await p.js('()=>t2d.nat.pad(5)'); p6 = await p.js('()=>t2d.nat.pad(6)'); p7 = await p.js('()=>t2d.nat.slot(7, 6)')
     pid = await p.hold(p0['x'], p0['y'], ms=60)
     for a2, b2 in ((p0, p5), (p5, p6), (p6, p7)): await p.drag(pid, a2['x'], a2['y'], b2['x'], b2['y'], steps=5)
     await p.shot('natura-glide-draw'); await p.up(); await p.pg.wait_for_timeout(100)
     g = await p.js('()=>[t2d.nat.pads.at[5].glide, t2d.nat.pads.at[6].glide]')
     assert g == [True, True], f'a stroke on the water through lilies — glide: {g}'
-    await p.js(f"()=>{{const v={pads0}; v.forEach((x,i)=>t2d.nat.pads.at[i]=x)}}")
+    await p.js(f"()=>{{const m=t2d.nat.model, S=m.state; m.restore(JSON.stringify({{fx:S.fx,len:S.pads.len,at:{pads0},bpm:S.seq.bpm}}))}}")
     q = await p.js('()=>t2d.nat.pad(0)'); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>t2d.nat.pads.at[0]') is None, 'tap a lily — gone'
     q = await p.js('()=>t2d.nat.slot(1, 10)'); await p.tap(q['x'], q['y']); await p.pg.wait_for_timeout(150)
@@ -863,7 +863,7 @@ async def sc_natura(p):                           # Natura: лодочка — �
     pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] + 40, q['y'], steps=8)
     await p.shot('natura-note'); await p.up(); await p.pg.wait_for_timeout(100)
     assert await p.js('()=>t2d.nat.pads.at[2] && t2d.nat.pads.at[2].note') > n0, 'drag a lily across — higher note'
-    await p.js("()=>{t2d.nat.pads.at[3].wave = 0; t2d.nat.setFx('cutoff', 0.4)}")
+    await p.js("()=>{const m=t2d.nat.model; m.setWave(m.state.pads.at[3],0); t2d.nat.setFx('cutoff', 0.4)}")
     q = await p.js('()=>t2d.nat.pad(3)'); await p.hold(q['x'], q['y'], ms=700); await p.up(); await p.pg.wait_for_timeout(150)   # держишь кувшинку — плашка снизу
     assert await p.js('()=>T2D.sheetOpen'), 'hold a lily — its sheet'
     fg = await p.js('()=>t2d.fxGeo()'); row = lambda k: next(q for q in fg['rows'] if q['k'] == k); tw = fg['tx1'] - fg['tx0']
@@ -885,7 +885,7 @@ async def sc_natura(p):                           # Natura: лодочка — �
     l0 = await p.js('()=>t2d.nat.pads.len'); q = await p.js('()=>t2d.nat.bridge()')
     pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'], q['y'] - 90, steps=8); await p.up()
     assert await p.js('()=>t2d.nat.pads.len') < l0, 'drag the bridge upstream — shorter loop'
-    await p.js('()=>{t2d.nat.pads.len = 16}'); await p.pg.wait_for_timeout(100)   # на 16 запруда видна и тянется обратно
+    await p.js('()=>t2d.nat.model.setLen(16)'); await p.pg.wait_for_timeout(100)   # на 16 запруда видна и тянется обратно
     q = await p.js('()=>t2d.nat.bridge()'); assert 13 < q['x'] < W - 13 and q['y'] < H - 40, f'weir at 16 is on screen: {q}'
     pid = await p.hold(q['x'], q['y'], ms=60); await p.drag(pid, q['x'], q['y'], q['x'] - 60, q['y'] - 60, steps=8); await p.up()
     assert await p.js('()=>t2d.nat.pads.len') < 16, 'from 16 the weir drags back'

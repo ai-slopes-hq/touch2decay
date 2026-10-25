@@ -1139,9 +1139,56 @@ static void pingpongAd() {
   CHECK(ad.step() == 0);
 }
 
+static void naturaModel() {
+  using namespace natura;
+  static Scale sc;
+  static World w(sc);
+  w.prepare(48000, 5);
+  sdk::Clock clk; clk.sr = 48000; w.attach(&clk);
+  float L[128], R[128], sL[128], sR[128];
+  const sdk::Out out{L, R, sL, sR};
+  const auto act = [&](int kind, int i, std::initializer_list<double> a) { std::vector<double> v(a); w.action(kind, i, v.data(), static_cast<int>(v.size())); };
+  double m[MIRROR_N];
+  const auto mir = [&]() { return w.mirror(m, MIRROR_N) == MIRROR_N; };
+  const auto P = [&](int i, int k) { return m[MIRROR_HEAD + i * MIRROR_PAD + k]; };   // k: 0 занято, 1 note, 2 wave, 3 glide, 4 chance, 5–8 cutoff res att rel
+  act(CLEAR, 0, {});
+  CHECK(mir());
+  bool empty = true; for (int i = 0; i < 16; i++) if (P(i, 0) != 0) empty = false;
+  CHECK(empty);
+  act(PLANT, 3, {5, 2}); act(PLANT, 3, {9, 4}); act(PLANT, 7, {0, 1});    // на занятое место — нет
+  CHECK(mir() && P(3, 0) == 1 && P(3, 1) == 5 && P(3, 2) == 2 && P(7, 1) == 0 && P(7, 2) == 1 && P(3, 4) < 0 && P(3, 5) < 0);
+  act(MOVE, 3, {7}); CHECK(mir() && P(3, 0) == 1);                           // занято — остаётся
+  act(MOVE, 3, {4}); CHECK(mir() && P(3, 0) == 0 && P(4, 0) == 1 && P(4, 1) == 5);
+  act(NOTE, 4, {11}); act(PWAVE, 4, {3}); act(PGLIDE, 4, {1}); act(PCHANCE, 4, {0.4}); act(PLOCK, 4, {0, 0.3}); act(PLOCK, 4, {3, 0.9});
+  CHECK(mir() && P(4, 1) == 11 && P(4, 2) == 3 && P(4, 3) == 1 && P(4, 4) == 0.4 && P(4, 5) == 0.3 && P(4, 6) < 0 && P(4, 8) == 0.9);
+  act(PUNLOCK, 4, {0, 4}); act(PUNLOCK, 4, {4, 4});                         // cutoff — снова общий; ключ 4 — шанс снова 1
+  CHECK(mir() && P(4, 5) < 0 && P(4, 8) == 0.9 && P(4, 4) == 1);
+  act(LEN, 0, {5}); act(SETBPM, 0, {111}); act(SETFX, 1, {0.77}); act(SETFX, 8, {0.5});
+  CHECK(mir() && m[5] == 5 && m[4] == 111 && m[7 + 1] == 0.77 && m[7 + 8] == 0.5);
+  act(REMOVE, 7, {}); CHECK(mir() && P(7, 0) == 0);
+  // снимок → restore в другой мир: сцена та же
+  const std::string js = w.snapshot();
+  static World w2(sc); w2.prepare(48000, 6); w2.restore(js);
+  double m2[MIRROR_N]; CHECK(w2.mirror(m2, MIRROR_N) == MIRROR_N);
+  bool same = true; for (int i = 4; i < MIRROR_N; i++) if (i != 6 && m2[i] != m[i]) same = false;
+  CHECK(same);
+  CHECK(w2.snapshot() == js);
+  // CLEAR после правок — пусто, bpm и fx остаются
+  act(CLEAR, 0, {}); CHECK(mir() && P(4, 0) == 0 && m[4] == 111);
+  // дерево: SHAKEBY копится до 1 и затихает τ 1.4 с (эталон — exp(−t/1.4) на блок)
+  act(SHAKEBY, 0, {0.7}); act(SHAKEBY, 0, {0.7});
+  CHECK(mir() && m[6] == 1);
+  const int blocks = static_cast<int>(1.4 * 48000 / 128);
+  for (int b = 0; b < blocks; b++) { w.process(out, 128); clk.now += 128 / 48000.0; }
+  CHECK(mir()); NEAR(m[6], std::exp(-1.0), 0.01);
+  for (int b = 0; b < 48000 * 25 / 128; b++) { w.process(out, 128); clk.now += 128 / 48000.0; }
+  CHECK(mir() && m[6] == 0);
+  CHECK(!w.sounding());
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld();
+  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
