@@ -18,6 +18,6 @@ for f in t2d_init t2d_args t2d_action t2d_process t2d_dry t2d_ret t2d_ext t2d_mb
   core/worlds/horologium/model.cpp core/worlds/horologium/world.cpp core/worlds/horologium/sound.cpp \
   core/worlds/arcadia/land.cpp core/worlds/arcadia/model.cpp core/worlds/arcadia/world.cpp core/worlds/arcadia/sound.cpp \
   core/worlds/tria/model.cpp core/worlds/tria/world.cpp \
-  core/worlds/portus/world.cpp \
+  core/worlds/portus/model.cpp core/worlds/portus/world.cpp \
   core/worlds/cymatica/model.cpp core/worlds/cymatica/plate.cpp core/worlds/cymatica/world.cpp
 echo "t2d.wasm ($(wc -c < t2d.wasm | tr -d ' ') bytes, wasi-sdk)"

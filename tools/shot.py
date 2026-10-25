@@ -1559,8 +1559,8 @@ async def sc_portus(p):                            # Portus: остров на �
     b = await p.js('()=>t2d.portus.col(10, 7)'); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(300)
     st = await p.js('()=>t2d.portus.isles.map(i=>[i.step, i.p])'); assert st == [[2, 0], [10, 7]], f'tap the fairway — a boat on that step, across — its note: {st}'
     h0, h1 = await p.js('()=>t2d.portus.isles.map(i=>t2d.portus.hz(i))'); print('  roots:', round(h0, 1), round(h1, 1)); assert abs(h0 - 110) < 1 and h1 > h0 * 1.4, f'A2 at octave 0, across — higher: {h0} {h1}'
-    await p.js('()=>{t2d.portus.pharos.oct = -2}'); h2 = await p.js('()=>t2d.portus.hz(t2d.portus.isles[0])'); assert abs(h2 - 27.5) < 0.5, f'lighthouse octave −2: {h2}'
-    await p.js('()=>{t2d.portus.pharos.oct = -1}')
+    await p.js('()=>{t2d.portus.model.setPharos("oct", -2)}'); h2 = await p.js('()=>t2d.portus.hz(t2d.portus.isles[0])'); assert abs(h2 - 27.5) < 0.5, f'lighthouse octave −2: {h2}'
+    await p.js('()=>{t2d.portus.model.setPharos("oct", -1)}')
     L = await p.js('()=>t2d.portus.lantern(6)'); await p.tap(L['x'], L['y']); await p.pg.wait_for_timeout(100)
     assert 6 in await p.js('()=>t2d.portus.steps'), 'tap a marker lamp — a boat on that step'
     ph = await p.js('()=>t2d.portus.geo().ph'); await p.tap(ph['x'], ph['y'] - 40); await p.pg.wait_for_timeout(2500)

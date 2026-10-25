@@ -2,12 +2,11 @@
 <meta charset="utf-8">
 <title>portus bus</title>
 <!-- Сверка звука Portus в браузере: прежний engine.js (tools/ref/portus-engine.js — стабы, шина, эхо, туман, море на узлах Web Audio, часы по suspend каждые 25 мс)
-     в OfflineAudioContext на 48 кГц. Состояние для ядра (STATE, 83 числа) считает фасад worlds/portus/engine.js из той же модели. Страница отдаёт: state и
+     в OfflineAudioContext на 48 кГц. Сцена для ядра — снимок той же (эталонной) модели. Страница отдаёт: snapshot и
      4 канала (L, R, посыл L, посыл R) каждого случая float32 в base64. Запускает tools/portus-bus.py; результат — window.__res. -->
 <script type="module">
-import { createModel } from '../../worlds/portus/model.js';
+import { createModel } from './portus-model.js';
 import { createEngine } from './portus-engine.js';
-import { stateArgs } from '../../worlds/portus/engine.js';
 import { stepTime, due } from '../../host/midi.js';
 
 const SR = 48000, SEC = 6;
@@ -35,12 +34,12 @@ async function one(name, setup) {
   dry.connect(ds); sendSum.connect(ss);
   ds.connect(mg, 0, 0); ds.connect(mg, 1, 1); ss.connect(mg, 0, 2); ss.connect(mg, 1, 3);
   mg.connect(ctx.destination);
-  const state = stateArgs(model);
+  const snapshot = model.snapshot();
   eng.build(ctx, dry);
   model.play(true);
   for (let t = 0.025; t < SEC - 0.05; t += 0.025) ctx.suspend(t).then(() => { for (const f of ticks) f(); ctx.resume(); });
   const buf = await ctx.startRendering();
-  return { state, ch: [0, 1, 2, 3].map((c) => b64(buf.getChannelData(c))) };
+  return { snapshot, ch: [0, 1, 2, 3].map((c) => b64(buf.getChannelData(c))) };
 }
 
 window.__res = (async () => { const o = {}; for (const [n, s] of Object.entries(CASES)) o[n] = await one(n, s); return o; })();

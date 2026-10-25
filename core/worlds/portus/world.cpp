@@ -21,21 +21,27 @@ void World::prepare(double sr, uint32_t seed) {
   steps_.reset(); npend_ = 0; nHeard_ = 0; cur_ = -1; now_ = 0;
   playing_ = false; got_ = false; killed_ = false; killUntil_ = -1; driveK_ = -1; seaOn_ = false;
   for (auto& v : voices_) v.on = false;
-  for (auto& s : slots_) s = Slot();
-  for (int i = 0; i < S_HEAD; i++) st_[i] = 0;
-  st_[S_BPM] = 120; st_[S_CHANCE] = 1; st_[S_CHORD] = 2; st_[S_LVL] = 0.8; st_[S_LEN] = 0.25; st_[S_FC] = 2000; st_[S_DT] = 3; st_[S_TONE] = 0.45; st_[S_FB] = 0.4;
-  st_[S_FOG] = 0.45; st_[S_SIZE] = 0.7; st_[S_DRIVE] = 0.25; st_[S_WOW] = 0.25; st_[S_SPREAD] = 0.6; st_[S_ENV] = 0.45; st_[S_RES] = 0.35; st_[S_MIX] = 0.6;
+  model_.reset();                                        // сцена по умолчанию, как у новой model.js
   sat_.build([](double x) { return std::tanh(1.4 * x) / std::tanh(1.4); });
   bp_ = sdk::Biquad(); lpSea_ = sdk::Biquad();
   bp_.set(sdk::Biquad::bandpass, 380, 0.5, sr_);
   lpSea_.set(sdk::Biquad::lowpass, 1600, 0.7, sr_);
   wow_.reset(); swell_.reset();
   rev_ = wantRev_ = sdk::Rev::hall;
-  applyState();
-  got_ = false;                                          // первый настоящий STATE (из веба) ставит всё сразу заново
+  pull(); applyState();
+  got_ = false;                                          // первое настоящее действие (в вебе — restore фасада) ставит всё сразу заново
 }
 
-// первый STATE после prepare ставит всё сразу (эхо и шина не «разгоняются» из нуля); дальше — плавно, как setTargetAtTime прежнего applyAll
+void World::pull() {                                     // параметры шины — из модели; высота места берётся в момент удара (лад хоста меняют на ходу)
+  st_[S_BPM] = model_.bpm(); st_[S_CHANCE] = model_.fx(CHANCE); st_[S_SWING] = model_.pharos(SWING); st_[S_CHORD] = model_.pharos(CHORD);
+  st_[S_LVL] = model_.pharos(LVL); st_[S_LEN] = model_.pharos(LEN); st_[S_FC] = model_.fcOf(); st_[S_RES] = model_.luna(RES); st_[S_ENV] = model_.luna(ENV);
+  const int t = static_cast<int>(clampd(std::floor(model_.echo(TIME) + 0.5), 0, 4));
+  st_[S_DT] = DT[t]; st_[S_TONE] = model_.echo(TONE); st_[S_MIX] = model_.echo(MIX); st_[S_FB] = model_.fbOf();
+  st_[S_FOG] = model_.fog(AMT); st_[S_SIZE] = model_.fog(SIZE); st_[S_DRIVE] = model_.fx(DRIVE); st_[S_WOW] = model_.fx(WOW);
+  st_[S_MARE] = model_.fx(MARE); st_[S_SPREAD] = model_.fx(SPREAD);
+}
+
+// первое действие после prepare ставит всё сразу (эхо и шина не «разгоняются» из нуля); дальше — плавно, как setTargetAtTime прежнего applyAll
 void World::applyState() {
   const bool first = !got_;
   bpm_ = clampd(st_[S_BPM], 20, 400); swing_ = st_[S_SWING];
@@ -67,38 +73,43 @@ void World::applyState() {
 }
 
 double World::gapFrom(int j) const {                     // до следующего звучащего места по кругу; пусто — круг целиком
-  for (int k = 1; k <= NSTEP; k++) if (slots_[(j + k) % NSTEP].on) return k * stepSec();
+  for (int k = 1; k <= NSTEP; k++) if (model_.isle((j + k) % NSTEP).on) return k * stepSec();
   return NSTEP * stepSec();
 }
 
-void World::action(int kind, int, const double* a, int n) {
+void World::action(int kind, int i, const double* a, int n) {
   const auto arg = [&](int k, double d) { return (a && k < n) ? a[k] : d; };
+  const int key = i;
   switch (kind) {
-    case STATE: {
-      if (n < STATE_N) break;
-      for (int i = 0; i < S_HEAD; i++) st_[i] = a[i];
-      for (int j = 0; j < NSTEP; j++) {
-        const double* s = a + S_HEAD + 4 * j;
-        slots_[j].on = s[0] != 0; slots_[j].hz = s[1]; slots_[j].p = s[2]; slots_[j].lvl = s[3];
-      }
-      applyState();
-      break;
-    }
+    case PLACE: model_.place(i, arg(0, 0), arg(1, 0)); break;
+    case SINK: model_.sink(i); break;
+    case MOVE: model_.move(i, static_cast<int>(arg(0, i))); break;
+    case NOTE: model_.setNote(i, arg(0, 0)); break;
+    case ISLE: model_.setIsle(i, static_cast<int>(arg(0, 1)), arg(1, 1)); break;
+    case LUNA: model_.setLuna(key, arg(0, 0)); break;
+    case BUOY: model_.setBuoy(arg(0, 0.5), arg(1, 0.45)); break;
+    case ECHO: model_.setEcho(key, arg(0, 0)); break;
+    case FOG: model_.setFog(key, arg(0, 0)); break;
+    case PHAROS: model_.setPharos(key, arg(0, 0)); break;
+    case BPM: model_.setBpm(arg(0, 120)); break;
+    case FX: model_.setFx(key, arg(0, 0)); break;
+    case CLEAR: model_.clearIsles(); break;
     case PLAY:
       playing_ = arg(0, 0) != 0;
       steps_.reset();                                    // часы — с начала (по сетке — к нынешней доле)
       if (!playing_) cur_ = -1;
-      break;
+      return;
     case KILL:                                           // эхо гаснет за ~20 мс, через 350 мс — снова слушает
       killed_ = true; killUntil_ = (clk_ ? clk_->now : now_) + 0.35;
       echo_.setFb(0, 0.02);
       gWet_.set(0, 0.02, sr_); gSend_.set(0, 0.02, sr_);
-      break;
-    case AUDITION:                                       // часы стоят — услышать аккорд, пока ставишь (JS решает, звучать ли)
-      stab((clk_ ? clk_->now : now_) + 0.02, arg(0, 110), arg(1, 0), arg(2, 1), 1, 0.6, static_cast<int>(arg(3, -1)));
-      break;
-    default: break;
+      return;
+    case AUDITION:                                       // часы стоят — услышать аккорд, пока ставишь (фасад решает, звучать ли)
+      if (i >= 0 && i < NSTEP && model_.isle(i).on) stab((clk_ ? clk_->now : now_) + 0.02, i, 1, 0.6);
+      return;
+    default: return;
   }
+  pull(); applyState();
 }
 
 void World::voiceCoefs(Voice& v, double tr) {            // срез идёт от пика к fc: setValueAtTime(peak, t) → setTargetAtTime(fc, t + A, 0.04 + 0.3τ)
@@ -107,7 +118,9 @@ void World::voiceCoefs(Voice& v, double tr) {            // срез идёт о
   v.lp2.set(sdk::Biquad::lowpass, f, 0.6, sr_);
 }
 
-void World::stab(double t, double hz, double p, double lvl, double vel, double gap, int step) {
+void World::stab(double t, int step, double vel, double gap) {
+  const Isle& is = model_.isle(step);
+  const double hz = model_.hzOf(step), p = is.p, lvl = is.lvl;
   Voice* v = nullptr;
   for (auto& x : voices_) if (!x.on) { v = &x; break; }
   if (!v) { v = &voices_[0]; for (auto& x : voices_) if (x.n > v->n) v = &x; }   // все заняты — самый старый уступает
@@ -132,7 +145,7 @@ void World::stab(double t, double hz, double p, double lvl, double vel, double g
   sdk::panEq((p / PSPAN - 0.5) * 0.5 * st_[S_SPREAD], v->pl, v->pr);
   v->lp1 = sdk::Biquad(); v->lp2 = sdk::Biquad();
   voiceCoefs(*v, 0);
-  if (step >= 0) {
+  {
     if (npend_ == 16) { for (int j = 1; j < 16; j++) pend_[j - 1] = pend_[j]; npend_--; }
     pend_[npend_++] = Pend{t, step};
   }
@@ -152,8 +165,8 @@ void World::process(const sdk::Out& out, int n) {
                [&](long k, double t) {
                  const int j = static_cast<int>(k % NSTEP);
                  cur_ = j;
-                 if (!slots_[j].on || !(rng_.next() < st_[S_CHANCE])) return;      // chance — от зерна
-                 stab(t, slots_[j].hz, slots_[j].p, slots_[j].lvl, j % 4 == 2 ? 1 : 0.85, gapFrom(j), j);
+                 if (!model_.isle(j).on || !(rng_.next() < st_[S_CHANCE])) return;     // chance — от зерна
+                 stab(t, j, j % 4 == 2 ? 1 : 0.85, gapFrom(j));
                });
   }
   if (npend_) {                                          // удары, чьё время пришло в этом блоке, — «услышаны» (вспышка кораблика, луч маяка, круги эха)
@@ -217,7 +230,18 @@ int World::mirror(double* buf, int cap) const {
   if (!buf || cap < MIRROR_N) return 0;
   int live = 0;
   for (const auto& v : voices_) live += v.on ? 1 : 0;
-  buf[0] = playing_ ? cur_ : -1; buf[1] = playing_ ? 1 : 0; buf[2] = live;
+  double* p = buf;
+  *p++ = playing_ ? cur_ : -1; *p++ = playing_ ? 1 : 0; *p++ = live; *p++ = model_.bpm();
+  for (int k = 0; k < NLUNA; k++) *p++ = model_.luna(k);
+  for (int k = 0; k < 3; k++) *p++ = model_.echo(k);
+  *p++ = model_.buoyU(); *p++ = model_.buoyD();
+  for (int k = 0; k < NFOG; k++) *p++ = model_.fog(k);
+  for (int k = 0; k < NPHAROS; k++) *p++ = model_.pharos(k);
+  for (int k = 0; k < NFX; k++) *p++ = model_.fx(k);
+  for (int j = 0; j < NSTEP; j++) {
+    const Isle& s = model_.isle(j);
+    *p++ = s.on ? 1 : 0; *p++ = s.p; *p++ = s.oct; *p++ = s.lvl; *p++ = s.sd;
+  }
   return MIRROR_N;
 }
 
@@ -230,7 +254,7 @@ int World::heard(double* buf, int cap) {
 }
 
 bool World::sounding() const {
-  if (playing_) for (const auto& s : slots_) if (s.on) return true;
+  if (playing_ && model_.count() > 0) return true;
   for (const auto& v : voices_) if (v.on) return true;
   return false;
 }

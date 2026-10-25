@@ -34,7 +34,7 @@ let last = 0;
 T.registerWorld(13, {
   n: 'XIII', title: 'Portus', sub: 'pharos · echo · nebula', theme: view.theme, corner: view.corner, fx: view.fx, legend: view.legend,
   build: engine.build,
-  tick(now) { model.tick(last ? (now - last) / 1000 : 0); last = now; view.tick(now); engine.poll(now); },
+  tick(now) { model.tick(last ? (now - last) / 1000 : 0); last = now; view.tick(now); },
   draw: view.draw, down: view.down, move: view.move, up: view.up,
   dice: model.dice, clear: model.clear, snapshot: model.snapshot, restore: model.restore, sounding: model.sounding,
   tempo: { get: () => seq.bpm, set: (bpm) => model.setBpm(bpm), play: (on) => model.play(on), playing: () => seq.playing, armed: () => isles.length > 0, min: 60, max: 180 },
@@ -44,5 +44,5 @@ const G = () => geo(T, S);
 window.t2d.portus = {
   isles, get steps() { return isles.map((i) => i.step); }, luna, echo, buoy, fog, pharos, fx, seq, geo: G, play: (on) => model.play(on), setFx: (k, v) => view.fx.set(k, v), get live() { return engine.live; }, hz: model.hzOf, name: model.nameOf, fc: model.fcOf, fb: model.fbOf,
   sea: (u, d) => P(G(), u, d), col: (i, p) => slotPt(G(), i, p), lantern: (i) => { const g = G(), m = markPt(g, i); return { x: m.x, y: m.y - (10 + 14 * m.s) }; }, sky: () => { const g = G(); return { x: g.cx + g.Ws * 0.2, y: (g.top + g.fogTop) / 2 }; }, kill: () => view.kill(0, 0), get killed() { return view.killed; }, buoyAt: () => { const g = G(), B = P(g, buoy.u, buoy.d); return { x: B.x, y: B.y - 8 }; },
-  get stepNow() { return engine.step; }, apply: engine.apply, model,
+  get stepNow() { return engine.step; }, model,
 };

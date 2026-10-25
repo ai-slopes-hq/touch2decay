@@ -95,6 +95,56 @@ static void pingpongPortus() {                           // HP, насыщени
   CHECK(f3 == 528);                                      // wow +1 мс — на 48 сэмплов позже
 }
 
+// Portus: модель в ядре — кораблики, высота с ладом, буй и время эха, фасадные ключи, снимок
+static void portusModel() {
+  using namespace portus;
+  Scale sc;
+  Model m(sc);
+  m.place(2, 0, 11); m.place(10, 7, 22);
+  CHECK(m.count() == 2 && m.isle(2).on && m.isle(2).sd == 11 && m.isle(10).p == 7);
+  m.place(2, 5, 99);                                     // место занято — новая нота, зерно прежнее
+  CHECK(m.count() == 2 && m.isle(2).p == 5 && m.isle(2).sd == 11);
+  m.move(2, 10); CHECK(m.isle(2).on && m.count() == 2);  // на занятое — остаётся
+  m.move(2, 4); CHECK(!m.isle(2).on && m.isle(4).on && m.isle(4).p == 5 && m.isle(4).sd == 11);
+  m.setIsle(10, IOCT, -1); m.setIsle(10, ILVL, 0.5);
+  CHECK(m.isle(10).oct == -1 && m.isle(10).lvl == 0.5);
+  m.sink(4); CHECK(m.count() == 1 && !m.isle(4).on);
+  m.setNote(4, 3); CHECK(!m.isle(4).on);                 // утонувшего плашка не трогает
+  // высота: A2 = 110 Гц; октавы маяка и кораблика складываются
+  m.place(0, 0, 1);
+  NEAR(m.hzOf(0), 110, 1e-9);
+  m.setNote(0, 7); NEAR(m.hzOf(0), 110 * std::pow(2.0, 7.0 / 12), 1e-9);
+  m.setPharos(OCT, -2); NEAR(m.hzOf(0), 110 * std::pow(2.0, 7.0 / 12) / 4, 1e-9);
+  m.setPharos(OCT, 0);
+  NEAR(m.fcOf(), 90 * std::pow(2.0, 7.2 * 0.42), 1e-9); m.setLuna(CUT, 1); NEAR(m.fcOf(), 90 * std::pow(2.0, 7.2), 1e-9);
+  // лад хоста: минор от C (root 3), ступени
+  sc.on = true; sc.idx = 1; sc.root = 3;
+  m.setNote(0, 1);
+  const double a = 1 + 3, snapped = sc.snapSemi(a + 24) - 24;
+  NEAR(m.semiOf(0), snapped, 1e-12); CHECK(sc.inScale(static_cast<int>(snapped + 24)));
+  sc.on = false;
+  // буй: дальше — дольше повторы (fb), поперёк — время; плашка: time / fb двигают буй
+  m.setBuoy(0.5, 0.45);
+  CHECK(m.echo(TIME) >= 0 && m.echo(TIME) <= 4 && m.echo(TIME) == std::floor(m.echo(TIME)));
+  NEAR(m.fbOf(), 0.15 + 0.45 * 0.84, 1e-12);
+  m.setBuoy(-9, 2); NEAR(m.buoyD(), 0.95, 1e-12); CHECK(m.echo(TIME) == 0);   // вбок до берега — 1/8, дальше горизонта не уйдёт
+  m.setBuoy(9, 0.45); CHECK(m.echo(TIME) == 4);
+  m.setEcho(TIME, 2);
+  const double l = edge(-1, m.buoyD()), r = edge(1, m.buoyD());
+  NEAR(m.buoyU(), l + 0.03 + 0.5 * (r - l - 0.06), 1e-12);
+  m.setEcho(FB, 0.5); NEAR(m.buoyD(), 0.03 + 0.5 * 0.92, 1e-12);
+  CHECK(edge(-1, 0.3) < 0 && edge(1, 0.3) > 0);
+  // снимок → restore в другую модель: то же
+  m.setFx(CHANCE, 0.5); m.setPharos(CHORD, 4); m.setBpm(97);
+  const std::string js = m.snapshot();
+  Model q(sc);
+  q.restore(js);
+  CHECK(q.snapshot() == js);
+  CHECK(q.count() == m.count() && q.bpm() == 97 && q.pharos(CHORD) == 4 && q.fx(CHANCE) == 0.5 && q.isle(10).oct == -1);
+  m.reset(); CHECK(m.count() == 0 && m.bpm() == 120 && m.echo(TIME) == 1 && m.pharos(CHORD) == 2);
+  q.restore("not json"); CHECK(q.bpm() == 97);           // мусор — модель цела
+}
+
 // Portus (слот 13): часы по шагам, свой темп и сетка MIDI, chance, смена зала, kill эха, аудиция
 static void portusWorld() {
   using namespace portus;
@@ -104,14 +154,12 @@ static void portusWorld() {
   sdk::Clock clk; clk.sr = 48000; w.attach(&clk);
   float L[128], R[128], sL[128], sR[128];
   const sdk::Out out{L, R, sL, sR};
-  double st[STATE_N] = {120, 1, 0, 2, 0.8, 0.25, 3000, 0.35, 0.45, 3, 0.45, 0.6, 0.5, 0.45, 0.7, 0.25, 0.25, 0, 0.6};
-  auto slot = [&](int j, double hz) { double* s = st + S_HEAD + 4 * j; s[0] = 1; s[1] = hz; s[2] = 6; s[3] = 1; };
-  slot(0, 110); slot(8, 220);
-  w.action(STATE, 0, st, STATE_N);
-  CHECK(w.rev() == sdk::Rev::cathedral);                  // size 0.7 ≥ 0.66 — собор; первый STATE ставит сразу, без перехода
+  const auto act = [&](int kind, int i, std::initializer_list<double> a) { std::vector<double> v(a); w.action(kind, i, v.data(), static_cast<int>(v.size())); };
+  act(BPM, 0, {120}); act(FX, SPREAD, {0.6}); act(FX, CHANCE, {1}); act(PHAROS, CHORD, {2}); act(LUNA, CUT, {0.5}); act(FOG, SIZE, {0.7});
+  act(PLACE, 0, {6, 1}); act(PLACE, 8, {6, 2});
+  CHECK(w.rev() == sdk::Rev::cathedral);                  // size 0.7 ≥ 0.66 — собор; первое действие ставит сразу, без перехода
   CHECK(!w.sounding());
-  const double on[1] = {1}, off[1] = {0};
-  w.action(PLAY, 0, on, 1);
+  act(PLAY, 0, {1});
   CHECK(w.sounding());
   std::vector<std::pair<double, int>> hits;             // (время блока, шаг)
   double peak = 0, sendPeak = 0;
@@ -138,40 +186,57 @@ static void portusWorld() {
   CHECK(hits.size() == 4);                               // шаги 0, 8, 0, 8 за 3 с: на 120 BPM шестнадцатая 0.125 с, восемь шагов — 1 с
   CHECK(hits.size() >= 2 && hits[0].second == 0 && hits[1].second == 8);
   CHECK(hits.size() >= 2 && std::fabs((hits[1].first - hits[0].first) - 1.0) < 0.01);   // 1 с между ударами, до блока
-  double mir[8];
-  CHECK(w.mirror(mir, 8) == MIRROR_N);
-  CHECK(mir[1] == 1 && mir[0] >= 0 && mir[0] < 16);
-  st[S_SIZE] = 0.2; w.action(STATE, 0, st, STATE_N);     // туман меньше — комната, переключение через затухание посыла
+  double mir[MIRROR_N];
+  CHECK(w.mirror(mir, MIRROR_N) == MIRROR_N);
+  CHECK(mir[1] == 1 && mir[0] >= 0 && mir[0] < 16 && mir[3] == 120);
+  CHECK(mir[MIRROR_HEAD + 0] == 1 && mir[MIRROR_HEAD + 1] == 6 && mir[MIRROR_HEAD + 4] == 1);                 // место 0: занято, p 6, зерно 1
+  CHECK(mir[MIRROR_HEAD + 8 * MIRROR_ISLE] == 1 && mir[MIRROR_HEAD + 8 * MIRROR_ISLE + 4] == 2 && mir[MIRROR_HEAD + 3 * MIRROR_ISLE] == 0);
+  act(FOG, SIZE, {0.2});                                 // туман меньше — комната, переключение через затухание посыла
   run(0.4);
   CHECK(w.rev() == sdk::Rev::room);
-  st[S_SIZE] = 0.5; w.action(STATE, 0, st, STATE_N);
+  act(FOG, SIZE, {0.5});
   run(0.4);
   CHECK(w.rev() == sdk::Rev::hall);
   const size_t n0 = hits.size();                         // chance 0 — удары пропущены, хвосты дозвучивают без ошибок
-  st[S_CHANCE] = 0; w.action(STATE, 0, st, STATE_N);
+  act(FX, CHANCE, {0});
   run(2.2);
   CHECK(hits.size() <= n0 + 1);                          // не больше одного уже стоявшего в очереди
-  w.action(KILL, 0, nullptr, 0);
+  act(KILL, 0, {});
   run(1.0);
   CHECK(finite);
-  w.action(PLAY, 0, off, 1);
-  CHECK(w.mirror(mir, 8) == MIRROR_N && mir[1] == 0 && mir[0] == -1);
+  act(PLAY, 0, {0});
+  CHECK(w.mirror(mir, MIRROR_N) == MIRROR_N && mir[1] == 0 && mir[0] == -1);
   run(6.0);                                              // всё затихло: нет голосов, эхо кончилось
   CHECK(!w.sounding());
-  const double aud[4] = {220, 6, 1, 8};
-  w.action(AUDITION, 0, aud, 4);
+  act(AUDITION, 8, {});
   CHECK(w.sounding());
   const size_t n1 = hits.size();
   run(0.3);
   CHECK(hits.size() == n1 + 1 && hits.back().second == 8);   // аудиция тоже «услышана» — кораблик вспыхивает
-  CHECK(finite);
+  act(AUDITION, 5, {});                                  // пустое место — тишина
+  const size_t n2 = hits.size();
+  run(0.3);
+  CHECK(hits.size() == n2 && finite);
+  // сцена целиком — снимком; мир отдаёт снимок модели
+  const std::string js = w.snapshot();
+  w.prepare(48000, 5);
+  CHECK(w.model().count() == 0);
+  w.restore(js);
+  CHECK(w.model().count() == 2 && w.snapshot() == js);
   // сетка MIDI-часов 150 BPM (p = 0.4 с на долю): шаг 0.1 с — восемь шагов за 0.8 с
   w.prepare(48000, 5); clk.now = 0; clk.grid.on = true; clk.grid.t0 = 0.0; clk.grid.p = 0.4;
-  st[S_CHANCE] = 1; w.action(STATE, 0, st, STATE_N);
-  w.action(PLAY, 0, on, 1);
+  w.restore(js); act(FX, CHANCE, {1});
+  act(PLAY, 0, {1});
   hits.clear();
   run(2.0);
   CHECK(hits.size() == 3 && std::fabs((hits[1].first - hits[0].first) - 0.8) < 0.01);   // шаги 0, 8, 0 (круг — 1.6 с)
+  // лад хоста меняют на ходу — следующий удар уже в новой высоте
+  w.prepare(48000, 5); clk.grid.on = false; clk.now = 0;
+  act(PLACE, 0, {1, 3});
+  sc.on = false; const double hz0 = w.model().hzOf(0);
+  sc.on = true; sc.idx = 1; sc.root = 0;
+  CHECK(std::fabs(w.model().hzOf(0) - hz0) > 1e-9 || sc.inScale(1));
+  sc.on = false;
 }
 
 static void rng() {
@@ -836,7 +901,7 @@ static void pingpongAd() {
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusWorld();
+  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Сверка звука Portus (мир SDK, core/worlds/portus) с прежним движком на узлах Web Audio: страница tools/ref/portus-bus.html рендерит эталон
-# (tools/ref/portus-engine.js) в OfflineAudioContext и отдаёт STATE; тот же STATE — в нативный core/build/portus-cli; мерило — RMS ± 1 дБ и
+# (tools/ref/portus-engine.js) в OfflineAudioContext и отдаёт снимок сцены; тот же снимок — в нативный core/build/portus-cli; мерило — RMS ± 1 дБ и
 # энергия по октавам ± 1.5 дБ (там, где она не на 60 дБ ниже самой громкой полосы; низшая 31–63 Гц — ± 2 дБ). Замер 25.10: RMS ± 0.3 дБ, октавы ± 1.1 дБ (31–63 Гц до +1.6). Различия не по ошибке: пила — настоящий band-limited (не PeriodicWave
 # браузера), эхо — одна пара линий от моно-суммы, смена зала — не перекрёстное затухание, а затухание-рост.
 #   python3 -m http.server 8765 (в корне репозитория), core/build.sh (или clang++ … portus_cli.cpp) и python3 tools/portus-bus.py
@@ -37,7 +37,7 @@ async def main():
     bad = 0
     for name, r in res.items():
         ref = [np.frombuffer(base64.b64decode(c), dtype=np.float32).astype(np.float64) for c in r['ch']]
-        inp = 'state ' + ' '.join(repr(float(v)) for v in r['state']) + '\nsecs 6\n'
+        inp = 'snapshot ' + r['snapshot'] + '\nsecs 6\n'
         raw = subprocess.run([CLI], input=inp.encode(), stdout=subprocess.PIPE, check=True).stdout
         core = np.frombuffer(raw, dtype=np.float32).astype(np.float64).reshape(-1, 4).T
         n = min(len(ref[0]), core.shape[1])

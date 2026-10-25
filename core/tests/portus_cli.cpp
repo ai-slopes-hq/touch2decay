@@ -1,6 +1,6 @@
-// Portus (мир SDK) → float32: STATE (83 числа) со stdin, затем секунды; stdout — кадры по 4 канала (L, R, посыл L, посыл R) для сверки с
-// прежним Web Audio-движком в Chromium (tools/portus-bus.py). Часы — своего темпа (без сетки), зерно 1.
-// Строки stdin: "state n0 n1 … n82", "secs 6", "fb 0.5" и т. п. не нужны — всё остальное по умолчанию мира.
+// Portus (мир SDK) → float32: снимок сцены (JSON модели) со stdin, затем секунды; stdout — кадры по 4 канала (L, R, посыл L, посыл R) для сверки
+// с прежним Web Audio-движком в Chromium (tools/portus-bus.py) и с t2d.wasm (tools/test-portus-core.mjs). Часы — своего темпа (без сетки), зерно 1.
+// Строки stdin: "snapshot {json}" (restore модели), "secs 6"; остальное — по умолчанию мира.
 #include <cstdio>
 #include <iostream>
 #include <sstream>
@@ -10,22 +10,22 @@
 #include "../worlds/portus/world.hpp"
 
 int main() {
-  std::vector<double> st;
+  std::string snap;
   double secs = 6;
   std::string line;
   while (std::getline(std::cin, line)) {
     std::istringstream s(line);
     std::string k;
     s >> k;
-    if (k == "state") { double v; while (s >> v) st.push_back(v); }
+    if (k == "snapshot") { std::getline(s, snap); }
     else if (k == "secs") s >> secs;
   }
-  if (st.size() != static_cast<size_t>(portus::STATE_N)) { std::fprintf(stderr, "state: %zu numbers, want %d\n", st.size(), portus::STATE_N); return 1; }
+  if (snap.empty()) { std::fprintf(stderr, "snapshot: no scene\n"); return 1; }
   Scale sc;
   portus::World w(sc);
   w.prepare(48000, 1);
   sdk::Clock clk; clk.sr = 48000; w.attach(&clk);
-  w.action(portus::STATE, 0, st.data(), static_cast<int>(st.size()));
+  w.restore(snap);
   const double on[1] = {1};
   w.action(portus::PLAY, 0, on, 1);
   float L[128], R[128], sL[128], sR[128];
