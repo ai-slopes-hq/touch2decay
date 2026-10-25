@@ -2,12 +2,14 @@
 // и обёртки над экспортами t2d_* (core/bridge/wasm.cpp). Для тестов; в вебе тот же модуль крутит worklet.
 import { readFileSync } from 'node:fs';
 
-export const WASM = new URL('../t2d.wasm', import.meta.url);
+// T2D_WASM — путь к другой сборке (например, собранной без emscripten: zig c++ -target wasm32-wasi даёт импорты WASI — ниже заглушки)
+export const WASM = process.env.T2D_WASM ? process.env.T2D_WASM : new URL('../t2d.wasm', import.meta.url);
+const wasiStubs = (m) => { const o = {}; for (const i of WebAssembly.Module.imports(m)) (o[i.module] ??= {})[i.name] = () => 0; return o; };
 let mod = null;
 
 export function loadT2d() {
   if (!mod) mod = new WebAssembly.Module(readFileSync(WASM));
-  const x = new WebAssembly.Instance(mod, { wasi_snapshot_preview1: { fd_close: () => 0, fd_seek: () => 0, fd_write: () => 0 } }).exports;
+  const x = new WebAssembly.Instance(mod, wasiStubs(mod)).exports;
   if (x._initialize) x._initialize();
   const f64 = (p, n) => new Float64Array(x.memory.buffer, p, n);
   const f32 = (p, n) => new Float32Array(x.memory.buffer, p, n);

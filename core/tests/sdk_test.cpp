@@ -12,12 +12,15 @@
 #include "../sdk/dc.hpp"
 #include "../sdk/echo.hpp"
 #include "../sdk/delay.hpp"
+#include "../sdk/bpbank.hpp"
 #include "../sdk/json.hpp"
 #include "../sdk/knee.hpp"
+#include "../sdk/noise.hpp"
 #include "../sdk/pan.hpp"
 #include "../sdk/resonator.hpp"
 #include "../sdk/reverb.hpp"
 #include "../sdk/rng.hpp"
+#include "../sdk/shaper.hpp"
 #include "../sdk/smooth.hpp"
 #include "../sdk/stepclock.hpp"
 #include "../sdk/world.hpp"
@@ -30,6 +33,7 @@
 #include "../worlds/firmamentum/world.hpp"
 #include "../worlds/portus/world.hpp"
 #include "../worlds/natura/world.hpp"
+#include "../worlds/inferno/world.hpp"
 
 static int fails = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -1186,9 +1190,217 @@ static void naturaModel() {
   CHECK(!w.sounding());
 }
 
+// ---------- Inferno и его блоки SDK ----------
+static double goertzel(const std::vector<float>& x, double hz, double sr) {   // амплитуда синусоиды на частоте hz
+  const double w = 2 * M_PI * hz / sr, c = 2 * std::cos(w);
+  double s1 = 0, s2 = 0;
+  for (float v : x) { const double s0 = v + c * s1 - s2; s2 = s1; s1 = s0; }
+  return std::sqrt(s1 * s1 + s2 * s2 - c * s1 * s2) * 2 / x.size();
+}
+
+static void shaper() {
+  sdk::TanhShaper s; s.set(1);
+  NEAR(s.shape(1), 1, 1e-12); NEAR(s.shape(-1), -1, 1e-12); NEAR(s.shape(5), 1, 1e-12); NEAR(s.shape(0), 0, 1e-15);
+  s.set(3);
+  NEAR(s.shape(0.5), std::tanh(1.5) / std::tanh(3), 1e-12);
+  NEAR(s.shape(-0.5), -s.shape(0.5), 1e-15);
+  NEAR(s.step(0.5), s.shape(0.5), 1e-15);               // без os — без задержки
+  sdk::TanhShaper o; o.os2 = true; o.set(3);
+  double y = 0;
+  for (int i = 0; i < 300; i++) y = o.step(0.5);        // постоянная на входе — на выходе та же кривая
+  NEAR(y, o.shape(0.5), 2e-3);
+  sdk::TanhShaper a, b; b.os2 = true; a.set(0.2); b.set(0.2);   // слабый перегруз ≈ линейный: 1 кГц проходит с тем же усилением
+  std::vector<float> ya, yb;
+  for (int i = 0; i < 4800; i++) { const double x = 0.3 * std::sin(2 * M_PI * 1000 * i / 48000.0); ya.push_back(a.step(x)); yb.push_back(b.step(x)); }
+  const std::vector<float> ta(ya.end() - 2400, ya.end()), tb(yb.end() - 2400, yb.end());
+  NEAR(goertzel(tb, 1000, 48000) / goertzel(ta, 1000, 48000), 1, 0.01);
+}
+
+static void bpbank() {
+  const double sr = 48000;
+  sdk::BpBank<3> b;
+  b.target(0, 440, 20, 1); b.target(1, 880, 20, 0.5); b.target(2, 1320, 20, 0.25);
+  b.snap(); b.update(sr);
+  std::vector<float> in(9600), out(9600);
+  for (int i = 0; i < 9600; i++) { in[i] = std::sin(2 * M_PI * 880 * i / sr); out[i] = b.step(in[i]); }
+  const std::vector<float> t(out.end() - 4800, out.end());
+  NEAR(goertzel(t, 880, sr), 0.5, 0.02);                // полоса 880 Гц, вес 0.5: пик BP — 0 дБ
+  sdk::BpBank<3> c; c.target(0, 440, 20, 1); c.target(1, 880, 20, 0); c.target(2, 1320, 20, 0); c.snap(); c.update(sr);
+  std::vector<float> o2(9600);
+  for (int i = 0; i < 9600; i++) o2[i] = c.step(in[i]);
+  const std::vector<float> t2(o2.end() - 4800, o2.end());
+  CHECK(goertzel(t2, 880, sr) < 0.15);                  // мимо полосы — сильно тише
+  c.target(0, 1000, 20, 1);                             // glide тянет частоту к цели, snap — сразу
+  c.glide(0.5, 0.5, 0.5); NEAR(c.b[0].hz, 720, 1e-9);
+}
+
+static void noise() {
+  const double sr = 48000;
+  for (int col = 0; col < sdk::Noise::NCOLORS; col++) {
+    sdk::Rng r(7), r2(7);
+    sdk::Noise n, m; n.set(col); m.set(col);
+    double sum = 0, sq = 0, pk = 0; int quiet = 0;
+    for (int i = 0; i < 96000; i++) {
+      const double x = n.next(r, sr);
+      CHECK(std::isfinite(x) && x == m.next(r2, sr));   // конечный и повторяется от одного зерна
+      sum += x; sq += x * x; if (std::fabs(x) > pk) pk = std::fabs(x); if (std::fabs(x) < 1e-3) quiet++;
+    }
+    const double rms = std::sqrt(sq / 96000);
+    CHECK(rms > 0.01 && pk < 2.5);
+    if (col == sdk::Noise::white) { NEAR(rms, 0.5 / std::sqrt(3.0), 0.005); NEAR(sum / 96000, 0, 0.005); }
+    if (col == sdk::Noise::crackle) CHECK(quiet > 20000 && quiet < 96000);   // редкие импульсы, между ними — тишина
+    if (col == sdk::Noise::grain) CHECK(quiet > 30000);   // всплески, между ними — почти тихо
+  }
+}
+
+static void infernoModel() {
+  using namespace inferno;
+  static Scale sc;
+  static Model m(sc);
+  sc.on = false; m.reset(3);
+  NEAR(m.semiOf(8, 0), 0, 1e-12); NEAR(m.semiOf(0, 1), 60, 1e-9); NEAR(m.semiOf(4, 0.5), 4 * SPAN + 0.5 * SPAN, 1e-9);
+  m.setPos(8, 0); NEAR(m.hzOf(8), 55, 1e-9);
+  double r[3];
+  m.ratios(3, r); NEAR(r[1], 2, 1e-12); NEAR(r[2], 3, 1e-12);
+  m.setFx(STRUCTURE, 0.9); m.ratios(3, r); NEAR(r[1], 2.76, 1e-12); NEAR(r[2], 5.4, 1e-12);
+  m.setFx(STRUCTURE, 0.5); m.ratios(3, r); NEAR(r[1], std::pow(2.0, 3 / 12.0), 1e-12);    // без лада — терция и квинта
+  sc.on = true; sc.idx = 0; sc.root = 0;                // мажор от A: нота A (0), вверх по ладу — 2, 4, 5, 7
+  m.setPos(8, 0); m.ratios(8, r);
+  NEAR(12 * std::log2(r[1]), 4, 1e-9); NEAR(12 * std::log2(r[2]), 7, 1e-9);
+  for (int k = 0; k < NC; k++) for (double p : {0.0, 0.13, 0.5, 0.77, 1.0}) CHECK(sc.inScale(static_cast<int>(m.semiOf(k, p))));
+  sc.on = false;
+  // иней: τ 6 с вверх, 3 с вниз; сдвиг > 0.02 — событие
+  int ices = 0;
+  m.listen([](void* c, const Ev& e) { if (e.t == Ev::ICE) ++*static_cast<int*>(c); }, &ices);
+  m.reset(3); m.setFx(ICE, 1);
+  for (int i = 0; i < 360; i++) m.tick(1.0 / 60);
+  NEAR(m.iceE(), 1 - std::exp(-1.0), 0.01);
+  CHECK(ices > 10 && ices < 40);
+  const double top = m.iceE();
+  m.setFx(ICE, 0);
+  for (int i = 0; i < 180; i++) m.tick(1.0 / 60);
+  NEAR(m.iceE(), top * std::exp(-1.0), 0.01);
+  NEAR(m.Qof(m.circ(0)), (4 + 0.5 * 60) * (1 + m.iceE() * 8), 1e-9);
+  // грешники: не больше четырёх; ещё раз — отпустить
+  m.listen(nullptr, nullptr);
+  m.reset(3);
+  for (int k = 0; k < 6; k++) m.pin(k, 0.25);
+  int n = 0; for (int k = 0; k < NC; k++) n += m.circ(k).sinner;
+  CHECK(n == PIN_MAX && !m.circ(5).sinner && m.circ(5).pos == 0.5 && m.circ(0).pos == 0.25);
+  CHECK(m.sounding() && m.burning(2));
+  CHECK(!m.pin(2, 0.9) && m.circ(2).pos == 0.25);
+  m.clear(); CHECK(!m.sounding());
+  m.hold(3, 1); CHECK(m.burning(3)); m.hold(3, -1); CHECK(!m.sounding());
+  // удар: lvl 1, спад τ 0.4
+  m.strike(4, 0.8); NEAR(m.circ(4).lvl, 1, 1e-12);
+  for (int i = 0; i < 24; i++) m.tick(1.0 / 60);
+  NEAR(m.circ(4).lvl, std::exp(-1.0), 0.01);
+  // буря: размах ≤ storm·7.8, затухает при storm = 0
+  m.reset(3); m.pin(1, 0.5);
+  double mx = 0;
+  for (int i = 0; i < 600; i++) { m.tick(1.0 / 60); mx = std::fmax(mx, std::fabs(m.stormSemi())); }
+  CHECK(mx > 1 && mx <= 0.6 * 7.8 + 1e-9);
+  m.setFx(STORM, 0);
+  for (int i = 0; i < 60; i++) m.tick(1.0 / 60);
+  CHECK(std::fabs(m.stormSemi()) < 0.01);
+  // снимок → restore → тот же снимок; кубик с зерном повторяется, 2–3 грешника
+  Model a(sc), b(sc);
+  a.reset(11); a.dice(); a.setCirc(3, WIDTH, 0.2); a.setFx(SMOKE, 0.8);
+  const std::string js = a.snapshot();
+  b.reset(1); b.restore(js);
+  CHECK(b.snapshot() == js);
+  Model c(sc), d(sc);
+  c.reset(42); d.reset(42); c.dice(); d.dice();
+  CHECK(c.snapshot() == d.snapshot());
+  for (uint32_t sd = 1; sd < 30; sd++) {
+    Model q(sc); q.reset(sd); q.pin(0, 0.1); q.dice();
+    int ns = 0; for (int k = 0; k < NC; k++) ns += q.circ(k).sinner;
+    const double st = q.fx(STRUCTURE);
+    CHECK(ns >= 2 && ns <= 3 && (st == 0.15 || st == 0.5 || st == 0.85));
+  }
+}
+
+static void infernoSound() {
+  using namespace inferno;
+  const double sr = 48000;
+  static Scale sc;
+  static Inferno w(sc);
+  w.prepare(sr, 5);
+  static float L[128], R[128], sL[128], sR[128];
+  const sdk::Out out{L, R, sL, sR};
+  const auto run = [&](double secs, std::vector<float>* rec, std::vector<float>* send = nullptr, double* pk = nullptr) {
+    for (int b = 0; b < static_cast<int>(secs * sr / 128); b++) {
+      w.process(out, 128);
+      for (int i = 0; i < 128; i++) {
+        CHECK(std::isfinite(L[i]) && std::isfinite(sL[i]) && L[i] == R[i]);
+        if (rec) rec->push_back(L[i]);
+        if (send) send->push_back(sL[i]);
+        if (pk) *pk = std::fmax(*pk, std::fabs(L[i]));
+      }
+    }
+  };
+  std::vector<float> z; double pk = 0;
+  run(0.2, &z, nullptr, &pk);
+  CHECK(pk == 0);                                       // молчит
+  // удар по кругу 8 (A, 55 Гц; structure 0 — гармоники 1·2·3): энергия у f0 и 2·f0, мимо — тише
+  w.action(ACT_FX, STORM, (const double[]){0}, 1);
+  const double f0 = w.model().hzOf(8);
+  w.action(ACT_STRIKE, 8, (const double[]){1}, 1);
+  std::vector<float> y, s;
+  run(1.0, &y, &s);
+  double peak = 0; for (float v : y) peak = std::fmax(peak, std::fabs(v));
+  CHECK(peak > 1e-3 && peak < 3);
+  const std::vector<float> tail(y.begin() + 2400, y.end());
+  CHECK(goertzel(tail, f0, sr) > 3 * goertzel(tail, f0 * 1.4, sr));
+  CHECK(goertzel(tail, 2 * f0, sr) > 3 * goertzel(tail, f0 * 1.7, sr));
+  double sp = 0; for (float v : s) sp = std::fmax(sp, std::fabs(v));
+  CHECK(sp > 1e-4);                                     // дым идёт в зал (smoke 0.35 по умолчанию)
+  std::vector<double> h(70);
+  CHECK(w.heard(h.data(), 70) == 2 && h[0] == 1 && h[1] == 8);
+  CHECK(w.heard(h.data(), 70) == 1);                    // очищено
+  run(8.0, nullptr);                                    // звон угасает, круг отпускается
+  pk = 0; run(0.5, nullptr, nullptr, &pk);
+  CHECK(pk < 1e-4);
+  // тление: держим круг — шум идёт, пока держат; отпустили — затихает
+  w.action(ACT_HOLD, 4, (const double[]){1}, 1);
+  CHECK(w.sounding());
+  std::vector<float> sm; run(1.5, &sm);
+  double rms = 0; for (size_t i = sm.size() / 2; i < sm.size(); i++) rms += sm[i] * sm[i];
+  CHECK(std::sqrt(rms / (sm.size() / 2)) > 1e-3);
+  w.action(ACT_HOLD, 4, (const double[]){-1}, 1);
+  run(6.0, nullptr); pk = 0; run(0.5, nullptr, nullptr, &pk);
+  CHECK(pk < 1e-4 && !w.sounding());
+  // smoke = 0 — посыл пуст; fire выше — сухого громче не становится бесконечно (перегруз сжимает)
+  w.action(ACT_FX, SMOKE, (const double[]){0}, 1);
+  w.action(ACT_STRIKE, 5, (const double[]){1}, 1);
+  std::vector<float> d2, s2; run(2.0, &d2, &s2);
+  double sp2 = 0; for (size_t i = 72000; i < s2.size(); i++) sp2 = std::fmax(sp2, std::fabs(s2[i]));
+  CHECK(sp2 < 1e-6);
+  // детерминизм: два мира, одно зерно и одни действия — те же сэмплы
+  static Inferno w2(sc);
+  w.prepare(sr, 9); w2.prepare(sr, 9);
+  w.action(ACT_DICE, 0, nullptr, 0); w2.action(ACT_DICE, 0, nullptr, 0);
+  w.action(ACT_STRIKE, 2, (const double[]){0.7}, 1); w2.action(ACT_STRIKE, 2, (const double[]){0.7}, 1);
+  static float L2[128], R2[128], sL2[128], sR2[128];
+  const sdk::Out out2{L2, R2, sL2, sR2};
+  bool same = true;
+  for (int b = 0; b < 200; b++) { w.process(out, 128); w2.process(out2, 128); for (int i = 0; i < 128; i++) if (L[i] != L2[i] || sL[i] != sL2[i]) same = false; }
+  CHECK(same);
+  CHECK(w.rev() == sdk::Rev::hall);
+  // снимок мира ядра: restore в другом мире повторяет снимок
+  const std::string js = w.snapshot();
+  w2.restore(js);
+  CHECK(w2.snapshot() == js);
+  // зеркало: размер и поля
+  std::vector<double> m(MIRROR_MAX);
+  CHECK(w.mirror(m.data(), MIRROR_MAX) == MIRROR_MAX);
+  CHECK(m[4 + FIRE] == w.model().fx(FIRE) && m[MIRROR_HEAD + 2 * CIRC_N + 3] == w.model().circ(2).color);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
+  shaper(); bpbank(); noise(); infernoModel(); infernoSound();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

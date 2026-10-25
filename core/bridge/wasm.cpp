@@ -1,5 +1,5 @@
 // Мост ядра SDK для WASM (t2d.wasm): хост и все миры SDK в одном модуле, его крутит t2d-worklet.js (в Node — tools/t2d-core.mjs).
-// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Cymatica — 2, Natura — 4, Monochordum — 7, Oceanus — 8, Horologium — 9, Firmamentum — 10, Tria — 11, Arcadia — 12, Goetia — 15.
+// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Cymatica — 2, Natura — 4, Inferno — 5, Monochordum — 7, Oceanus — 8, Horologium — 9, Firmamentum — 10, Tria — 11, Arcadia — 12, Portus — 13, Goetia — 15.
 // Обмен — через буферы ядра: аргументы action (t2d_args), зеркало и услышанное (t2d_mbuf), строка снимка (t2d_str_buf + длина).
 #include <cstring>
 #include <string>
@@ -15,6 +15,7 @@
 #include "../worlds/tria/world.hpp"
 #include "../worlds/portus/world.hpp"
 #include "../worlds/natura/world.hpp"
+#include "../worlds/inferno/world.hpp"
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
@@ -27,6 +28,7 @@ static arcadia::World arc(host.scale());
 static tria::World tria3(host.scale());
 static portus::World port(host.scale());
 static natura::World nat(host.scale());
+static inferno::Inferno inf(host.scale());
 static sdk::World* worlds[Host::SLOTS] = {};
 static constexpr int ARGS_CAP = 256;                    // узор Cymatica — 117 чисел
 static double args[ARGS_CAP];
@@ -79,6 +81,9 @@ API void t2d_init(double sr, unsigned seed) {
   nat.prepare(sr, seed);                                // Natura: шанс шага и шелест — от зерна
   worlds[4] = &nat;
   host.add(4, &nat);
+  inf.prepare(sr, seed);                                // Inferno — слот 5
+  worlds[5] = &inf;
+  host.add(5, &inf);
 }
 API double* t2d_args() { return args; }
 API void t2d_action(int slot, int kind, int i, const double* a, int n) {
