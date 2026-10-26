@@ -1,4 +1,3 @@
-// Хост SDK: см. host.hpp. Порядок process: миры → посыл × фейдер в rin → (+ ext) → защита от NaN → ревербы → сумма × 0.9.
 #include "host.hpp"
 #include <cmath>
 #include <cstring>
@@ -16,6 +15,21 @@ void Host::prepare(double sr, uint32_t seed) {
   for (int s = 0; s < SLOTS; s++) std::memset(dry_[s], 0, sizeof dry_[s]);
   std::memset(ext_, 0, sizeof ext_);
   std::memset(ret_, 0, sizeof ret_);
+  std::memset(master_, 0, sizeof master_);
+  
+  // Мастер-цепь
+  for (auto& f : lpf_) f.set(sdk::Biquad::lowpass, 20000, 0.5, sr);
+  compThr_ = -10; compRatio_ = 2.5;
+  compEnv_[0] = compEnv_[1] = 0;
+  knee_.k = 2.6 / std::tanh(2.6);
+  knee_.kn = 0.6;
+  knee_.room = 0.38;
+  masterGain_ = 1.0;
+  
+  // LFO
+  lfos_.clear();
+  morphClassic_ = sdk::WaveMorph(sdk::WaveMorph::CLASSIC);
+  morphRandom_ = sdk::WaveMorph(sdk::WaveMorph::RANDOM);
 }
 
 void Host::add(int slot, sdk::World* w) {
@@ -98,6 +112,105 @@ void Host::process(int n) {
   }
   for (int c = 0; c < 2; c++)
     for (int i = 0; i < n; i++) ret_[c][i] = (rout_[0][c][i] + rout_[1][c][i] + rout_[2][c][i] + rout_[3][c][i]) * RET;
+  
+  // Мастер-цепь: LPF → компрессор → потолок knee
+  for (int c = 0; c < 2; c++) {
+    for (int i = 0; i < n; i++) master_[c][i] = static_cast<float>(lpf_[c].step(ret_[c][i]));
+    for (int i = 0; i < n; i++) {
+      const double x = std::abs(master_[c][i]);
+      const double attack = 0.01, release = 0.4;        // время атаки/релиза (с)
+      const double a = x > compEnv_[c] ? (1.0 - std::exp(-1.0 / (attack * clk_.sr))) : (1.0 - std::exp(-1.0 / (release * clk_.sr)));
+      compEnv_[c] += a * (x - compEnv_[c]);
+      const double thrLin = std::pow(10.0, compThr_ / 20.0);
+      const double knee = 10.0;                         // ширина колена (дБ)
+      double gr = 1.0;                                  // gain reduction
+      if (compEnv_[c] > thrLin) {
+        const double dbOver = 20.0 * std::log10(compEnv_[c] / thrLin);
+        if (dbOver < knee) {
+          const double s = 1.0 / compRatio_ - 1.0;
+          gr = std::pow(10.0, s * dbOver * dbOver / (2.0 * knee) / 20.0);
+        } else {
+          gr = std::pow(10.0, (1.0 / compRatio_ - 1.0) * (dbOver - knee / 2.0) / 20.0);
+        }
+      }
+      master_[c][i] = static_cast<float>(master_[c][i] * gr);
+    }
+    for (int i = 0; i < n; i++) master_[c][i] = static_cast<float>(knee_(master_[c][i]) * masterGain_);
+  }
+  
   std::memset(ext_, 0, sizeof ext_);
   clk_.now += n / clk_.sr;                              // следующий блок — сразу за этим (веб перед каждым задаёт время сам)
+}
+
+void Host::masterLpf(double hz) {
+  const double sr = clk_.sr;
+  const double cutoff = hz > 19000 ? 22000 : hz;        // >19 кГц — проброс (22 кГц)
+  for (auto& f : lpf_) f.set(sdk::Biquad::lowpass, cutoff, 0.5, sr);
+}
+
+void Host::masterComp(double thr, double ratio) {
+  compThr_ = thr;
+  compRatio_ = ratio;
+}
+
+void Host::masterCeil(double db) {
+  const double room = (db + 12.0) / 12.0;               // −12…0 дБ → 0…1
+  knee_.k = 2.6 / std::tanh(2.6);
+  knee_.kn = 0.6;
+  knee_.room = 0.38 * (room > 0 ? (room < 1 ? room : 1) : 0);
+  masterGain_ = std::pow(10.0, -db / 20.0);             // компенсация потолка усилением
+}
+
+const float* Host::master(int ch) const { return master_[ch & 1]; }
+
+int Host::addLfo(int world, const char* key, double base, int shape) {
+  sdk::RowLfo lfo;
+  lfo.world = world;
+  lfo.key = key ? key : "";
+  lfo.base = base;
+  lfo.shape = shape == 1 ? sdk::WaveMorph::RANDOM : sdk::WaveMorph::CLASSIC;
+  lfo.morph = lfo.shape == sdk::WaveMorph::CLASSIC ? 0 : 0.6;
+  lfo.rate = lfo.shape == sdk::WaveMorph::CLASSIC ? 0.8 : 0.4;
+  lfo.depth = 0.3;
+  lfo.phase = 0;
+  lfo.u = 0;
+  lfo.seed = static_cast<int>(lfos_.size() * 1234567 + world * 7919);   // псевдослучайное зерно
+  lfos_.push_back(lfo);
+  return static_cast<int>(lfos_.size()) - 1;
+}
+
+void Host::removeLfo(int idx) {
+  if (idx >= 0 && idx < static_cast<int>(lfos_.size())) lfos_.erase(lfos_.begin() + idx);
+}
+
+void Host::lfoSpec(int idx, double m0, double m1, double r0, double r1, double d0, double d1) {
+  if (idx >= 0 && idx < static_cast<int>(lfos_.size())) {
+    auto& lfo = lfos_[static_cast<size_t>(idx)];
+    lfo.morph = m0;                                     // начало диапазона morph (конец — m1, но пока не используется)
+    lfo.rate = r0;                                      // начало диапазона rate
+    lfo.depth = d0;                                     // начало диапазона depth
+    // m1, r1, d1 — для будущего (анимация параметров LFO)
+    (void)m1; (void)r1; (void)d1;
+  }
+}
+
+double Host::lfoValue(int idx) const {
+  if (idx < 0 || idx >= static_cast<int>(lfos_.size())) return 0.5;
+  const auto& lfo = lfos_[static_cast<size_t>(idx)];
+  const auto& morph = lfo.shape == sdk::WaveMorph::CLASSIC ? morphClassic_ : morphRandom_;
+  return lfo.value(morph);
+}
+
+void Host::lfoTick(double dt) {
+  for (auto& lfo : lfos_) {
+    const auto& morph = lfo.shape == sdk::WaveMorph::CLASSIC ? morphClassic_ : morphRandom_;
+    lfo.tick(dt, morph);
+  }
+}
+
+void Host::modelTick(double dt) {
+  const double a[1] = {dt};
+  for (int s = 0; s < SLOTS; s++) {
+    if (w_[s]) w_[s]->action(-1, 0, a, 1);              // kind=-1 — тик модели
+  }
 }

@@ -16,7 +16,7 @@
 
 ## Фазы
 
-**1. Хост в ядро (без Mac).** Мастер (компрессор, `knee`), микшер, concordia (лад, темп), LFO строк (`host/sl.js` → `RowLfo`), тик моделей, `Transport` (MIDI, потом хост AUv3). Единый C-ABI моста для нативной стороны: действия → ядро, зеркало → view (сейчас оно ходит через worklet и JS-фасады). Без этого картинке нечем жить без JS.
+**1. Хост в ядро (без Mac).** ✅ **Готово (26.10).** Мастер (LPF 20 кГц, компрессор −10 дБ / 2.5:1, потолок `knee`), микшер (16 слотов, фейдеры, посыл после фейдера), лад (`Scale`: 6 ладов, `snapSemi`), LFO строк (`sdk::RowLfo`, морфинг classic/random, `addLfo/removeLfo/tick/value`), тик моделей (`modelTick(dt)` → `action(-1, ...)`), `Transport` (MIDI-часы, `ClockParser` × 8 входов, `Follower`, события). Единый C-ABI мост: `t2d_master_*`, `t2d_lfo_*`, `t2d_model_tick`, `t2d_time/midi_byte/midi_msg/hevents`. Без этого картинке нечем жить без JS.
 
 **2. Каркас приложения (Mac).** `ios/app/` (XcodeGen), ядро — статической библиотекой, `AVAudioSourceNode` → `process`. Слой рисования с теми же вызовами, что `host/draw.js` (`ink`, `ring`, `dot`, `text`, `mapText`, `hairBox`, `glowAt`, `drawCurve`; фон — кешированный слой вместо `bgLayer`, без теней). Касания (`F`, тап / двойной / удержание — `TAP_MS`, `DTAP_MS`, `HOLD_MS`), реестр миров и их интерфейс, верхняя строка, карта Universum, микшер, concordia, плашки FX / LFO (`sheet`), легенда, панель audio, undo, сохранение (файлы вместо localStorage). **Проба:** Firmamentum со звуком и касанием звезды — звук, нагрузка, задержка.
 

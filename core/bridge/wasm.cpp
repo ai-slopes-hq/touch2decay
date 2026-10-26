@@ -126,3 +126,24 @@ API int t2d_hmirror() {                                 // зеркало хос
 API int t2d_hevents() { return host.events(mbuf, 512); }   // события часов: по 2 числа — код, bpm
 // звучащая страна Arcadia (сетка 80 × 160, float): which 0 — высоты z, 1 — маска воды; для тестов и картинки натива
 API const float* t2d_arc_land(int which) { return which ? arc.land().lake : arc.land().z; }
+
+// мастер-цепь: LPF, компрессор, потолок, выход
+API void t2d_master_lpf(double hz) { host.masterLpf(hz); }
+API void t2d_master_comp(double thr, double ratio) { host.masterComp(thr, ratio); }
+API void t2d_master_ceil(double db) { host.masterCeil(db); }
+API const float* t2d_master(int ch) { return host.master(ch); }
+
+// LFO: world — слот, key — ключ параметра, base — базовое значение, shape — форма (0=classic, 1=random)
+// spec: morph/rate/depth — по два числа (начало, конец), value — текущее значение
+API int t2d_add_lfo(int world, const char* key, double base, int shape) { 
+  return host.addLfo(world, key, base, shape); 
+}
+API void t2d_remove_lfo(int idx) { host.removeLfo(idx); }
+API void t2d_lfo_spec(int idx, double m0, double m1, double r0, double r1, double d0, double d1) { 
+  host.lfoSpec(idx, m0, m1, r0, r1, d0, d1); 
+}
+API double t2d_lfo_value(int idx) { return host.lfoValue(idx); }
+API void t2d_lfo_tick(double dt) { host.lfoTick(dt); }
+
+// model tick — обновление модели вне аудио-потока
+API void t2d_model_tick(double dt) { host.modelTick(dt); }

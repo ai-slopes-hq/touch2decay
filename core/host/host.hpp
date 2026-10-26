@@ -2,9 +2,15 @@
 // Внешние посылы (веб, переходный период): по стереовходу на тип, суммируются с посылами миров; мост пишет их до process,
 // хост обнуляет после. Буферы фиксированные, под 128 кадров; в process аллокаций нет. Объект ~1.2 МБ (4 ревербера) —
 // на стек не класть. Контракт: prepare до process.
+//
+// Дополнено: мастер (LPF, компрессор, потолок knee), LFO строк (tick + хранилище), тик моделей (dt), единый C-ABI мост.
 #pragma once
 #include <cstdint>
+#include <vector>
 #include "../sdk/world.hpp"
+#include "../sdk/lfo.hpp"
+#include "../sdk/biquad.hpp"
+#include "../sdk/knee.hpp"
 #include "scale.hpp"
 
 class Host {
@@ -33,6 +39,22 @@ class Host {
   const sdk::Clock& clock() const { return clk_; }
   int events(double* buf, int cap);                     // по 2 числа: код (sdk::Follower::Ev), bpm; очищает
 
+  // Мастер: LPF, компрессор (thr, ratio), потолок knee. Применяются к ret_ после суммы ревербов, до выхода.
+  void masterLpf(double hz);                            // cutoff LPF
+  void masterComp(double thr, double ratio);            // компрессор: порог дБ, отношение
+  void masterCeil(double db);                           // потолок knee: db от −12…0
+  const float* master(int ch) const;                    // выход мастера (ch 0 — L, 1 — R)
+
+  // LFO строк: add/remove/tick, get возвращает текущее значение строки.
+  int addLfo(int world, const char* key, double base, int shape);   // shape 0 — classic, 1 — random; возвращает индекс
+  void removeLfo(int idx);
+  void lfoSpec(int idx, double m0, double m1, double r0, double r1, double d0, double d1);   // параметры LFO: morph, rate, depth — по два числа (начало, конец)
+  double lfoValue(int idx) const;
+  void lfoTick(double dt);                              // сдвиг фаз всех LFO
+
+  // Тик моделей: вызывается раз в блок, dt — время блока в секундах. Миры с tick() получают dt.
+  void modelTick(double dt);
+
  private:
   sdk::World* w_[SLOTS] = {};
   float gain_[SLOTS] = {};                              // 0 у пустых; add ставит 1
@@ -41,6 +63,7 @@ class Host {
   float rin_[4][2][BLOCK] = {}, rout_[4][2][BLOCK] = {};
   float ext_[4][2][BLOCK] = {};
   float ret_[2][BLOCK] = {};
+  float master_[2][BLOCK] = {};                         // выход мастера (после LPF, компрессора, потолка)
   Scale scale_;
   sdk::Reverb rev_[4];
   void follow(const sdk::MidiMsg& m, double at);
@@ -50,4 +73,16 @@ class Host {
   sdk::Follower follow_;
   double ev_[EVMAX][2] = {};
   int nev_ = 0;
+
+  // Мастер
+  sdk::Biquad lpf_[2];                                  // LPF стерео
+  double compThr_ = -10, compRatio_ = 2.5;              // компрессор
+  double compEnv_[2] = {0, 0};                          // огибающая на канал (для peak detector)
+  sdk::Knee knee_;                                      // потолок
+  double masterGain_ = 1.0;                             // усиление потолка
+
+  // LFO строк
+  std::vector<sdk::RowLfo> lfos_;
+  sdk::WaveMorph morphClassic_{sdk::WaveMorph::CLASSIC};
+  sdk::WaveMorph morphRandom_{sdk::WaveMorph::RANDOM};
 };
