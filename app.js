@@ -21,6 +21,7 @@ import { DTAP_MS, F, HOLD_MOVE, HOLD_MS, TAP_MOVE, TAP_MS } from './host/touch.j
 import { backPos, btnHit, btnPos, drawBuild, drawUI, headHit, ITEM_H, markDice, rootAt, sclList, titleW } from './host/ui-top.js';
 import { commit, hists, undo } from './host/undo.js';
 import { clamp, inBox, invLog, lerpLog } from './host/util.js';
+import { alignCoeffs, beatHz, cutoffOf, freqOf, quantX, shiftHz, waveCoeffs } from './worlds/tenebrae/tone.js';
 import { morphFn, morphName, NW, WAVES, weight } from './host/waves.js';
 setClockVer(new URL(import.meta.url).searchParams.get('v') || '0');   // версия для addModule метронома (у host/ её нет)
 setCoreVer(new URL(import.meta.url).searchParams.get('v') || '0');    // и для ядра SDK (t2d-worklet.js, t2d.wasm)
@@ -65,10 +66,6 @@ const SECTORS = [                          // кольцо свойств кру
 ];
 // сдвиг частоты: середина луча — ноль, дальше вверх, ближе к центру — вниз; до ±1.5 кГц, у нуля — медленно
 const SHIFT_DEF = 0.5, SHIFT_MAX = 1500;
-const shiftHz = (t) => {
-  const u = 2 * t - 1, a = Math.abs(u);
-  return a < 0.04 ? 0 : Math.sign(u) * (2 ** (((a - 0.04) / 0.96) * 11) - 1) * (SHIFT_MAX / 2047);
-};
 const LINK_SECTORS = [                     // кольцо связи: характер и глубина; cut — удалить
   { key: 'fm', label: 'fm', ang: deg(-90) },
   { key: 'tzfm', label: 'tzfm', ang: deg(-18) },
@@ -109,22 +106,14 @@ const FX_SECTORS = [                        // веер от кнопки вве
 const semi = (x) => SEMIS * clamp(x) ** WARP;
 const xOf = (s) => (clamp(s, 0, SEMIS) / SEMIS) ** (1 / WARP);
 
-function quantX(x) {
-  const s = semi(x);
-  let best = s, bd = 99;
-  for (let n = Math.floor(s) - 7; n <= Math.ceil(s) + 7; n++) {
-    if (n < 0 || n > SEMIS || !inScale(n)) continue;
-    const d = Math.abs(n - s);
-    if (d < bd) { bd = d; best = n; }
-  }
-  return xOf(best);
-}
-const soundX = (v) => (scl.on ? quantX(v.x) : v.x);
-const freq = (v) => F_LO * 2 ** (semi(soundX(v)) / 12);
+// лад для формул тона: переключатель и проверка ноты — живые, из host/scale.js
+const sclView = { get on() { return scl.on; }, inScale };
+const soundX = (v) => (scl.on ? quantX(v.x, sclView) : v.x);
+const freq = (v) => freqOf(v.x, sclView);
 // сколько FM на кружке: пока она есть, фильтр приоткрывается — иначе он съедает боковые полосы
 const fmOpen = (v) => Math.min(1, v.fm + v.mods.reduce((s, m) => s + (m.type === 'fm' || m.type === 'tzfm' ? m.depth : 0), 0));
 // cutoff кружка — на весь диапазон; ось Y ведёт его ещё на ±2.25 октавы: внизу тёмно, вверху открыто
-const cutoff = (v) => clamp(lerpLog(CUT_LO, CUT_HI, v.cut) * 2 ** ((v.y - 0.5) * 4.5) * 2 ** (1.5 * fmOpen(v)), 20, 20000);
+const cutoff = (v) => cutoffOf(v.cut, v.y, fmOpen(v));
 // dx — где кружок виден (с ладом он съезжает к ноте); wob — сдвиг от LFO на высоте
 const vx = (v) => place(v.dx + v.wob, v.y).x;
 const vy = (v) => place(v.dx + v.wob, v.y).y;
@@ -1194,35 +1183,16 @@ function weightCurve(i, level, shape = 1) {
 
 // цикл волны → гармоники → PeriodicWave; громкость выравнивается по RMS
 function makeWave(w) {
-  const N = 1024, HARM = 220, smp = new Float64Array(N);
-  let mean = 0;
-  for (let i = 0; i < N; i++) { smp[i] = w.fn(i / N); mean += smp[i] / N; }
-  let peak = 0;
-  for (let i = 0; i < N; i++) { smp[i] -= mean; peak = Math.max(peak, Math.abs(smp[i])); }
-  let rms = 0;
-  for (let i = 0; i < N; i++) { smp[i] /= peak; rms += (smp[i] * smp[i]) / N; }
-  const re = new Float32Array(HARM), im = new Float32Array(HARM);
-  for (let h = 1; h < HARM; h++) {
-    let a = 0, b = 0;
-    for (let i = 0; i < N; i++) { const ph = (2 * Math.PI * h * i) / N; a += smp[i] * Math.cos(ph); b += smp[i] * Math.sin(ph); }
-    re[h] = (2 * a) / N; im[h] = (2 * b) / N;
-  }
-  w.re = re; w.im = im;
-  w.pwLfo = ctx.createPeriodicWave(re, im);   // LFO — исходная форма: её видно и слышно как форму
-  w.level = 0.24 / Math.sqrt(rms);
+  const c = waveCoeffs(w.fn);
+  w.re = Float32Array.from(c.re); w.im = Float32Array.from(c.im);
+  w.pwLfo = ctx.createPeriodicWave(w.re, w.im);   // LFO — исходная форма: её видно и слышно как форму
+  w.level = c.level;
 }
 // для голосов фазы гармоник у всех таблиц одни (как у saw): морф между соседями — чистая
 // интерполяция амплитуд гармоник, без провалов громкости и взаимного гашения посередине
 function alignWaves() {
-  const ref = WAVES.find((w) => w.label === 'saw');
-  for (const w of WAVES) {
-    const re = new Float32Array(w.re.length), im = new Float32Array(w.im.length);
-    for (let h = 1; h < re.length; h++) {
-      const m = Math.hypot(w.re[h], w.im[h]), th = Math.atan2(ref.im[h], ref.re[h]);
-      re[h] = m * Math.cos(th); im[h] = m * Math.sin(th);
-    }
-    w.pw = ctx.createPeriodicWave(re, im);
-  }
+  const al = alignCoeffs(WAVES, WAVES.findIndex((w) => w.label === 'saw'));
+  WAVES.forEach((w, i) => { w.pw = ctx.createPeriodicWave(Float32Array.from(al[i].re), Float32Array.from(al[i].im)); });
 }
 
 // генератор с морфингом: по осциллятору на таблицу, их веса — из позиции (позиция — звуковой сигнал,
@@ -1444,7 +1414,7 @@ function apply(v) {
   const T = (p, val, tau) => p.setTargetAtTime(val, t, s ? 0.004 : tau);
   const f = freq(v), y = v.y, G = 0.14;
   T(n.c1.freq, f, G);
-  T(n.c2.freq, f + v.beat, G);
+  T(n.c2.freq, f + beatHz(v.beat), G);
   T(n.sub.frequency, f / 2, G);
   T(n.m.frequency, f, G);
   T(n.morph.pos, 2 * v.wave - 1, 0.04);

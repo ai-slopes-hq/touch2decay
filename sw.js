@@ -9,6 +9,7 @@ const HOST = ['./host/util.js', './host/fonts.js', './host/draw.js', './host/sca
 const MODULES = [...HOST, './app.js', './worlds/cymatica/index.js', './laboratorium.js', './worlds/natura/index.js', './worlds/inferno/index.js', './worlds/paradisus/index.js', './worlds/monochord/index.js', './worlds/oceanus/index.js', './worlds/horologium/index.js', './worlds/firmamentum/index.js', './worlds/tria/index.js', './worlds/arcadia/index.js', './worlds/portus/index.js', './worlds/goetia/index.js', './prisma.js', './vitrea.js',
   './worlds/arcadia/model.js', './worlds/arcadia/engine.js', './worlds/arcadia/view.js', './worlds/firmamentum/model.js', './worlds/firmamentum/engine.js', './worlds/firmamentum/view.js', './worlds/goetia/model.js', './worlds/goetia/engine.js', './worlds/goetia/view.js', './worlds/monochord/model.js', './worlds/monochord/engine.js', './worlds/monochord/view.js', './worlds/oceanus/model.js', './worlds/oceanus/engine.js', './worlds/oceanus/view.js', './worlds/tria/model.js', './worlds/tria/engine.js', './worlds/tria/view.js',
   './worlds/inferno/model.js', './worlds/inferno/engine.js', './worlds/inferno/view.js', './worlds/paradisus/model.js', './worlds/paradisus/engine.js', './worlds/paradisus/view.js',
+  './worlds/tenebrae/tone.js',
   './worlds/portus/model.js', './worlds/portus/engine.js', './worlds/portus/view.js',
   './worlds/horologium/model.js', './worlds/horologium/engine.js', './worlds/horologium/view.js',
   './worlds/natura/model.js', './worlds/natura/engine.js', './worlds/natura/view.js', './worlds/natura/scene.js',
