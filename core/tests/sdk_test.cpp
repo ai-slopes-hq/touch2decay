@@ -36,6 +36,7 @@
 #include "../worlds/inferno/world.hpp"
 #include "../worlds/tenebrae/tone.hpp"
 #include "../worlds/tenebrae/waves.hpp"
+#include "../worlds/tenebrae/shifter.hpp"
 
 static int fails = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -2102,10 +2103,34 @@ static void tenebraeMorph() {
   }
 }
 
+// Tenebrae: сдвиг частоты — синус 1000 Гц уходит на 1000 ± hz, зеркальной боковой нет (≥ 40 dB), при hz = 0 громкость та же
+static void tenebraeShifter() {
+  const double sr = 48000, PI = 3.14159265358979323846;
+  auto run = [&](double hz, double* mag) {          // амплитуды бинов 1 Гц второй половины (1 с = 48000 точек, шаг ДПФ 1 Гц)
+    tenebrae::Shifter sh; sh.reset();
+    std::vector<double> y(48000);
+    for (int n = 0; n < 48000; n++) y[n] = sh.step(std::sin(2 * PI * 1000 * n / sr), hz, sr);
+    double rms = 0;
+    for (int n = 24000; n < 48000; n++) rms += y[n] * y[n];
+    for (int k = 0; k < 3; k++) {
+      const double f = k == 0 ? 1000 + hz : k == 1 ? 1000 - hz : 1000;
+      double re = 0, im = 0;
+      for (int n = 24000; n < 48000; n++) { re += y[n] * std::cos(2 * PI * f * n / sr); im += y[n] * std::sin(2 * PI * f * n / sr); }
+      mag[k] = std::sqrt(re * re + im * im);
+    }
+    return std::sqrt(rms / 24000);
+  };
+  double m[3];
+  run(300, m);   CHECK(m[0] > 1000); CHECK(20 * std::log10(m[1] / m[0]) <= -40);
+  run(-300, m);  CHECK(m[0] > 1000); CHECK(20 * std::log10(m[1] / m[0]) <= -40);   // пик на 700, зеркало на 1300
+  const double r = run(0, m);
+  NEAR(20 * std::log10(r / (1 / std::sqrt(2.0))), 0, 0.1);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
-  tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph();
+  tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
   shaper(); shaperOs4(); bpbank(); noise(); infernoModel(); infernoSound();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
