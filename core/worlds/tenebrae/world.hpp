@@ -37,7 +37,7 @@ constexpr int MIRROR_HEAD = 1, MIRROR_V = 130, MIRROR_N = MIRROR_HEAD + VOICES *
 class World : public sdk::World {
  public:
   static constexpr int MAXLINK = 24;                    // связей у приёмника: 5 источников × 4 типа с запасом
-  static constexpr int ECHO_MAX = 1 << 16;              // линия эха: 0.53 + 0.005 с до 96 кГц (DelayNode(2) — с запасом)
+  static constexpr int ECHO_MAX = 1 << 16;              // линия эха: 0.53 с + квант + 0.005 с до 96 кГц (DelayNode(2) — с запасом)
   static constexpr int NSTRIKE = 4;                     // ударов одновременно (новый вытесняет самый старый)
 
   explicit World(const Scale& scale) : sc_(scale) {}

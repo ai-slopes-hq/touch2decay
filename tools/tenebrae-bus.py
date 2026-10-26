@@ -38,7 +38,9 @@ async def render(pw, seed, only, errs):
     pg.on('console', lambda m: m.type == 'error' and errs.append(m.text))
     await pg.add_init_script(f'window.__seed = {seed}; window.__only = {json.dumps(only)};')
     await pg.goto(URL)
-    res = await pg.evaluate('async () => { while (!window.__res) await new Promise(r => setTimeout(r, 50)); return await window.__res; }')
+    while not errs and not await pg.evaluate('!!window.__res'):   # ошибка на странице — сразу выход, а не ожидание до таймаута
+        await asyncio.sleep(0.05)
+    res = {} if errs else await pg.evaluate('async () => await window.__res')
     await b.close()
     return res
 
@@ -52,8 +54,8 @@ async def main():
     errs = []
     async with async_playwright() as pw:
         runs = [await render(pw, 1, ONLY or None, errs)]   # сцены — из tenebrae-scenes.js (все или названные)
-        names = list(runs[0])
-        for seed in range(2, 1 + max(SEEDS_OF.get(n, SEEDS) for n in names)):
+        names = [] if errs else list(runs[0])
+        for seed in range(2, 1 + max((SEEDS_OF.get(n, SEEDS) for n in names), default=0)):
             runs.append(await render(pw, seed, [n for n in names if seed <= SEEDS_OF.get(n, SEEDS)], errs))
     bad = 0
     for name in runs[0]:

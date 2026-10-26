@@ -45,7 +45,9 @@ void World::prepare(double sr, uint32_t seed) {
     drv_.os = 4; drv_.reset();
   }
   echo_.prepare(sr_, 0.37, 2600, -3, DLY_REPEATS);
-  echo_.setSec(0.37, 0.53);
+  // Chromium рвёт цикл пинг-понга на звене dL → dR (тянут dL, он же — вход dR): правая нога на квант позже
+  // (замер: dL 300 + dR 500 → правый повтор через 928) — в ядре это +128 сэмплов к времени dR
+  echo_.setSec(0.37, 0.53 + 128 / sr_);
   echo_.setLp(2600, 2100, -3);
   wowL_.reset(); wowR_.reset();
   for (Strike& s : st_) s.on = false;
