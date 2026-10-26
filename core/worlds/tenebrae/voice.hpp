@@ -34,6 +34,7 @@ class Voice {
 
   void prepare(double sr, uint32_t seed, const Tables* t, int index);   // index → k = 1 + i·0.137
   void set(const double* a, double f, double fmOpen);  // 11 чисел VOICE; f — уже по ладу; fmOpen — от связей
+  void rm(double sum) { rm_ = sum; }                    // Σ глубин rm-связей — до set (базу vca ставит set, с его τ)
   void on();
   void off(double tau);
   void live(bool on);
@@ -45,6 +46,7 @@ class Voice {
   double env() const { return env_; }
   double freq() const { return f_; }
   double combDelay() const { return dSec_; }            // задержка comb, с (на текущем блоке)
+  double vcaBase() const { return p_[VCA].p.value(); }  // база vca (1 − Σ rm), последнее значение
   void scope(double* out128) const;                     // 128 точек контура (как scope в engine.js)
 
  private:

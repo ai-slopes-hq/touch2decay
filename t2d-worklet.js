@@ -88,7 +88,7 @@ class T2d extends AudioWorkletProcessor {
     for (let r = 0; r < REVS; r++) this.ext.push([new Float32Array(b, x.t2d_ext(r, 0), 128), new Float32Array(b, x.t2d_ext(r, 1), 128)]);
     for (let c = 0; c < 2; c++) this.ret.push(new Float32Array(b, x.t2d_ret(c), 128));
     for (const s of this.slots) this.dry.push([new Float32Array(b, x.t2d_dry(s, 0), 128), new Float32Array(b, x.t2d_dry(s, 1), 128)]);
-    this.mb = new Float64Array(b, x.t2d_mbuf(), 512);
+    this.mb = new Float64Array(b, x.t2d_mbuf(), 1024);
   }
   process(inputs, outputs) {
     const x = this.x;

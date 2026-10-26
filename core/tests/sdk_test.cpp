@@ -38,6 +38,7 @@
 #include "../worlds/tenebrae/waves.hpp"
 #include "../worlds/tenebrae/shifter.hpp"
 #include "../worlds/tenebrae/voice.hpp"
+#include "../worlds/tenebrae/world.hpp"
 
 static int fails = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -2241,11 +2242,167 @@ static void tenebraeVoiceRelive() {
   CHECK(head <= tail);                                     // без щелчка выше установившегося
 }
 
+// Tenebrae: мир (слот 1). Сцена — действия как от app.js; блоки по 128, как у хоста
+static void tenebraeRender(tenebrae::World& w, double sec, double* peak = nullptr, bool* finite = nullptr) {
+  static float L[128], R[128], sL[128], sR[128];
+  const sdk::Out out{L, R, sL, sR};
+  const long blocks = std::lround(sec * 48000 / 128);
+  for (long b = 0; b < blocks; b++) {
+    w.process(out, 128);
+    for (int k = 0; k < 128; k++) {
+      const float* ch[4] = {L, R, sL, sR};
+      for (const float* c : ch) {
+        if (peak) *peak = std::fmax(*peak, std::fabs(c[k]));
+        if (finite && !std::isfinite(c[k])) *finite = false;
+      }
+    }
+  }
+}
+static void tenebraeVoiceOn(tenebrae::World& w, int i, double x, double y = 0.4) {   // как attack, потом sync: live → on → voice
+  const double one = 1, a[11] = {x, y, 0.6, 0.2, 0.25, 1.5, 0.1, 0.5, 0.8, 0, 1};
+  w.action(tenebrae::LIVE, i, &one, 1);
+  w.action(tenebrae::ON, i, nullptr, 0);
+  w.action(tenebrae::VOICE, i, a, 11);
+}
+
+static void tenebraeWorldBus() {
+  static Scale sc;
+  static tenebrae::World w(sc);
+  w.prepare(48000, 1);
+  const double fx[3] = {0.3, 0.3, 0.2};                  // FX по умолчанию app.js: rev, dly, dirt
+  w.action(tenebrae::FX, 0, fx, 3);
+  for (int i = 0; i < 6; i++) tenebraeVoiceOn(w, i, 0.1 + 0.15 * i);
+  double peak = 0;
+  tenebraeRender(w, 3, &peak);
+  CHECK(peak > 0.01);
+  CHECK(w.sounding());
+  NEAR(w.busGain(), 1 / std::sqrt(6.0), 0.01 / std::sqrt(6.0));   // 6 голосов с env ≈ 1
+  const double zero = 0;
+  for (int i = 0; i < 6; i++) w.action(tenebrae::LIVE, i, &zero, 1);
+  CHECK(!w.sounding());
+  double tail = 0;
+  tenebraeRender(w, 3, &tail);                           // эхо (fb 0.46, как в вебе) ещё звучит
+  CHECK(tail > 1e-4);
+  tenebraeRender(w, 6.5);                                // хвост эха dly 0.3 до −120 дБ — ~8.5 с, затем 0.5 с тишины — блок не считается
+  tail = 0;
+  tenebraeRender(w, 0.5, &tail);
+  CHECK(tail == 0);
+}
+
+static void tenebraeTzfmFollows() {
+  static Scale sc;
+  static tenebrae::World w(sc);
+  w.prepare(48000, 1);
+  tenebraeVoiceOn(w, 0, 0.3);
+  tenebraeVoiceOn(w, 1, 0.5);
+  const double link[3] = {0, 1, 0.5};                    // источник 0, tzfm, глубина 0.5
+  w.action(tenebrae::LINKS, 1, link, 3);
+  tenebraeRender(w, 0.5);
+  const double f0 = tenebrae::freqOf(0.3, sc);
+  NEAR(w.linkValue(1, 0), 0.5 * 5 * f0, 0.01 * 0.5 * 5 * f0);
+  const double a[11] = {0.7, 0.4, 0.6, 0.2, 0.25, 1.5, 0.1, 0.5, 0.8, 0, 0};
+  w.action(tenebrae::VOICE, 0, a, 11);                   // источник сменил высоту — глубина в Гц у приёмника идёт за ней (τ 0.08)
+  const double f1 = tenebrae::freqOf(0.7, sc), want = 0.5 * 5 * f1;
+  tenebraeRender(w, 0.2);
+  CHECK(std::fabs(w.linkValue(1, 0) - want) < 0.1 * std::fabs(want - 0.5 * 5 * f0));   // 2.5 τ: дошла на 92 %
+  tenebraeRender(w, 0.3);
+  NEAR(w.linkValue(1, 0), want, 0.01 * want);
+}
+
+static void tenebraeLinksClear() {
+  static Scale sc;
+  static tenebrae::World w(sc);
+  w.prepare(48000, 1);
+  tenebraeVoiceOn(w, 0, 0.3);
+  tenebraeVoiceOn(w, 1, 0.5);
+  const double link[3] = {0, 3, 0.8};                    // rm 0.8: база vca 1 − 0.8
+  w.action(tenebrae::LINKS, 1, link, 3);
+  tenebraeRender(w, 0.5);
+  CHECK(w.voice(1).vcaBase() < 0.3);
+  CHECK(w.links(1) == 1);
+  w.action(tenebrae::LINKS, 1, nullptr, 0);              // пустой список — связи сняты, база vca назад к 1 (τ 0.08)
+  CHECK(w.links(1) == 0);
+  tenebraeRender(w, 0.6);
+  NEAR(w.voice(1).vcaBase(), 1, 1e-3);
+}
+
+static void tenebraeMirror() {
+  static Scale sc;
+  static tenebrae::World w(sc);
+  w.prepare(48000, 1);
+  tenebraeVoiceOn(w, 0, 0.4);
+  tenebraeRender(w, 1);
+  static double m[1024];
+  CHECK(w.mirror(m, 1024) == tenebrae::MIRROR_N);
+  CHECK(tenebrae::MIRROR_N == 781);
+  CHECK(w.mirror(m, 780) == 0);                          // не влезло — ничего
+  w.mirror(m, 1024);
+  CHECK(m[0] == 6);
+  const double* v0 = m + tenebrae::MIRROR_HEAD;
+  CHECK(v0[0] == 1);
+  CHECK(v0[1] > 0.9);                                    // env после 1 с (τ 0.12)
+  bool any = false;
+  for (int j = 0; j < 128; j++) if (v0[2 + j] != 0) any = true;
+  CHECK(any);
+  const double* v1 = m + tenebrae::MIRROR_HEAD + tenebrae::MIRROR_V;
+  CHECK(v1[0] == 0);
+  bool none = true;
+  for (int j = 0; j < 128; j++) if (v1[2 + j] != 0) none = false;
+  CHECK(none);
+  double h[4];
+  CHECK(w.heard(h, 4) == 0);
+  CHECK(w.snapshot().empty());
+}
+
+static void tenebraeCycleSafe() {
+  static Scale sc;
+  static tenebrae::World w(sc);
+  w.prepare(48000, 1);
+  tenebraeVoiceOn(w, 0, 0.3);
+  tenebraeVoiceOn(w, 1, 0.6);
+  const double to1[6] = {0, 1, 1, 0, 0, 1}, to0[6] = {1, 1, 1, 1, 0, 1};   // 0 → 1 и 1 → 0: tzfm 1 и fm 1
+  w.action(tenebrae::LINKS, 1, to1, 6);
+  w.action(tenebrae::LINKS, 0, to0, 6);
+  double peak = 0;
+  bool finite = true;
+  tenebraeRender(w, 4, &peak, &finite);
+  CHECK(finite);
+  CHECK(peak < 4);
+  CHECK(peak > 1e-3);
+}
+
+static void tenebraeStrikeClear() {
+  static Scale sc;
+  static tenebrae::World w(sc);
+  w.prepare(48000, 1);
+  const double p = 1;
+  w.action(tenebrae::STRIKE, 0, &p, 1);                  // удар без голосов — в шину, слышен
+  double peak = 0;
+  bool finite = true;
+  tenebraeRender(w, 0.2, &peak, &finite);
+  CHECK(finite && peak > 0.01 && peak < 2);
+  peak = 0;
+  tenebraeRender(w, 1.5);
+  tenebraeRender(w, 0.2, &peak);
+  CHECK(peak == 0);                                      // отзвучал, эха нет — блок не считается
+  tenebraeVoiceOn(w, 0, 0.3);
+  tenebraeVoiceOn(w, 1, 0.5);
+  const double link[3] = {0, 0, 0.4};
+  w.action(tenebrae::LINKS, 1, link, 3);
+  tenebraeRender(w, 0.5);
+  CHECK(w.sounding());
+  w.action(tenebrae::CLEAR, 0, nullptr, 0);              // корзина: связи сняты, звучащие гаснут τ 0.25
+  CHECK(w.links(1) == 0);
+  tenebraeRender(w, 2);
+  CHECK(!w.sounding());
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
+  tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear();
   shaper(); shaperOs4(); bpbank(); noise(); infernoModel(); infernoSound();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;

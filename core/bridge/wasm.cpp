@@ -1,5 +1,5 @@
 // Мост ядра SDK для WASM (t2d.wasm): хост и все миры SDK в одном модуле, его крутит t2d-worklet.js (в Node — tools/t2d-core.mjs).
-// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Cymatica — 2, Natura — 4, Inferno — 5, Monochordum — 7, Oceanus — 8, Horologium — 9, Firmamentum — 10, Tria — 11, Arcadia — 12, Portus — 13, Goetia — 15.
+// Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Tenebrae — 1 (этап 1: только звук), Cymatica — 2, Natura — 4, Inferno — 5, Monochordum — 7, Oceanus — 8, Horologium — 9, Firmamentum — 10, Tria — 11, Arcadia — 12, Portus — 13, Goetia — 15.
 // Обмен — через буферы ядра: аргументы action (t2d_args), зеркало и услышанное (t2d_mbuf), строка снимка (t2d_str_buf + длина).
 #include <cstring>
 #include <string>
@@ -16,6 +16,7 @@
 #include "../worlds/portus/world.hpp"
 #include "../worlds/natura/world.hpp"
 #include "../worlds/inferno/world.hpp"
+#include "../worlds/tenebrae/world.hpp"
 
 static Host host;
 static firmamentum::Firmamentum firm(host.scale());
@@ -29,10 +30,12 @@ static tria::World tria3(host.scale());
 static portus::World port(host.scale());
 static natura::World nat(host.scale());
 static inferno::Inferno inf(host.scale());
+static tenebrae::World ten(host.scale());              // таблицы волн ~0.95 МБ и 6 голосов — статика
 static sdk::World* worlds[Host::SLOTS] = {};
 static constexpr int ARGS_CAP = 256;                    // узор Cymatica — 117 чисел
 static double args[ARGS_CAP];
-static double mbuf[512];                                // зеркало: Firmamentum — до 101 числа, Oceanus — до 135, Goetia — до 59, Monochordum — 52, Horologium — 47, Tria — 47, Arcadia — 65
+static constexpr int MBUF = 1024;
+static double mbuf[MBUF];                               // зеркало: Tenebrae — 781 число, Firmamentum — до 101, Oceanus — до 135, Goetia — до 59, Monochordum — 52, Horologium — 47, Tria — 47, Arcadia — 65
 static constexpr int STR_CAP = 1 << 16;
 static char str[STR_CAP];
 
@@ -84,6 +87,9 @@ API void t2d_init(double sr, unsigned seed) {
   inf.prepare(sr, seed);                                // Inferno — слот 5
   worlds[5] = &inf;
   host.add(5, &inf);
+  ten.prepare(sr, seed);                                // Tenebrae — слот 1: шум голосов и удары — от зерна
+  worlds[1] = &ten;
+  host.add(1, &ten);
 }
 API double* t2d_args() { return args; }
 API void t2d_action(int slot, int kind, int i, const double* a, int n) {
@@ -96,8 +102,8 @@ API const float* t2d_dry(int slot, int ch) { return host.dry(slot, ch); }
 API const float* t2d_ret(int ch) { return host.ret(ch); }
 API float* t2d_ext(int rev, int ch) { return host.ext(static_cast<sdk::Rev>(rev < 0 ? 0 : rev > 3 ? 3 : rev), ch); }
 API double* t2d_mbuf() { return mbuf; }
-API int t2d_mirror(int slot) { sdk::World* w = at(slot); return w ? w->mirror(mbuf, 512) : 0; }
-API int t2d_heard(int slot) { sdk::World* w = at(slot); return w ? w->heard(mbuf, 512) : 0; }
+API int t2d_mirror(int slot) { sdk::World* w = at(slot); return w ? w->mirror(mbuf, MBUF) : 0; }
+API int t2d_heard(int slot) { sdk::World* w = at(slot); return w ? w->heard(mbuf, MBUF) : 0; }
 API char* t2d_str_buf() { return str; }
 API int t2d_str_cap() { return STR_CAP; }
 API int t2d_snapshot(int slot) {                        // длина строки в t2d_str_buf; не влезла — 0
@@ -123,7 +129,7 @@ API int t2d_hmirror() {                                 // зеркало хос
   mbuf[0] = c.grid.on ? 1 : 0; mbuf[1] = c.grid.t0; mbuf[2] = c.grid.p; mbuf[3] = c.now;
   return 4;
 }
-API int t2d_hevents() { return host.events(mbuf, 512); }   // события часов: по 2 числа — код, bpm
+API int t2d_hevents() { return host.events(mbuf, MBUF); }   // события часов: по 2 числа — код, bpm
 // звучащая страна Arcadia (сетка 80 × 160, float): which 0 — высоты z, 1 — маска воды; для тестов и картинки натива
 API const float* t2d_arc_land(int which) { return which ? arc.land().lake : arc.land().z; }
 
