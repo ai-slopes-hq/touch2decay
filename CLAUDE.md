@@ -1,6 +1,6 @@
 # touch2decay — заметки для Claude
 
-Эзотерический дрон/нойз-синтезатор для мобильного Safari (iPhone), одна страница без сборки: `index.html` + `app.js` и `host/` (Web Audio + canvas 2D, без зависимостей) + `sw.js` (офлайн) + `fonts/`. Звук большинства миров — ядро C++ `core/` → `t2d.wasm`. Референс по духу — SOMA Lyra-8 и Forge TME Vhikk X. Пользовательская документация — `README.md` (по-русски), планы — `ROADMAP.md`.
+Эзотерический дрон/нойз-синтезатор для мобильного Safari (iPhone), одна страница без сборки: `index.html` + `app.js` и `host/` (Web Audio + canvas 2D, без зависимостей) + `sw.js` (офлайн) + `fonts/`. Звук почти всех миров, в том числе Tenebrae — ядро C++ `core/` → `t2d.wasm`. Референс по духу — SOMA Lyra-8 и Forge TME Vhikk X. Пользовательская документация — `README.md` (по-русски), планы — `ROADMAP.md`.
 
 Деплой: GitHub `ai-slopes-hq/touch2decay`, ветка `main` → Vercel выкатывает сам. Статус деплоя: `python3 tools/deploy-wait.py` (ждёт и печатает одну строку).
 
@@ -34,7 +34,7 @@
 
 | № | Мир | Где звук | Статус |
 |---|---|---|---|
-| I | Tenebrae | `app.js` | |
+| I | Tenebrae | ядро, слот 1 (звук) | |
 | II | Cymatica | ядро, слот 2 | |
 | III | Laboratorium | `laboratorium.js` | выключен |
 | IV | Natura | ядро, слот 4 | |

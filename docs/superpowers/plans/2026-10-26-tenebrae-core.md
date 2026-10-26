@@ -53,9 +53,9 @@
 ## Общие имена (все задачи)
 
 **Коды действий** (C++ `enum Act` в `core/worlds/tenebrae/world.hpp`, те же числа — `ACT` в `worlds/tenebrae/engine.js`):
-`VOICE = 0, ON = 1, OFF = 2, LIVE = 3, LINKS = 4, LFO = 5, FX = 6, STRIKE = 7, CLEAR = 8`; `kind = −1` — тик хоста, пропускать.
+`VOICE = 0, ON = 1, OFF = 2, LIVE = 3, LINKS = 4, LFO = 5, FX = 6, STRIKE = 7, CLEAR = 8`; `kind = −1` — тик хоста, пропускать. `CLEAR` гасит голоса и связи, но **LFO не снимает** — их убирает модель, когда голос затих (так и в вебе).
 
-- `VOICE i` — a = `[x, y, cut, res, wave, beat, fm, shift, amp, holeT, snap]` (11 чисел, как поля `v` в `app.js`; `beat`, `shift`, `cut` — нормированные, как в модели).
+- `VOICE i` — a = `[x, y, cut, res, wave, beat, fm, shift, amp, holeT, snap]` (11 чисел, как поля `v` в `app.js`; `cut`, `shift` — нормированные, как в модели; `beat` — уже в Гц, `0.05…24`, как хранит модель: `beatHz` — тождество).
 - `OFF i` — a = `[tau]`. `LIVE i` — a = `[0|1]`. `FX` — a = `[rev, dly, dirt]`. `STRIKE` — a = `[p]`.
 - `LINKS i` — a = `[src, type, depth] × k`, type: `0 fm, 1 tzfm, 2 am, 3 rm` (JS `LINK_TYPES = ['fm','tzfm','am','rm']`).
 - `LFO i` — a = `[key, morph, rate, depth]`, key: `0 pitch, 1 wave, 2 cut, 3 res, 4 beat, 5 shift, 6 amp, 7 fm` (JS `LFO_KEYS` в этом порядке); depth 0 — снять.

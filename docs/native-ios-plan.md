@@ -12,7 +12,7 @@
 
 ## Что уже есть
 
-Звук и модели в ядре у всех включённых миров, кроме Tenebrae (слоты `t2d.wasm`: 2, 4, 5, 7–13, 15). Сверка ядра с эталоном, `render-cli`, `sdk::Steps` и MIDI-часы в ядре (`core/sdk/transport.hpp`). `ios/shell/` — одноразовая проба (CoreMIDI-ведомый, фон) — источник кода для фазы 5.
+Звук и модели в ядре у всех включённых миров (слоты `t2d.wasm`: 1 — Tenebrae, только звук, 2, 4, 5, 7–13, 15). Сверка ядра с эталоном, `render-cli`, `sdk::Steps` и MIDI-часы в ядре (`core/sdk/transport.hpp`). `ios/shell/` — одноразовая проба (CoreMIDI-ведомый, фон) — источник кода для фазы 5.
 
 ## Фазы
 
@@ -22,7 +22,7 @@
 
 **3. Миры по одному (Mac).** Порядок от простого: Firmamentum → Goetia → Oceanus → Monochordum → Horologium → Arcadia → Tria → Inferno → Natura → Portus → Cymatica. На каждый: `view` на Swift по веб-`view.js`, касания, плашки, legenda; приёмка — скриншоты `tools/shot.py` (эталон веба) против симулятора, принципы «картинка = информация» и «не шумно» из `CLAUDE.md`.
 
-**4. Tenebrae (последней).** Сначала в ядро (Hilbert-сдвиг, голоса и граф связей, таблицы волн, шина `1/√Σenv`, чёрная дыра), с отдельным разбором перед стартом; потом view (~4000 строк `app.js`).
+**4. Tenebrae (последней).** **Этап 1 сделан (26.10): звук в ядре, слот 1** — таблицы волн, Hilbert-сдвиг, голоса, связи, LFO, шина `1/√Σenv`, эхо, удар солнца; сверка с Web Audio в Chromium, детали — `docs/worlds/tenebrae.md`. Осталось: модель в ядро и view. Исходный план этапа: сначала в ядро (Hilbert-сдвиг, голоса и граф связей, таблицы волн, шина `1/√Σenv`, чёрная дыра), с отдельным разбором перед стартом; потом view (~4000 строк `app.js`).
 
 **5. Системное (Mac).** `AVAudioSession .playback` и `UIBackgroundModes: audio`; CoreMIDI ведомый (порт `ios/shell/Midi.swift` на `Transport` ядра; Continue / Song Position — вместе с этим); `idleTimerDisabled` вместо Wake Lock; `MPNowPlayingInfoCenter` вместо `mediaSession`; прерывания и смена маршрута (аналог `restartAudio`); многоканальный выход (S-4) — позже.
 

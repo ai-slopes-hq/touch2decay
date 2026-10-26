@@ -15,7 +15,7 @@ const MODULES = [...HOST, './app.js', './worlds/cymatica/index.js', './laborator
   './worlds/natura/model.js', './worlds/natura/engine.js', './worlds/natura/view.js', './worlds/natura/scene.js',
   './worlds/cymatica/core.js', './worlds/cymatica/model.js', './worlds/cymatica/engine.js', './worlds/cymatica/view.js'];   // части миров (worlds/<мир>/) — их импортирует index.js мира
 // модули AudioWorklet — грузятся из миров через addModule(`…?v=`)
-const WORKLETS = ['./clock-worklet.js', './t2d-worklet.js', './t2d.wasm'];   // t2d.wasm — ядро SDK (хост, ревербы, MIDI-часы, Firmamentum, Goetia, Oceanus, Monochordum, Horologium, Arcadia), его грузит host/audio.js
+const WORKLETS = ['./clock-worklet.js', './t2d-worklet.js', './t2d.wasm'];   // t2d.wasm — ядро SDK (хост, ревербы, MIDI-часы, Firmamentum, Goetia, Oceanus, Monochordum, Horologium, Arcadia, звук Tenebrae), его грузит host/audio.js
 const SHELL = [...PAGE, ...MODULES, ...WORKLETS];
 const STATIC = ['./icon-180.png', './icon-192.png', './icon-512.png',
   './fonts/im-fell-english-latin-400-italic.woff2', './fonts/im-fell-english-latin-400-normal.woff2', './fonts/eb-garamond-latin-400-normal.woff2', './fonts/eb-garamond-latin-400-italic.woff2'];
