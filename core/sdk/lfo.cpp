@@ -1,15 +1,10 @@
 // LFO строк: морфинг волн и тик фазы. Расчёт форм — как в host/waves.js; random — как в host/sl.js.
 #include "lfo.hpp"
+#include "waveforms.hpp"
 #include <algorithm>
 #include <cmath>
 
 namespace sdk {
-
-double WaveMorph::tri(double t) {
-  t = std::fmod(t + 0.25, 1.0);
-  if (t < 0) t += 1.0;
-  return 1.0 - 4.0 * std::fabs(t - 0.5);
-}
 
 double WaveMorph::hash(int n) {
   const double x = std::sin(n * 12.9898) * 43758.5453;
@@ -29,24 +24,7 @@ void WaveMorph::initClassic() {
     for (int i = 0; i < N; i++) { tables_[idx][i] -= static_cast<float>(mean); peak = std::max(peak, std::fabs(static_cast<double>(tables_[idx][i]))); }
     if (peak > 0) for (int i = 0; i < N; i++) tables_[idx][i] /= static_cast<float>(peak);
   };
-  fill(0, [](double t) { double x = tri(t); return x + 0.1 * x * x; });   // triangle
-  fill(1, [](double t) { return std::tanh(2.6 * tri(t) + 0.35); });       // sharp
-  fill(2, [](double t) { const double k = 1.4; return (2.0 * (1.0 - std::exp(-k * t))) / (1.0 - std::exp(-k)) - 1.0; });   // saw
-  fill(3, [](double t) { return std::tanh(9.0 * (std::sin(2.0 * M_PI * t) - 0.35)); });   // pulse
-  fill(4, [](double t) { return std::sin(2.8 * std::sin(2.0 * M_PI * t) + 0.4); });   // fold
-  fill(5, [](double t) { return (2.0 * std::fmod(t * 2.63, 1.0) - 1.0) * (1.0 - 0.35 * t); });   // sync
-  fill(6, [](double t) { return std::round(std::sin(2.0 * M_PI * (std::floor(t * 8) + 0.5) / 8.0) * 2.5) / 2.5; });   // crush
-  fill(7, [](double t) { return std::sin(2.0 * M_PI * t + 2.2 * std::sin(2.0 * M_PI * 7.0 * t)); });   // metal
-  // grain: застывший кусок шума (40 сэмплов)
-  int seed = 11;
-  float grain[40];
-  for (int i = 0; i < 40; i++) { seed = (seed * 16807) % 2147483647; grain[i] = std::tanh(3.0 * ((seed / 2147483647.0) * 2.0 - 1.0)); }
-  fill(8, [&](double t) {
-    const double x = t * 40.0;
-    const int i = static_cast<int>(std::floor(x)) % 40;
-    const double fr = x - std::floor(x);
-    return grain[i] + (grain[(i + 1) % 40] - grain[i]) * fr;
-  });
+  for (int idx = 0; idx < waveform::COUNT; idx++) fill(idx, [idx](double t) { return waveform::form(idx, t); });
 }
 
 void WaveMorph::initRandom() {
