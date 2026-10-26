@@ -15,7 +15,7 @@ void Sound::prepare(double sr, uint32_t seed) {
   burst_.assign(static_cast<size_t>(len), 0.f);
   for (int i = 0; i < len; i++) burst_[i] = static_cast<float>((rng_.next() * 2 - 1) * std::exp(-i / (len * 0.25)));
   for (Voice& v : v_) v = Voice();
-  fire_ = sdk::TanhShaper(); fire_.os2 = true; fire_.set(1 + fx_fire_ * 8);
+  fire_ = sdk::TanhShaper(); fire_.os = 2; fire_.set(1 + fx_fire_ * 8);
   smLP_ = sdk::Biquad(); smLP_.set(sdk::Biquad::lowpass, 1400, 1, sr_);
   outG_ = smokeG_ = 0; busInit_ = false; live_ = 0; tail_ = 0; strikes_ = 0; nheard_ = 0;
   fx(0.2, 0.35);

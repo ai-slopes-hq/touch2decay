@@ -120,8 +120,8 @@
 | блок | канон | миры | варианты | один блок? |
 |---|---|---|---|---|
 | `softclip(x,k)` | `tanh(k·x)` на выходе | X (PU:54, 0.7), XII (TE:108, 0.7), VII (MO:94, 0.8), XV (GO:72, 0.8), IX (HO:95, 0.9), VIII (OC:73, 0.45) | только k | да·п |
-| Нормированный tanh | `tanh(k·x)/tanh(k)` (или `/k`) | V (`w/inferno/e:34-41`, k 1..7 круг, 1..9 шина, 2×), XIII (drive `1+5d`, пост-гейн `1/(1+0.8d)`; петля эха 1.4), XI (1.4), I `soft(3,true)` 2× и `soft(1.6,false)` в гребёнке, (H) III | k, oversample | сделан: `sdk::TanhShaper` (k, oversample 2×; Inferno, 25.10); кривые `WaveShaperNode` без oversample — `Shaper<N>` (Portus, Tria) |
-| Асимметричный tanh | `tanh(kx+bias)-tanh(bias)`, норм. по пику | I drive `asym(2.4, 0.35)` 4× (`au:7-14`) | — | да·п (рядом с `TanhShaper`) |
+| Нормированный tanh | `tanh(k·x)/tanh(k)` (или `/k`) | V (`w/inferno/e:34-41`, k 1..7 круг, 1..9 шина, 2×), XIII (drive `1+5d`, пост-гейн `1/(1+0.8d)`; петля эха 1.4), XI (1.4), I `soft(3,true)` 2× и `soft(1.6,false)` в гребёнке, (H) III | k, oversample | сделан: `sdk::TanhShaper` (k, `os` 1/2/4; Inferno, 25.10); кривые `WaveShaperNode` без oversample — `Shaper<N>` (Portus, Tria) |
+| Асимметричный tanh | `tanh(kx+bias)-tanh(bias)`, норм. по пику | I drive `asym(2.4, 0.35)` 4× (`au:7-14`) | — | кривая — `Shaper<4096>`, oversample 4× (`os = 4`) сделан и сверен с Chromium по сэмплам до 1e-6 (`tools/shaper-os4-ref.py`, 26.10) |
 | `knee` (мастер) | `y=|kx|; y<kn ? y : kn+room·tanh((y-kn)/room)`, k=2.6/tanh 2.6, kn 0.6, top 0.98, вход ×0.5, 4× (`au:20-27,157-161`) | хост | — | да·п (`Knee{k,kn,top}`) |
 | `outKnee` Cymatica | линейно до 0.8, выше `0.8+0.8·tanh((a-0.8)/0.8)`, пре-гейн 0.2 (PL:110-113,329) | II | — | да·п — тот же `Knee`; **не заменять на tanh** (tanh давал искажения до −16 дБ) |
 | Битовое дробление (H) | `round(x·st)/st` | III | — | нет |
