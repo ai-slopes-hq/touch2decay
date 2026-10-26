@@ -86,7 +86,7 @@ for (const [nm, c, w] of [['echo L', echoCore.L, web.eL], ['echo R', echoCore.R,
   const d = dbs(c, w); check(`${nm} RMS`, Math.abs(d) <= 1, `core ${db(rms(c)).toFixed(2)} dB, web ${db(rms(w)).toFixed(2)} dB, ${d >= 0 ? '+' : ''}${d.toFixed(3)} dB`);
 }
 // форма: первый возврат (L, до петли) — совпадает по сэмплам; второй (R, прошёл петлю) — Chromium добавляет в петлю один квант (128), место разрыва
-// петли случайное на контекст (см. CLAUDE.md, Tria) — берём лучший сдвиг из {0, 128}; гул — по сэмплам
+// петли случайное на контекст (см. docs/architecture.md, Tria) — берём лучший сдвиг из {0, 128}; гул — по сэмплам
 const seg = (x, a, b) => x.slice(Math.round(a * SR), Math.round(b * SR));
 const at = (c, w, a, b, lag) => corr(seg(c, a, b), w.slice(Math.round(a * SR) + lag, Math.round(b * SR) + lag));
 check('echo L hop 1', corr(seg(echoCore.L, 0.26, 0.5), seg(web.eL, 0.26, 0.5)) >= 0.999, `corr ${corr(seg(echoCore.L, 0.26, 0.5), seg(web.eL, 0.26, 0.5)).toFixed(5)}`);

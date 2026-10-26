@@ -1,6 +1,6 @@
 # План рефакторинга: модули model / engine / view
 
-Состояние на 22.10 (v165): шаги 1–2, 6 и 7 проверены на iPhone; шаг 3 (экраны хоста в `host/`) и шаг 4 (Firmamentum — образец `worlds/<мир>/`, контракты в `CLAUDE.md`), панель audio, шаги 5 (Oceanus, Arcadia, Monochordum, Goetia, Tria) и 7 (секвенсеры: Horologium, Portus, Natura, Cymatica) сделаны. В `worlds/` — все миры, кроме Tenebrae и выключенных III, XVII, XVIII. `app.js` ~2 660 строк.
+Состояние на 22.10 (v165): шаги 1–2, 6 и 7 проверены на iPhone; шаг 3 (экраны хоста в `host/`) и шаг 4 (Firmamentum — образец `worlds/<мир>/`, контракты в `docs/architecture.md`), панель audio, шаги 5 (Oceanus, Arcadia, Monochordum, Goetia, Tria) и 7 (секвенсеры: Horologium, Portus, Natura, Cymatica) сделаны. В `worlds/` — все миры, кроме Tenebrae и выключенных III, XVII, XVIII. `app.js` ~2 660 строк.
 
 **22.10, вечер: курс сменился — миры переносятся в C++ по одному, план в `docs/native-plan.md`.** Шаги 3–7 к этому моменту уже сделаны (ветка `refactor/modules`, слита в `main` на v165): у каждого мира, кроме Tenebrae, model / engine / view — готовый шов «ядро ↔ view». Шаги 8 (Tenebrae) и 9 — отложены, по мере переноса.
 
@@ -50,7 +50,7 @@ tests/models/<мир>.test.mjs   модели в Node без браузера
 
 ## 3. Контракты
 
-> **Утверждены на шаге 4** — как они вышли на Firmamentum, записано в `CLAUDE.md` («Мир из модулей»). Отличия от наброска ниже: engine создаётся один раз — `createEngine(T, model, ver)`, а `build(ctx, chanIn)` хост зовёт на каждом новом контексте; вместо `apply(state)` каждый кадр — `on(event)` по событиям модели (`listen`); view получает engine ради метров (только чтение); экранная мера, нужная алгоритму, приходит в модель чистой функцией (`place`).
+> **Утверждены на шаге 4** — как они вышли на Firmamentum, записано в `docs/architecture.md` («Мир из модулей»). Отличия от наброска ниже: engine создаётся один раз — `createEngine(T, model, ver)`, а `build(ctx, chanIn)` хост зовёт на каждом новом контексте; вместо `apply(state)` каждый кадр — `on(event)` по событиям модели (`listen`); view получает engine ради метров (только чтение); экранная мера, нужная алгоритму, приходит в модель чистой функцией (`place`).
 
 **Model** — то, что переписывается в Swift один в один (или живёт в JavaScriptCore):
 ```js
