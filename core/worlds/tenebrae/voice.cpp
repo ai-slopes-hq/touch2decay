@@ -40,8 +40,7 @@ void Voice::prepare(double sr, uint32_t seed, const Tables* t, int index) {
   for (sdk::Osc& o : dr_) o.reset();
   drift1_ = drift2_ = lpDrift_ = 0; breath_ = 1; mRaw_ = mOut_ = env_ = 0;
   mix_.voice(*t, 0.125);
-  rn_ = sdk::Rng(seed ^ (0x9E3779B9u * (2u * index + 1)));
-  rj_ = sdk::Rng(seed ^ (0x9E3779B9u * (2u * index + 2)));
+  rj_ = sdk::Rng(seed ^ (0x9E3779B9u * (index + 1u)));
   jit1_ = jit2_ = bp_ = hp_ = sdk::Biquad{};
   jit1_.set(sdk::Biquad::lowpass, 23 * k_, -3, sr);     // джиттер: шум до десятков герц, ±140 ц
   jit2_.set(sdk::Biquad::lowpass, 31 * k_, -3, sr);
@@ -232,8 +231,8 @@ void Voice::step(const ModIn& in, double& L, double& R) {
     for (double& v : x) v *= b_[DRY][k];
   }
 
-  // дыхание шумом: полоса на гармонике кружка, вверху поля — шипение
-  const double n = rn_.next() * 2 - 1;
+  // дыхание шумом: полоса на гармонике кружка, вверху поля — шипение; шум общий на все голоса (от мира)
+  const double n = in.noise;
   const double nz = b_[NZ][k] * (2.4 * bp_.step(n) + b_[HISS][k] * hp_.step(n));
   const double drive = b_[DRIVE][k], comb = b_[COMB][k], vca = b_[VCA][k] + in.vcaAdd;
   const double lv = breath_ * (b_[LVL][k] + lfo_[L_AMP].v);

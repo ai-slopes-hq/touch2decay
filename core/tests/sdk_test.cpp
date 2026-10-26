@@ -2130,10 +2130,12 @@ static void tenebraeShifter() {
 
 // Tenebrae: голос. a — 11 чисел VOICE: x, y, cut, res, wave, beat, fm, shift, amp, holeT, snap
 static double tenebraeRun(tenebrae::Voice& v, int n, double* peak = nullptr, bool* finite = nullptr) {   // n сэмплов, Σ квадратов L+R
-  const tenebrae::ModIn in{0, 0, 0, 0};
+  static sdk::Rng rng(0x54454eu);                        // общий шум мира (bp и hiss)
+  tenebrae::ModIn in{0, 0, 0, 0, 0};
   double e = 0;
   for (int k = 0; k < n; k++) {
     double L, R;
+    in.noise = rng.next() * 2 - 1;
     v.prestep(); v.step(in, L, R);
     e += L * L + R * R;
     if (peak) *peak = std::fmax(*peak, std::fmax(std::fabs(L), std::fabs(R)));
@@ -2158,7 +2160,7 @@ static void tenebraeVoiceSilent() {
   const double e0 = v.env(), f0 = v.freq();
   CHECK(e0 > 0.3);
   double peak = 0;
-  const tenebrae::ModIn in{100, 50, 0.5, 0.5};
+  const tenebrae::ModIn in{100, 50, 0.5, 0.5, 0.7};
   for (int k = 0; k < 48000; k++) { double L = 1, R = 1; v.prestep(); v.step(in, L, R); peak = std::fmax(peak, std::fmax(std::fabs(L), std::fabs(R))); CHECK(v.modOut() == 0 || k > 0); }
   CHECK(peak == 0);
   CHECK(v.env() == e0 && v.freq() == f0 && v.modOut() == 0);
@@ -2190,6 +2192,30 @@ static void tenebraeVoiceExtremes() {
     }
 }
 
+// шум bp/hiss — общий от мира (ModIn.noise): без него у дыры почти тихо, два голоса с одним шумом — когерентны
+static void tenebraeVoiceNoise() {
+  const double sr = 48000;
+  static tenebrae::Voice v[2];
+  const Scale sc;
+  const double a[11] = {0.5, 0, 0.5, 0, 0.5, 1, 0, 0.5, 1, 0.85, 1};   // y = 0, h = 0.85: тон почти съеден, шум ещё слышен (alive 0.22)
+  double e[2] = {0, 0}, cross = 0, en[2] = {0, 0};
+  for (int pass = 0; pass < 2; pass++) {
+    for (int i = 0; i < 2; i++) { v[i].prepare(sr, 100 + i, &tenebraeTables(), i); v[i].set(a, tenebrae::freqOf(a[0], sc), 0); v[i].live(true); v[i].on(); }
+    sdk::Rng rng(9);
+    tenebrae::ModIn in{0, 0, 0, 0, 0};
+    for (int k = 0; k < 48000; k++) {
+      in.noise = pass ? rng.next() * 2 - 1 : 0;
+      double L[2], R[2];
+      for (int i = 0; i < 2; i++) { v[i].prestep(); v[i].step(in, L[i], R[i]); }
+      if (k < 24000) continue;
+      e[pass] += L[0] * L[0];
+      if (pass) { cross += L[0] * L[1]; en[0] += L[0] * L[0]; en[1] += L[1] * L[1]; }
+    }
+  }
+  CHECK(e[1] > 10 * e[0]);                                 // звук дыры — от общего шума (без него — на 10+ дБ тише)
+  CHECK(cross / std::sqrt(en[0] * en[1]) > 0.9);           // голоса с одним шумом коррелированы
+}
+
 static void tenebraeVoiceRelive() {
   const double sr = 48000;
   static tenebrae::Voice v;
@@ -2204,9 +2230,10 @@ static void tenebraeVoiceRelive() {
   v.live(false);
   tenebraeRun(v, 48000);
   v.live(true); v.on();
-  const tenebrae::ModIn in{0, 0, 0, 0};
+  sdk::Rng rng(5);
+  tenebrae::ModIn in{0, 0, 0, 0, 0};
   double y[512];
-  for (int k = 0; k < 512; k++) { double L, R; v.prestep(); v.step(in, L, R); y[k] = std::fmax(std::fabs(L), std::fabs(R)); }
+  for (int k = 0; k < 512; k++) { double L, R; in.noise = rng.next() * 2 - 1; v.prestep(); v.step(in, L, R); y[k] = std::fmax(std::fabs(L), std::fabs(R)); }
   double head = 0, tail = 0;
   for (int k = 0; k < 256; k++) head = std::fmax(head, y[k]);
   for (int k = 256; k < 512; k++) tail = std::fmax(tail, y[k]);
@@ -2218,7 +2245,7 @@ int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
-  tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceRelive();
+  tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
   shaper(); shaperOs4(); bpbank(); noise(); infernoModel(); infernoSound();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;

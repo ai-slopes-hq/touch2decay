@@ -21,7 +21,9 @@
 
 namespace tenebrae {
 
-struct ModIn { double fmCents, tzHz, vcaAdd, rmSum; };   // Σ от связей на этот сэмпл (rmSum — глубины, для базы vca)
+// Σ от связей на этот сэмпл (rmSum — глубины, для базы vca); noise — общий шум мира −1…1 на сэмпл (в вебе bp и hiss всех голосов
+// питает один буфер: в дыре голоса складываются когерентно, ×N, а не ×√N)
+struct ModIn { double fmCents, tzHz, vcaAdd, rmSum, noise; };
 
 // ключи LFO — порядок LFO_KEYS в engine.js
 enum LfoKey { L_PITCH, L_WAVE, L_CUT, L_RES, L_BEAT, L_SHIFT, L_AMP, L_FM, LFO_N };
@@ -90,7 +92,7 @@ class Voice {
   Mix mix_;
   sdk::Osc sub_, m_, dr_[6];                            // дрейф: c1 ×2, c2 ×2, lp, дыхание
   double drift1_ = 0, drift2_ = 0, lpDrift_ = 0, breath_ = 1, mRaw_ = 0, mOut_ = 0, env_ = 0;
-  sdk::Rng rn_{1}, rj_{2};                              // шум голоса и джиттер строя
+  sdk::Rng rj_{2};                                      // джиттер строя (в вебе — свой случайный сдвиг по буферу)
   sdk::Biquad jit1_, jit2_, bp_, hp_;
   double g1L_ = 0, g1R_ = 0, g2L_ = 0, g2R_ = 0;        // панорамы c1, c2 (StereoPanner на моно-входе)
 
