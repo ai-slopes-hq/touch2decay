@@ -22,5 +22,5 @@ for f in t2d_init t2d_args t2d_action t2d_process t2d_dry t2d_ret t2d_ext t2d_mb
   core/worlds/cymatica/model.cpp core/worlds/cymatica/plate.cpp core/worlds/cymatica/world.cpp \
   core/worlds/natura/model.cpp core/worlds/natura/world.cpp \
   core/worlds/inferno/model.cpp core/worlds/inferno/world.cpp core/worlds/inferno/sound.cpp \
-  core/worlds/tenebrae/waves.cpp
+  core/worlds/tenebrae/waves.cpp core/worlds/tenebrae/voice.cpp
 echo "t2d.wasm ($(wc -c < t2d.wasm | tr -d ' ') bytes, wasi-sdk)"

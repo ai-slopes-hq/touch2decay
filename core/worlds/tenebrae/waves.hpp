@@ -18,10 +18,20 @@ struct Tables {
 // вес формы i при позиции морфа p (0…1): треугольный, как weight в host/waves.js
 double formWeight(int i, double p);
 
+// веса форм на позицию морфа — считаются раз в блок (16 сэмплов), не на сэмпл: ненулевых не больше двух (соседние формы)
+struct Mix {
+  int n = 0, form[2] = {0, 0};
+  double g[2] = {0, 0};
+  void voice(const Tables& t, double pos);              // g = w^0.85·level
+  void lfo(double pos);                                 // g = w
+};
+
 struct Morph {                                          // один генератор (c1, c2 или LFO)
   double ph = 0;
-  double voiceStep(const Tables& t, double pos, double hz, double sr);   // Σ w_i^0.85·level_i·voice[i][L], затем фаза += hz/sr
-  double lfoStep(const Tables& t, double pos, double hz, double sr);     // Σ w_i·lfo[i]
+  double voiceRun(const Tables& t, const Mix& m, double hz, double sr);  // Σ g·voice[i][L], затем фаза += hz/sr
+  double lfoRun(const Tables& t, const Mix& m, double hz, double sr);    // Σ g·lfo[i]
+  double voiceStep(const Tables& t, double pos, double hz, double sr);   // то же с весами на месте (тесты)
+  double lfoStep(const Tables& t, double pos, double hz, double sr);
 };
 
 }  // namespace tenebrae

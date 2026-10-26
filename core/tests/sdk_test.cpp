@@ -37,6 +37,7 @@
 #include "../worlds/tenebrae/tone.hpp"
 #include "../worlds/tenebrae/waves.hpp"
 #include "../worlds/tenebrae/shifter.hpp"
+#include "../worlds/tenebrae/voice.hpp"
 
 static int fails = 0, checks = 0;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -2127,10 +2128,97 @@ static void tenebraeShifter() {
   NEAR(20 * std::log10(r / (1 / std::sqrt(2.0))), 0, 0.1);
 }
 
+// Tenebrae: голос. a — 11 чисел VOICE: x, y, cut, res, wave, beat, fm, shift, amp, holeT, snap
+static double tenebraeRun(tenebrae::Voice& v, int n, double* peak = nullptr, bool* finite = nullptr) {   // n сэмплов, Σ квадратов L+R
+  const tenebrae::ModIn in{0, 0, 0, 0};
+  double e = 0;
+  for (int k = 0; k < n; k++) {
+    double L, R;
+    v.prestep(); v.step(in, L, R);
+    e += L * L + R * R;
+    if (peak) *peak = std::fmax(*peak, std::fmax(std::fabs(L), std::fabs(R)));
+    if (finite && !(std::isfinite(L) && std::isfinite(R))) *finite = false;
+  }
+  return e;
+}
+
+static void tenebraeVoiceSilent() {
+  const double sr = 48000;
+  static tenebrae::Voice v;
+  const Scale sc;
+  const double a[11] = {0.4, 0.5, 0.6, 0.3, 0.25, 2, 0.2, 0.5, 0.8, 0, 1};
+  const double f = tenebrae::freqOf(a[0], sc);
+  v.prepare(sr, 7, &tenebraeTables(), 0);
+  v.set(a, f, a[6]);
+  v.live(true); v.on();
+  CHECK(v.isLive());
+  CHECK(tenebraeRun(v, 4800) > 1e-3);                      // живой и включённый — звучит
+  v.live(false);
+  CHECK(!v.isLive());
+  const double e0 = v.env(), f0 = v.freq();
+  CHECK(e0 > 0.3);
+  double peak = 0;
+  const tenebrae::ModIn in{100, 50, 0.5, 0.5};
+  for (int k = 0; k < 48000; k++) { double L = 1, R = 1; v.prestep(); v.step(in, L, R); peak = std::fmax(peak, std::fmax(std::fabs(L), std::fabs(R))); CHECK(v.modOut() == 0 || k > 0); }
+  CHECK(peak == 0);
+  CHECK(v.env() == e0 && v.freq() == f0 && v.modOut() == 0);
+}
+
+static void tenebraeVoiceExtremes() {
+  const double sr = 48000;
+  static tenebrae::Voice v;
+  const Scale sc;
+  for (double x : {0.0, 1.0})
+    for (double hole : {1.0, 0.0}) {
+      const double a[11] = {x, 1, 1, 1, 1, 24, 1, 1, 1, hole, 1};
+      const double f = tenebrae::freqOf(x, sc);
+      v.prepare(sr, 3, &tenebraeTables(), 5);
+      v.set(a, f, 1);
+      for (int key = 0; key < 8; key++) v.lfo(key, 0.5, 7, 1);
+      v.live(true); v.on();
+      double peak = 0;
+      bool finite = true;
+      const double e = tenebraeRun(v, 4 * 48000, &peak, &finite);
+      CHECK(finite);
+      // hole = 1 — в дыре голос молчит (alive = 0); hole = 0 — всё на максимум (res 44 дБ с LFO, LFO amp ×2, comb, сумма
+      // панорамы): один голос до нормировки шины бывает до ~5 — проверка только на разнос
+      CHECK(peak < (hole == 1 ? 4 : 8));
+      CHECK(v.combDelay() > 0 && v.combDelay() <= 1);
+      if (x == 0) NEAR(v.combDelay(), 1 / 55.0, 1e-4);   // 1/f, f = 55 Гц
+      else NEAR(v.combDelay(), 16 / 1760.0, 1e-4);         // 1/1760 удвоена до ≥ 6 мс
+      if (hole == 0) CHECK(e > 1);                         // без дыры — громко
+    }
+}
+
+static void tenebraeVoiceRelive() {
+  const double sr = 48000;
+  static tenebrae::Voice v;
+  const Scale sc;
+  const double a[11] = {0.3, 0.6, 0.55, 0.4, 0.4, 1.5, 0.3, 0.5, 0.9, 0, 0};
+  v.prepare(sr, 11, &tenebraeTables(), 2);
+  v.set(a, tenebrae::freqOf(a[0], sc), a[6]);
+  v.live(true); v.on();
+  tenebraeRun(v, 48000);
+  v.off(0.25);
+  tenebraeRun(v, 2 * 48000);
+  v.live(false);
+  tenebraeRun(v, 48000);
+  v.live(true); v.on();
+  const tenebrae::ModIn in{0, 0, 0, 0};
+  double y[512];
+  for (int k = 0; k < 512; k++) { double L, R; v.prestep(); v.step(in, L, R); y[k] = std::fmax(std::fabs(L), std::fabs(R)); }
+  double head = 0, tail = 0;
+  for (int k = 0; k < 256; k++) head = std::fmax(head, y[k]);
+  for (int k = 256; k < 512; k++) tail = std::fmax(tail, y[k]);
+  CHECK(tail > 1e-3);                                      // звук пошёл
+  CHECK(head <= tail);                                     // без щелчка выше установившегося
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
+  tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceRelive();
   shaper(); shaperOs4(); bpbank(); noise(); infernoModel(); infernoSound();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;

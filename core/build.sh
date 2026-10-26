@@ -10,7 +10,7 @@ clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/render-cli 
 echo "core/build/render-cli"
 clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/sdk-test core/tests/sdk_test.cpp core/sdk/reverb.cpp core/sdk/lfo.cpp core/host/host.cpp core/host/scale.cpp \
   core/worlds/firmamentum/model.cpp core/worlds/firmamentum/world.cpp core/worlds/firmamentum/sound.cpp \
-  core/worlds/monochord/model.cpp core/worlds/monochord/world.cpp core/worlds/monochord/sound.cpp core/worlds/cymatica/model.cpp core/worlds/cymatica/plate.cpp core/worlds/cymatica/world.cpp core/worlds/portus/model.cpp core/worlds/portus/world.cpp core/worlds/natura/model.cpp core/worlds/natura/world.cpp core/worlds/inferno/model.cpp core/worlds/inferno/world.cpp core/worlds/inferno/sound.cpp core/worlds/tenebrae/waves.cpp
+  core/worlds/monochord/model.cpp core/worlds/monochord/world.cpp core/worlds/monochord/sound.cpp core/worlds/cymatica/model.cpp core/worlds/cymatica/plate.cpp core/worlds/cymatica/world.cpp core/worlds/portus/model.cpp core/worlds/portus/world.cpp core/worlds/natura/model.cpp core/worlds/natura/world.cpp core/worlds/inferno/model.cpp core/worlds/inferno/world.cpp core/worlds/inferno/sound.cpp core/worlds/tenebrae/waves.cpp core/worlds/tenebrae/voice.cpp
 echo "core/build/sdk-test"
 clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/param-cli core/tests/param_cli.cpp
 echo "core/build/param-cli"
@@ -34,5 +34,5 @@ em++ -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --
   core/worlds/portus/model.cpp core/worlds/portus/world.cpp \
   core/worlds/natura/model.cpp core/worlds/natura/world.cpp \
   core/worlds/inferno/model.cpp core/worlds/inferno/world.cpp core/worlds/inferno/sound.cpp \
-  core/worlds/tenebrae/waves.cpp
+  core/worlds/tenebrae/waves.cpp core/worlds/tenebrae/voice.cpp
 echo "t2d.wasm ($(wc -c < t2d.wasm | tr -d ' ') bytes)"

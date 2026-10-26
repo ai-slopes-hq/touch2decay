@@ -8,12 +8,12 @@ namespace tenebrae {
 // Квадратурная фаза своя (как у пары осцилляторов cos/sin в вебе: стартуют с нуля, частота — на лету).
 struct Shifter {
   static constexpr int N = 4;
+  static constexpr double A[2][N] = {{0.6923878, 0.9360654322959, 0.988229522686, 0.9987488452737},
+                                     {0.4021921162426, 0.856171088242, 0.9722909545651, 0.9952884791278}};
 
   void reset() { for (auto& c : z) for (auto& s : c) s = Sec{}; iDly = 0; ph = 0; }
 
   double step(double x, double hz, double sr) {
-    static const double A[2][N] = {{0.6923878, 0.9360654322959, 0.988229522686, 0.9987488452737},
-                                   {0.4021921162426, 0.856171088242, 0.9722909545651, 0.9952884791278}};
     double c[2] = {x, x};
     for (int k = 0; k < 2; k++)
       for (int j = 0; j < N; j++) {

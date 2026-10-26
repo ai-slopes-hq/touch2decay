@@ -91,25 +91,47 @@ inline double advance(double ph, double hz, double sr) {
 }
 }  // namespace
 
-double Morph::voiceStep(const Tables& t, double pos, double hz, double sr) {
+void Mix::voice(const Tables& t, double pos) {
+  n = 0;
+  for (int i = 0; i < Tables::FORMS && n < 2; i++) {
+    const double w = formWeight(i, pos);
+    if (w > 0) { form[n] = i; g[n] = std::pow(w, 0.85) * t.level[i]; n++; }
+  }
+}
+
+void Mix::lfo(double pos) {
+  n = 0;
+  for (int i = 0; i < Tables::FORMS && n < 2; i++) {
+    const double w = formWeight(i, pos);
+    if (w > 0) { form[n] = i; g[n] = w; n++; }
+  }
+}
+
+double Morph::voiceRun(const Tables& t, const Mix& m, double hz, double sr) {
   const int L = t.levelFor(hz, sr);
   double y = 0;
-  for (int i = 0; i < Tables::FORMS; i++) {
-    const double w = formWeight(i, pos);
-    if (w > 0) y += std::pow(w, 0.85) * t.level[i] * read(t.voice[i][L], ph);
-  }
+  for (int k = 0; k < m.n; k++) y += m.g[k] * read(t.voice[m.form[k]][L], ph);
   ph = advance(ph, hz, sr);
   return y;
 }
 
-double Morph::lfoStep(const Tables& t, double pos, double hz, double sr) {
+double Morph::lfoRun(const Tables& t, const Mix& m, double hz, double sr) {
   double y = 0;
-  for (int i = 0; i < Tables::FORMS; i++) {
-    const double w = formWeight(i, pos);
-    if (w > 0) y += w * read(t.lfo[i], ph);
-  }
+  for (int k = 0; k < m.n; k++) y += m.g[k] * read(t.lfo[m.form[k]], ph);
   ph = advance(ph, hz, sr);
   return y;
+}
+
+double Morph::voiceStep(const Tables& t, double pos, double hz, double sr) {
+  Mix m;
+  m.voice(t, pos);
+  return voiceRun(t, m, hz, sr);
+}
+
+double Morph::lfoStep(const Tables& t, double pos, double hz, double sr) {
+  Mix m;
+  m.lfo(pos);
+  return lfoRun(t, m, hz, sr);
 }
 
 }  // namespace tenebrae
