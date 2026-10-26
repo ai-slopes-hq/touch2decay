@@ -257,3 +257,4 @@ $RECYCLE.BIN/
 __pycache__/
 .superpowers/
 .ipynb_checkpoints/
+.claude/handoff*.md
