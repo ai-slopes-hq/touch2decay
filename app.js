@@ -1,6 +1,6 @@
 // touch2decay — дрон / нойз на 1–2 пальца. Web Audio + canvas, без зависимостей.
 // хост: сервисы, примитивы и экраны — в host/ (шаги 2–3 docs/refactor-plan.md); здесь роутер касаний, кадр и мир I · Tenebrae
-import { an, asym, chanLvl, chans, core, coreGrid, ctx, filter, gainNode, lfo, mix, noiseBuffer, onClock, restartAudio, saveMix, scopeBuf, send, setCoreVer, setVol, soft, syncScale, unlock, vol, VOL_TRAVEL } from './host/audio.js';
+import { an, chanLvl, chans, core, coreGrid, ctx, mix, onClock, restartAudio, saveMix, scopeBuf, send, setCoreVer, setVol, syncScale, unlock, vol, VOL_TRAVEL } from './host/audio.js';
 import { audioPanel, drawAudioPanel, panelDown, panelGeo, panelHit, panelMove, setAudioPanel, volTap } from './host/audio-panel.js';
 import { link, tempoFrom, transportFrom } from './host/concordia.js';
 import { clockLive, onTick, setClockVer } from './host/clock.js';
@@ -21,8 +21,9 @@ import { DTAP_MS, F, HOLD_MOVE, HOLD_MS, TAP_MOVE, TAP_MS } from './host/touch.j
 import { backPos, btnHit, btnPos, drawBuild, drawUI, headHit, ITEM_H, markDice, rootAt, sclList, titleW } from './host/ui-top.js';
 import { commit, hists, undo } from './host/undo.js';
 import { clamp, inBox, invLog, lerpLog } from './host/util.js';
-import { alignCoeffs, beatHz, cutoffOf, freqOf, quantX, shiftHz, waveCoeffs } from './worlds/tenebrae/tone.js';
-import { morphFn, morphName, NW, WAVES, weight } from './host/waves.js';
+import { cutoffOf, freqOf, quantX, shiftHz } from './worlds/tenebrae/tone.js';
+import { createEngine, DLY_REPEATS, LFO_KEYS, LINK_TYPES, RES_MAX } from './worlds/tenebrae/engine.js';
+import { morphFn, morphName, NW, WAVES } from './host/waves.js';
 setClockVer(new URL(import.meta.url).searchParams.get('v') || '0');   // версия для addModule метронома (у host/ её нет)
 setCoreVer(new URL(import.meta.url).searchParams.get('v') || '0');    // и для ядра SDK (t2d-worklet.js, t2d.wasm)
 
@@ -33,14 +34,11 @@ const SEMIS = OCT * 12;
 const WARP = 1.45;        // как у эквалайзеров: нижним октавам больше места, верхним меньше
 const BEAT_MIN = 0.05, BEAT_MAX = 24;      // detune: от фазирования до треска
 const BEAT_DEF = 0.35;    // по умолчанию пара медленно «дышит»
-const FB_BASE = 0.3;      // гребёнка-резонатор: постоянная фоновая окраска
 const CUT_LO = 40, CUT_HI = 18000, CUT_DEF = 0.68;   // cutoff — на весь слышимый диапазон
-const RES_DEF = 0.21, RES_MAX = 24;        // res: Q фильтра в дБ
+const RES_DEF = 0.21;                      // res по умолчанию (Q в дБ — RES_MAX движка)
 const TAIL = 1.6;         // хвост после отпускания (τ, с)
 const UNPIN_TAIL = 0.8;   // хвост после снятия с закрепления
-const FM_MAX = 1.4;       // собственная fm на полную: девиация в долях частоты
 const LINK_NEW = 0.5;     // глубина нового моста
-const LINK_TYPES = ['fm', 'tzfm', 'am', 'rm'];
 
 const WAVE_DEF = 0.125;   // позиция морфинга: 0 — triangle … 1 — grain; 0.125 — sharp
 
@@ -83,7 +81,7 @@ const V = Array.from({ length: VOICES }, (_, i) => ({
   mods: [], lfo: {},
   fingers: [], pinned: false, active: false,
   env: 0, envT: 0, envTau: 0.05, emit: 0, t: 0,
-  dirty: true, snap: true, nodes: null,
+  dirty: true, snap: true, live: false,   // live — голос подключён к графу движка (молчащий отцеплен и не тратит процессор)
 }));
 let focus = V[0];
 let touchedOnce = false;
@@ -93,7 +91,7 @@ const rings = [];
 
 // ---------- общие эффекты (кнопка FX): посылы и характер; сухой звук не трогают ----------
 const fx = { rev: 0.3, decay: 3.5, dly: 0.3, chaos: 0, dirt: 0.2 };
-const DECAY_MIN = 0.6, DECAY_MAX = 14, DLY_REPEATS = 0.46;
+const DECAY_MIN = 0.6, DECAY_MAX = 14;
 const FX_SECTORS = [                        // веер от кнопки вверху: влево → вниз
   { key: 'rev', label: 'hall', ang: deg(180) },
   { key: 'decay', label: 'decay', ang: deg(157.5) },
@@ -299,21 +297,16 @@ function spawn(f) {
 
 function attack(v) {
   v.active = true; v.envT = 1; v.envTau = 0.12;
-  const n = v.nodes;
-  if (n) {
-    if (!n.live) { n.out.connect(bus); n.vca.connect(n.vscope); n.live = true; }   // молчащий кружок отключён от графа и не тратит процессор
-    n.env.gain.setTargetAtTime(1, ctx.currentTime, 0.12);
-    n.mod.gain.setTargetAtTime(1, ctx.currentTime, 0.12);
+  if (engine) {
+    if (!v.live) { v.live = true; engine.live(v.i, true); }   // молчащий кружок отключён от графа и не тратит процессор
+    engine.on(v.i);
   }
   wake();
 }
 
 function release(v, tau) {
   v.envT = 0; v.envTau = tau;
-  if (v.nodes) {
-    v.nodes.env.gain.setTargetAtTime(0, ctx.currentTime, tau);
-    v.nodes.mod.gain.setTargetAtTime(0, ctx.currentTime, tau);
-  }
+  if (engine) engine.off(v.i, tau);
 }
 
 function burst(v) {
@@ -321,24 +314,9 @@ function burst(v) {
 }
 
 // ---------- связи: другой кружок модулирует этот; характер — fm, tzfm, am или rm ----------
-function linkTargets(n, type) {
-  if (type === 'fm') return [n.c1.detune, n.c2.detune];   // экспоненциальная, по строю
-  if (type === 'tzfm') return n.fmTargets;                 // линейная, сквозь ноль, в герцах
-  return [n.vca.gain];                                     // am и rm — через усилитель кружка
-}
-
-function wire(dst, m) {
-  if (m.g) m.g.disconnect();
-  m.g = null;
-  if (!ctx || !dst.nodes || !m.src.nodes) return;
-  m.g = gainNode(0);
-  m.src.nodes.mod.connect(m.g);
-  for (const p of linkTargets(dst.nodes, m.type)) m.g.connect(p);
-}
-
+// узлы связей — в движке: приёмник, у которого изменились mods, помечен dirty и шлёт их целиком (sync)
 function addLink(dst, src, depth, type = 'tzfm') {
-  const m = { src, type, depth, g: null };
-  wire(dst, m);
+  const m = { src, type, depth };
   dst.mods.push(m);
   dst.dirty = true;
   return m;
@@ -347,18 +325,16 @@ function addLink(dst, src, depth, type = 'tzfm') {
 function dropLink(dst, m) {
   const i = dst.mods.indexOf(m);
   if (i < 0) return;
-  if (m.g) m.g.disconnect();
   dst.mods.splice(i, 1);
   dst.dirty = true;
 }
 
 function unlinkAll(v) {
-  for (const m of v.mods) if (m.g) m.g.disconnect();
   v.mods = [];
   v.dirty = true;
   for (const u of V) {
     const keep = [];
-    for (const m of u.mods) { if (m.src === v) { if (m.g) m.g.disconnect(); u.dirty = true; } else keep.push(m); }
+    for (const m of u.mods) { if (m.src === v) u.dirty = true; else keep.push(m); }
     u.mods = keep;
   }
 }
@@ -382,44 +358,18 @@ function chaosTick(now) {
   }
 }
 
-// ---------- LFO на параметрах кружка ----------
-function lfoTargets(n, key) {
-  if (key === 'pitch') return [n.c1.detune, n.c2.detune, n.sub.detune];
-  if (key === 'wave') return [n.morph.pos];
-  if (key === 'cut') return [n.lp.detune];
-  if (key === 'res') return [n.lp.Q];
-  if (key === 'beat') return [n.c2.freq];
-  if (key === 'shift') return [n.shf.cos.frequency, n.shf.sin.frequency];
-  if (key === 'amp') return [n.lvl.gain];
-  return [n.sfm.gain];
-}
-
+// ---------- LFO на параметрах кружка (генераторы — в движке) ----------
 function setLfo(v, key, spec) {
   if (!v.lfo[key]) spec.ph = 0;              // фаза для рисования: генератор тоже стартует с нуля
   v.lfo[key] = spec;
-  const n = v.nodes;
-  if (n && !n.lfo[key]) {
-    const out = gainNode(0);
-    for (const p of lfoTargets(n, key)) out.connect(p);
-    const sum = gainNode(1);
-    const mp = morphPos(spec.morph, false);
-    const mo = morphOsc(mp.shapers, sum, true);
-    sum.connect(out);
-    n.lfo[key] = { out, mp, mo };
-  }
+  if (engine) engine.lfo(v.i, key, spec);
   v.dirty = true;
 }
 
 function removeLfo(v, key) {
+  if (!v.lfo[key]) return;
   delete v.lfo[key];
-  const n = v.nodes, L = n && n.lfo[key];
-  if (!L) return;
-  L.out.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-  delete n.lfo[key];
-  setTimeout(() => {
-    for (const o of [...L.mo.oscs, L.mp.src]) { try { o.stop(); } catch (_) { /* ok */ } o.disconnect(); }
-    L.out.disconnect();
-  }, 400);
+  if (engine) engine.lfo(v.i, key, null);
 }
 
 function clearLfos(v) { for (const key of Object.keys(v.lfo)) removeLfo(v, key); }
@@ -657,7 +607,7 @@ function rollDice() {
     for (const m of v.mods) {
       if (m.auto) continue;
       const t = LINK_TYPES[Math.floor(R() * 4)];
-      if (t !== m.type) { m.type = t; wire(v, m); }
+      m.type = t;
       m.depth = 0.15 + 0.75 * R();
     }
     for (const spec of Object.values(v.lfo)) { spec.morph = R(); spec.rate = lerpLog(LFO_RATE_MIN, LFO_RATE_MAX, 0.15 + 0.7 * R()); }
@@ -830,6 +780,7 @@ function restore(js) {
 function clearAll() {
   editor = null;
   for (const v of V) if (v.active) deleteVoice(v);
+  if (engine) engine.clear();
   lastTap = null;
 }
 
@@ -1060,7 +1011,7 @@ function openLink(f, dst, m) {
   const c = linkMid(dst, m), orig = { type: m.type, depth: m.depth };
   f.menuWas = true;
   m.auto = false;                           // тронутую хаос-связь пользователь забирает себе
-  const setType = (t) => { if (m.type !== t) { m.type = t; wire(dst, m); } };
+  const setType = (t) => { if (m.type !== t) { m.type = t; dst.dirty = true; } };
   const rc = ringCenter(c.x, c.y);
   f.menu = {
     cx: rc.cx, cy: rc.cy, gx: f.x, gy: f.y, sector: null, sectors: LINK_SECTORS, span: MENU_SPAN, link: m, dst, overPin: true,
@@ -1149,323 +1100,40 @@ function ringTouch(f, first) {
   }
   if (f.sector.key === 'cut') { e.cutting = t > 0.35; return; }
   e.cutting = false;
-  if (e.m.type !== f.sector.key) { e.m.type = f.sector.key; wire(e.dst, e.m); }
+  e.m.type = f.sector.key;
   e.m.depth = t; e.key = e.m.type;
   e.dst.dirty = true;
 }
 
-// ---------- аудио ----------
-let bus = null, fxN = null;
+// ---------- аудио: звук — worlds/tenebrae/engine.js; модель шлёт ему поля голосов, связи, LFO и FX ----------
+let engine = null;
 
-// звук удара солнца: треск (шум в полосе, двумя щелчками) и глухой толчок; через шину голосов — с залом и перегрузом
-function strikeSound(p) {
-  if (!ctx || !bus) return;
-  const t = ctx.currentTime, lvl = 0.05 + 0.1 * p;
-  const n = ctx.createBufferSource(), bp = filter('bandpass', 1800 + 2600 * Math.random(), 1.2), ng = gainNode(0);
-  n.buffer = noiseBuf;
-  const t2 = t + 0.012 + 0.02 * Math.random();
-  ng.gain.setValueAtTime(lvl, t); ng.gain.exponentialRampToValueAtTime(lvl * 0.08, t2);
-  ng.gain.setValueAtTime(lvl * 0.7, t2); ng.gain.exponentialRampToValueAtTime(0.0005, t2 + 0.04 + 0.06 * p);
-  n.connect(bp).connect(ng).connect(bus);
-  n.start(t, Math.random() * 3); n.stop(t2 + 0.12);
-  const o = ctx.createOscillator(), og = gainNode(0);
-  o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.08);
-  og.gain.setValueAtTime(lvl * 1.4, t); og.gain.exponentialRampToValueAtTime(0.0005, t + 0.12);
-  o.connect(og).connect(bus); o.start(t); o.stop(t + 0.14);
+function applyFx() { if (engine) engine.fx(fx); }
+
+// голос изменился (dirty): связи и LFO — до полей, чтобы голос применился один раз (и со snap, если он есть)
+function syncMods(v) {
+  engine.links(v.i, v.mods.map((m) => ({ src: m.src.i, type: m.type, depth: m.depth })));
+  for (const key of LFO_KEYS) engine.lfo(v.i, key, v.lfo[key] || null);
 }
-
-// кривая для WaveShaper: вход −1..1 — это позиция 0..1, выход — вес (с громкостью таблицы или без)
-function weightCurve(i, level, shape = 1) {
-  const n = 1024, c = new Float32Array(n);
-  for (let j = 0; j < n; j++) c[j] = weight(i, j / (n - 1)) ** shape * level;
-  return c;
-}
-
-// цикл волны → гармоники → PeriodicWave; громкость выравнивается по RMS
-function makeWave(w) {
-  const c = waveCoeffs(w.fn);
-  w.re = Float32Array.from(c.re); w.im = Float32Array.from(c.im);
-  w.pwLfo = ctx.createPeriodicWave(w.re, w.im);   // LFO — исходная форма: её видно и слышно как форму
-  w.level = c.level;
-}
-// для голосов фазы гармоник у всех таблиц одни (как у saw): морф между соседями — чистая
-// интерполяция амплитуд гармоник, без провалов громкости и взаимного гашения посередине
-function alignWaves() {
-  const al = alignCoeffs(WAVES, WAVES.findIndex((w) => w.label === 'saw'));
-  WAVES.forEach((w, i) => { w.pw = ctx.createPeriodicWave(Float32Array.from(al[i].re), Float32Array.from(al[i].im)); });
-}
-
-// генератор с морфингом: по осциллятору на таблицу, их веса — из позиции (позиция — звуковой сигнал,
-// поэтому её можно модулировать хоть на звуковой скорости). Частота и строй — общие на весь набор.
-function morphOsc(shapers, dest, lfoShapes = false) {
-  const fq = ctx.createConstantSource(); fq.offset.value = 0;
-  const dt = ctx.createConstantSource(); dt.offset.value = 0;
-  const oscs = [fq, dt], tabs = [];
-  WAVES.forEach((w, i) => {
-    const o = ctx.createOscillator(); o.setPeriodicWave(lfoShapes ? w.pwLfo : w.pw); o.frequency.value = 0;
-    fq.connect(o.frequency); dt.connect(o.detune);
-    const gn = gainNode(0);
-    shapers[i].connect(gn.gain);
-    o.connect(gn).connect(dest);
-    oscs.push(o);
-    tabs.push({ o, gn, on: true, want: true });
-  });
-  for (const o of oscs) o.start();
-  return { freq: fq.offset, detune: dt.offset, oscs, tabs };
-}
-// слышны только соседние таблицы вокруг позиции морфа (и размах LFO на волне) — остальные генераторы
-// отцеплены от графа и не считаются; отцепляются с задержкой, пока позиция доезжает
-const tableSpan = (p, d) => [Math.max(0, Math.floor(clamp(p - d) * (NW - 1) + 1e-6)), Math.min(NW - 1, Math.ceil(clamp(p + d) * (NW - 1) - 1e-6))];
-function useTables(mo, lo, hi) {
-  mo.tabs.forEach((t, i) => {
-    if (i >= lo && i <= hi) { t.want = true; if (!t.on) { t.o.connect(t.gn); t.on = true; } }
-    else if (t.on && t.want) {
-      t.want = false;
-      setTimeout(() => { if (!t.want && t.on) { t.o.disconnect(t.gn); t.on = false; } }, 160);
-    }
-  });
-}
-
-// позиция морфинга → веса таблиц
-function morphPos(p, withLevel) {
-  const c = ctx.createConstantSource(); c.offset.value = 2 * p - 1; c.start();
-  const shapers = WAVES.map((w, i) => {
-    const sh = ctx.createWaveShaper(); sh.curve = withLevel ? weightCurve(i, w.level, 0.85) : weightCurve(i, 1);   // 0.85 — ровная громкость по ходу морфа
-    c.connect(sh);
-    return sh;
-  });
-  return { pos: c.offset, src: c, shapers };
-}
-
-// сдвиг частоты: две цепочки фазовращателей дают сигнал и его копию со сдвигом фазы на 90°
-// (преобразование Гильберта, коэффициенты О. Ниемиталы), дальше I·cos + Q·sin: все частоты едут
-// на одни и те же герцы, гармоники перестают быть кратными — металл, колокол, «неправильный» звук
-const HILB = [[0.6923878, 0.9360654322959, 0.988229522686, 0.9987488452737],
-  [0.4021921162426, 0.856171088242, 0.9722909545651, 0.9952884791278]];
-function shifter(input, output) {
-  const heads = [];
-  const chain = (as) => {
-    let x = null;
-    for (const a of as) { const f = ctx.createIIRFilter([a * a, 0, -1], [1, 0, -a * a]); if (x) x.connect(f); else heads.push(f); x = f; }
-    return x;
-  };
-  const I = ctx.createIIRFilter([0, 1], [1]);   // одна ветка на отсчёт позже — так фазы расходятся ровно на 90°
-  chain(HILB[0]).connect(I);
-  const Q = chain(HILB[1]);
-  const cos = ctx.createOscillator(), sin = ctx.createOscillator();
-  cos.setPeriodicWave(ctx.createPeriodicWave(new Float32Array([0, 1]), new Float32Array([0, 0]), { disableNormalization: true }));
-  cos.frequency.value = 0; sin.frequency.value = 0;
-  const mi = gainNode(0), mq = gainNode(0), wet = gainNode(0), dry = gainNode(1);
-  cos.connect(mi.gain); sin.connect(mq.gain);
-  I.connect(mi).connect(wet);
-  Q.connect(mq).connect(wet);                    // I·cos + Q·sin: с этим знаком плюс — вверх
-  input.connect(dry).connect(output);
-  cos.start(); sin.start();
-  // пока сдвиг выключен, ветки отключены от графа и не считаются (см. shifterOn)
-  return { cos, sin, wet, dry, heads, input, output, on: false, linked: false };
-}
-function shifterOn(sh, on) {
-  if (on === sh.on) return;
-  sh.on = on;
-  if (on) {
-    if (!sh.linked) { for (const h of sh.heads) sh.input.connect(h); sh.wet.connect(sh.output); sh.linked = true; }
-  } else setTimeout(() => {                      // после перехода сухой/мокрый — отцепить
-    if (!sh.on && sh.linked) { for (const h of sh.heads) sh.input.disconnect(h); sh.wet.disconnect(sh.output); sh.linked = false; }
-  }, 150);
-}
-
-function applyFx() {
-  if (!fxN) return;
-  const t = ctx.currentTime, T = (p, v) => p.setTargetAtTime(v, t, 0.05);
-  T(fxN.revSend.gain, fx.rev * fx.rev * 1.4);
-  T(fxN.dSend.gain, fx.dly * 0.7);
-  T(fxN.pre.gain, 0.45 + fx.dirt ** 1.4 * 14);   // до ~15× в перегруз
-  T(fxN.post.gain, 2.2 / (1 + 4 * fx.dirt ** 0.8));   // громкость примерно ровная по всему ходу drive
-}
-
-let noiseBuf = null;
-// звук Tenebrae: таблицы, шум, шина голосов → drive → дилей и зал (FX), голоса; выход — в канал мира I
-function solBuild(_, chanIn) {
-  for (const w of WAVES) makeWave(w);
-  alignWaves();
-  noiseBuf = noiseBuffer(4);
-  const noise = ctx.createBufferSource();
-  noise.buffer = noiseBuf; noise.loop = true; noise.start();
-
-  // шина голосов → drive (перегруз) → сухой звук; дилей и зал — посылы поверх него
-  bus = ctx.createGain();
-  const pre = gainNode(0.8), post = gainNode(1);
-  const drive = ctx.createWaveShaper(); drive.curve = asym(2.4, 0.35); drive.oversample = '4x';
-  bus.connect(pre).connect(drive).connect(post);
-  const out = gainNode(1);
-  post.connect(out);
-
-  // стерео-дилей: две линии крест-накрест, время слегка плавает, как у ленты
-  const dSend = gainNode(0);
-  const dL = ctx.createDelay(2), dR = ctx.createDelay(2);
-  dL.delayTime.value = 0.37; dR.delayTime.value = 0.53;
-  const fbL = gainNode(DLY_REPEATS), fbR = gainNode(DLY_REPEATS);
-  const lpL = filter('lowpass', 2600, -3), lpR = filter('lowpass', 2100, -3);
-  post.connect(dSend);
-  dSend.connect(dL);
-  dL.connect(lpL).connect(fbL).connect(dR);
-  dR.connect(lpR).connect(fbR).connect(dL);
-  lfo(0.13, 0.004, dL.delayTime);
-  lfo(0.087, 0.005, dR.delayTime);
-  const dMerge = ctx.createChannelMerger(2);
-  dL.connect(dMerge, 0, 0); dR.connect(dMerge, 0, 1);
-  dMerge.connect(out);
-
-  // зал слышит и сухой звук, и повторы дилея
-  // посыл — в общий зал ядра (T.send); после возврата зала в цепи ничего нет (out → канал), коэффициент прежний: rev²·1.4
-  const revSend = gainNode(0);
-  post.connect(revSend); dMerge.connect(revSend);
-  revSend.connect(send('hall'));
-
-  fxN = { pre, post, dSend, revSend };
-  applyFx();
-  out.connect(chanIn);
-
-  for (const v of V) {
-    v.nodes = voiceNodes(v, noise);
-    v.snap = true; v.dirty = true;
-    if (v.active) { v.nodes.out.connect(bus); v.nodes.vca.connect(v.nodes.vscope); v.nodes.live = true; }
-    for (const [key, spec] of Object.entries(v.lfo)) setLfo(v, key, spec);
-  }
-  for (const v of V) for (const m of v.mods) wire(v, m);
-}
-
-function voiceNodes(v, noise) {
-  const k = 1 + v.i * 0.137;                  // у каждого кружка свои скорости дыхания
-  const pan = (p) => { if (!ctx.createStereoPanner) return gainNode(1); const s = ctx.createStereoPanner(); s.pan.value = p; return s; };
-
-  // пара генераторов, разведённая по стерео; второй сдвинут на detune; обе половины морфят из одной позиции
-  const tone = gainNode(1);
-  const morph = morphPos(v.wave, true);
-  const p1 = pan(-0.5), p2 = pan(0.5);
-  p1.connect(tone); p2.connect(tone);
-  const c1 = morphOsc(morph.shapers, p1), c2 = morphOsc(morph.shapers, p2);
-  const sub = ctx.createOscillator(), m = ctx.createOscillator();
-  sub.type = 'sine'; m.type = 'sine';
-  sub.connect(gainNode(0.28)).connect(tone);
-  for (const o of [sub, m]) o.start();
-
-  // живость: медленный дрейф строя у каждого генератора по-своему…
-  lfo(0.071 * k, 5, c1.detune); lfo(0.19 * k, 2.5, c1.detune);
-  lfo(0.053 * k, 6, c2.detune); lfo(0.23 * k, 2, c2.detune);
-  // …и быстрая аналоговая нестабильность: свой шум, отфильтрованный до десятков герц, ±3 цента
-  const jit = ctx.createBufferSource();
-  jit.buffer = noiseBuf; jit.loop = true; jit.start(0, Math.random() * 3.5);
-  jit.connect(filter('lowpass', 23 * k, -3)).connect(gainNode(140)).connect(c1.detune);
-  jit.connect(filter('lowpass', 31 * k, -3)).connect(gainNode(-140)).connect(c2.detune);
-
-  // модулятор: собственная fm и выход для связей. Сам он ничем не модулируется — петель нет
-  const sfm = gainNode(0); m.connect(sfm);
-  const fmTargets = [c1.freq, c2.freq];
-  for (const p of fmTargets) sfm.connect(p);
-  const mod = gainNode(0); m.connect(mod);
-
-  // перегруз внутри голоса → фильтр, который сам медленно гуляет
-  const driveIn = gainNode(0.5);
-  const shaper = ctx.createWaveShaper(); shaper.curve = soft(3, true); shaper.oversample = '2x';
-  const lp = filter('lowpass', 800, 5);
-  const shf = shifter(tone, driveIn);           // сдвиг частоты — до перегруза и фильтра
-  driveIn.connect(shaper).connect(lp);
-  lfo(0.043 * k, 280, lp.detune);
-
-  // дыхание шумом: полоса на гармонике кружка, вверху поля — шипение
-  const nz = gainNode(0);
-  const bp = filter('bandpass', 400, 6);
-  noise.connect(bp).connect(gainNode(2.4)).connect(nz);
-  const hiss = gainNode(0);
-  noise.connect(filter('highpass', 3000)).connect(hiss).connect(nz);
-
-  const env = gainNode(0);
-  lp.connect(env); nz.connect(env);
-
-  // гребёнка, настроенная на высоту: тихая постоянная окраска
-  const sum = gainNode(1);
-  env.connect(sum);
-  const dl = ctx.createDelay(1), comb = gainNode(0.45);
-  const loopLP = filter('lowpass', 3000, -3);
-  const loopSat = ctx.createWaveShaper(); loopSat.curve = soft(1.6, false);
-  const fb = gainNode(FB_BASE);
-  env.connect(dl);
-  dl.connect(loopLP).connect(loopSat).connect(fb).connect(dl);
-  dl.connect(comb).connect(sum);
-
-  // усилитель для am / rm от связей
-  const vca = gainNode(1);
-  const vscope = ctx.createAnalyser(); vscope.fftSize = 1024; vscope.smoothingTimeConstant = 0;   // для контура кружка
-  const lvl = gainNode(0.55);
-  const breath = gainNode(1);                  // громкость чуть дышит — в долях от громкости, тихую планету дыхание не пробивает
-  lfo(0.09 * k, 0.13, breath.gain);
-  const out = pan(0);
-  sum.connect(vca).connect(breath).connect(lvl).connect(out);  // к шине подключается, только пока кружок звучит
-
-  return { c1, c2, sub, m, morph, tone, shf, sfm, mod, driveIn, lp, bp, nz, hiss, env, dl, comb, vca, lvl, vscope, out, fmTargets, lfo: {}, live: false };
-}
-
-function apply(v) {
-  const n = v.nodes;
-  if (!n) return;
-  const t = ctx.currentTime, s = v.snap;
+function sync(v) {
+  if (!engine) return;
+  syncMods(v);
+  engine.voice(v.i, v);
   v.snap = false;
-  const T = (p, val, tau) => p.setTargetAtTime(val, t, s ? 0.004 : tau);
-  const f = freq(v), y = v.y, G = 0.14;
-  T(n.c1.freq, f, G);
-  T(n.c2.freq, f + beatHz(v.beat), G);
-  T(n.sub.frequency, f / 2, G);
-  T(n.m.frequency, f, G);
-  T(n.morph.pos, 2 * v.wave - 1, 0.04);
-  const wl = v.lfo.wave ? v.lfo.wave.depth : 0, [tlo, thi] = tableSpan(v.wave, wl);
-  useTables(n.c1, tlo, thi); useTables(n.c2, tlo, thi);
-  const sh = shiftHz(v.shift), shOn = sh !== 0 || !!v.lfo.shift;
-  shifterOn(n.shf, shOn);
-  T(n.shf.cos.frequency, sh, 0.06); T(n.shf.sin.frequency, sh, 0.06);   // одинаково — иначе пара разойдётся по фазе
-  T(n.shf.wet.gain, shOn ? 1 : 0, 0.02); T(n.shf.dry.gain, shOn ? 0 : 1, 0.02);
-  // ось Y: внизу чистые колебания, вверху перегруз и шум, вытесняющий тон.
-  // В чёрной дыре (h) тон и настроенная гребёнка съедены, остаётся широкий шум — глубже, темнее
-  const h = v.holeT;
-  T(n.driveIn.gain, 0.22 + 3.6 * y * y, 0.1);
-  T(n.tone.gain, (1 - 0.65 * y ** 1.5) * (1 - h), 0.15);
-  T(n.lp.frequency, cutoff(v), 0.1);
-  T(n.lp.Q, v.res * RES_MAX, 0.1);
-  T(n.nz.gain, 0.95 * y ** 1.8 * (1 - h) + 0.9 * h, 0.15);
-  T(n.bp.frequency, Math.min(f * 3 * 2 ** (y * 2), 9000) ** (1 - h) * 600 ** h, 0.15);
-  T(n.bp.Q, (9 - 6 * y) * (1 - h) + 0.5 * h, 0.15);
-  T(n.hiss.gain, 0.25 * y ** 3 * (1 - h), 0.15);
-  T(n.comb.gain, 0.45 * (1 - h), 0.15);
-  let d = 1 / f;
-  while (d < 0.006) d *= 2;
-  T(n.dl.delayTime, d, G);
-  if (n.out.pan) T(n.out.pan, (v.x - 0.5) * 0.6, 0.2);
-  T(n.sfm.gain, f * FM_MAX * v.fm, 0.08);
-  // связи: глубина в единицах своей цели; rm забирает долю прямого сигнала
-  let rm = 0;
-  for (const m of v.mods) {
-    if (!m.g) continue;
-    // fm — до ±2 октав; tzfm — индекс до 5 от частоты источника (как в настоящей FM); am — полная; rm — громкий
-    const dd = m.type === 'fm' ? m.depth * 2400 : m.type === 'tzfm' ? m.depth * 5 * freq(m.src)
-      : m.type === 'am' ? m.depth : m.depth * 1.6;
-    if (m.type === 'rm') rm += m.depth;
-    T(m.g.gain, dd, 0.08);
-  }
-  T(n.vca.gain, Math.max(0, 1 - rm), 0.08);
-  const alive = 1 - clamp((h - 0.5) / 0.45);  // в глубине дыры звук умирает
-  T(n.lvl.gain, 0.55 * v.amp * alive, 0.15);   // громкость генератора — щипок по планете
-  // LFO: скорость и глубина в единицах своей цели
-  for (const [key, spec] of Object.entries(v.lfo)) {
-    const L = n.lfo[key];
-    if (!L) continue;
-    L.mo.freq.setTargetAtTime(spec.rate, t, 0.05);
-    L.mp.pos.setTargetAtTime(2 * spec.morph - 1, t, 0.05);
-    const [la, lb] = tableSpan(spec.morph, 0);
-    useTables(L.mo, la, lb);
-    const d2 = spec.depth;
-    const depth = key === 'pitch' ? d2 * 700 : key === 'wave' ? d2 * 2 : key === 'cut' ? d2 * 4800
-      : key === 'res' ? d2 * 20 : key === 'beat' ? d2 * 16 : key === 'shift' ? d2 * 300 : key === 'amp' ? d2 * 0.55 * v.amp * alive : d2 * f * FM_MAX;
-    L.out.gain.setTargetAtTime(depth, t, 0.05);
+}
+
+// звук Tenebrae: новый движок в канал мира I (и после смены контекста — restartAudio); заново всё: голоса, связи, LFO, FX
+function solBuild(_, chanIn) {
+  if (engine) engine.dispose();
+  engine = createEngine({ ctx, out: chanIn, send: send('hall'), scale: sclView });
+  applyFx();
+  for (const v of V) syncMods(v);
+  for (const v of V) { v.snap = true; engine.voice(v.i, v); v.snap = false; v.dirty = false; }
+  for (const v of V) {
+    v.live = v.active;
+    if (!v.active) continue;
+    engine.live(v.i, true);
+    if (v.envT === 1) engine.on(v.i);
   }
 }
 
@@ -1545,23 +1213,18 @@ function resize() {
 // контур кружка — его собственный звук: два периода сигнала, обёрнутые по кругу.
 // Синус — плавные лепестки, пила и fold — зубцы, шум — рваный край, биения — контур дышит
 function contour(v, x, y, r, a, lw, glow) {
-  const n = v.nodes;
+  const b = engine && engine.scope(v.i);     // 128 точек: два периода сигнала голоса
   let pts = null;
-  if (n && n.live && n.vscope) {
-    const b = v.buf || (v.buf = new Float32Array(1024));
-    n.vscope.getFloatTimeDomainData(b);
-    let s0 = 0;
-    for (let i = 1; i < 480; i++) if (b[i - 1] < 0 && b[i] >= 0) { s0 = i; break; }
-    const span = Math.round(clamp((ctx.sampleRate / freq(v)) * 2, 64, 520));
+  if (b) {
+    const N = b.length;
     let pk = 0;
-    for (let i = 0; i < span; i++) pk = Math.max(pk, Math.abs(b[s0 + i]));
+    for (let i = 0; i < N; i++) pk = Math.max(pk, Math.abs(b[i]));
     v.pk = Math.max(pk, (v.pk || 0) * 0.92, 0.02);
     const k = (10 / v.pk) * Math.min(1, v.env * 1.4);
     pts = [];
-    const N = 128;
     for (let j = 0; j < N; j++) {
       const th = (j / N) * Math.PI * 2 - Math.PI / 2;
-      const rr = r + clamp(b[s0 + Math.floor((j / N) * span)] * k, -12, 12);
+      const rr = r + clamp(b[j] * k, -12, 12);
       pts.push(x + Math.cos(th) * rr, y + Math.sin(th) * rr);
     }
   }
@@ -2071,7 +1734,8 @@ function sunStrikes(now) {
     if (t <= 0 || now < (v.strikeNext || 0)) continue;
     v.strike = { t0: now, p: t, a: Math.atan2(vy(v) - oy, vx(v) - ox) };
     v.strikeNext = now + (440 - 320 * t) * (0.6 + 0.8 * Math.random());
-    strikeSound(t); strikes++;
+    if (engine) engine.strike(t);
+    strikes++;
   }
 }
 
@@ -2365,10 +2029,9 @@ function solTick(now, dt) {
     }
   }
 
-  for (const v of V) if (v.dirty) for (const u of V) if (u.mods.some((m) => m.src === v && m.type === 'tzfm')) u.dirty = true;
   let anyActive = false;
   for (const v of V) {
-    if (v.dirty) { v.dirty = false; apply(v); }
+    if (v.dirty) { v.dirty = false; sync(v); }   // tzfm-приёмники идут за высотой источника сами (движок)
     v.env += (v.envT - v.env) * (1 - Math.exp(-dt / v.envTau));
     v.hole += (v.holeT - v.hole) * (1 - Math.exp(-dt / 0.15));
     if (v.active && v.holeT > 0.9 && !v.fingers.length && v.envT !== 0) { v.pinned = false; release(v, 0.4); }   // отпущена в глубине дыры — умирает
@@ -2376,15 +2039,12 @@ function solTick(now, dt) {
       v.active = false;
       unlinkAll(v);
       clearLfos(v);
-      if (v.nodes && v.nodes.live) { v.nodes.out.disconnect(); v.nodes.vca.disconnect(v.nodes.vscope); v.nodes.live = false; }
+      if (v.live) { v.live = false; if (engine) engine.live(v.i, false); }
     }
     if (v.active) anyActive = true;
   }
   if (editor && ((editor.kind === 'voice' && !editor.v.active) || (editor.kind === 'link' && !editor.dst.mods.includes(editor.m)))) editor = null;
-  if (bus) {                                  // чем больше кружков, тем тише каждый
-    const live = V.reduce((s, v) => s + (v.active ? v.env : 0), 0);
-    bus.gain.setTargetAtTime(1 / Math.sqrt(Math.max(1, live)), ctx.currentTime, 0.3);
-  }
+  if (engine) engine.busEnv(V.reduce((s, v) => s + (v.active ? v.env : 0), 0));   // чем больше кружков, тем тише каждый
   // экран держит общий сторож ниже — по всем мирам, не только по Tenebrae
 
 }
@@ -2590,7 +2250,7 @@ window.t2d = {
   get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.send === 'function' && T2D.snapSemi(3.4) === 3.4; },
   hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
   voices: V, fx, scl, freq, cutoff, applyFx, place, unplace, semi,
-  get ctx() { return ctx; }, get core() { return core && { ready: core.ready, sent: core.sent, node: !!core.node }; }, strikeSound, holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
+  get ctx() { return ctx; }, get core() { return core && { ready: core.ready, sent: core.sent, node: !!core.node }; }, strikeSound: (p) => engine && engine.strike(p), holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
 };   // для отладки из консоли
 
 resize();

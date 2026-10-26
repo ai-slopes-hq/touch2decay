@@ -1,7 +1,7 @@
 // Офлайн без залипания старой версии.
 // Код и страница — сначала из сети (мимо HTTP-кеша), кеш — только запасной вариант без сети.
 // Шрифты, иконки и гравюры не меняются — сразу из кеша.
-const CACHE = 't2d-v188';   // при выкладке менять вместе с ?v= у модулей в index.html
+const CACHE = 't2d-v189';   // при выкладке менять вместе с ?v= у модулей в index.html
 const PAGE = ['./', './index.html', './manifest.webmanifest'];
 // ES-модули — те же, что <script type="module"> в index.html, в том же порядке; host/ — их импортирует app.js
 const HOST = ['./host/util.js', './host/fonts.js', './host/draw.js', './host/scale.js', './host/registry.js', './host/undo.js', './host/audio.js',
@@ -9,7 +9,7 @@ const HOST = ['./host/util.js', './host/fonts.js', './host/draw.js', './host/sca
 const MODULES = [...HOST, './app.js', './worlds/cymatica/index.js', './laboratorium.js', './worlds/natura/index.js', './worlds/inferno/index.js', './worlds/paradisus/index.js', './worlds/monochord/index.js', './worlds/oceanus/index.js', './worlds/horologium/index.js', './worlds/firmamentum/index.js', './worlds/tria/index.js', './worlds/arcadia/index.js', './worlds/portus/index.js', './worlds/goetia/index.js', './prisma.js', './vitrea.js',
   './worlds/arcadia/model.js', './worlds/arcadia/engine.js', './worlds/arcadia/view.js', './worlds/firmamentum/model.js', './worlds/firmamentum/engine.js', './worlds/firmamentum/view.js', './worlds/goetia/model.js', './worlds/goetia/engine.js', './worlds/goetia/view.js', './worlds/monochord/model.js', './worlds/monochord/engine.js', './worlds/monochord/view.js', './worlds/oceanus/model.js', './worlds/oceanus/engine.js', './worlds/oceanus/view.js', './worlds/tria/model.js', './worlds/tria/engine.js', './worlds/tria/view.js',
   './worlds/inferno/model.js', './worlds/inferno/engine.js', './worlds/inferno/view.js', './worlds/paradisus/model.js', './worlds/paradisus/engine.js', './worlds/paradisus/view.js',
-  './worlds/tenebrae/tone.js',
+  './worlds/tenebrae/tone.js', './worlds/tenebrae/engine.js',
   './worlds/portus/model.js', './worlds/portus/engine.js', './worlds/portus/view.js',
   './worlds/horologium/model.js', './worlds/horologium/engine.js', './worlds/horologium/view.js',
   './worlds/natura/model.js', './worlds/natura/engine.js', './worlds/natura/view.js', './worlds/natura/scene.js',

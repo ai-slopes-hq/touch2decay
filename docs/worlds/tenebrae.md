@@ -18,10 +18,10 @@
 1. Палитра, константы звука/жестов (пороги касаний и пальцы `F` — `host/touch.js`), таблицы `WAVES` (`host/waves.js`) (морф по линии triangle → sharp → saw → pulse → fold → sync → crush → metal → grain).
 2. Голоса `V`, лад `SCALES`, общие FX `fx`.
 3. **Поле**: геометрия `geo`, `place/unplace`, зум.
-4. Связи (`addLink`, `wire`, `chaosTick`), LFO (`setLfo`, `lfoTargets`), мост (`startBridge`).
+4. Связи (`addLink`, `chaosTick`; узлы связей — в движке), LFO (`setLfo`, `removeLfo`), мост (`startBridge`).
 5. **Касания**: `down`, `move`, `up`, `spawn`, `deleteVoice`, зум.
 6. **Кнопки и меню**: `uiHit`, `uiDown/uiMove/uiUp` (верхняя строка — `host/ui-top.js`, плашка FX — `host/sheet.js`), лад, кубик `rollDice`, **отмена** (`snapshot`, `restore`; `commit` — `host/undo.js`), веер FX, кольца (`openMenu`, `openLink`, `pinFrom`, `ringTouch`).
-7. **Аудио**: таблицы (`makeWave`, `alignWaves` — у звуковых таблиц фазы гармоник выровнены по saw, морф без провалов), `morphOsc` + `useTables` (считаются только соседние таблицы), `shifter` + `shifterOn` (шифтер отцеплен, пока выключен), посыл в зал ядра (`send('hall')`, rev²·1.4; `fx.decay` — теперь только размер туманностей на поле, хвост у зала ядра один), `build()`, голос `voiceNodes()`, `apply(v)` — перевод параметров в звук.
+7. **Аудио**: `solBuild` (новый движок в канал мира I, после `restartAudio` — заново голоса, связи, LFO, FX), `sync(v)` (голос `dirty` → `links`, `lfo`, `voice`), `applyFx`. Сам звук — `worlds/tenebrae/engine.js` (`createEngine`, API «действий» `voice/on/off/live/links/lfo/fx/strike/clear/busEnv/scope`): таблицы (у звуковых фазы гармоник выровнены по saw, морф без провалов), `morphOsc` + `useTables` (считаются только соседние таблицы), `shifter` + `shifterOn` (шифтер отцеплен, пока выключен), посыл в зал ядра (`send('hall')`, rev²·1.4; `fx.decay` — только размер туманностей на поле, хвост у зала ядра один), голос `voiceNodes()`, `apply()` — перевод полей голоса в звук (частота, cutoff, сдвиг — формулы `tone.js`), tzfm-приёмники идут за высотой источника.
 8. **Рисование**: `resize` (фон-звёзды в `scan`), `contour` (контур из сигнала), `drawVoice` (планета, кольцо Сатурна, двойная звезда, спутники, хвост кометы), `drawLinks` (нити), кольца `drawRing/drawEditor/drawHeld`, `drawLfoPanel`, `drawAmpStrip`, поле `drawField` (кеш `orbitLayer` + `bgLayer`), `drawSun`, `drawUI`, `frame`.
 9. **Нагрузка** — `host/strain.js`: `measureStrain` (время кадра, отставание звуковых часов, доля графа — от мира I через `setGraphLoad`) → `drawStrain`.
 

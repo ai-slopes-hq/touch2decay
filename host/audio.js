@@ -1,6 +1,6 @@
 // звук хоста: контекст, мастер (срез, компрессор, потолок), микшер-каналы миров, общий зал, громкость,
 // ядро SDK (t2d.wasm: миры SDK и четыре общих ревербера, посылы миров T.send), перезапуск при смене выхода, разблокировка звука в iOS.
-// Голоса Tenebrae — в app.js (solBuild)
+// Голоса Tenebrae — worlds/tenebrae/engine.js (строит app.js, solBuild)
 import { startClock } from './clock.js';
 import { clamp } from './util.js';
 import { worlds, nav } from './registry.js';
