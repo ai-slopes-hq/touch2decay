@@ -1844,6 +1844,38 @@ static void shaperOs4() {
   NEAR(sh.run(0.3), sh.step(0.3), 1e-15);
 }
 
+// TanhShaper2, os 2 ступенью Chromium (голос Tenebrae): пачкой stepN — до бита как по одному step; пара L/R — как моно OsChromium
+// с той же кривой; задержка 128 (как '2x' WaveShaperNode: 64 апсэмпл + 64 даунсэмпл)
+static void shaperChromium2() {
+  sdk::TanhShaper2 a[6], b[6];
+  sdk::TanhShaper2* pa[6];
+  for (int v = 0; v < 6; v++) {
+    for (sdk::TanhShaper2* t : {&a[v], &b[v]}) { t->set(1 + v); t->os = 2; t->chromium = true; t->reset(); }
+    pa[v] = &a[v];
+  }
+  sdk::TanhShaper mono; mono.set(1);
+  sdk::OsChromium oc;
+  bool same = true, pair = true;
+  for (int i = 0; i < 2000; i++) {
+    double io[12], ref[12];
+    for (int v = 0; v < 6; v++) {
+      io[2 * v] = ref[2 * v] = 0.7 * std::sin(2 * M_PI * (300 + 50 * v) * i / 48000.0);
+      io[2 * v + 1] = ref[2 * v + 1] = 0.5 * std::sin(2 * M_PI * (410 + 30 * v) * i / 48000.0);
+    }
+    const double m = oc.step(io[0], [&](double u) { return mono.shape(u); });
+    sdk::TanhShaper2::stepN(pa, io, 6);
+    for (int v = 0; v < 6; v++) b[v].step(ref[2 * v], ref[2 * v + 1]);
+    for (int k = 0; k < 12; k++) same = same && io[k] == ref[k];
+    pair = pair && io[0] == m;
+  }
+  CHECK(same);
+  CHECK(pair);
+  sdk::TanhShaper2 d; d.set(0.01); d.os = 2; d.chromium = true; d.reset();   // почти линейная кривая: импульс → пик на задержке ступени
+  int at = -1; double pk = 0;
+  for (int i = 0; i < 400; i++) { double l = i == 0 ? 0.5 : 0, r = 0; d.step(l, r); if (std::fabs(l) > pk) { pk = std::fabs(l); at = i; } }
+  CHECK(at == 128);
+}
+
 static void bpbank() {
   const double sr = 48000;
   sdk::BpBank<3> b;
@@ -2403,7 +2435,7 @@ int main(int argc, char** argv) {
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
   tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear();
-  shaper(); shaperOs4(); bpbank(); noise(); infernoModel(); infernoSound();
+  shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

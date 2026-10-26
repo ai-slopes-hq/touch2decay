@@ -109,6 +109,8 @@ class Voice {
   sdk::Delay dl_[2];
   float dbuf_[2][DMAX];
   double dSamp_ = 128, dSec_ = 0;
+  double fbq_[2][128] = {};                             // петля comb: выход обратной связи на квант позже (как цикл в Chromium)
+  int fbi_ = 0;
   double nz_ = 0, comb_ = 0, vca_ = 0, lv_ = 0;         // от pre к post этого сэмпла
   sdk::PanStereo pan_;
 

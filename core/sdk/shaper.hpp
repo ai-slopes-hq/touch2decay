@@ -131,6 +131,24 @@ struct OsChromiumT {
     o.do_.push(i.step(ou, g));                          // второй проход внутренней — по апсэмплу внешней
     return oy;
   }
+  // K ступеней 2× за раз (голоса мира): у каждой — те же суммы в том же порядке, что в step, до бита; цепочки K ступеней вперемешку.
+  // Вызовы g идут сперва чётные всех ступеней, потом нечётные — кривая g(v, u) у ступеней своя и без состояния, на биты это не влияет
+  template <int K, class G>
+  static void stepK(OsChromiumT* const* s, T* x, G&& g) {
+    const Kernels& k = kernels();
+    const T *xp[K], *op[K];
+    T u1[K], y[K];
+    for (int v = 0; v < K; v++) {
+      s[v]->ux_.push(x[v]);
+      xp[v] = s[v]->ux_.at();
+      s[v]->de_.push(g(v, xp[v][UP / 2]));
+      u1[v] = T(); y[v] = k.dn[DN / 2] * s[v]->de_.at()[DN / 4];
+      op[v] = s[v]->do_.at();
+    }
+    for (int t = 0; t < UP; t++)
+      for (int v = 0; v < K; v++) { u1[v] += k.up[t] * xp[v][t]; y[v] += k.dn[2 * t + 1] * op[v][t]; }
+    for (int v = 0; v < K; v++) { s[v]->do_.push(g(v, u1[v])); x[v] = y[v]; }
+  }
   void reset() { ux_ = Hist<T, UP>(); de_ = Hist<T, DN / 4 + 1>(); do_ = Hist<T, DN / 2>(); }
 
  private:
@@ -221,23 +239,39 @@ struct TanhShaper {
 // пара каналов с одним k: step(l, r) — до бита как step у двух TanhShaper с тем же k
 struct TanhShaper2 {
   int os = 1;
+  bool chromium = false;                                // os 2 — ступенью Chromium (как '2x' WaveShaperNode до сэмпла, задержка 128), не FIR 47
   void set(double k) { t_.set(k); }
   void step(double& l, double& r) {
-    const V2 y = oversample<V2>(os, a_, b_, c_, V2{l, r}, [this](V2 u) { return V2{t_.shape(u[0]), t_.shape(u[1])}; });
+    const auto g = [this](V2 u) { return V2{t_.shape(u[0]), t_.shape(u[1])}; };
+    const V2 y = os == 2 && chromium ? b_.step(V2{l, r}, g) : oversample<V2>(os, a_, b_, c_, V2{l, r}, g);
     l = y[0]; r = y[1];
   }
-  // n пар за раз (у каждой свой k): до бита как sh[v]->step(io[2v], io[2v + 1]) по очереди; при os 2 — ступени пачками до 6
+  // n пар за раз (у каждой свой k): до бита как sh[v]->step(io[2v], io[2v + 1]) по очереди; при os 2 (FIR 47 или Chromium) — ступени пачками до 6
   static void stepN(TanhShaper2* const* sh, double* io, int n) {
     while (n > 0) {
       const int m = n < 6 ? n : 6;
-      bool os2 = true;
-      for (int v = 0; v < m; v++) os2 = os2 && sh[v]->os == 2;
-      if (!os2) { for (int v = 0; v < m; v++) sh[v]->step(io[2 * v], io[2 * v + 1]); }
-      else {
+      bool os2 = true, ch2 = true;
+      for (int v = 0; v < m; v++) { os2 = os2 && sh[v]->os == 2 && !sh[v]->chromium; ch2 = ch2 && sh[v]->os == 2 && sh[v]->chromium; }
+      const auto g = [sh](int v, V2 u) { return V2{sh[v]->t_.shape(u[0]), sh[v]->t_.shape(u[1])}; };
+      if (ch2) {
+        V2 x[6];
+        OsChromiumT<V2>* b[6];
+        for (int v = 0; v < m; v++) { x[v] = V2{io[2 * v], io[2 * v + 1]}; b[v] = &sh[v]->b_; }
+        switch (m) {
+          case 1: OsChromiumT<V2>::stepK<1>(b, x, g); break;
+          case 2: OsChromiumT<V2>::stepK<2>(b, x, g); break;
+          case 3: OsChromiumT<V2>::stepK<3>(b, x, g); break;
+          case 4: OsChromiumT<V2>::stepK<4>(b, x, g); break;
+          case 5: OsChromiumT<V2>::stepK<5>(b, x, g); break;
+          default: OsChromiumT<V2>::stepK<6>(b, x, g); break;
+        }
+        for (int v = 0; v < m; v++) { io[2 * v] = x[v][0]; io[2 * v + 1] = x[v][1]; }
+      } else if (!os2) {
+        for (int v = 0; v < m; v++) sh[v]->step(io[2 * v], io[2 * v + 1]);
+      } else {
         V2 x[6];
         Os2T<V2>* a[6];
         for (int v = 0; v < m; v++) { x[v] = V2{io[2 * v], io[2 * v + 1]}; a[v] = &sh[v]->a_; }
-        const auto g = [sh](int v, V2 u) { return V2{sh[v]->t_.shape(u[0]), sh[v]->t_.shape(u[1])}; };
         switch (m) {
           case 1: Os2T<V2>::stepK<1>(a, x, g); break;
           case 2: Os2T<V2>::stepK<2>(a, x, g); break;

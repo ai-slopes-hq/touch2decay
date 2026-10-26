@@ -48,14 +48,16 @@ void Voice::prepare(double sr, uint32_t seed, const Tables* t, int index) {
   hp_.set(sdk::Biquad::highpass, 3000, 1, sr);          // Q по умолчанию у BiquadFilterNode — 1 (у highpass — дБ)
   sdk::panEq(-0.5, g1L_, g1R_);
   sdk::panEq(0.5, g2L_, g2R_);
-  sat_.set(3); sat_.os = 2; sat_.reset();               // soft(3, true), oversample '2x'
+  sat_.set(3); sat_.os = 2; sat_.chromium = true; sat_.reset();   // soft(3, true), oversample '2x' — ступень Chromium (задержка 128)
   for (int c = 0; c < 2; c++) {
     sh_[c].reset();
     lp_[c] = loop_[c] = sdk::Biquad{};
     lp_[c].set(sdk::Biquad::lowpass, 800, 5, sr);
     loop_[c].set(sdk::Biquad::lowpass, 3000, -3, sr);
     dl_[c] = sdk::Delay(dbuf_[c], DMAX);
+    for (double& v : fbq_[c]) v = 0;
   }
+  fbi_ = 0;
   dSamp_ = 128; dSec_ = 0;
   pan_.set(0);
   for (float& v : ring_) v = 0;
@@ -252,12 +254,16 @@ void Voice::post(const double* s, double& L, double& R) {
   double v[2];
   for (int c = 0; c < 2; c++) {
     const double e = env_ * (lp_[c].step(s[c]) + nz_);
-    const double d = dl_[c].read(dSamp_);               // гребёнка на высоте: тихая постоянная окраска
-    dl_[c].write(e + FB_BASE * sat.step(loop_[c].step(d)));
+    // гребёнка на высоте: тихая постоянная окраска. В Chromium цикл узлов рвётся на одном звене: обратная связь
+    // приходит в задержку с выхода прошлого кванта — круг петли D + 128 сэмплов (замер: D 300 → эхо через 428)
+    const double d = dl_[c].read(dSamp_);
+    dl_[c].write(e + fbq_[c][fbi_]);
+    fbq_[c][fbi_] = FB_BASE * sat.step(loop_[c].step(d));
     v[c] = (e + comb_ * d) * vca_;
   }
   ring_[ringW_] = static_cast<float>(0.5 * (v[0] + v[1]));   // AnalyserNode сводит стерео в моно
   ringW_ = (ringW_ + 1) & (SCOPE - 1);
+  fbi_ = (fbi_ + 1) & 127;
   pan_.step(v[0] * lv_, v[1] * lv_, L, R);
   if (++blk_ == BLOCK) blk_ = 0;
   now_ += 1;

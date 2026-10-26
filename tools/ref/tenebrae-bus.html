@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>tenebrae bus</title>
+<!-- Сверка звука Tenebrae в браузере: эталон worlds/tenebrae/engine.js (узлы Web Audio) в OfflineAudioContext на 48 кГц, сцены — tools/ref/tenebrae-scenes.js.
+     Действия сцены применяются в начале своего блока 128 (suspend), как в tenebrae-cli. Клей модели — только busEnv: Σ огибающих живых голосов,
+     посчитанная по тем же setTargetAtTime (on — τ 0.12 к 1, off — свой τ к 0), раз в блок — как ядро. Страница отдаёт: stdin для CLI и 4 канала
+     (сухой L, R, посыл L, R) каждой сцены float32 в base64. Запускает tools/tenebrae-bus.py; результат — window.__res. -->
+<script type="module">
+import { ACT, LINK_TYPES, LFO_KEYS, createEngine } from '../../worlds/tenebrae/engine.js';
+import * as S from './tenebrae-scenes.js';
+const { SCENES, FIELDS, SR, cliInput } = S;
+if (JSON.stringify([ACT, LINK_TYPES, LFO_KEYS]) !== JSON.stringify([S.ACT, S.LINK_TYPES, S.LFO_KEYS])) throw new Error('коды сцен ≠ engine.js');
+
+const b64 = (f) => { const u = new Uint8Array(f.buffer); let s = ''; for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); };
+const BLOCK = 128 / SR;
+
+async function one({ secs, acts }) {
+  const ctx = new OfflineAudioContext(4, Math.round(SR * secs), SR);
+  const chan = ctx.createGain(), send = ctx.createGain();
+  const eng = createEngine({ ctx, out: chan, send, scale: { on: false, inScale: () => true } });
+  const mg = ctx.createChannelMerger(4), ds = ctx.createChannelSplitter(2), ss = ctx.createChannelSplitter(2);
+  chan.connect(ds); send.connect(ss);
+  ds.connect(mg, 0, 0); ds.connect(mg, 1, 1); ss.connect(mg, 0, 2); ss.connect(mg, 1, 3);
+  mg.connect(ctx.destination);
+  // огибающая голоса — как его env.gain: { v0, to, tau, t0 }; live — подключён к шине
+  const env = Array.from({ length: 6 }, () => ({ v0: 0, to: 0, tau: 1, t0: 0, live: false }));
+  const envAt = (e, t) => e.to + (e.v0 - e.to) * Math.exp(-(t - e.t0) / e.tau);
+  const target = (e, t, to, tau) => { e.v0 = envAt(e, t); e.t0 = t; e.to = to; e.tau = tau; };
+  const run = (t, [, kind, i, a]) => {
+    if (kind === ACT.VOICE) { const v = {}; FIELDS.forEach((k, j) => { v[k] = a[j]; }); eng.voice(i, v); }
+    else if (kind === ACT.ON) { target(env[i], t, 1, 0.12); eng.on(i); }
+    else if (kind === ACT.OFF) { target(env[i], t, 0, a[0]); eng.off(i, a[0]); }
+    else if (kind === ACT.LIVE) { env[i].live = a[0] !== 0; eng.live(i, a[0] !== 0); }
+    else if (kind === ACT.LINKS) { const m = []; for (let k = 0; k + 2 < a.length; k += 3) m.push({ src: a[k], type: LINK_TYPES[a[k + 1]], depth: a[k + 2] }); eng.links(i, m); }
+    else if (kind === ACT.LFO) eng.lfo(i, LFO_KEYS[a[0]], a[3] > 0 ? { morph: a[1], rate: a[2], depth: a[3] } : null);
+    else if (kind === ACT.FX) eng.fx({ rev: a[0], dly: a[1], dirt: a[2] });
+    else if (kind === ACT.STRIKE) eng.strike(a[0]);
+    else if (kind === ACT.CLEAR) { eng.clear(); env.forEach((e) => e.live && target(e, t, 0, 0.25)); }
+  };
+  let next = 0;
+  const step = (b) => {
+    const t = b * BLOCK;
+    while (next < acts.length && acts[next][0] <= t + 1e-9) run(t, acts[next++]);
+    eng.busEnv(env.reduce((s, e) => s + (e.live ? envAt(e, t) : 0), 0));
+  };
+  step(0);
+  const blocks = Math.floor(secs * SR / 128);
+  for (let b = 1; b < blocks; b++) ctx.suspend(b * BLOCK).then(() => { step(b); ctx.resume(); });
+  const buf = await ctx.startRendering();
+  return { stdin: cliInput({ secs, acts }), ch: [0, 1, 2, 3].map((c) => b64(buf.getChannelData(c))) };
+}
+
+// Math.random движка (шум, джиттер, удар) — от зерна (window.__seed): эталон воспроизводим; window.__only — только эти сцены;
+// window.__scenes — свои сцены вместо SCENES (отладка)
+const seeded = (seed) => () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+window.__res = (async () => {
+  const o = {};
+  for (const [n, s] of Object.entries(window.__scenes || SCENES)) {
+    if (window.__only && !window.__only.includes(n)) continue;
+    Math.random = seeded(window.__seed || 7); o[n] = await one(s);
+  }
+  return o;
+})();
+</script>
