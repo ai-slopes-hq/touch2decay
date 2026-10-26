@@ -62,6 +62,27 @@ async def sc_planets(p):
     print('planets:', await p.js("()=>t2d.voices.filter(v=>v.active).map(v=>[v.i,v.pinned,Math.round(t2d.freq(v))])"))
 
 
+async def sc_tenscale(p):                          # лад в Tenebrae: в ядро — раньше голосов того же кадра (их VOICE уже по новому ладу)
+    await p.pin(150, 560); await p.pg.wait_for_timeout(800)
+    await p.js("""()=>{ const key = () => `${t2d.scl.on}|${t2d.scl.idx}|${t2d.scl.root}`;
+      window.__ten = { core: key(), voice: 0, stale: 0, scale: 0 }; const o = MessagePort.prototype.postMessage;
+      MessagePort.prototype.postMessage = function (m, ...r) {
+        const T = window.__ten;
+        if (m && m.t === 'scale') { T.core = `${m.on}|${m.idx}|${m.root}`; T.scale++; }
+        if (m && m.t === 'action' && m.slot === 1 && m.kind === 0) { T.voice++; if (T.core !== key()) T.stale++; }   // VOICE, пока у ядра старый лад
+        return o.call(this, m, ...r); }; }""")
+    s = await p.js("()=>t2d.btnPos('scl')")
+    for _ in range(2):                                 # вкл и выкл
+        on0 = await p.js('()=>t2d.scl.on')
+        await p.tap(s['x'], s['y']); await p.pg.wait_for_timeout(300)
+        T = await p.js('()=>window.__ten')
+        print('  scale', on0, '->', await p.js('()=>t2d.scl.on'), T)
+        assert await p.js('()=>t2d.scl.on') != on0, 'tap the scale button — scale toggles'
+    assert T['scale'] == 2 and T['voice'] > 0, f'scale and voices reach the core: {T}'
+    assert T['stale'] == 0, f'no VOICE is sent while the core has the old scale: {T}'
+    await p.shot('tenscale')
+
+
 async def sc_ring(p):                              # долгое касание планеты — плашка снизу: строки, «~» — LFO, двойной тап — по умолчанию
     await p.pin(200, 300)
     await p.hold(200, 300, ms=600); await p.up(); await p.pg.wait_for_timeout(200)
@@ -1819,7 +1840,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'tenscale': sc_tenscale, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

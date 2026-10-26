@@ -2362,9 +2362,11 @@ static void tenebraeMirror() {
   static Scale sc;
   static tenebrae::World w(sc);
   w.prepare(48000, 1);
+  static double m[1024];
+  CHECK(w.mirror(m, 1024) == tenebrae::MIRROR_HEAD);     // ни одного живого — только заголовок (ворклет не гонит 781 число)
+  CHECK(m[0] == 6);
   tenebraeVoiceOn(w, 0, 0.4);
   tenebraeRender(w, 1);
-  static double m[1024];
   CHECK(w.mirror(m, 1024) == tenebrae::MIRROR_N);
   CHECK(tenebrae::MIRROR_N == 781);
   CHECK(w.mirror(m, 780) == 0);                          // не влезло — ничего
@@ -2384,6 +2386,15 @@ static void tenebraeMirror() {
   double h[4];
   CHECK(w.heard(h, 4) == 0);
   CHECK(w.snapshot().empty());
+  const double zero = 0, one = 1;
+  w.action(tenebrae::LIVE, 0, &zero, 1);                 // отцепили — снова заголовок; подключили — снова весь контур
+  CHECK(w.mirror(m, 1024) == tenebrae::MIRROR_HEAD);
+  w.action(tenebrae::LIVE, 0, &one, 1);
+  tenebraeRender(w, 0.1);
+  CHECK(w.mirror(m, 1024) == tenebrae::MIRROR_N);
+  any = false;
+  for (int j = 0; j < 128; j++) if (v0[2 + j] != 0) any = true;
+  CHECK(v0[0] == 1 && any);
 }
 
 static void tenebraeCycleSafe() {
@@ -2429,12 +2440,76 @@ static void tenebraeStrikeClear() {
   CHECK(!w.sounding());
 }
 
+// лад сменился после VOICE (кадр app.js шлёт голоса раньше лада; хост натива — сам): ядро перестраивает живые голоса
+// и глубины tzfm в Гц без нового VOICE; крайние x = 0 и x = 1 с ладом — нота лада в пределах поля
+static void tenebraeScaleRetune() {
+  static Scale sc;
+  static tenebrae::World w(sc);
+  w.prepare(48000, 1);
+  tenebraeVoiceOn(w, 0, 0.6);
+  tenebraeVoiceOn(w, 1, 0.3);
+  const double link[3] = {0, 1, 0.5};                    // 0 → 1, tzfm 0.5
+  w.action(tenebrae::LINKS, 1, link, 3);
+  tenebraeRender(w, 0.5);
+  const double f0 = tenebrae::freqOf(0.6, sc);
+  NEAR(w.voice(0).freq(), f0, 1e-9);
+  sc.on = true; sc.idx = 0; sc.root = 1;                 // мажор от B♭ — 0.6 не на ноте (как в замере ревью: 150.4 → 155.4 Гц)
+  const double f1 = tenebrae::freqOf(0.6, sc);
+  CHECK(std::fabs(f1 - f0) > 1);
+  tenebraeRender(w, 128 / 48000.0);                      // один блок — без нового VOICE
+  NEAR(w.voice(0).freq(), f1, 1e-9);
+  NEAR(w.voice(1).freq(), tenebrae::freqOf(0.3, sc), 1e-9);
+  tenebraeRender(w, 0.5);
+  NEAR(w.linkValue(1, 0), 0.5 * 5 * f1, 0.01 * 0.5 * 5 * f1);
+  sc.on = false;                                         // лад снят — назад к полю
+  tenebraeRender(w, 128 / 48000.0);
+  NEAR(w.voice(0).freq(), f0, 1e-9);
+  // край поля с ладом: все лады и тоники — нота лада, 0…60 полутонов, не дальше тона от поля
+  for (int idx = 0; idx < Scale::kScales; idx++) for (int root = 0; root < 12; root++) {
+    Scale q; q.on = true; q.idx = idx; q.root = root;
+    for (double x : {0.0, 1.0}) {
+      const double s = tenebrae::semiOf(tenebrae::quantX(x, q)), n = std::round(s);
+      NEAR(s, n, 1e-9);
+      CHECK(n >= 0 && n <= tenebrae::SEMIS && q.inScale(static_cast<int>(n)));
+      CHECK(std::fabs(n - tenebrae::semiOf(x)) <= 2);
+      const double f = tenebrae::freqOf(x, q);
+      CHECK(std::isfinite(f) && f >= tenebrae::F_LO - 1e-9 && f <= tenebrae::F_LO * 32 + 1e-9);
+    }
+  }
+  sc.on = true; sc.idx = 1; sc.root = 3;                 // и в мире: x = 0 и x = 1 с ладом — частота по ладу, звук конечный
+  static tenebrae::World e(sc);
+  e.prepare(48000, 2);
+  tenebraeVoiceOn(e, 0, 0);
+  tenebraeVoiceOn(e, 1, 1);
+  double peak = 0;
+  bool finite = true;
+  tenebraeRender(e, 1, &peak, &finite);
+  NEAR(e.voice(0).freq(), tenebrae::freqOf(0, sc), 1e-9);
+  NEAR(e.voice(1).freq(), tenebrae::freqOf(1, sc), 1e-9);
+  CHECK(finite && peak > 1e-3 && peak < 4);
+  sc.on = false;
+  // лад, потом VOICE со snap в том же блоке (кадр app.js: лад — до голосов) — как будто лад был с самого начала, до бита
+  static Scale sa, sb;
+  sa.on = true; sa.idx = 0; sa.root = 1;
+  static tenebrae::World wa(sa), wb(sb);
+  wa.prepare(48000, 4); wb.prepare(48000, 4);
+  sb.on = true; sb.idx = 0; sb.root = 1;
+  tenebraeVoiceOn(wa, 0, 0.6); tenebraeVoiceOn(wb, 0, 0.6);
+  static float aL[128], aR[128], aS[128], aT[128], bL[128], bR[128], bS[128], bT[128];
+  bool same = true;
+  for (int b = 0; b < 100; b++) {
+    wa.process(sdk::Out{aL, aR, aS, aT}, 128); wb.process(sdk::Out{bL, bR, bS, bT}, 128);
+    for (int k = 0; k < 128; k++) same = same && aL[k] == bL[k] && aR[k] == bR[k];
+  }
+  CHECK(same);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
-  tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear();
+  tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;

@@ -1974,9 +1974,10 @@ function frame(now) {
   const t0 = performance.now();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  syncScale();                                           // лад сменился — в ядро SDK до голосов: VOICE этого кадра — уже по нему
   for (const w of Object.values(worlds)) if (w.tick) w.tick(now, dt);
   slTick(dt);
-  syncScale();                                           // лад сменился — в ядро SDK
+  syncScale();                                           // и после — если лад сменили внутри тика (сравнение строки — дёшево)
   readLevel();
   if (audioPanel && (nav.view !== 'play' || audioPanel.w !== nav.world || fxSheet || legenda)) setAudioPanel(null);
   if ((nav.view !== 'play' || nav.anim) && drawNav(now)) { drawBuild(); measureStrain(now, performance.now() - t0); return; }

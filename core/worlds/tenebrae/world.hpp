@@ -12,7 +12,9 @@
 //   LINKS i, a = [src, type, depth] × k  — все связи приёмника i (type: 0 fm, 1 tzfm, 2 am, 3 rm); пусто — снять все
 //   LFO i, a = [key, morph, rate, depth]  — key: 0 pitch, 1 wave, 2 cut, 3 res, 4 beat, 5 shift, 6 amp, 7 fm; depth 0 — снять
 //   FX a = [rev, dly, dirt];  STRIKE a = [p];  CLEAR  — звучащие гаснут τ 0.25, связи сняты (LFO снимает модель, как в вебе)
-// Зеркало: [6, затем на голос: live, env, 128 точек контура] — MIRROR_N = 781; у неживого голоса точки — нули.
+// Зеркало: [6, затем на голос: live, env, 128 точек контура] — MIRROR_N = 781; у неживого голоса точки — нули;
+// ни одного живого — только заголовок [6] (MIRROR_HEAD): клей читает это как «контуров нет».
+// Лад хоста (const Scale&) сверяется в начале action и process: сменился — apply всех голосов заново (частоты, глубины tzfm).
 #pragma once
 #include <string>
 #include "../../host/scale.hpp"
@@ -72,12 +74,14 @@ class World : public sdk::World {
     sdk::Osc o;
   };
   void applyVoice(int i, bool snap);                    // apply(i, snap): поля голоса, база vca, глубины связей
+  void retune();                                        // лад хоста сменился с прошлой сверки — заново apply у всех голосов с полями
   double depthOf(const Link& l) const;                  // linkDepth: глубина в единицах цели
   void setLinks(int i, const double* a, int n);
   void strike(double p);
   double strikeStep(double t);
 
   const Scale& sc_;
+  Scale scApplied_;                                     // лад, с которым считали частоты (сверка в начале process)
   Tables T_;
   bool built_ = false;
   Voice v_[VOICES];

@@ -6,7 +6,7 @@
 
 | № | Мир | Код | Заметки |
 |---|---|---|---|
-| I | Tenebrae — планеты вокруг солнца, морф-таблицы, связи, LFO | `app.js` | `docs/worlds/tenebrae.md` |
+| I | Tenebrae — планеты вокруг солнца, морф-таблицы, связи, LFO | `app.js` (модель, жесты, рисование); звук — ядро SDK C++ `core/worlds/tenebrae` → `t2d.wasm` (слот 1), `worlds/tenebrae/engine.js` — склейка; эталон Web Audio — `tools/ref/` | `docs/worlds/tenebrae.md` |
 | II | Cymatica — пластина/ханг, полиритм ритм × места | `worlds/cymatica/` (model.js — фасад), модель, смычки, звук пластины, часы, эхо и гул резонатора — ядро SDK C++ `core/worlds/cymatica` → `t2d.wasm` (слот 2; в вебе остались касания и картинка) | `docs/worlds/cymatica.md` |
 | III | **выключен** (`HIDDEN` в `app.js`) · Laboratorium — FM-дрон как Lyra-8, колбы и трубки | `laboratorium.js` | `docs/worlds/laboratorium.md` |
 | IV | Natura — секвенсер-река, кувшинки | `worlds/natura/` (model.js — фасад над моделью в ядре, этап 2 · v186: действия — в ядро по одному, зеркало ~60/с, state правят только методы), звук (пять band-limited волн, фильтр с огибающей, шина: срез дерева → хор `sdk::Chorus` моно → лента `sdk::TapeEcho` → зал hall, кораблик, лазер, лягушка, шелест) и часы шагов (`sdk::Steps`, свой темп или сетка MIDI) — ядро SDK C++ `core/worlds/natura` → `t2d.wasm` (слот 4); engine.js — тонкая склейка; эталон прежней JS-модели и движка — `tools/ref/natura-model.js`, `natura-engine.js` | `docs/worlds/natura.md` |

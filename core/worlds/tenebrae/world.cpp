@@ -51,6 +51,7 @@ void World::prepare(double sr, uint32_t seed) {
   echo_.setLp(2600, 2100, -3);
   wowL_.reset(); wowR_.reset();
   for (Strike& s : st_) s.on = false;
+  scApplied_ = sc_;
   now_ = 0;
   quiet_ = std::lround(0.5 * sr_);                      // пока ничего не прислали — не считается
 }
@@ -84,6 +85,15 @@ void World::applyVoice(int i, bool snap) {
   for (int k = 0; k < nl_[i]; k++) L_[i][k].g.target(depthOf(L_[i][k]), now_, tau);
 }
 
+// лад меняют без VOICE (лад мог прийти после голосов кадра, хост натива меняет его сам): частоты по новому ладу, τ apply;
+// apply приёмника пересчитывает и его глубины tzfm (Гц от частоты источника). Сверка — в начале action и process:
+// VOICE после смены лада ляжет поверх (его snap не перебьётся медленным apply). Без аллокаций
+void World::retune() {
+  if (sc_.on == scApplied_.on && sc_.idx == scApplied_.idx && sc_.root == scApplied_.root) return;
+  scApplied_ = sc_;
+  for (int i = 0; i < VOICES; i++) applyVoice(i, false);
+}
+
 // весь список связей приёмника: та же пара источник + тип сохраняет свою глубину (узел), новая — от нуля, пропавшая — снята
 void World::setLinks(int i, const double* a, int n) {
   static Link next[MAXLINK];                            // не на стек (~32 КБ); не в process
@@ -107,6 +117,7 @@ void World::setLinks(int i, const double* a, int n) {
 }
 
 void World::action(int kind, int i, const double* a, int n) {
+  retune();
   if (kind == FX) {
     if (n < 3) return;
     const double rev = a[0], dly = a[1], dirt = std::max(0.0, a[2]);
@@ -186,6 +197,7 @@ double World::strikeStep(double t) {
 void World::process(const sdk::Out& out, int n) {
   if (n <= 0) return;
   if (n > 128) n = 128;
+  retune();
   bool live = false, strk = false;
   double envSum = 0;
   for (const Voice& v : v_) if (v.isLive()) { live = true; envSum += v.env(); }
@@ -250,6 +262,9 @@ void World::process(const sdk::Out& out, int n) {
 int World::mirror(double* buf, int cap) const {
   if (!buf || cap < MIRROR_N) return 0;
   buf[0] = VOICES;
+  bool any = false;
+  for (const Voice& v : v_) any = any || v.isLive();
+  if (!any) return MIRROR_HEAD;                         // ни одного живого — контуров нет: ворклет не копирует и не шлёт 781 число 60 раз в с
   for (int i = 0; i < VOICES; i++) {
     double* m = buf + MIRROR_HEAD + i * MIRROR_V;
     const Voice& v = v_[i];

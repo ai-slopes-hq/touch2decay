@@ -8,8 +8,10 @@ namespace tenebrae {
 namespace {
 constexpr int SRC_N = 1024;                             // длина исходного цикла для гармоник — как N в tone.js
 
-// waveCoeffs: цикл минус среднее, на пик, ДПФ; level по RMS (в double, как в JS)
-void coeffs(int form, double* re, double* im, double& level) {
+// waveCoeffs: цикл минус среднее, на пик, ДПФ; level по RMS (в double, как в JS). cs/sn — таблицы на N = 2·SRC_N точек:
+// угол 2π·h·i / SRC_N — их точка (2·h·i) mod N (без 4 М вызовов cos/sin — сборка шла десятки мс на аудиопотоке)
+void coeffs(int form, const double* cs, const double* sn, double* re, double* im, double& level) {
+  static_assert(Tables::N == 2 * SRC_N, "ДПФ берёт cos/sin из таблиц на 2·SRC_N точек");
   static double smp[SRC_N];
   double mean = 0;
   for (int i = 0; i < SRC_N; i++) { smp[i] = sdk::waveform::form(form, i / double(SRC_N)); mean += smp[i] / SRC_N; }
@@ -20,26 +22,28 @@ void coeffs(int form, double* re, double* im, double& level) {
   re[0] = im[0] = 0;
   for (int h = 1; h < Tables::HARM; h++) {
     double a = 0, b = 0;
-    for (int i = 0; i < SRC_N; i++) { const double ph = (2 * M_PI * h * i) / SRC_N; a += smp[i] * std::cos(ph); b += smp[i] * std::sin(ph); }
+    for (int i = 0; i < SRC_N; i++) { const int j = (2 * h * i) & (Tables::N - 1); a += smp[i] * cs[j]; b += smp[i] * sn[j]; }
     re[h] = (2 * a) / SRC_N; im[h] = (2 * b) / SRC_N;
   }
   level = 0.24 / std::sqrt(rms);
 }
 
-// обратное ДПФ гармоник h ≤ hmax в N точек; cs/sn — таблицы cos/sin на N точек
+// гармоника h — в сумму обратного ДПФ на N точек; cs/sn — таблицы cos/sin на N точек
+void addHarm(double* acc, double re, double im, int h, const double* cs, const double* sn) {
+  for (int k = 0; k < Tables::N; k++) { const int j = (h * k) & (Tables::N - 1); acc[k] += re * cs[j] + im * sn[j]; }
+}
+
+// обратное ДПФ гармоник h ≤ hmax (h по возрастанию — порядок сложения как у суммы по точке)
 void synth(const double* re, const double* im, int hmax, const double* cs, const double* sn, double* out) {
-  for (int k = 0; k < Tables::N; k++) {
-    double y = 0;
-    for (int h = 1; h <= hmax; h++) { const int j = (h * k) & (Tables::N - 1); y += re[h] * cs[j] + im[h] * sn[j]; }
-    out[k] = y;
-  }
+  for (int k = 0; k < Tables::N; k++) out[k] = 0;
+  for (int h = 1; h <= hmax; h++) addHarm(out, re[h], im[h], h, cs, sn);
 }
 }  // namespace
 
 void Tables::build() {
-  static double cs[N], sn[N], buf[N];
+  static double cs[N], sn[N], buf[N], acc[N];
   for (int j = 0; j < N; j++) { cs[j] = std::cos(2 * M_PI * j / N); sn[j] = std::sin(2 * M_PI * j / N); }
-  for (int f = 0; f < FORMS; f++) coeffs(f, re[1][f], im[1][f], level[f]);
+  for (int f = 0; f < FORMS; f++) coeffs(f, cs, sn, re[1][f], im[1][f], level[f]);
   // голос: модуль своей гармоники, фаза — пилы (alignCoeffs)
   for (int f = 0; f < FORMS; f++) {
     re[0][f][0] = im[0][f][0] = 0;
@@ -53,9 +57,14 @@ void Tables::build() {
     double peak = 0;
     for (int k = 0; k < N; k++) peak = std::max(peak, std::fabs(buf[k]));
     const double g = peak > 0 ? 1.0 / peak : 1.0;
-    for (int L = 0; L < LEVELS; L++) {
-      synth(re[0][f], im[0][f], (HARM - 1) >> L, cs, sn, buf);
-      for (int k = 0; k < N; k++) voice[f][L][k] = static_cast<float>(buf[k] * g);
+    for (int k = 0; k < N; k++) voice[f][0][k] = static_cast<float>(buf[k] * g);
+    // уровни 1… — префиксы той же суммы (h ≤ 219 >> L): один проход по h, уровень пишется на своей границе — до бита как отдельный synth
+    for (int k = 0; k < N; k++) acc[k] = 0;
+    int L = LEVELS - 1;
+    for (int h = 0; L >= 1; h++) {
+      if (h > 0) addHarm(acc, re[0][f][h], im[0][f][h], h, cs, sn);
+      for (; L >= 1 && ((HARM - 1) >> L) == h; L--)
+        for (int k = 0; k < N; k++) voice[f][L][k] = static_cast<float>(acc[k] * g);
     }
     synth(re[1][f], im[1][f], HARM - 1, cs, sn, buf);
     peak = 0;
