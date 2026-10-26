@@ -1,5 +1,5 @@
 // Пинг-понг с перекрёстной связью: две линии задержки крест-накрест, lowpass в каждой петле — как пара DelayNode у Cymatica
-// (worlds/cymatica/engine.js до этапа 3; у Portus и Tenebrae та же схема с насыщением и wow — они подключат их параметрами позже):
+// (worlds/cymatica/engine.js до этапа 3; Portus и Tenebrae — та же схема со своими параметрами, ниже):
 //   in → dL ──→ выход L            dL → LP → fb → dR
 //         ↑                        dR → LP → fb → dL
 //         └── LP ← fb ← dR ──→ выход R

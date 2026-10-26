@@ -42,7 +42,11 @@ class Voice {
   void lfo(int key, double morph, double rate, double depth);   // depth 0 — снять
   double modOut() const { return live_ ? mOut_ : 0; }  // сигнал m этого сэмпла: синус f × огибающая
   void prestep();                                       // считает m и огибающую на сэмпл (до связей)
-  void step(const ModIn& in, double& L, double& R);     // выход голоса после панорамы
+  void step(const ModIn& in, double& L, double& R);     // выход голоса после панорамы: pre → sat → post
+  // тот же step по частям — мир считает перегруз (soft 2×) всех живых голосов одной пачкой (sdk::TanhShaper2::stepN), до бита как step
+  void pre(const ModIn& in, double* s);                 // всё до перегруза: s[2] — его вход (L, R)
+  sdk::TanhShaper2& sat() { return sat_; }
+  void post(const double* s, double& L, double& R);     // s[2] — выход перегруза; дальше lowpass, шум, огибающая, comb, vca, панорама
   double env() const { return env_; }
   double freq() const { return f_; }
   double combDelay() const { return dSec_; }            // задержка comb, с (на текущем блоке)
@@ -100,11 +104,12 @@ class Voice {
 
   // стерео-цепь
   Shifter sh_[2];
-  sdk::TanhShaper sat_[2];
+  sdk::TanhShaper2 sat_;                                // L и R — ступени oversample парой
   sdk::Biquad lp_[2], loop_[2];
   sdk::Delay dl_[2];
   float dbuf_[2][DMAX];
   double dSamp_ = 128, dSec_ = 0;
+  double nz_ = 0, comb_ = 0, vca_ = 0, lv_ = 0;         // от pre к post этого сэмпла
   sdk::PanStereo pan_;
 
   float ring_[SCOPE] = {};

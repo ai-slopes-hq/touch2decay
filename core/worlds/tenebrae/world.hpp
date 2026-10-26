@@ -88,7 +88,7 @@ class World : public sdk::World {
   int nl_[VOICES] = {};
   sdk::Rng nz_{1}, rs_{2};                              // общий шум голосов; удары (полоса, щелчок, шум)
   sdk::Glide bus_, pre_, post_, dly_, rev_;
-  sdk::Shaper<4096> drv_[2];
+  sdk::Shaper2<4096> drv_;                              // L и R — одна кривая, ступени oversample парой
   sdk::PingPong<ECHO_MAX> echo_;
   sdk::Osc wowL_, wowR_;
   Strike st_[NSTRIKE];

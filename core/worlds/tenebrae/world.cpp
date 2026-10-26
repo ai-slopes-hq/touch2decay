@@ -33,7 +33,7 @@ void World::prepare(double sr, uint32_t seed) {
   rev_.set(0, 0.05, sr_); rev_.jump(0);
   // asym(2.4, 0.35) — как host/audio.js: Float32Array tanh(k·x + bias) − tanh(bias), потом деление на пик
   {
-    sdk::Shaper<4096>& d = drv_[0];
+    sdk::Shaper<4096>& d = drv_.curve;
     const double o = std::tanh(0.35);
     double peak = 0;
     for (int i = 0; i < 4096; i++) {
@@ -42,8 +42,7 @@ void World::prepare(double sr, uint32_t seed) {
       peak = std::max(peak, std::fabs(static_cast<double>(d.c[i])));
     }
     for (float& c : d.c) c = static_cast<float>(c / peak);
-    for (int i = 0; i < 4096; i++) drv_[1].c[i] = d.c[i];
-    for (sdk::Shaper<4096>& s : drv_) { s.os = 4; s.reset(); }
+    drv_.os = 4; drv_.reset();
   }
   echo_.prepare(sr_, 0.37, 2600, -3, DLY_REPEATS);
   echo_.setSec(0.37, 0.53);
@@ -205,6 +204,10 @@ void World::process(const sdk::Out& out, int n) {
     const double noise = nz_.next() * 2 - 1;            // общий шум голосов на этот сэмпл
     for (Voice& v : v_) v.prestep();
     double sL = 0, sR = 0;
+    // голоса: всё до перегруза, перегруз всех живых одной пачкой (цепочки FIR параллельно), остальное — по голосу; до бита как v.step
+    int nv = 0, idx[VOICES];
+    double io[2 * VOICES];
+    sdk::TanhShaper2* sat[VOICES];
     for (int r = 0; r < VOICES; r++) {
       Voice& v = v_[r];
       if (!v.isLive()) continue;
@@ -216,13 +219,21 @@ void World::process(const sdk::Out& out, int n) {
         else if (l.type == TZFM) in.tzHz += m;
         else in.vcaAdd += m;
       }
+      v.pre(in, io + 2 * nv);
+      sat[nv] = &v.sat();
+      idx[nv++] = r;
+    }
+    sdk::TanhShaper2::stepN(sat, io, nv);
+    for (int q = 0; q < nv; q++) {
       double L, R;
-      v.step(in, L, R);
+      v_[idx[q]].post(io + 2 * q, L, R);
       sL += L; sR += R;
     }
     if (strk) { const double s = strikeStep(now_ + k); sL += s; sR += s; }   // моно в стерео-шину
     const double g = bus_.step() * pre_.step(), po = post_.step();
-    const double yL = drv_[0].run(sL * g) * po, yR = drv_[1].run(sR * g) * po;
+    double dL = sL * g, dR = sR * g;
+    drv_.run(dL, dR);                                   // L и R вместе — до бита как два Shaper::run
+    const double yL = dL * po, yR = dR * po;
     double eL, eR;
     echo_.step(0.5 * (yL + yR) * dly_.step(), eL, eR, 0.004 * wowL_.sine(0.13 / sr_), 0.005 * wowR_.sine(0.087 / sr_));
     const double oL = yL + eL, oR = yR + eR, rv = rev_.step();

@@ -48,9 +48,9 @@ void Voice::prepare(double sr, uint32_t seed, const Tables* t, int index) {
   hp_.set(sdk::Biquad::highpass, 3000, 1, sr);          // Q по умолчанию у BiquadFilterNode — 1 (у highpass — дБ)
   sdk::panEq(-0.5, g1L_, g1R_);
   sdk::panEq(0.5, g2L_, g2R_);
+  sat_.set(3); sat_.os = 2; sat_.reset();               // soft(3, true), oversample '2x'
   for (int c = 0; c < 2; c++) {
     sh_[c].reset();
-    sat_[c].set(3); sat_[c].os = 2; sat_[c].reset();   // soft(3, true), oversample '2x'
     lp_[c] = loop_[c] = sdk::Biquad{};
     lp_[c].set(sdk::Biquad::lowpass, 800, 5, sr);
     loop_[c].set(sdk::Biquad::lowpass, 3000, -3, sr);
@@ -202,6 +202,13 @@ void Voice::prestep() {
 
 void Voice::step(const ModIn& in, double& L, double& R) {
   if (!live_) { L = R = 0; return; }
+  double s[2];
+  pre(in, s);
+  sat_.step(s[0], s[1]);
+  post(s, L, R);
+}
+
+void Voice::pre(const ModIn& in, double* s) {
   const int k = blk_;
   for (Lfo& l : lfo_) {
     if (!l.on && l.die <= 0) { l.v = 0; continue; }
@@ -218,7 +225,7 @@ void Voice::step(const ModIn& in, double& L, double& R) {
   const double h1 = (b_[F1][k] + sfm + in.tzHz) * std::exp2(det1 / 1200);
   const double h2 = (b_[F2][k] + lfo_[L_BEAT].v + sfm + in.tzHz) * std::exp2(det2 / 1200);
   const double o1 = c1_.voiceRun(*T_, mix_, h1, sr_), o2 = c2_.voiceRun(*T_, mix_, h2, sr_);
-  const double so = 0.28 * sub_.sine(b_[SUB][k] * std::exp2(pitch / 1200) / sr_);
+  const double so = 0.28 * sub_.sine((pitch == 0 ? b_[SUB][k] : b_[SUB][k] * std::exp2(pitch / 1200)) / sr_);   // exp2(0) = 1 ровно — без вызова
   const double tg = b_[TONE][k];
   double x[2] = {(g1L_ * o1 + g2L_ * o2 + so) * tg, (g1R_ * o1 + g2R_ * o2 + so) * tg};
 
@@ -233,20 +240,25 @@ void Voice::step(const ModIn& in, double& L, double& R) {
 
   // дыхание шумом: полоса на гармонике кружка, вверху поля — шипение; шум общий на все голоса (от мира)
   const double n = in.noise;
-  const double nz = b_[NZ][k] * (2.4 * bp_.step(n) + b_[HISS][k] * hp_.step(n));
-  const double drive = b_[DRIVE][k], comb = b_[COMB][k], vca = b_[VCA][k] + in.vcaAdd;
-  const double lv = breath_ * (b_[LVL][k] + lfo_[L_AMP].v);
+  nz_ = b_[NZ][k] * (2.4 * bp_.step(n) + b_[HISS][k] * hp_.step(n));
+  const double drive = b_[DRIVE][k];
+  comb_ = b_[COMB][k]; vca_ = b_[VCA][k] + in.vcaAdd;
+  lv_ = breath_ * (b_[LVL][k] + lfo_[L_AMP].v);
+  s[0] = x[0] * drive; s[1] = x[1] * drive;
+}
+
+void Voice::post(const double* s, double& L, double& R) {
   const sdk::Shaper<4096>& sat = loopSat();
   double v[2];
   for (int c = 0; c < 2; c++) {
-    const double e = env_ * (lp_[c].step(sat_[c].step(x[c] * drive)) + nz);
+    const double e = env_ * (lp_[c].step(s[c]) + nz_);
     const double d = dl_[c].read(dSamp_);               // гребёнка на высоте: тихая постоянная окраска
     dl_[c].write(e + FB_BASE * sat.step(loop_[c].step(d)));
-    v[c] = (e + comb * d) * vca;
+    v[c] = (e + comb_ * d) * vca_;
   }
   ring_[ringW_] = static_cast<float>(0.5 * (v[0] + v[1]));   // AnalyserNode сводит стерео в моно
   ringW_ = (ringW_ + 1) & (SCOPE - 1);
-  pan_.step(v[0] * lv, v[1] * lv, L, R);
+  pan_.step(v[0] * lv_, v[1] * lv_, L, R);
   if (++blk_ == BLOCK) blk_ = 0;
   now_ += 1;
 }
