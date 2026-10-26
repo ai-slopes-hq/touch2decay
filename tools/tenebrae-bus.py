@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Сверка звука Tenebrae (мир I, core/worlds/tenebrae, слот 1) с эталоном на узлах Web Audio: страница tools/ref/tenebrae-bus.html рендерит
-# worlds/tenebrae/engine.js в OfflineAudioContext по сценам tools/ref/tenebrae-scenes.js и отдаёт stdin для CLI; то же — в нативный
+# tools/ref/tenebrae-engine.js в OfflineAudioContext по сценам tools/ref/tenebrae-scenes.js и отдаёт stdin для CLI; то же — в нативный
 # core/build/tenebrae-cli. Мерило — RMS ± 1 дБ и энергия по октавам ± 1.5 дБ (там, где она не на 60 дБ ниже самой громкой полосы;
 # низшая 31–63 Гц — ± 2 дБ), отдельно сухой выход и посыл в зал, L и R (мир стерео).
 # Звук случаен с обеих сторон (джиттер строя, шум дыхания, полоса треска удара: Math.random в вебе, Rng ядра), и одна реализация

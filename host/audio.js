@@ -1,6 +1,6 @@
 // звук хоста: контекст, мастер (срез, компрессор, потолок), микшер-каналы миров, общий зал, громкость,
 // ядро SDK (t2d.wasm: миры SDK и четыре общих ревербера, посылы миров T.send), перезапуск при смене выхода, разблокировка звука в iOS.
-// Голоса Tenebrae — worlds/tenebrae/engine.js (строит app.js, solBuild)
+// Звук Tenebrae — тоже в ядре (слот 1); клей worlds/tenebrae/engine.js строит app.js (solBuild), после смены контекста он шлёт ядру всё заново
 import { startClock } from './clock.js';
 import { clamp } from './util.js';
 import { worlds, nav } from './registry.js';
@@ -59,7 +59,7 @@ export function lfo(rate, depth, ...params) {
 // Порт: send(m) → номер сообщения (фасад модели мира сверяет по нему зеркало: t2d-worklet.js шлёт, сколько сообщений применено);
 // пока узла нет (качается wasm, грузится модуль) — очередь. Не загрузилось — console.error, миры на Web Audio звучат без реверба.
 export const REVS = ['room', 'plate', 'hall', 'cathedral'];
-export const SDK_WORLDS = [10, 15, 8, 7, 9, 12, 11, 2, 13, 4, 5];  // слоты миров SDK в ядре (номер мира): Firmamentum, Goetia, Oceanus, Monochordum, Horologium, Arcadia, Tria, Cymatica, Portus, Natura, Inferno
+export const SDK_WORLDS = [10, 15, 8, 7, 9, 12, 11, 2, 13, 4, 5, 1];  // слоты миров SDK в ядре (номер мира): Firmamentum, Goetia, Oceanus, Monochordum, Horologium, Arcadia, Tria, Cymatica, Portus, Natura, Inferno, Tenebrae
 let coreVer = '0', coreBytes = null;                     // байты t2d.wasm — качаются один раз, на каждый новый контекст — копия
 export function setCoreVer(v) { coreVer = v; }
 export let core = null;
@@ -169,7 +169,7 @@ try { Object.assign(audioPref, JSON.parse(localStorage.getItem('t2d-audio') || '
 export function saveAudioPref() { try { localStorage.setItem('t2d-audio', JSON.stringify(audioPref)); } catch (_) { /* приватный режим */ } }
 export let restartAt = 0;
 // перезапуск звука без потери патчей: Safari после смены выхода (USB-интерфейс, другая частота) хрипит, пока контекст не пересоздан.
-// Снимки миров → новый контекст (build пересобирает и голоса Tenebrae) → миры восстанавливаются из снимков
+// Снимки миров (кроме мира I: его снимок — модель JS, звук ядру заново шлёт его клей из build) → новый контекст → миры восстанавливаются из снимков
 export function restartAudio() {
   if (!ctx) return;
   const keep = {};

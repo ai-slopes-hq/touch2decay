@@ -1,15 +1,17 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>tenebrae bus</title>
-<!-- Сверка звука Tenebrae в браузере: эталон worlds/tenebrae/engine.js (узлы Web Audio) в OfflineAudioContext на 48 кГц, сцены — tools/ref/tenebrae-scenes.js.
+<!-- Сверка звука Tenebrae в браузере: эталон tools/ref/tenebrae-engine.js (узлы Web Audio) в OfflineAudioContext на 48 кГц, сцены — tools/ref/tenebrae-scenes.js.
      Действия сцены применяются в начале своего блока 128 (suspend), как в tenebrae-cli. Клей модели — только busEnv: Σ огибающих живых голосов,
      посчитанная по тем же setTargetAtTime (on — τ 0.12 к 1, off — свой τ к 0), раз в блок — как ядро. Страница отдаёт: stdin для CLI и 4 канала
      (сухой L, R, посыл L, R) каждой сцены float32 в base64. Запускает tools/tenebrae-bus.py; результат — window.__res. -->
 <script type="module">
-import { ACT, LINK_TYPES, LFO_KEYS, createEngine } from '../../worlds/tenebrae/engine.js';
+import { ACT, LINK_TYPES, LFO_KEYS, createEngine } from './tenebrae-engine.js';
 import * as S from './tenebrae-scenes.js';
 const { SCENES, FIELDS, SR, cliInput } = S;
-if (JSON.stringify([ACT, LINK_TYPES, LFO_KEYS]) !== JSON.stringify([S.ACT, S.LINK_TYPES, S.LFO_KEYS])) throw new Error('коды сцен ≠ engine.js');
+import * as G from '../../worlds/tenebrae/engine.js';   // клей к ядру — те же коды
+if (JSON.stringify([ACT, LINK_TYPES, LFO_KEYS]) !== JSON.stringify([S.ACT, S.LINK_TYPES, S.LFO_KEYS])) throw new Error('коды сцен ≠ tenebrae-engine.js');
+if (JSON.stringify([G.ACT, G.LINK_TYPES, G.LFO_KEYS]) !== JSON.stringify([S.ACT, S.LINK_TYPES, S.LFO_KEYS])) throw new Error('коды сцен ≠ worlds/tenebrae/engine.js');
 
 const b64 = (f) => { const u = new Uint8Array(f.buffer); let s = ''; for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); };
 const BLOCK = 128 / SR;

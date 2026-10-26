@@ -1105,7 +1105,7 @@ function ringTouch(f, first) {
   e.dst.dirty = true;
 }
 
-// ---------- аудио: звук — worlds/tenebrae/engine.js; модель шлёт ему поля голосов, связи, LFO и FX ----------
+// ---------- аудио: звук — ядро SDK, слот 1 (клей worlds/tenebrae/engine.js); модель шлёт ему поля голосов, связи, LFO и FX ----------
 let engine = null;
 
 function applyFx() { if (engine) engine.fx(fx); }
@@ -1122,19 +1122,16 @@ function sync(v) {
   v.snap = false;
 }
 
-// звук Tenebrae: новый движок в канал мира I (и после смены контекста — restartAudio); заново всё: голоса, связи, LFO, FX
+// звук Tenebrae — в ядре (слот 1), engine — клей к нему. Первый build — клей и всё из модели: голоса, связи, LFO, FX;
+// после смены контекста (restartAudio) клей сам шлёт новому ядру всё, что помнит
 function solBuild(_, chanIn) {
-  if (engine) engine.dispose();
-  engine = createEngine({ ctx, out: chanIn, send: send('hall'), scale: sclView });
+  if (engine) { engine.bind({ core, out: chanIn }); return; }
+  engine = createEngine({ core, out: chanIn });
   applyFx();
+  for (const v of V) { v.live = v.active; if (v.active) engine.live(v.i, true); }   // LIVE — до полей и ON: неживому голосу ядро ставит цели без хода
   for (const v of V) syncMods(v);
   for (const v of V) { v.snap = true; engine.voice(v.i, v); v.snap = false; v.dirty = false; }
-  for (const v of V) {
-    v.live = v.active;
-    if (!v.active) continue;
-    engine.live(v.i, true);
-    if (v.envT === 1) engine.on(v.i);
-  }
+  for (const v of V) if (v.active && v.envT === 1) engine.on(v.i);
 }
 
 // экран не гаснет, пока что-то звучит

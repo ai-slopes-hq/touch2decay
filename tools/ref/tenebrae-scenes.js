@@ -1,8 +1,8 @@
-// Сцены сверки звука Tenebrae (мир I): один источник для эталона в Chromium (tools/ref/tenebrae-bus.html + worlds/tenebrae/engine.js),
+// Сцены сверки звука Tenebrae (мир I): один источник для эталона в Chromium (tools/ref/tenebrae-bus.html + tools/ref/tenebrae-engine.js),
 // нативного core/build/tenebrae-cli (tools/tenebrae-bus.py) и t2d.wasm (tools/test-tenebrae-core.mjs).
-// Сцена — { secs, acts: [[t, kind, i, a]] }: действие мира в момент t (с), виды и a — как t2d_action слота 1 (ACT в engine.js).
+// Сцена — { secs, acts: [[t, kind, i, a]] }: действие мира в момент t (с), виды и a — как t2d_action слота 1 (ACT в worlds/tenebrae/engine.js).
 // Время — на границе блока 128 сэмплов при 48 кГц (q): и страница, и CLI применяют действие в начале блока.
-// Коды — те же, что ACT / LINK_TYPES / LFO_KEYS в worlds/tenebrae/engine.js (страница сверяет): импорт движка в Node тянет весь хост.
+// Коды — те же, что ACT / LINK_TYPES / LFO_KEYS в tools/ref/tenebrae-engine.js и worlds/tenebrae/engine.js (страница сверяет оба): импорт движка в Node тянет весь хост.
 export const ACT = { VOICE: 0, ON: 1, OFF: 2, LIVE: 3, LINKS: 4, LFO: 5, FX: 6, STRIKE: 7, CLEAR: 8 };
 export const LINK_TYPES = ['fm', 'tzfm', 'am', 'rm'];
 export const LFO_KEYS = ['pitch', 'wave', 'cut', 'res', 'beat', 'shift', 'amp', 'fm'];
