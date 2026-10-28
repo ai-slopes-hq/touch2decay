@@ -28,6 +28,7 @@ final class Undo {
     var s = slots[slot] ?? Slot()
     s.base = w.map { Base(w: $0, scl: scl) }
     s.skipStep = false
+    s.floor = s.lastId                    // запросы до base устарели (повторная инициализация ядра)
     slots[slot] = s
   }
 
@@ -75,7 +76,15 @@ final class Undo {
     let back = (st.scl != st.after && cur == st.after) ? st.scl : nil
     s.base = Base(w: st.w, scl: back ?? cur)
     s.floor = s.lastId                    // запросы до undo устарели
-    s.skipStep = true
+    s.skipStep = true                     // первый принятый ответ — база без шага
+    // запрос «пересборки» сразу за restore: его ответ — мир после restore (как rebase в host/undo.js);
+    // кольцо полно — первым принятым станет ответ на следующий commit
+    let id = nextId
+    if core.snap(slot: slot, id: id) {
+      nextId += 1
+      s.lastId = id
+      pending[id] = (slot, back ?? cur)
+    }
     slots[slot] = s
     return (true, back)
   }
