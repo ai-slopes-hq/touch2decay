@@ -1,0 +1,42 @@
+// C-ABI ядра SDK: хост и миры по слотам, один экземпляр. Реализация — api.cpp (общая для wasm и iOS), экспорт wasm — build.sh.
+#pragma once
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void t2d_init(double sr, unsigned seed);
+double* t2d_args();
+void t2d_action(int slot, int kind, int i, const double* a, int n);
+void t2d_process(int n);
+const float* t2d_dry(int slot, int ch);
+const float* t2d_ret(int ch);
+float* t2d_ext(int rev, int ch);
+double* t2d_mbuf();
+int t2d_mirror(int slot);
+int t2d_heard(int slot);
+char* t2d_str_buf();
+int t2d_str_cap();
+int t2d_snapshot(int slot);
+void t2d_restore(int slot, int len);
+void t2d_fader(int slot, double g);
+void t2d_scale(int on, int idx, int root);
+void t2d_time(double t);
+void t2d_midi_byte(int src, int status, double at);
+void t2d_midi_msg(int kind, double n, double bpm, double at);
+int t2d_hmirror();
+int t2d_hevents();
+const float* t2d_arc_land(int which);
+void t2d_master_lpf(double hz);
+void t2d_master_comp(double thr, double ratio);
+void t2d_master_ceil(double db);
+const float* t2d_master(int ch);
+int t2d_add_lfo(int world, const char* key, double base, int shape);
+void t2d_remove_lfo(int idx);
+void t2d_lfo_spec(int idx, double m0, double m1, double r0, double r1, double d0, double d1);
+double t2d_lfo_value(int idx);
+void t2d_lfo_tick(double dt);
+void t2d_model_tick(double dt);
+
+#ifdef __cplusplus
+}
+#endif

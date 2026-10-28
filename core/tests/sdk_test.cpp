@@ -25,6 +25,7 @@
 #include "../sdk/stepclock.hpp"
 #include "../sdk/world.hpp"
 #include "../host/host.hpp"
+#include "../bridge/t2d.h"
 #include "../host/scale.hpp"
 #include "../sdk/ad.hpp"
 #include "../sdk/pingpong.hpp"
@@ -2504,13 +2505,27 @@ static void tenebraeScaleRetune() {
   CHECK(same);
 }
 
+// Общий мост (api.cpp) нативно, без wasm: звезда Firmamentum в слоте 10 — зеркало, счётчик звёзд и звук в dry
+static void bridgeNative() {
+  t2d_init(48000, 1);
+  t2d_args()[0] = 0.3; t2d_args()[1] = 0.1;
+  t2d_action(10, 0, 0, t2d_args(), 2);
+  for (int b = 0; b < 40; b++) t2d_process(128);
+  CHECK(t2d_mirror(10) > 17);
+  CHECK(t2d_mbuf()[16] == 1);                                             // одна звезда
+  const float* d = t2d_dry(10, 0);
+  bool sound = false;
+  for (int k = 0; k < 128; k++) sound = sound || d[k] != 0.f;
+  CHECK(sound);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
   tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();
-  shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound();
+  shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
