@@ -86,10 +86,11 @@ class Host {
     double thr = -10, knee = 10, ratio = 2.5, att = 0.01, rel = 0.4;
     double lin = 0, k = 5, kneeDb = 0, yKneeDb = 0, slope = 0.4, makeup = 1;
     double aAtt = 0, aRel = 0, gDb = 0;                 // коэффициенты одного полюса и текущее усиление, дБ (≤ 0)
+    double satRel = 120, det = 1;                       // детектор Chromium: время спада в кадрах (2.5 мс) и текущее затухание (линейное, ≤ 1)
     int dly = 0, pos = 0;
     float buf[2][DLY] = {};
     void set(double thr_, double ratio_, double sr);
-    void reset() { gDb = 0; pos = 0; std::memset(buf, 0, sizeof buf); }
+    void reset() { gDb = 0; det = 1; pos = 0; std::memset(buf, 0, sizeof buf); }
     void run(double& l, double& r);
    private:
     double kneeCurve(double x, double kk) const;

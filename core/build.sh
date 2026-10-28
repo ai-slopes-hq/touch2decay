@@ -23,6 +23,13 @@ clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/natura-cli 
 echo "core/build/natura-cli"
 clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/tenebrae-cli core/tests/tenebrae_cli.cpp core/worlds/tenebrae/waves.cpp core/worlds/tenebrae/voice.cpp core/worlds/tenebrae/world.cpp core/sdk/lfo.cpp core/host/scale.cpp
 echo "core/build/tenebrae-cli"
+clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/mix-cli core/tests/mix_cli.cpp core/bridge/api.cpp core/sdk/reverb.cpp core/sdk/lfo.cpp core/host/host.cpp core/host/scale.cpp \
+  core/worlds/firmamentum/model.cpp core/worlds/firmamentum/world.cpp core/worlds/firmamentum/sound.cpp \
+  core/worlds/monochord/model.cpp core/worlds/monochord/world.cpp core/worlds/monochord/sound.cpp core/worlds/cymatica/model.cpp core/worlds/cymatica/plate.cpp core/worlds/cymatica/world.cpp core/worlds/portus/model.cpp core/worlds/portus/world.cpp core/worlds/natura/model.cpp core/worlds/natura/world.cpp core/worlds/inferno/model.cpp core/worlds/inferno/world.cpp core/worlds/inferno/sound.cpp core/worlds/tenebrae/waves.cpp core/worlds/tenebrae/voice.cpp core/worlds/tenebrae/world.cpp \
+  core/worlds/oceanus/model.cpp core/worlds/oceanus/world.cpp core/worlds/oceanus/ocean.cpp core/worlds/goetia/model.cpp core/worlds/goetia/world.cpp core/worlds/goetia/goetia.cpp \
+  core/worlds/horologium/model.cpp core/worlds/horologium/world.cpp core/worlds/horologium/sound.cpp core/worlds/arcadia/land.cpp core/worlds/arcadia/model.cpp core/worlds/arcadia/world.cpp core/worlds/arcadia/sound.cpp \
+  core/worlds/tria/model.cpp core/worlds/tria/world.cpp
+echo "core/build/mix-cli"
 # t2d.wasm — хост SDK и все миры SDK (Tenebrae, Monochordum, Oceanus, Horologium, Firmamentum, Tria, Arcadia, Goetia, Cymatica, Portus, Natura, Inferno) одним модулем (core/bridge/api.cpp + wasm.cpp); хост ~1.2 МБ статики — память 16 МБ (линии эха Cymatica ~7 МБ); em++ — нужен libc++ (std::string снимка)
 em++ -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --no-entry \
   -sEXPORTED_FUNCTIONS=_t2d_init,_t2d_args,_t2d_action,_t2d_process,_t2d_dry,_t2d_ret,_t2d_ext,_t2d_mbuf,_t2d_mirror,_t2d_heard,_t2d_str_buf,_t2d_str_cap,_t2d_snapshot,_t2d_restore,_t2d_fader,_t2d_scale,_t2d_time,_t2d_midi_byte,_t2d_midi_msg,_t2d_hmirror,_t2d_hevents,_t2d_arc_land,_t2d_master_lpf,_t2d_master_comp,_t2d_master_ceil,_t2d_sum,_t2d_master_run,_t2d_mix,_t2d_add_lfo,_t2d_remove_lfo,_t2d_lfo_spec,_t2d_lfo_value,_t2d_lfo_tick,_t2d_model_tick \

@@ -18,7 +18,7 @@ void Host::prepare(double sr, uint32_t seed) {
   
   // Мастер-цепь (по умолчанию как MIX_DEF веба: LPF 22 кГц, компрессор −10/10/2.5, потолок 0 дБ)
   for (auto& f : hp_) f.set(sdk::Biquad::highpass, 30, 1, clk_.sr);
-  masterLpf(lpfHz_);
+  masterLpf(22000);                                     // и в lpfHz_: срез прежней сцены не переживает t2d_init
   for (auto& f : lpf_) { f.x1 = f.x2 = f.y1 = f.y2 = 0; }
   for (auto& f : hp_) { f.x1 = f.x2 = f.y1 = f.y2 = 0; }
   comp_.set(-10, 2.5, clk_.sr);
@@ -194,14 +194,22 @@ void Host::Comp::set(double thr_, double ratio_, double sr) {
   makeup = std::pow(1.0 / saturate(1.0), 0.6);          // fullRangeMakeupGain^0.6 — включён всегда, и ниже порога
   aAtt = 1 - std::exp(-1.0 / (att * sr));
   aRel = 1 - std::exp(-1.0 / (rel * sr));
+  satRel = 0.0025 * sr;
   dly = static_cast<int>(0.006 * sr + 0.5);
   if (dly > DLY - 1) dly = DLY - 1;
 }
 
 void Host::Comp::run(double& l, double& r) {
   const double x = std::fmax(std::fabs(l), std::fabs(r));   // связанный детектор: одно усиление на оба канала
-  double target = 0;                                    // желаемое усиление, дБ
-  if (x > lin) target = 20 * std::log10(saturate(x) / x);
+  double att_ = 1;                                      // мгновенное затухание, линейное
+  if (x > 1e-4) att_ = saturate(x) / x;
+  if (att_ < det) det = att_;                           // детектор Chromium: вниз — сразу, вверх — не медленнее 2 дБ за 2.5 мс
+  else {
+    const double perFrame = std::fmax(2.0, -20 * std::log10(att_)) / satRel;
+    det += (att_ - det) * (std::pow(10.0, perFrame / 20) - 1);
+    if (det > 1) det = 1;
+  }
+  const double target = det < 1 ? 20 * std::log10(det) : 0;   // желаемое усиление, дБ
   if (target < gDb) gDb += aAtt * (target - gDb);       // сжимаем сильнее — атака
   else if (gDb < 0) { gDb += aRel * (target - gDb); if (gDb > 0) gDb = 0; }   // отпускаем — релиз
   buf[0][pos] = static_cast<float>(l); buf[1][pos] = static_cast<float>(r);

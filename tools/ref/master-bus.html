@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>master bus</title>
+<!-- Мастер веба для сверки с ядром: сумма L/R из core/build/mix-cli → AudioBufferSourceNode → цепочка host/audio.js build() (строки 190-212):
+     highpass 30 → lowpass (MIX_DEF.lpf = 1 → 22000 Гц, Q 0.5; audio.js:121-126, applyMix) → DynamicsCompressor (thr −10, knee 10, ratio 2.5,
+     attack 0.01, release 0.4) → master gain 0.8·volGain(VOL_DEF) = 0.8 (VOL_DEF = 0 дБ) → limitIn 0.5 → WaveShaper knee(2.6/tanh 2.6, 0.6, 0.98),
+     oversample 4x → ceil 1 (MIX_DEF.ceil = 1 → 0 дБ). Запускает tools/master-bus.py: window.__stdin — вход CLI по сценам, window.__run(name, L, R) — рендер. -->
+<script type="module">
+import { SCENES, SR, cliInput } from './master-scenes.js';
+
+const b64 = (f) => { const u = new Uint8Array(f.buffer); let s = ''; for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); };
+const unb64 = (s) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new Float32Array(u.buffer); };
+// host/audio.js:22-29
+function knee(k, kn, top) {
+  const n = 4096, c = new Float32Array(n), room = top - kn;
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1, y = Math.abs(k * x);
+    c[i] = Math.sign(x) * (y < kn ? y : kn + room * Math.tanh((y - kn) / room));
+  }
+  return c;
+}
+window.__stdin = Object.fromEntries(Object.entries(SCENES).map(([n, s]) => [n, cliInput(s)]));
+window.__run = async (name, bl, br) => {
+  const L = unb64(bl), R = unb64(br);
+  const ctx = new OfflineAudioContext(2, L.length, SR);
+  const buf = ctx.createBuffer(2, L.length, SR);
+  buf.copyToChannel(L, 0); buf.copyToChannel(R, 1);
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 30;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 22000; lp.Q.value = 0.5;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -10; comp.knee.value = 10; comp.ratio.value = 2.5; comp.attack.value = 0.01; comp.release.value = 0.4;
+  const master = ctx.createGain(); master.gain.value = 0.8;
+  const limitIn = ctx.createGain(); limitIn.gain.value = 0.5;
+  const limit = ctx.createWaveShaper(); limit.curve = knee(2.6 / Math.tanh(2.6), 0.6, 0.98); limit.oversample = '4x';
+  const ceil = ctx.createGain(); ceil.gain.value = 1;
+  src.connect(hp).connect(lp).connect(comp).connect(master).connect(limitIn).connect(limit).connect(ceil).connect(ctx.destination);
+  src.start();
+  const out = await ctx.startRendering();
+  return [b64(out.getChannelData(0)), b64(out.getChannelData(1))];
+};
+window.__ready = true;
+</script>
