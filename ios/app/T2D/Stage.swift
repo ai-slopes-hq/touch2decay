@@ -42,7 +42,7 @@ final class Stage: UIView {
     let top = safeAreaInsets.top + 44, bot = safeAreaInsets.bottom
     guard bounds.size != geoSize || top != geoTop || bot != geoBot, bounds.width > 0 else { return }
     geoSize = bounds.size; geoTop = top; geoBot = bot
-    world.geo = Geo(W: bounds.width, H: bounds.height, topY: top, safeBot: bot)
+    world.layout(W: bounds.width, H: bounds.height, topY: top, safeBot: bot)
   }
   override func layoutSubviews() { super.layoutSubviews(); updateGeo() }
   override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); updateGeo() }

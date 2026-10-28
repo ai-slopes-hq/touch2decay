@@ -178,4 +178,35 @@ final class FirmamentumTests: XCTestCase {
     measure { for _ in 0..<10 { view.draw(d, now: 10.02) } }   // среднее на 10 кадров — делим на 10
     XCTAssertNotNil(d.g.makeImage())
   }
+
+  // ---------- интерфейс мира для хоста ----------
+  func testDiceClearActions() {
+    view.dice(); view.clear()
+    XCTAssertEqual(rec.acts.map(\.kind), [6, 5])
+  }
+
+  func testCornerHit() {
+    view.layout(W: 390, H: 844, topY: 59, safeBot: 34)
+    let s = view.geo.sun
+    XCTAssertTrue(view.cornerHit(s.x, s.y))
+    XCTAssertFalse(view.cornerHit(skyPt.x, skyPt.y))
+  }
+
+  func testLegendMatchesWeb() {
+    XCTAssertEqual(view.legend.count, 6)
+    XCTAssertEqual(view.legend[0].glyph, .tap)
+    XCTAssertEqual(view.legend[0].gesture, "tap the sky")
+    XCTAssertEqual(view.legend[0].does, "pierce the firmament — a star pulses")
+    XCTAssertEqual(view.legend[5].glyph, .tap); XCTAssertEqual(view.legend[5].gesture, "tap the sun")
+    XCTAssertEqual([view.title, view.sub, "\(view.hasFx)"], ["Firmamentum", "stellae · pulsar", "true"])
+  }
+
+  func testRestoredDropsHolds() {
+    setStars([(3, 0.5, 0.2)])
+    view.down(finger(skyPt, now: 0.1)); view.up(finger(skyPt, now: 0.1))
+    XCTAssertEqual(rec.acts.count, 1)                    // без restore тап по звезде закрывает дыру
+    rec.acts.removeAll()
+    view.down(finger(skyPt, now: 0.1)); view.restored(); view.up(finger(skyPt, now: 0.1))
+    XCTAssertTrue(rec.acts.isEmpty)
+  }
 }

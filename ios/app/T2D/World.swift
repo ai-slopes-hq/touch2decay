@@ -9,10 +9,23 @@ struct Finger {
   var touchTime: Double
 }
 
+// глиф жеста в легенде (как в host/legend.js)
+enum Glyph: String { case tap, double, hold, drag, up, draw, `throw`, shake, two, pinch, twist }
+struct LegendRow { let glyph: Glyph; let gesture: String; let does: String }
+
 // мир: слот ядра, тема, шаг, рисование и касания (как интерфейс мира в host/)
 protocol World: AnyObject {
   var slot: Int { get }
   var theme: Theme { get }
+  var title: String { get }
+  var sub: String { get }
+  var legend: [LegendRow] { get }
+  var hasFx: Bool { get }                                // false — кнопка FX приглушена
+  func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat)
+  func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool     // предмет, ведущий на карту
+  func dice()
+  func clear()
+  func restored()                                        // после restore: бросить временное (пальцы, удержания, вспышки); id звёзд — по зеркалу
   func tick(now: Double, dt: Double)
   func draw(_ d: Draw, now: Double)
   func down(_ f: Finger)

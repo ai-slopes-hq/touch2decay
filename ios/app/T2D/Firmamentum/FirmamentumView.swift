@@ -9,6 +9,17 @@ final class FirmamentumView: World {
   static let gold: RGB = (236, 204, 130)
   static let ink: RGB = (232, 224, 200)
 
+  let title = "Firmamentum", sub = "stellae · pulsar", hasFx = true
+  // view.js:194-196
+  let legend: [LegendRow] = [
+    LegendRow(glyph: .tap, gesture: "tap the sky", does: "pierce the firmament — a star pulses"),
+    LegendRow(glyph: .up, gesture: "drag a star up", does: "faster: low — rhythm, high — a tone"),
+    LegendRow(glyph: .drag, gesture: "drag a star sideways", does: "formant · colour"),
+    LegendRow(glyph: .tap, gesture: "tap a star", does: "close the hole"),
+    LegendRow(glyph: .hold, gesture: "hold a star", does: "its sheet: cycles, window, mask, level"),
+    LegendRow(glyph: .tap, gesture: "tap the sun", does: "map of worlds"),
+  ]
+
   var geo: Geo
   var mirror = FirmMirror()
   var flash: [Int: Double] = [:]                        // id звезды → когда прозвучал её последний пульсарет
@@ -35,6 +46,14 @@ final class FirmamentumView: World {
     self.readMirror = readMirror ?? { b in Int(t2d_app_mirror(Int32(FirmamentumView.slotN), &b, Int32(b.count))) }
     self.readHeard = readHeard ?? { b in Int(t2d_app_heard(Int32(FirmamentumView.slotN), &b, Int32(b.count))) }
   }
+
+  func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat) { geo = Geo(W: W, H: H, topY: topY, safeBot: safeBot) }
+  func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool {   // view.js:197 — солнце под землёй
+    y > geo.hy + 6 && hypot(x - geo.sun.x, y - geo.sun.y) < geo.sun.r + 6
+  }
+  func dice() { core.action(6, 0, [], touchTime: 0) }
+  func clear() { core.action(5, 0, [], touchTime: 0) }
+  func restored() { holds.removeAll(); flash.removeAll() }   // id звёзд — по зеркалу, их не трогаем
 
   func tick(now: Double, dt: Double) {
     self.now = now
