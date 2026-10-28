@@ -15,8 +15,14 @@ final class FirmamentumView: World {
   var specks: [(x: CGFloat, y: CGFloat, a: Double, t: Double)] = []   // пылинки треска, ≤ 60, 260 мс
   var bolts: [(slot: Int, t: Double)] = []              // лучи вспышек, ≤ 12, 110 мс
   private let core: Core
-  private let readMirror: () -> [Double]
-  private let readHeard: () -> [Double]
+  // читатель снимка: заполняет буфер (ёмкость — его count), возвращает длину
+  typealias Reader = (inout [Double]) -> Int
+  private let readMirror: Reader
+  private let readHeard: Reader
+  private var mbuf = [Double](repeating: 0, count: 1024), mprev = [Double](repeating: 0, count: 1024)   // буферы кадра — выделены раз
+  private var mlen = 0, mprevLen = -1                    // -1: разбирать всегда (первый кадр)
+  private var hbuf = [Double](repeating: 0, count: 256)
+  private(set) var mirrorParses = 0                      // сколько раз разбирали зеркало (для теста пропуска)
   private var issued = 0                                // наибольший выданный Swift id
   private var now = 0.0
   private var rng = SystemRandomNumberGenerator()
@@ -24,22 +30,21 @@ final class FirmamentumView: World {
   private struct Hold { var id: Int?; var x0, y0: CGFloat; var moved = false, fresh = false, seen = false }
   private var holds: [ObjectIdentifier: Hold] = [:]
 
-  init(core: Core, geo: Geo, readMirror: (() -> [Double])? = nil, readHeard: (() -> [Double])? = nil) {
+  init(core: Core, geo: Geo, readMirror: Reader? = nil, readHeard: Reader? = nil) {
     self.core = core; self.geo = geo
-    self.readMirror = readMirror ?? {
-      var m = [Double](repeating: 0, count: 1024)
-      let n = Int(t2d_app_mirror(Int32(FirmamentumView.slotN), &m, 1024)); return Array(m[0..<max(0, n)])
-    }
-    self.readHeard = readHeard ?? {
-      var m = [Double](repeating: 0, count: 256)
-      let n = Int(t2d_app_heard(Int32(FirmamentumView.slotN), &m, 256)); return Array(m[0..<max(0, n)])
-    }
+    self.readMirror = readMirror ?? { b in Int(t2d_app_mirror(Int32(FirmamentumView.slotN), &b, Int32(b.count))) }
+    self.readHeard = readHeard ?? { b in Int(t2d_app_heard(Int32(FirmamentumView.slotN), &b, Int32(b.count))) }
   }
 
   func tick(now: Double, dt: Double) {
     self.now = now
-    mirror = FirmMirror.parse(readMirror())
-    for h in Heard.parse(readHeard()) { hear(h, now: now) }
+    mlen = min(max(0, readMirror(&mbuf)), mbuf.count)
+    if mlen != mprevLen || !mbuf[0..<mlen].elementsEqual(mprev[0..<mlen]) {   // снимок не изменился — разбор не нужен
+      mirror = FirmMirror.parse(Array(mbuf[0..<mlen])); mirrorParses += 1
+      swap(&mbuf, &mprev); mprevLen = mlen
+    }
+    let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
+    if hn > 0 { for h in Heard.parse(Array(hbuf[0..<hn])) { hear(h, now: now) } }
     specks.removeAll { now - $0.t > 0.26 }
     bolts.removeAll { now - $0.t > 0.11 }
   }
@@ -261,9 +266,10 @@ final class FirmamentumView: World {
     var h = Hold(id: nil, x0: f.x, y0: f.y)
     if let q = geo.toSky(CGPoint(x: f.x, y: f.y)), mirror.stars.count < FirmamentumView.smax {
       let id = max(mirror.stars.map(\.id).max() ?? 0, issued) + 1
-      issued = id
-      core.action(0, 0, [q.h, q.u, -1, Double(id)], touchTime: f.touchTime)
-      h.id = id; h.fresh = true
+      if core.action(0, 0, [q.h, q.u, -1, Double(id)], touchTime: f.touchTime) {   // кольцо полно — добавление отброшено: ни id, ни держания
+        issued = id
+        h.id = id; h.fresh = true
+      }
     }
     holds[f.id] = h
   }
@@ -280,6 +286,8 @@ final class FirmamentumView: World {
       core.action(2, id, [q.h, q.u], touchTime: f.touchTime)
     }
   }
+
+  func cancel(_ f: Finger) { holds[f.id] = nil }          // без закрытия звезды; уже добавленная свежая остаётся
 
   func up(_ f: Finger) {
     guard let t = holds.removeValue(forKey: f.id), let id = t.id else { return }

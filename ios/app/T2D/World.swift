@@ -18,4 +18,5 @@ protocol World: AnyObject {
   func down(_ f: Finger)
   func move(_ f: Finger)
   func up(_ f: Finger)
+  func cancel(_ f: Finger)                               // система отняла касание: бросить палец без действий тапа и удержания
 }

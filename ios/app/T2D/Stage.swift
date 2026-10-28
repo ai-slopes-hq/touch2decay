@@ -15,6 +15,7 @@ final class Stage: UIView {
   private var statsAt = 0.0, frameStart = 0.0
   private struct Corner { var t0: Double; var x0, y0: CGFloat; var fired = false }
   private var corner: [ObjectIdentifier: Corner] = [:]
+  private var dropped: Set<ObjectIdentifier> = []          // палец из угла, ушедший дальше holdMove: съеден, миру не идёт до подъёма / отмены
   private var fingers: [ObjectIdentifier: Finger] = [:]
   private var geoSize = CGSize.zero, geoTop = CGFloat(-1), geoBot = CGFloat(-1)
 
@@ -101,7 +102,9 @@ final class Stage: UIView {
   override func touchesBegan(_ ts: Set<UITouch>, with e: UIEvent?) { for t in ts { touchDown(finger(t)) } }
   override func touchesMoved(_ ts: Set<UITouch>, with e: UIEvent?) { for t in ts { touchMove(finger(t)) } }
   override func touchesEnded(_ ts: Set<UITouch>, with e: UIEvent?) { release(ts) }
-  override func touchesCancelled(_ ts: Set<UITouch>, with e: UIEvent?) { release(ts) }
+  override func touchesCancelled(_ ts: Set<UITouch>, with e: UIEvent?) {
+    for t in ts { let f = finger(t); fingers[f.id] = nil; touchCancel(f) }
+  }
   private func release(_ ts: Set<UITouch>) {
     for t in ts { let f = finger(t); fingers[f.id] = nil; touchUp(f) }
   }
@@ -113,9 +116,10 @@ final class Stage: UIView {
   }
   func touchMove(_ f: Finger) {
     if let c = corner[f.id] {
-      if hypot(f.x - c.x0, f.y - c.y0) > Touch.holdMove { corner[f.id] = nil }   // сдвинулся — не удержание
+      if hypot(f.x - c.x0, f.y - c.y0) > Touch.holdMove { corner[f.id] = nil; dropped.insert(f.id) }   // сдвинулся — не удержание
       return
     }
+    if dropped.contains(f.id) { return }
     world.move(f)
   }
   func touchUp(_ f: Finger) {
@@ -124,7 +128,13 @@ final class Stage: UIView {
       corner[f.id] = nil
       return
     }
+    if dropped.remove(f.id) != nil { return }
     world.up(f)
+  }
+  // система отняла касание: ни тапа, ни удержания — состояние пальца просто бросаем
+  func touchCancel(_ f: Finger) {
+    let ours = corner.removeValue(forKey: f.id) != nil, eaten = dropped.remove(f.id) != nil
+    if !ours && !eaten { world.cancel(f) }
   }
 }
 

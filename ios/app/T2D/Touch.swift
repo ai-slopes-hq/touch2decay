@@ -9,19 +9,15 @@ enum Touch {
 
 // путь действий в ядро: живой — t2d_app_action, тестовый — запись
 protocol Core {
-  func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double)
+  @discardableResult func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) -> Bool   // false — действие отброшено (кольцо полно)
 }
 
 // живое ядро: слот мира, метка касания (UITouch.timestamp, сек) → такты mach
 struct AppCore: Core {
   let slot: Int
-  private static let ticksPerSec: Double = {
-    var tb = mach_timebase_info_data_t(); mach_timebase_info(&tb)
-    return 1e9 * Double(tb.denom) / Double(tb.numer)
-  }()
-  func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) {
-    let t = touchTime > 0 ? UInt64(touchTime * AppCore.ticksPerSec) : 0
+  func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) -> Bool {
+    let t = touchTime > 0 ? UInt64(touchTime * Clock.ticksPerSec) : 0
     var buf = a
-    _ = t2d_app_action(Int32(slot), Int32(kind), Int32(i), &buf, Int32(a.count), t)
+    return t2d_app_action(Int32(slot), Int32(kind), Int32(i), &buf, Int32(a.count), t) != 0
   }
 }

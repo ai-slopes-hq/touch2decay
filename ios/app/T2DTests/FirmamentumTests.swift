@@ -4,7 +4,8 @@ import T2DCore
 
 private final class Rec: Core {
   var acts: [(kind: Int, i: Int, a: [Double], t: Double)] = []
-  func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) { acts.append((kind, i, a, touchTime)) }
+  var accept = true                                      // false — ядро отбрасывает действие (кольцо полно)
+  func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) -> Bool { acts.append((kind, i, a, touchTime)); return accept }
 }
 
 final class FirmamentumTests: XCTestCase {
@@ -15,7 +16,9 @@ final class FirmamentumTests: XCTestCase {
   private let geo = Geo(W: 390, H: 844, topY: 59, safeBot: 34)
   private let rec = Rec()
   private var mirrorBuf: [Double] = []
-  private lazy var view = FirmamentumView(core: rec, geo: geo, readMirror: { self.mirrorBuf }, readHeard: { [] })
+  private lazy var view = FirmamentumView(core: rec, geo: geo, readMirror: { [unowned self] b in
+    let n = min(self.mirrorBuf.count, b.count); b.replaceSubrange(0..<n, with: self.mirrorBuf[0..<n]); return n
+  }, readHeard: { _ in 0 })
 
   // зеркало с звёздами (id, h, u)
   private func setStars(_ s: [(Int, Double, Double)]) {
@@ -86,6 +89,45 @@ final class FirmamentumTests: XCTestCase {
     setStars([])
     view.down(finger(skyPt, t0: 20, now: 20)); view.up(finger(skyPt, t0: 20, now: 20.1))   // свежая
     XCTAssertEqual(rec.acts.map(\.kind), [0])
+  }
+
+  // свежая звезда уже в зеркале, но тап по ней — тот же жест, что её создал: закрывать нельзя (guard !t.fresh)
+  func testFreshStarNotClosedOnLift() {
+    setStars([])
+    view.down(finger(skyPt, t0: 20, now: 20))
+    XCTAssertEqual(rec.acts.map(\.kind), [0])
+    setStars([(1, 0.5, 0.2)])
+    view.up(finger(skyPt, t0: 20, now: 20.1))
+    XCTAssertEqual(rec.acts.map(\.kind), [0], "close не ушёл")
+  }
+
+  func testRejectedAddMakesNoHold() {
+    setStars([])
+    rec.accept = false
+    view.down(finger(skyPt, t0: 5, now: 5))
+    let p = skyPt
+    view.move(finger(CGPoint(x: p.x + 30, y: p.y), p0: p)); view.up(finger(p, now: 5.1))
+    XCTAssertEqual(rec.acts.map(\.kind), [0], "только отброшенное добавление: ни move, ни close")
+    rec.accept = true; rec.acts = []
+    view.down(finger(skyPt, t0: 6, now: 6))
+    XCTAssertEqual(rec.acts[0].a[3], 1, "id не выдан зря")
+  }
+
+  func testCancelDropsHold() {
+    setStars([(3, 0.5, 0.2)])
+    let p = skyPt
+    view.down(finger(p)); view.cancel(finger(p))
+    view.move(finger(CGPoint(x: p.x + 30, y: p.y), p0: p)); view.up(finger(p, now: 0.1))
+    XCTAssertTrue(rec.acts.isEmpty)
+  }
+
+  func testUnchangedMirrorNotReparsed() {
+    setStars([(3, 0.5, 0.2)])
+    let n = view.mirrorParses
+    view.tick(now: 2, dt: 0.016); view.tick(now: 3, dt: 0.016)
+    XCTAssertEqual(view.mirrorParses, n, "тот же снимок — без разбора")
+    setStars([(3, 0.6, 0.2)])
+    XCTAssertEqual(view.mirrorParses, n + 1); XCTAssertEqual(view.mirror.stars[0].h, 0.6, accuracy: 1e-9)
   }
 
   func testTouchOnVanishedStar() {

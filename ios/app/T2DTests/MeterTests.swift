@@ -4,7 +4,7 @@ import T2DCore
 
 private final class Rec: Core {
   var acts: [(kind: Int, i: Int)] = []
-  func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) { acts.append((kind, i)) }
+  func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) -> Bool { acts.append((kind, i)); return true }
 }
 
 final class MeterTests: XCTestCase {
@@ -48,7 +48,7 @@ final class MeterTests: XCTestCase {
   }
   private let rec = Rec()
   private func stage() -> Stage {
-    Stage(world: FirmamentumView(core: rec, geo: Geo(W: 390, H: 844, topY: 59, safeBot: 34), readMirror: { [] }, readHeard: { [] }), audio: nil)
+    Stage(world: FirmamentumView(core: rec, geo: Geo(W: 390, H: 844, topY: 59, safeBot: 34), readMirror: { _ in 0 }, readHeard: { _ in 0 }), audio: nil)
   }
   private func finger(_ x: CGFloat, _ y: CGFloat, t0: Double, now: Double, id: AnyObject) -> Finger {
     Finger(id: ObjectIdentifier(id), x: x, y: y, x0: x, y0: y, t0: t0, moved: false, touchTime: now)
@@ -65,5 +65,35 @@ final class MeterTests: XCTestCase {
     let c = NSObject()
     s.touchDown(finger(195, 400, t0: 30, now: 30, id: c))
     XCTAssertFalse(rec.acts.isEmpty, "контроль: вне угла мир получает касание")
+  }
+
+  // отмена системой: угол не переключает панель, мир не закрывает звезду
+  func testCancelledCornerHoldDoesNotToggle() {
+    let s = stage(), a = NSObject()
+    s.touchDown(finger(380, 830, t0: 10, now: 10, id: a)); s.touchCancel(finger(380, 830, t0: 10, now: 10.6, id: a))
+    XCTAssertFalse(s.meter.visible)
+  }
+
+  // палец из угла, ушедший дальше holdMove, съеден до подъёма: миру ни down, ни move, ни up
+  func testCornerFingerStaysConsumedAfterMove() {
+    let s = stage(), a = NSObject()
+    s.touchDown(finger(380, 830, t0: 10, now: 10, id: a))
+    var f = finger(380, 780, t0: 10, now: 10.1, id: a); f.x0 = 380; f.y0 = 830
+    s.touchMove(f); s.touchMove(f); s.touchUp(f)
+    XCTAssertTrue(rec.acts.isEmpty)
+    XCTAssertFalse(s.meter.visible)
+  }
+
+  func testCancelledShortPressDoesNotCloseStar() {
+    var b = [Double](repeating: 0, count: 17); b[16] = 1
+    b += [0, 3, 0.5, 0.2, 1, 0.5, 0.5, 0.5, 0, 0, 1, 1, 0, 0]
+    let w = FirmamentumView(core: rec, geo: Geo(W: 390, H: 844, topY: 59, safeBot: 34), readMirror: { m in m.replaceSubrange(0..<b.count, with: b); return b.count }, readHeard: { _ in 0 })
+    let s = Stage(world: w, audio: nil)
+    w.tick(now: 1, dt: 0.016)
+    let p = w.geo.fromSky(h: 0.5, u: 0.2), t = NSObject()
+    s.touchDown(finger(p.x, p.y, t0: 10, now: 10, id: t)); s.touchCancel(finger(p.x, p.y, t0: 10, now: 10.1, id: t))
+    XCTAssertTrue(rec.acts.isEmpty, "отменённый короткий тап не закрывает звезду")
+    s.touchUp(finger(p.x, p.y, t0: 10, now: 10.1, id: t))   // после отмены подъём ничего не находит
+    XCTAssertTrue(rec.acts.isEmpty)
   }
 }
