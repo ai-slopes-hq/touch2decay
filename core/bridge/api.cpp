@@ -113,6 +113,7 @@ T2D_API void t2d_restore(int slot, int len) {
 }
 T2D_API void t2d_fader(int slot, double g) { host.fader(slot, g); }
 T2D_API void t2d_scale(int on, int idx, int root) { host.scale(on != 0, idx, root); }
+T2D_API void t2d_vol(double g) { host.vol(g); }
 // часы: время начала следующего блока (секунды контекста), MIDI — байт от входа src или разобранное сообщение (оболочка iOS)
 T2D_API void t2d_time(double t) { host.time(t); }
 T2D_API void t2d_midi_byte(int src, int status, double at) { host.midiByte(src, status, at); }

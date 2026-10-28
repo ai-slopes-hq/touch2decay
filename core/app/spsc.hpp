@@ -15,6 +15,13 @@ class Spsc {
     head_.store(nx, std::memory_order_release);
     return true;
   }
+  // без копии всего элемента (большие строки): reserve() — ячейка под запись или nullptr, если полно; заполнить, затем commit()
+  T* reserve() {
+    const size_t h = head_.load(std::memory_order_relaxed);
+    return next(h) == tail_.load(std::memory_order_acquire) ? nullptr : &buf_[h];
+  }
+  void commit() { head_.store(next(head_.load(std::memory_order_relaxed)), std::memory_order_release); }
+  bool full() const { return next(head_.load(std::memory_order_relaxed)) == tail_.load(std::memory_order_acquire); }  // производитель
   bool pop(T& v) {
     const T* p = peek();
     if (!p) return false;

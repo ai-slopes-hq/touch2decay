@@ -32,6 +32,7 @@
 #include "../app/spsc.hpp"
 #include "../app/triple.hpp"
 #include "../app/t2d_app.h"
+#include "../app/engine.hpp"
 #include "../host/scale.hpp"
 #include "../sdk/ad.hpp"
 #include "../sdk/pingpong.hpp"
@@ -2800,6 +2801,119 @@ static void appReinitRate() {
   CHECK(m[16] == 1);
 }
 
+// Снимок и restore хоста через кольцо
+static std::string appSnapStr(int slot, int id, int* gotId = nullptr, int* gotSlot = nullptr) {
+  float L[128], R[128];
+  const double a[1] = {static_cast<double>(id)};
+  t2d_app_action(T2D_HOST, T2D_H_SNAP, slot, a, 1, 0);
+  t2d_app_render(L, R, 128, 0);
+  static char buf[1 << 16];
+  int i = -1, sl = -1;
+  const int n = t2d_app_snap_take(&i, &sl, buf, sizeof buf);
+  if (gotId) *gotId = i;
+  if (gotSlot) *gotSlot = sl;
+  return std::string(buf, static_cast<size_t>(n));
+}
+
+// ADD → restore(пустая сцена) → ADD: порядок в кольце общий — в зеркале одна звезда, вторая
+static void appHostOrder() {
+  t2d_app_init(48000, 7, 1e9, 1u << 10);
+  t2d_app_action(10, 5, 0, nullptr, 0, 0);                                // CLEAR
+  const std::string E = appSnapStr(10, 1);
+  CHECK(!E.empty());
+  t2d_app_init(48000, 7, 1e9, 1u << 10);
+  const double a1[2] = {0.3, 0.1}, a2[2] = {0.6, 0.5};
+  t2d_app_action(10, 0, 0, a1, 2, 0);
+  CHECK(t2d_app_restore(10, E.data(), static_cast<int>(E.size()), 0) == 1);
+  t2d_app_action(10, 0, 0, a2, 2, 0);
+  float L[128], R[128];
+  t2d_app_render(L, R, 128, 0);
+  double m[1024];
+  CHECK(t2d_app_mirror(10, m, 1024) > 17);
+  CHECK(m[16] == 1);
+  NEAR(m[19], 0.6, 1e-9);
+}
+
+// DICE → SNAP(id 7) → строка с id и слотом; clear → restore → SNAP(id 8) даёт ту же строку
+static void appSnapRoundtrip() {
+  t2d_app_init(48000, 9, 1e9, 1u << 10);
+  t2d_app_action(10, 6, 0, nullptr, 0, 0);                                // DICE
+  int id = 0, slot = 0;
+  const std::string S = appSnapStr(10, 7, &id, &slot);
+  CHECK(id == 7 && slot == 10);
+  CHECK(!S.empty());
+  t2d_app_action(10, 5, 0, nullptr, 0, 0);
+  t2d_app_restore(10, S.data(), static_cast<int>(S.size()), 0);
+  CHECK(appSnapStr(10, 8, &id, &slot) == S);
+  CHECK(id == 8);
+  t2d_app_stats_t st; t2d_app_stats(&st);
+  CHECK(st.snap_n == 2 && st.snap_avg > 0 && st.snap_max >= st.snap_avg && st.snap_lost == 0);
+}
+
+static void appRestoreGarbage() {
+  t2d_app_init(48000, 7, 1e9, 1u << 10);
+  const double a1[2] = {0.3, 0.1};
+  t2d_app_action(10, 0, 0, a1, 2, 0);
+  float L[128], R[128];
+  t2d_app_render(L, R, 128, 0);
+  double m[1024];
+  t2d_app_mirror(10, m, 1024);
+  const double before = m[16];
+  const char g[] = "{garbage";
+  t2d_app_restore(10, g, 8, 0);
+  t2d_app_render(L, R, 128, 0);
+  CHECK(t2d_app_mirror(10, m, 1024) > 17);
+  CHECK(m[16] == before && before == 1);
+}
+
+static void appStrOverflow() {
+  t2d_app_init(48000, 7, 1e9, 1u << 10);
+  const char s[] = "{}";
+  CHECK(t2d_app_restore(10, s, 2, 0) == 1);
+  CHECK(t2d_app_restore(10, s, 2, 0) == 1);
+  CHECK(t2d_app_restore(10, s, 2, 0) == 0);                               // кольцо строк: ровно 2
+  t2d_app_init(48000, 7, 1e9, 1u << 10);
+  float L[128], R[128];
+  const double a[1] = {1};
+  for (int k = 0; k < 3; k++) t2d_app_action(T2D_HOST, T2D_H_SNAP, 10, a, 1, 0);
+  t2d_app_render(L, R, 128, 0);
+  t2d_app_stats_t st; t2d_app_stats(&st);
+  CHECK(st.snap_lost == 1 && st.snap_n == 3);
+  static char buf[1 << 16];
+  int id, sl;
+  CHECK(t2d_app_snap_take(&id, &sl, buf, 8) == 0);                        // не влез в cap — потерян
+  t2d_app_stats(&st);
+  CHECK(st.snap_lost == 2);
+  CHECK(t2d_app_snap_take(&id, &sl, buf, sizeof buf) > 0);                // следующий цел
+}
+
+// VOL a=[0.5] → через 0.3 с выход вдвое тише (громкость после компрессора — линейна); SCALE как прямой t2d_scale
+static void appHostVolScale() {
+  const double a1[2] = {0.3, 0.1}, a2[2] = {0.6, 0.5};
+  const int N = 128 * 150;
+  auto run = [&](double vol, bool viaRing, bool scale, std::vector<float>& out) {
+    t2d_app_init(48000, 11, 1e9, 1u << 10);
+    if (scale && !viaRing) t2d_scale(1, 2, 5);
+    if (vol != 1) { const double v[1] = {vol}; t2d_app_action(T2D_HOST, T2D_H_VOL, 0, v, 1, 0); }
+    if (scale && viaRing) { const double sc[3] = {1, 2, 5}; t2d_app_action(T2D_HOST, T2D_H_SCALE, 0, sc, 3, 0); }
+    t2d_app_action(10, 0, 0, a1, 2, 0);
+    t2d_app_action(10, 0, 0, a2, 2, 0);
+    std::vector<float> R(N);
+    out.assign(N, 0.f);
+    t2d_app_render(out.data(), R.data(), N, 0);
+  };
+  std::vector<float> full, half, sc1, sc2;
+  run(1, true, false, full); run(0.5, true, false, half);
+  double e1 = 0, e2 = 0;
+  for (int i = N - 128 * 8; i < N; i++) { e1 += full[i] * full[i]; e2 += half[i] * half[i]; }
+  CHECK(e1 > 0);
+  NEAR(std::sqrt(e2 / e1), 0.5, 0.005);
+  run(1, true, true, sc1); run(1, false, true, sc2);
+  CHECK(sc1 == sc2);
+}
+
+static void appStrCap() { CHECK(t2d_str_cap() == Engine::STR); }
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
@@ -2808,6 +2922,7 @@ int main(int argc, char** argv) {
   tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
+  appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

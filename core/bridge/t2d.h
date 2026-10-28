@@ -20,6 +20,7 @@ int t2d_snapshot(int slot);
 void t2d_restore(int slot, int len);
 void t2d_fader(int slot, double g);
 void t2d_scale(int on, int idx, int root);
+void t2d_vol(double g);
 void t2d_time(double t);
 void t2d_midi_byte(int src, int status, double at);
 void t2d_midi_msg(int kind, double n, double bpm, double at);
