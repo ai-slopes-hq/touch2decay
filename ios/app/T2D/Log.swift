@@ -11,6 +11,7 @@ final class Log {
   private var file: FileHandle?
   private var timer: DispatchSourceTimer?
   private let t0 = Date()
+  private var thermal = -1                              // последнее записанное состояние: строка — только при смене
 
   private init() {
     let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("t2d.log")
@@ -33,7 +34,8 @@ final class Log {
   }
 
   private func flush() {
-    add("app", "thermal \(ProcessInfo.processInfo.thermalState.rawValue)")
+    let th = ProcessInfo.processInfo.thermalState.rawValue
+    if th != thermal { thermal = th; add("app", "thermal \(th)") }   // не на каждый тик: иначе пачка уходит на Mac вечно
     guard !buf.isEmpty else { return }
     let text = buf.joined(separator: "\n") + "\n"; buf = []
     file?.write(text.data(using: .utf8)!)

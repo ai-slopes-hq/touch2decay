@@ -3,6 +3,23 @@
 import AVFoundation
 import T2DCore
 
+// что делать движку по событию сессии: пересобрать граф и/или переинициализировать ядро (init стирает состояние всех миров —
+// только при смене частоты). Чистая функция — решение проверяется тестом без железа.
+enum AudioTrigger { case start, interruptionEnded, mediaServicesReset, route(AVAudioSession.RouteChangeReason) }
+struct AudioPlan: Equatable {
+  var rebuild: Bool, reinit: Bool
+  static func make(_ t: AudioTrigger, coreRate: Double, rate: Double, running: Bool) -> AudioPlan {
+    let changed = rate != coreRate
+    switch t {
+    case .start, .interruptionEnded, .mediaServicesReset:   // движок остановлен системой или пропал — граф собираем заново
+      return AudioPlan(rebuild: true, reinit: changed)
+    case .route(let why):                                    // категория, override, wake и прочее — не смена устройства
+      guard why == .newDeviceAvailable || why == .oldDeviceUnavailable else { return AudioPlan(rebuild: false, reinit: false) }
+      return AudioPlan(rebuild: changed || !running, reinit: changed)
+    }
+  }
+}
+
 final class Audio {
   private let log: Log
   private let session = AVAudioSession.sharedInstance()
@@ -20,23 +37,28 @@ final class Audio {
   func start() {
     guard !started else { return }
     started = true
-    observe()
     do {
       try session.setCategory(.playback)
       try session.setPreferredIOBufferDuration(256.0 / 48000.0)
       try session.setActive(true)
     } catch { log.add("audio", "session error \(error)") }
     log.add("audio", String(format: "session ioBuffer %.5f s, rate %.0f, outputLatency %.5f s", session.ioBufferDuration, session.sampleRate, session.outputLatency))
-    reset("start")
+    observe()                                  // после setCategory / setActive: их собственные уведомления не должны перезапускать движок
+    handle(.start, "start")
+  }
+
+  private func handle(_ t: AudioTrigger, _ why: String) {
+    let p = AudioPlan.make(t, coreRate: coreRate, rate: session.sampleRate, running: engine?.isRunning ?? false)
+    if p.rebuild { reset(why, reinit: p.reinit) }
   }
 
   // Остановить движок, при смене частоты (или первом пуске) переинициализировать ядро, собрать граф и запустить.
-  private func reset(_ why: String, reinit: Bool = false) {
+  private func reset(_ why: String, reinit: Bool) {
     engine?.stop()                           // после stop render-блок не вызывается — init безопасен
     engine = nil
     let sr = session.sampleRate
     if reinit || sr != coreRate {
-      t2d_app_init(sr, seed, Audio.ticksPerSec, 1 << 10)
+      t2d_app_init(sr, seed, Clock.ticksPerSec, 1 << 10)
       coreRate = sr
     }
     let e = AVAudioEngine()
@@ -58,25 +80,20 @@ final class Audio {
     nc.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
       guard let self, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
       self.log.add("audio", "interruption \(type == .began ? "began" : "ended")")
-      if type == .ended { try? self.session.setActive(true); self.reset("interruption ended", reinit: true) }
+      if type == .ended { try? self.session.setActive(true); self.handle(.interruptionEnded, "interruption ended") }
     }
     nc.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] n in
       guard let self else { return }
       let raw = n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
       self.log.add("audio", "route change reason \(raw)")
-      self.reset("route change")
+      self.handle(.route(AVAudioSession.RouteChangeReason(rawValue: raw) ?? .unknown), "route change")
     }
     nc.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
       guard let self else { return }
       self.log.add("audio", "media services reset")
       try? self.session.setCategory(.playback)
       try? self.session.setActive(true)
-      self.reset("media services reset", reinit: true)
+      self.handle(.mediaServicesReset, "media services reset")
     }
   }
-
-  private static let ticksPerSec: Double = {
-    var tb = mach_timebase_info_data_t(); mach_timebase_info(&tb)
-    return 1e9 * Double(tb.denom) / Double(tb.numer)
-  }()
 }
