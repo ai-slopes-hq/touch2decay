@@ -28,6 +28,8 @@ void Host::prepare(double sr, uint32_t seed) {
   knee_.os = 4;
   knee_.reset();
   ceilGain_ = 1.0;
+  volTarget_ = volNow_ = 1.0;
+  volCoef_ = 1.0 - std::exp(-1.0 / (0.03 * clk_.sr));
 
   // LFO
   lfos_.clear();
@@ -134,7 +136,6 @@ void Host::sum(float* L, float* R, int n) const {
 void Host::masterRun(float* L, float* R, int n) {
   if (n > BLOCK) n = BLOCK;
   if (n < 0) n = 0;
-  const double amp = 0.8 * VOL_GAIN * 0.5;              // masterG веба и limitIn
   for (int i = 0; i < n; i++) {
     double l = L[i], r = R[i];
     if (!std::isfinite(l)) l = 0;                       // NaN отравил бы состояние фильтров навсегда
@@ -142,6 +143,8 @@ void Host::masterRun(float* L, float* R, int n) {
     l = lpf_[0].step(hp_[0].step(l));
     r = lpf_[1].step(hp_[1].step(r));
     comp_.run(l, r);
+    volNow_ += (volTarget_ - volNow_) * volCoef_;       // громкость шагает к цели каждый сэмпл (без треска)
+    const double amp = 0.8 * volNow_ * 0.5;             // masterG веба и limitIn
     l *= amp; r *= amp;
     knee_.run(l, r);
     L[i] = static_cast<float>(l * ceilGain_);

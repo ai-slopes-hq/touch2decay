@@ -721,6 +721,28 @@ static double hostBlocks(int blocks, double* tailMax) {   // гонит блок
   return sum;
 }
 
+// Громкость мастера: по умолчанию 1.0, к цели — однополюсно с τ = 30 мс, без скачков
+static void hostVolSmooth() {
+  const double sr = 48000;
+  H.prepare(sr, 7);
+  float l = 0, r = 0;
+  CHECK(H.volNow() == 1.0);
+  H.vol(0.5);
+  double prev = H.volNow(), maxStep = 0, at1 = 0, atTau = 0;
+  const int tau = static_cast<int>(0.03 * sr), total = static_cast<int>(0.3 * sr);
+  for (int i = 1; i <= total; i++) {
+    l = r = 0; H.masterRun(&l, &r, 1);
+    const double v = H.volNow();
+    maxStep = std::max(maxStep, std::fabs(v - prev)); prev = v;
+    if (i == 1) at1 = v;
+    if (i == tau) atTau = v;
+  }
+  CHECK(std::fabs(at1 - 1) < 0.01);
+  CHECK(std::fabs(atTau - (0.5 + 0.5 / std::exp(1.0))) < 0.01);
+  CHECK(std::fabs(prev - 0.5) < 1e-3);
+  CHECK(maxStep <= 0.5 / (0.03 * sr) * 1.01);
+}
+
 static void host() {
   const double sr = 48000;
   const uint32_t seed = 7;
@@ -2780,7 +2802,7 @@ static void appReinitRate() {
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
+  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
   tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();

@@ -42,12 +42,14 @@ class Host {
   int events(double* buf, int cap);                     // по 2 числа: код (sdk::Follower::Ev), bpm; очищает
 
   // Микс для приложения: sum — Σ dry[s]·фейдер·trim(s) + ret (фейдер на сухой части; в ret посыл уже после фейдера, ×RET);
-  // masterRun — мастер на месте, цепь host/audio.js: HP 30 Гц → LPF → компрессор (модель Chromium) → ×0.8·volGain → ×0.5 →
+  // masterRun — мастер на месте, цепь host/audio.js: HP 30 Гц → LPF → компрессор (модель Chromium) → ×0.8·vol → ×0.5 →
   // knee(2.6/tanh 2.6, 0.6, 0.98) 4× → ×10^(ceil/20). Веб эти два не зовёт: его мастер — узлы Web Audio. n ≤ 128, без аллокаций.
   void sum(float* L, float* R, int n) const;
   void masterRun(float* L, float* R, int n);
   void masterLpf(double hz);                            // срез LPF; не выше 0.45·sr (на Найквисте бикуад вырождается)
   void masterComp(double thr, double ratio);            // компрессор: порог дБ, отношение (колено 10 дБ, атака .01, релиз .4)
+  void vol(double g) { volTarget_ = g; }                // громкость мастера: цель-усиление (1 = 0 дБ, по умолчанию 1), сглаживание ~30 мс
+  double volNow() const { return volNow_; }             // текущее сглаженное усиление (для тестов)
   void masterCeil(double db);                           // усиление после knee, дБ (−12…0; по умолчанию 0)
   double masterMakeup() const { return comp_.makeup; }  // авто-подъём компрессора (1/fullRangeGain)^0.6: Chromium даёт его и ниже порога
 
@@ -80,7 +82,8 @@ class Host {
   int nev_ = 0;
 
   // Мастер
-  static constexpr double VOL_GAIN = 1.0;               // volGain(vol) по умолчанию (vol 0 дБ); 0.8·VOL_GAIN — усилитель мастера в вебе
+  double volTarget_ = 1.0, volNow_ = 1.0;               // усиление громкости: цель и сглаженное (как setTargetAtTime(…, 0.03) веба)
+  double volCoef_ = 0;                                  // 1 − exp(−1/(0.03·sr)): шаг однополюсного сглаживания за сэмпл
   struct Comp {                                         // DynamicsCompressor Chromium: связанный детектор max|L|,|R|, задержка 6 мс, авто-подъём
     static constexpr int DLY = 1024;                    // кольцо задержки (6 мс ≤ 1023 кадров до 170 кГц)
     double thr = -10, knee = 10, ratio = 2.5, att = 0.01, rel = 0.4;
