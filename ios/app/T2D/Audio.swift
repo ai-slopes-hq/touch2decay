@@ -31,6 +31,7 @@ final class Audio {
   private var coreRate = 0.0                 // частота, с которой инициализировано ядро
 
   private let seed: UInt32
+  var onInit: (() -> Void)?                // сразу после t2d_app_init, до старта движка: вернуть сцену, лад, громкость (запуск и смена частоты)
   init(log: Log, seed: UInt32 = 1) { self.log = log; self.seed = seed }
 
   var sampleRate: Double { session.sampleRate }
@@ -63,6 +64,7 @@ final class Audio {
     if reinit || sr != coreRate {
       t2d_app_init(sr, seed, Clock.ticksPerSec, 1 << 10)
       coreRate = sr
+      onInit?()
     }
     let e = AVAudioEngine()
     let fmt = AVAudioFormat(standardFormatWithSampleRate: sr, channels: 2)!   // планарный float

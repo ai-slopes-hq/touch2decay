@@ -2,11 +2,12 @@ import UIKit
 import SwiftUI
 import T2DCore
 
-// сцена: один UIView на весь экран. CADisplayLink → кадр (зеркало и услышанное → world.tick → setNeedsDisplay);
-// draw(_:) → тема + world.draw (+ панель замеров); касания → пальцы мира. Правый нижний угол 44×44 — не мира:
+// сцена: один UIView на весь экран. CADisplayLink → кадр (host.tick → мир, отмена, автосохранение → setNeedsDisplay);
+// draw(_:) → тема + host.draw (мир, верхняя строка, легенда; + панель замеров); касания → host (он решает, чьи). Правый нижний угол 44×44 — не мира:
 // долгое нажатие (HOLD_MS) показывает / прячет панель замеров. Карта миров — позже.
 final class Stage: UIView {
   let world: FirmamentumView
+  let host: Host
   private var link: CADisplayLink?
   private var last = 0.0
   let meter = Meter()
@@ -19,8 +20,8 @@ final class Stage: UIView {
   private var fingers: [ObjectIdentifier: Finger] = [:]
   private var geoSize = CGSize.zero, geoTop = CGFloat(-1), geoBot = CGFloat(-1)
 
-  init(world: FirmamentumView, audio: Audio?) {
-    self.world = world; self.audio = audio
+  init(world: FirmamentumView, host: Host, audio: Audio?) {
+    self.world = world; self.host = host; self.audio = audio
     super.init(frame: .zero)
     contentScaleFactor = Draw.scale                        // плотность рисования не больше 2×
     isOpaque = true; isMultipleTouchEnabled = true
@@ -37,12 +38,12 @@ final class Stage: UIView {
     link = l; last = CACurrentMediaTime()
   }
 
-  // геометрия мира: topY = верхний inset + 44 (строка кнопок), safeBot = нижний inset
+  // геометрия: хост получает верхний inset (мир сдвигает на строку кнопок сам), safeBot = нижний inset
   private func updateGeo() {
-    let top = safeAreaInsets.top + 44, bot = safeAreaInsets.bottom
+    let top = safeAreaInsets.top, bot = safeAreaInsets.bottom
     guard bounds.size != geoSize || top != geoTop || bot != geoBot, bounds.width > 0 else { return }
     geoSize = bounds.size; geoTop = top; geoBot = bot
-    world.layout(W: bounds.width, H: bounds.height, topY: top, safeBot: bot)
+    host.layout(W: bounds.width, H: bounds.height, top: top, safeBot: bot)
   }
   override func layoutSubviews() { super.layoutSubviews(); updateGeo() }
   override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); updateGeo() }
@@ -52,7 +53,7 @@ final class Stage: UIView {
     last = now; frameStart = now
     updateGeo()
     cornerTick(now: now)
-    world.tick(now: now, dt: dt)
+    host.tick(now: now, dt: dt)
     if now - statsAt >= 1 { statsAt = now; second() }
     setNeedsDisplay()
   }
@@ -83,9 +84,12 @@ final class Stage: UIView {
     if let x = drawer { d = x; d.g = g; d.W = bounds.width; d.H = bounds.height }
     else { d = Draw(g: g, W: bounds.width, H: bounds.height); drawer = d }   // один Draw — кеш шрифтов живёт между кадрами
     d.setTheme(world.theme)
-    world.draw(d, now: CACurrentMediaTime())
+    host.draw(d, now: CACurrentMediaTime())
     if meter.visible && !panelLine.isEmpty {
-      d.reading { d.text(panelLine, bounds.width / 2, bounds.height - max(geoBot, 0) - 14, 11, 0.6, align: .center) }
+      d.reading {
+        d.text(panelLine, bounds.width / 2, bounds.height - max(geoBot, 0) - 14, 11, 0.6, align: .center)
+        d.text(Meter.buildLabel(Bundle.main.infoDictionary), bounds.width / 2, bounds.height - max(geoBot, 0) - 28, 11, 0.6, align: .center)
+      }
     }
     if frameStart > 0 { meter.frame(start: frameStart, end: CACurrentMediaTime(), missed: 0) }
   }
@@ -109,10 +113,10 @@ final class Stage: UIView {
     for t in ts { let f = finger(t); fingers[f.id] = nil; touchUp(f) }
   }
 
-  // маршрут пальца: угол — Stage, остальное — миру (внутренние — для тестов)
+  // маршрут пальца: угол — Stage, остальное — хосту (внутренние — для тестов)
   func touchDown(_ f: Finger) {
     if inCorner(f) { corner[f.id] = Corner(t0: f.t0, x0: f.x0, y0: f.y0); return }
-    world.down(f)
+    host.down(f)
   }
   func touchMove(_ f: Finger) {
     if let c = corner[f.id] {
@@ -120,7 +124,7 @@ final class Stage: UIView {
       return
     }
     if dropped.contains(f.id) { return }
-    world.move(f)
+    host.move(f)
   }
   func touchUp(_ f: Finger) {
     if corner[f.id] != nil {
@@ -129,19 +133,17 @@ final class Stage: UIView {
       return
     }
     if dropped.remove(f.id) != nil { return }
-    world.up(f)
+    host.up(f)
   }
   // система отняла касание: ни тапа, ни удержания — состояние пальца просто бросаем
   func touchCancel(_ f: Finger) {
     let ours = corner.removeValue(forKey: f.id) != nil, eaten = dropped.remove(f.id) != nil
-    if !ours && !eaten { world.cancel(f) }
+    if !ours && !eaten { host.cancel(f) }
   }
 }
 
 struct StageView: UIViewRepresentable {
-  let audio: Audio
-  func makeUIView(context: Context) -> Stage {
-    Stage(world: FirmamentumView(core: AppCore(slot: FirmamentumView.slotN), geo: Geo(W: 390, H: 844, topY: 59, safeBot: 34)), audio: audio)
-  }
+  let world: FirmamentumView, host: Host, audio: Audio
+  func makeUIView(context: Context) -> Stage { Stage(world: world, host: host, audio: audio) }
   func updateUIView(_ v: Stage, context: Context) {}
 }

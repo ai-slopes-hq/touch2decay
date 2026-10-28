@@ -7,11 +7,20 @@ private final class Rec: Core {
   func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) -> Bool { acts.append((kind, i)); return true }
 }
 
+private final class NullHostCore: HostCore {
+  func vol(_ gain: Double) -> Bool { true }
+  func scale(_ s: Scl) -> Bool { true }
+  func snap(slot: Int, id: Int) -> Bool { true }
+  func restore(slot: Int, _ w: String) -> Bool { true }
+  func takeSnap() -> (id: Int, slot: Int, w: String)? { nil }
+}
+
 final class MeterTests: XCTestCase {
   private func stats(latN: Int32 = 5) -> t2d_app_stats_t {
     var s = t2d_app_stats_t()
     s.lat_avg = 0.004; s.lat_max = 0.006; s.lat_n = latN
     s.load_avg = 0.12; s.load_max = 0.21
+    s.snap_avg = 0.0004; s.snap_max = 0.0012; s.snap_n = 2; s.snap_lost = 1
     return s
   }
 
@@ -20,6 +29,15 @@ final class MeterTests: XCTestCase {
     let l = m.line(stats: stats(), outLat: 0.005, frames: 256, sr: 48000, stars: 3)
     XCTAssertTrue(l.hasPrefix("lat 9.0/11.0 ms · load 12/21 % · "), l)
     XCTAssertTrue(l.hasSuffix("· miss 0 · buf 256@48000 · stars 3"), l)
+  }
+
+  func testSnapAndBuild() {
+    let l = Meter().line(stats: stats(), outLat: 0, frames: 256, sr: 48000, stars: 0)
+    XCTAssertTrue(l.contains("snap 0.40/1.20 ms, lost 1"), l)
+    var s = stats(); s.snap_n = 0
+    XCTAssertTrue(Meter().line(stats: s, outLat: 0, frames: 256, sr: 48000, stars: 0).contains("snap –, lost 1"))
+    XCTAssertEqual(Meter.buildLabel(["CFBundleShortVersionString": "1.2"]), "v1.2")
+    XCTAssertEqual(Meter.buildLabel(["CFBundleShortVersionString": "1.2", "T2DBuildHash": "abc"]), "v1.2 · abc")
   }
 
   func testNoLatency() {
@@ -48,7 +66,11 @@ final class MeterTests: XCTestCase {
   }
   private let rec = Rec()
   private func stage() -> Stage {
-    Stage(world: FirmamentumView(core: rec, geo: Geo(W: 390, H: 844, topY: 59, safeBot: 34), readMirror: { _ in 0 }, readHeard: { _ in 0 }), audio: nil)
+    stage(FirmamentumView(core: rec, geo: Geo(W: 390, H: 844, topY: 59, safeBot: 34), readMirror: { _ in 0 }, readHeard: { _ in 0 }))
+  }
+  private func stage(_ w: FirmamentumView) -> Stage {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("meter-\(UUID().uuidString)")
+    return Stage(world: w, host: Host(world: w, core: NullHostCore(), store: Store(dir: dir, log: { _ in })), audio: nil)
   }
   private func finger(_ x: CGFloat, _ y: CGFloat, t0: Double, now: Double, id: AnyObject) -> Finger {
     Finger(id: ObjectIdentifier(id), x: x, y: y, x0: x, y0: y, t0: t0, moved: false, touchTime: now)
@@ -88,7 +110,7 @@ final class MeterTests: XCTestCase {
     var b = [Double](repeating: 0, count: 17); b[16] = 1
     b += [0, 3, 0.5, 0.2, 1, 0.5, 0.5, 0.5, 0, 0, 1, 1, 0, 0]
     let w = FirmamentumView(core: rec, geo: Geo(W: 390, H: 844, topY: 59, safeBot: 34), readMirror: { m in m.replaceSubrange(0..<b.count, with: b); return b.count }, readHeard: { _ in 0 })
-    let s = Stage(world: w, audio: nil)
+    let s = stage(w)
     w.tick(now: 1, dt: 0.016)
     let p = w.geo.fromSky(h: 0.5, u: 0.2), t = NSObject()
     s.touchDown(finger(p.x, p.y, t0: 10, now: 10, id: t)); s.touchCancel(finger(p.x, p.y, t0: 10, now: 10.1, id: t))
