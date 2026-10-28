@@ -1007,7 +1007,7 @@ async def sc_legenda(p):                           # тап по заголов�
     assert await p.js('()=>t2d.nav.settings'), 'tap the concordia label — settings'
 
 
-async def sc_firmtop(p):                           # Firmamentum с верхней строкой: лад dorian / тоника D# (подпись), список ладов (зажата кнопка лада), легенда — пары к ios/app/shot.sh topbar | scales | legend
+async def sc_firmtop(p):                           # Firmamentum с верхней строкой: лад dorian / тоника C (подпись), список ладов (зажата кнопка лада), легенда — пары к ios/app/shot.sh topbar | scales | legend
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(10)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 10], 'the card right of Tenebrae opens Firmamentum'
@@ -1019,9 +1019,9 @@ async def sc_firmtop(p):                           # Firmamentum с верхне
     pid = await p.hold(b['x'], b['y'], ms=100)
     x, y = bx + 40, top + 46 * 3.5                    # строка dorian (off, major, minor, dorian)
     await p.drag(pid, b['x'], b['y'], x, y, steps=8); await p.pg.wait_for_timeout(200); await p.T('touchMove', [{'x': x, 'y': y + 1, 'id': pid}]); await p.pg.wait_for_timeout(200)
-    x, y = rx + 20, top + ch * 3.5                    # тоника: колонка 0, ряд 3 — D#
+    x, y = rx + 20, top + ch * 3.5                    # тоника: колонка 0, ряд 3 — C
     await p.drag(pid, bx + 40, top + 46 * 3.5, x, y, steps=8); await p.pg.wait_for_timeout(300)
-    assert await p.js('()=>[t2d.scl.on, t2d.scl.idx, t2d.scl.root]') == [True, 2, 3], 'dorian, root D#'
+    assert await p.js('()=>[t2d.scl.on, t2d.scl.idx, t2d.scl.root]') == [True, 2, 3], 'dorian, root C'
     await p.shot('firmtop-scales'); await p.up(); await p.pg.wait_for_timeout(700)
     await p.shot('firmtop-topbar')
     tw = await p.js('()=>t2d.titleW()')
