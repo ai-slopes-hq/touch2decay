@@ -28,7 +28,7 @@ targets:
   T2D:
     type: application
     platform: iOS
-    sources: [T2D]
+    sources: [T2D, Fonts]
     dependencies:
       - target: T2DCore
     info:
@@ -40,6 +40,11 @@ targets:
         NSAppTransportSecurity: { NSAllowsLocalNetworking: true }
         UILaunchScreen: {}
         UIFileSharingEnabled: true
+        UIAppFonts:
+          - eb-garamond-latin-400-italic.ttf
+          - eb-garamond-latin-400-normal.ttf
+          - im-fell-english-latin-400-italic.ttf
+          - im-fell-english-latin-400-normal.ttf
         LSSupportsOpeningDocumentsInPlace: true
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
@@ -52,7 +57,7 @@ targets:
   T2DTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [T2DTests]
+    sources: [T2DTests, Fonts, T2D/Draw.swift, T2D/Theme.swift]
     dependencies:
       - target: T2DCore
     settings:
