@@ -89,6 +89,10 @@ final class HostTests: XCTestCase {
     }
     let f = finger(0, 350, 750); host.down(f); host.move(f); host.up(f)   // «солнце под землёй»
     XCTAssertFalse(world.acted)
+    let e = finger(0, 5, 300); host.down(e); host.move(e); host.up(e)    // левая полоса x < 14 под верхней строкой
+    XCTAssertFalse(world.acted, "левый край съедается, как headHit в вебе")
+    let e2 = finger(0, 20, 300); host.down(e2); host.up(e2)
+    XCTAssertTrue(world.acted, "x ≥ 14 — уже мир")
   }
 
   func testVolDrag() {
@@ -154,9 +158,12 @@ final class HostTests: XCTestCase {
     tap(bar.pos(.scl).x, bar.pos(.scl).y)
     tap(bar.sclList.bx + 20, bar.sclList.top + TopBar.itemH * 1.5)   // major
     tap(50, 400)                                                     // закрыть список
+    let live = host.scl
+    XCTAssertTrue(live.on, "лад выбран после последнего ответа снимка")
     core.calls.removeAll()
     host.reapply()
     XCTAssertEqual(core.calls, ["restore:w1", "scale", "vol"])
+    XCTAssertEqual(core.scales.last, live, "reinit не откатывает лад к последнему снимку")
     XCTAssertEqual(core.vols.last!, Vol.gain(host.vol), accuracy: 1e-12)
   }
 
@@ -180,6 +187,14 @@ final class HostTests: XCTestCase {
     try? FileManager.default.removeItem(at: dir.appendingPathComponent("scene-10.json"))
     host.tick(now: 20, dt: 0.016)
     XCTAssertNil(store.loadScene(slot: 10), "таймер отменён")
+  }
+
+  func testBackgroundDrainsUnpolledAnswer() {
+    host.reapply(); answer("w0", now: 1)
+    tap(100, 400)                                                      // жест → новый запрос снимка
+    core.queue.append((id: core.snaps.last!.id, slot: 10, w: "w9"))   // ответ пришёл, тика не было
+    host.background()
+    XCTAssertEqual(store.loadScene(slot: 10)?.w, "w9")
   }
 
   func testAutosaveDebounce() {

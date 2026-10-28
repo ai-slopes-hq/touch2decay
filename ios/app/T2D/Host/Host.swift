@@ -24,6 +24,7 @@ final class Host {
 
   private var scene: (w: String, scl: Scl)?                    // последний известный снимок: из него автосохранение и reinit
   private var dirtyAt: Double?                                 // когда сцена изменилась; запись — через autosave секунд
+  static let edgeW: CGFloat = 14                               // ui-top.js EDGE_W
   private var loaded = false                                   // файл сцены читаем один раз — дальше сцена в памяти
   private static let autosave = 3.0
 
@@ -62,6 +63,7 @@ final class Host {
     case .btn(let b): return .btn(b)
     case nil: break
     }
+    if f.x < Host.edgeW && f.y > top + 44 { return .eat }   // левая полоса под строкой — как headHit в вебе (EDGE_W = 14)
     return world.cornerHit(f.x, f.y) ? .eat : .world        // карты в 2b-1 нет: предмет в углу приглушён и съедает касание
   }
 
@@ -156,6 +158,7 @@ final class Host {
 
   // в фон: сразу сцена и prefs, таймер снят
   func background() {
+    if let b = undo.poll() { setScene(b.w, b.scl) }          // ответ, пришедший без тика, иначе потеряется
     saveScene()
     store.savePrefs(PrefsFile(vol: vol))
   }
@@ -164,10 +167,11 @@ final class Host {
   // Порядок: restore сцены, лад, громкость. Можно звать повторно.
   func reapply() {
     if scene == nil && !loaded, let f = store.loadScene(slot: world.slot) { scene = (f.w, f.scl) }
+    let first = !loaded
     loaded = true
     if let s = scene {
       core.restore(slot: world.slot, s.w)
-      scl = s.scl
+      if first { scl = s.scl }                               // лад из файла — только при запуске; при reinit живой новее снимка
       world.restored()
     }
     core.scale(scl)

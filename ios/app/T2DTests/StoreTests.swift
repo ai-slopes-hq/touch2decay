@@ -53,4 +53,13 @@ final class StoreTests: XCTestCase {
     try put("prefs.json", "{\"v\":2,\"vol\":0.5}")
     XCTAssertNil(store().loadPrefs()); XCTAssertEqual(lines.count, 2)
   }
+
+  func testSceneSclOutOfRangeIgnored() throws {
+    try put("scene-0.json", "{\"v\":1,\"w\":\"x\",\"scl\":{\"on\":true,\"idx\":6,\"root\":0}}")
+    XCTAssertNil(store().loadScene(slot: 0)); XCTAssertEqual(lines.count, 1)
+    try put("scene-1.json", "{\"v\":1,\"w\":\"x\",\"scl\":{\"on\":true,\"idx\":0,\"root\":-1}}")
+    XCTAssertNil(store().loadScene(slot: 1)); XCTAssertEqual(lines.count, 2)
+    try put("scene-2.json", "{\"v\":1,\"w\":\"x\",\"scl\":{\"on\":true,\"idx\":0,\"root\":12}}")
+    XCTAssertNil(store().loadScene(slot: 2)); XCTAssertEqual(lines.count, 3)
+  }
 }

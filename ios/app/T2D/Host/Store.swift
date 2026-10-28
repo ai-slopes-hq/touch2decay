@@ -12,7 +12,15 @@ final class Store {
 
   func loadPrefs() -> PrefsFile? { load("prefs.json", PrefsFile.self, version: \.v) }
   func savePrefs(_ p: PrefsFile) { save("prefs.json", p) }
-  func loadScene(slot: Int) -> SceneFile? { load("scene-\(slot).json", SceneFile.self, version: \.v) }
+  func loadScene(slot: Int) -> SceneFile? {
+    let name = "scene-\(slot).json"
+    guard let f = load(name, SceneFile.self, version: \.v) else { return nil }
+    // лад вне диапазона уронил бы верхнюю строку (индексы Scales) на каждом запуске
+    guard (0..<Scales.labels.count).contains(f.scl.idx), (0..<12).contains(f.scl.root) else {
+      log("\(name): лад вне диапазона (idx \(f.scl.idx), root \(f.scl.root))"); return nil
+    }
+    return f
+  }
   func saveScene(slot: Int, _ s: SceneFile) { save("scene-\(slot).json", s) }
 
   // нет файла — nil молча; не JSON, нет полей, чужая версия — nil и одна строка в лог

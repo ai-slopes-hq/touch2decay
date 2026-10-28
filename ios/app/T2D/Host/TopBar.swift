@@ -22,7 +22,7 @@ struct TopBar {
     var vol: Double                 // позиция фейдера 0…1
     var volHeld: Bool
     var scl: Scl
-    var sclOpen: Bool               // зажата кнопка лада — открыт список
+    var sclOpen: Bool               // открыт список ладов (тап по кнопке, тап по строке)
     var canUndo: Bool
     var hasFx: Bool
     var diceAt: Double              // мс, момент броска; кость крутится 400 мс
@@ -57,7 +57,7 @@ struct TopBar {
     return col * 6 + row
   }
 
-  // ui-top.js:41-57 (headHit без угла и края — их знает Stage; затем btnHit). dice и rev попадаются всегда:
+  // ui-top.js:41-57 (headHit без угла и края: угол 44×44 замеров знает Stage, левую полосу — Host.route; затем btnHit). dice и rev попадаются всегда:
   // есть ли у мира кубик и FX, решает роутер
   func hit(_ x: CGFloat, _ y: CGFloat, titleW: CGFloat) -> Hit? {
     let B = pos(.back)
