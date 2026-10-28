@@ -10,7 +10,8 @@ final class Audio {
   private var started = false
   private var coreRate = 0.0                 // частота, с которой инициализировано ядро
 
-  init(log: Log) { self.log = log }
+  private let seed: UInt32
+  init(log: Log, seed: UInt32 = 1) { self.log = log; self.seed = seed }
 
   var sampleRate: Double { session.sampleRate }
   var outputLatency: Double { session.outputLatency }
@@ -35,7 +36,7 @@ final class Audio {
     engine = nil
     let sr = session.sampleRate
     if reinit || sr != coreRate {
-      t2d_app_init(sr, 1, Audio.ticksPerSec, 1 << 10)
+      t2d_app_init(sr, seed, Audio.ticksPerSec, 1 << 10)
       coreRate = sr
     }
     let e = AVAudioEngine()

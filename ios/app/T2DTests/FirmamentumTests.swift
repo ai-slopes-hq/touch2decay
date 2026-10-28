@@ -1,4 +1,5 @@
 import XCTest
+import CoreText
 import T2DCore
 
 private final class Rec: Core {
@@ -7,6 +8,10 @@ private final class Rec: Core {
 }
 
 final class FirmamentumTests: XCTestCase {
+  override class func setUp() {                         // шрифты — в бандле тестов (см. DrawTests)
+    let urls = Bundle(for: FirmamentumTests.self).urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
+    for u in urls { CTFontManagerRegisterFontsForURL(u as CFURL, .process, nil) }
+  }
   private let geo = Geo(W: 390, H: 844, topY: 59, safeBot: 34)
   private let rec = Rec()
   private var mirrorBuf: [Double] = []
@@ -96,5 +101,39 @@ final class FirmamentumTests: XCTestCase {
     let p = skyPt
     view.down(finger(p)); view.move(finger(CGPoint(x: p.x + 30, y: p.y), p0: p)); view.up(finger(p, now: 0.1))
     XCTAssertTrue(rec.acts.isEmpty)
+  }
+
+  // ---------- рисование ----------
+  private func ctx(_ w: Int, _ h: Int, scale: CGFloat = 2) -> Draw {
+    let g = CGContext(data: nil, width: Int(CGFloat(w) * scale), height: Int(CGFloat(h) * scale), bitsPerComponent: 8, bytesPerRow: 0,
+                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)!
+    g.translateBy(x: 0, y: CGFloat(h) * scale); g.scaleBy(x: scale, y: -scale)   // начало слева сверху, как в UIKit
+    let d = Draw(g: g, W: CGFloat(w), H: CGFloat(h)); d.setTheme(view.theme); return d
+  }
+
+  func testWallCachedOnce() {
+    let d = ctx(390, 844)
+    XCTAssertEqual(view.wallBuilds, 0)
+    view.draw(d, now: 1); view.draw(d, now: 1.016)
+    XCTAssertEqual(view.wallBuilds, 1)
+    view.geo = Geo(W: 360, H: 780, topY: 59, safeBot: 34)
+    let d2 = ctx(360, 780)
+    view.draw(d2, now: 2); view.draw(d2, now: 2.016)
+    XCTAssertEqual(view.wallBuilds, 2)
+  }
+
+  // кадр с 6 звёздами, кометой, 60 искрами и 12 молниями; время — для ориентира, не порог
+  func testDrawSmoke() {
+    var b = [Double](repeating: 0, count: 17)
+    b[0] = 10; b[1] = 1; b[2] = 1; b[3] = 0.3; b[4] = -0.6; b[5] = 0.7; b[6] = 0.5; b[7] = 9; b[8] = 4; b[16] = 6
+    for k in 0..<6 { b += [Double(k), Double(k + 1), 0.1 + 0.14 * Double(k), -0.7 + 0.28 * Double(k), 3, 0.2 * Double(k % 4), k % 2 == 0 ? 0.3 : 0, 0.8, 0, 1, k < 2 ? 2.5 : 220, 800, 0.4, 5] }
+    mirrorBuf = b; view.tick(now: 10, dt: 0.016)
+    XCTAssertEqual(view.mirror.stars.count, 6)
+    view.hear(Heard(pulsed: [0, 1, 2], dust: (0..<60).map { (pan: Double($0 % 20) / 10 - 1, a: 0.3) }, bolts: Array(0..<6) + Array(0..<6)), now: 10)
+    XCTAssertEqual(view.specks.count, 60); XCTAssertEqual(view.bolts.count, 12)
+    let d = ctx(390, 844)
+    view.draw(d, now: 10.01)                            // прогрев: фон строится один раз
+    measure { for _ in 0..<10 { view.draw(d, now: 10.02) } }   // среднее на 10 кадров — делим на 10
+    XCTAssertNotNil(d.g.makeImage())
   }
 }
