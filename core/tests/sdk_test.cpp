@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <complex>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -2519,13 +2520,87 @@ static void bridgeNative() {
   CHECK(sound);
 }
 
+// Веб не меняется: FNV-1a по байтам dry(10) и ret за 200 блоков сцены «3 звезды, seed 1» (константа снята до правки host.cpp)
+static void mixWebUntouched() {
+  t2d_init(48000, 1);
+  const double pts[3][2] = {{0.3, 0.1}, {0.6, 0.5}, {0.8, 0.2}};
+  for (const auto& p : pts) { t2d_args()[0] = p[0]; t2d_args()[1] = p[1]; t2d_action(10, 0, 0, t2d_args(), 2); }
+  uint64_t h = 1469598103934665603ull;
+  const auto eat = [&h](const float* x) {
+    const unsigned char* b = reinterpret_cast<const unsigned char*>(x);
+    for (size_t i = 0; i < 128 * sizeof(float); i++) { h ^= b[i]; h *= 1099511628211ull; }
+  };
+  for (int b = 0; b < 200; b++) {
+    t2d_process(128);
+    eat(t2d_dry(10, 0)); eat(t2d_dry(10, 1)); eat(t2d_ret(0)); eat(t2d_ret(1));
+  }
+  CHECK(h == 8071415700913142258ull);
+}
+
+// Микс: t2d_sum == Σ dry·фейдер·trim + ret; фейдер — только на сухой части (на посыле он уже учтён в ret блока)
+static void mixSum() {
+  t2d_init(48000, 1);
+  t2d_args()[0] = 0.3; t2d_args()[1] = 0.1;
+  t2d_action(10, 0, 0, t2d_args(), 2);
+  for (int b = 0; b < 40; b++) t2d_process(128);                          // звезда звучит не с первого блока
+  float L[128], R[128];
+  const auto expect = [](int ch, int i, double fader10) {
+    double v = t2d_ret(ch)[i];
+    for (int s = 0; s < 16; s++) v += t2d_dry(s, ch)[i] * (s == 10 ? fader10 * 2.5 : s == 2 ? 2.5 : 1.0);
+    return v;
+  };
+  t2d_sum(L, R, 128);
+  double peak = 0, err = 0;
+  for (int i = 0; i < 128; i++) { peak = std::fmax(peak, std::fabs(L[i])); err = std::fmax(err, std::fabs(L[i] - expect(0, i, 1))); err = std::fmax(err, std::fabs(R[i] - expect(1, i, 1))); }
+  CHECK(peak > 1e-4);                                                     // звук есть
+  CHECK(err < 1e-6);
+  t2d_fader(10, 0.5);
+  t2d_sum(L, R, 128);                                                     // тот же блок: ret не менялся, dry звезды вдвое тише
+  err = 0;
+  for (int i = 0; i < 128; i++) { err = std::fmax(err, std::fabs(L[i] - expect(0, i, 0.5))); err = std::fmax(err, std::fabs(R[i] - expect(1, i, 0.5))); }
+  CHECK(err < 1e-6);
+}
+
+// Мастер ядра по цепочке веба: HP 30 → LPF → компрессор → ×0.8·volGain → ×0.5 → knee 4× → ceil
+static double masterSine(double hz, double amp, double sec = 1.5) {
+  const double sr = 48000;
+  t2d_init(sr, 1);
+  float L[128], R[128];
+  double ph = 0, pk = 0;
+  const int blocks = static_cast<int>(sec * sr / 128);
+  for (int b = 0; b < blocks; b++) {
+    for (int i = 0; i < 128; i++) { L[i] = R[i] = static_cast<float>(amp * std::sin(ph)); ph += 2 * M_PI * hz / sr; }
+    t2d_master_run(L, R, 128);
+    if (b >= blocks - static_cast<int>(0.3 * sr / 128)) for (int i = 0; i < 128; i++) { pk = std::fmax(pk, std::fabs(L[i])); }
+  }
+  return pk;
+}
+static void mixMaster() {
+  const double k = 2.6 / std::tanh(2.6), makeup = t2d_master_makeup();
+  const double lin = 0.8 * 1.0 * 0.5 * k * makeup;                        // volGain по умолчанию 1 (0 дБ)
+  const double y1k = masterSine(1000, 0.01);
+  NEAR(y1k / (0.01 * lin), 1.0, 0.01);                                    // малый сигнал: линейная ветка колена, компрессор молчит
+  const double y10 = masterSine(10, 0.01);
+  CHECK(y10 < 0.01 * lin * std::pow(10.0, -10.0 / 20));                   // 10 Гц ослаблен > 10 дБ
+  CHECK(masterSine(1000, 4) <= 0.98);                                     // потолок knee
+  t2d_master_ceil(-6);
+  float L[128], R[128];
+  double pk = 0; double ph = 0;
+  for (int b = 0; b < 400; b++) {
+    for (int i = 0; i < 128; i++) { L[i] = R[i] = static_cast<float>(4 * std::sin(ph)); ph += 2 * M_PI * 1000 / 48000; }
+    t2d_master_run(L, R, 128);
+    if (b >= 300) for (int i = 0; i < 128; i++) pk = std::fmax(pk, std::fabs(L[i]));
+  }
+  CHECK(pk <= 0.98 * std::pow(10.0, -6.0 / 20) * 1.0001);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
   tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();
-  shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative();
+  shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

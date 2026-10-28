@@ -23,6 +23,7 @@ class World {
   virtual std::string snapshot() const = 0;                             // JSON — тот же, что был у model.js
   virtual void restore(const std::string& js) = 0;
   virtual bool sounding() const = 0;
+  virtual double trim() const { return 1; }                             // множитель сухого выхода в миксе (в вебе — узел перед каналом мира)
   virtual void attach(const Clock*) {}                                  // часы хоста (время блока, сетка MIDI) — мирам с шагами
 };
 

@@ -25,7 +25,7 @@ clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/tenebrae-cl
 echo "core/build/tenebrae-cli"
 # t2d.wasm — хост SDK и все миры SDK (Tenebrae, Monochordum, Oceanus, Horologium, Firmamentum, Tria, Arcadia, Goetia, Cymatica, Portus, Natura, Inferno) одним модулем (core/bridge/api.cpp + wasm.cpp); хост ~1.2 МБ статики — память 16 МБ (линии эха Cymatica ~7 МБ); em++ — нужен libc++ (std::string снимка)
 em++ -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall -sSTANDALONE_WASM --no-entry \
-  -sEXPORTED_FUNCTIONS=_t2d_init,_t2d_args,_t2d_action,_t2d_process,_t2d_dry,_t2d_ret,_t2d_ext,_t2d_mbuf,_t2d_mirror,_t2d_heard,_t2d_str_buf,_t2d_str_cap,_t2d_snapshot,_t2d_restore,_t2d_fader,_t2d_scale,_t2d_time,_t2d_midi_byte,_t2d_midi_msg,_t2d_hmirror,_t2d_hevents,_t2d_arc_land,_t2d_master_lpf,_t2d_master_comp,_t2d_master_ceil,_t2d_master,_t2d_add_lfo,_t2d_remove_lfo,_t2d_lfo_spec,_t2d_lfo_value,_t2d_lfo_tick,_t2d_model_tick \
+  -sEXPORTED_FUNCTIONS=_t2d_init,_t2d_args,_t2d_action,_t2d_process,_t2d_dry,_t2d_ret,_t2d_ext,_t2d_mbuf,_t2d_mirror,_t2d_heard,_t2d_str_buf,_t2d_str_cap,_t2d_snapshot,_t2d_restore,_t2d_fader,_t2d_scale,_t2d_time,_t2d_midi_byte,_t2d_midi_msg,_t2d_hmirror,_t2d_hevents,_t2d_arc_land,_t2d_master_lpf,_t2d_master_comp,_t2d_master_ceil,_t2d_sum,_t2d_master_run,_t2d_mix,_t2d_add_lfo,_t2d_remove_lfo,_t2d_lfo_spec,_t2d_lfo_value,_t2d_lfo_tick,_t2d_model_tick \
   -sFILESYSTEM=0 -sINITIAL_MEMORY=16MB -s$STACK=64KB -sALLOW_MEMORY_GROWTH=0 \
   -o t2d.wasm core/bridge/wasm.cpp core/bridge/api.cpp core/sdk/reverb.cpp core/sdk/lfo.cpp core/host/host.cpp core/host/scale.cpp \
   core/worlds/firmamentum/model.cpp core/worlds/firmamentum/world.cpp core/worlds/firmamentum/sound.cpp \

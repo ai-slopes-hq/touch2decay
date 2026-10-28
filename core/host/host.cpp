@@ -15,17 +15,20 @@ void Host::prepare(double sr, uint32_t seed) {
   for (int s = 0; s < SLOTS; s++) std::memset(dry_[s], 0, sizeof dry_[s]);
   std::memset(ext_, 0, sizeof ext_);
   std::memset(ret_, 0, sizeof ret_);
-  std::memset(master_, 0, sizeof master_);
   
-  // Мастер-цепь
-  for (auto& f : lpf_) f.set(sdk::Biquad::lowpass, 20000, 0.5, sr);
-  compThr_ = -10; compRatio_ = 2.5;
-  compEnv_[0] = compEnv_[1] = 0;
-  knee_.k = 2.6 / std::tanh(2.6);
-  knee_.kn = 0.6;
-  knee_.room = 0.38;
-  masterGain_ = 1.0;
-  
+  // Мастер-цепь (по умолчанию как MIX_DEF веба: LPF 22 кГц, компрессор −10/10/2.5, потолок 0 дБ)
+  for (auto& f : hp_) f.set(sdk::Biquad::highpass, 30, 1, clk_.sr);
+  masterLpf(lpfHz_);
+  for (auto& f : lpf_) { f.x1 = f.x2 = f.y1 = f.y2 = 0; }
+  for (auto& f : hp_) { f.x1 = f.x2 = f.y1 = f.y2 = 0; }
+  comp_.set(-10, 2.5, clk_.sr);
+  comp_.reset();
+  const sdk::Knee kn{2.6 / std::tanh(2.6), 0.6, 0.98 - 0.6};
+  knee_.curve.build([&kn](double x) { return kn(x); });
+  knee_.os = 4;
+  knee_.reset();
+  ceilGain_ = 1.0;
+
   // LFO
   lfos_.clear();
   morphClassic_ = sdk::WaveMorph(sdk::WaveMorph::CLASSIC);
@@ -112,56 +115,101 @@ void Host::process(int n) {
   }
   for (int c = 0; c < 2; c++)
     for (int i = 0; i < n; i++) ret_[c][i] = (rout_[0][c][i] + rout_[1][c][i] + rout_[2][c][i] + rout_[3][c][i]) * RET;
-  
-  // Мастер-цепь: LPF → компрессор → потолок knee
-  for (int c = 0; c < 2; c++) {
-    for (int i = 0; i < n; i++) master_[c][i] = static_cast<float>(lpf_[c].step(ret_[c][i]));
-    for (int i = 0; i < n; i++) {
-      const double x = std::abs(master_[c][i]);
-      const double attack = 0.01, release = 0.4;        // время атаки/релиза (с)
-      const double a = x > compEnv_[c] ? (1.0 - std::exp(-1.0 / (attack * clk_.sr))) : (1.0 - std::exp(-1.0 / (release * clk_.sr)));
-      compEnv_[c] += a * (x - compEnv_[c]);
-      const double thrLin = std::pow(10.0, compThr_ / 20.0);
-      const double knee = 10.0;                         // ширина колена (дБ)
-      double gr = 1.0;                                  // gain reduction
-      if (compEnv_[c] > thrLin) {
-        const double dbOver = 20.0 * std::log10(compEnv_[c] / thrLin);
-        if (dbOver < knee) {
-          const double s = 1.0 / compRatio_ - 1.0;
-          gr = std::pow(10.0, s * dbOver * dbOver / (2.0 * knee) / 20.0);
-        } else {
-          gr = std::pow(10.0, (1.0 / compRatio_ - 1.0) * (dbOver - knee / 2.0) / 20.0);
-        }
-      }
-      master_[c][i] = static_cast<float>(master_[c][i] * gr);
-    }
-    for (int i = 0; i < n; i++) master_[c][i] = static_cast<float>(knee_(master_[c][i]) * masterGain_);
-  }
-  
+
   std::memset(ext_, 0, sizeof ext_);
   clk_.now += n / clk_.sr;                              // следующий блок — сразу за этим (веб перед каждым задаёт время сам)
 }
 
+void Host::sum(float* L, float* R, int n) const {
+  if (n > BLOCK) n = BLOCK;
+  if (n < 0) n = 0;
+  for (int i = 0; i < n; i++) { L[i] = ret_[0][i]; R[i] = ret_[1][i]; }
+  for (int s = 0; s < SLOTS; s++) {
+    if (!w_[s]) continue;
+    const float g = gain_[s] * static_cast<float>(w_[s]->trim());
+    for (int i = 0; i < n; i++) { L[i] += dry_[s][0][i] * g; R[i] += dry_[s][1][i] * g; }
+  }
+}
+
+void Host::masterRun(float* L, float* R, int n) {
+  if (n > BLOCK) n = BLOCK;
+  if (n < 0) n = 0;
+  const double amp = 0.8 * VOL_GAIN * 0.5;              // masterG веба и limitIn
+  for (int i = 0; i < n; i++) {
+    double l = L[i], r = R[i];
+    if (!std::isfinite(l)) l = 0;                       // NaN отравил бы состояние фильтров навсегда
+    if (!std::isfinite(r)) r = 0;
+    l = lpf_[0].step(hp_[0].step(l));
+    r = lpf_[1].step(hp_[1].step(r));
+    comp_.run(l, r);
+    l *= amp; r *= amp;
+    knee_.run(l, r);
+    L[i] = static_cast<float>(l * ceilGain_);
+    R[i] = static_cast<float>(r * ceilGain_);
+  }
+}
+
 void Host::masterLpf(double hz) {
-  const double sr = clk_.sr;
-  const double cutoff = hz > 19000 ? 22000 : hz;        // >19 кГц — проброс (22 кГц)
+  const double sr = clk_.sr, top = 0.45 * sr;
+  lpfHz_ = hz;
+  const double cutoff = hz > top ? top : (hz < 10 ? 10 : hz);   // 22 кГц на 44.1 кГц — это Найквист
   for (auto& f : lpf_) f.set(sdk::Biquad::lowpass, cutoff, 0.5, sr);
 }
 
-void Host::masterComp(double thr, double ratio) {
-  compThr_ = thr;
-  compRatio_ = ratio;
-}
+void Host::masterComp(double thr, double ratio) { comp_.set(thr, ratio, clk_.sr); }
 
 void Host::masterCeil(double db) {
-  const double room = (db + 12.0) / 12.0;               // −12…0 дБ → 0…1
-  knee_.k = 2.6 / std::tanh(2.6);
-  knee_.kn = 0.6;
-  knee_.room = 0.38 * (room > 0 ? (room < 1 ? room : 1) : 0);
-  masterGain_ = std::pow(10.0, -db / 20.0);             // компенсация потолка усилением
+  const double d = db > 0 ? 0 : (db < -12 ? -12 : db);
+  ceilGain_ = std::pow(10.0, d / 20.0);
 }
 
-const float* Host::master(int ch) const { return master_[ch & 1]; }
+// Статическая кривая DynamicsCompressorKernel (Chromium): до порога прямая, затем экспоненциальное колено k, выше колена — наклон 1/ratio.
+double Host::Comp::kneeCurve(double x, double kk) const { return x < lin ? x : lin + (1 - std::exp(-kk * (x - lin))) / kk; }
+
+double Host::Comp::saturate(double x) const {
+  if (x < std::pow(10.0, kneeDb / 20)) return kneeCurve(x, k);
+  return std::pow(10.0, (yKneeDb + slope * (20 * std::log10(x) - kneeDb)) / 20);
+}
+
+double Host::Comp::slopeAt(double x, double kk) const {
+  if (x < lin) return 1;
+  const double x2 = x * 1.001, xDb = 20 * std::log10(x), x2Db = 20 * std::log10(x2);
+  const double yDb = 20 * std::log10(kneeCurve(x, kk)), y2Db = 20 * std::log10(kneeCurve(x2, kk));
+  return (y2Db - yDb) / (x2Db - xDb);
+}
+
+void Host::Comp::set(double thr_, double ratio_, double sr) {
+  thr = thr_; ratio = ratio_ < 1 ? 1 : ratio_;
+  lin = std::pow(10.0, thr / 20);
+  slope = 1.0 / ratio;
+  kneeDb = thr + knee;
+  const double x = std::pow(10.0, kneeDb / 20);
+  double lo = 0.1, hi = 10000;                          // k, при котором наклон кривой в колене равен 1/ratio (бисекция, как у Chromium)
+  k = 5;
+  for (int i = 0; i < 15; i++) {
+    if (slopeAt(x, k) < slope) hi = k; else lo = k;
+    k = std::sqrt(lo * hi);
+  }
+  yKneeDb = 20 * std::log10(kneeCurve(x, k));
+  makeup = std::pow(1.0 / saturate(1.0), 0.6);          // fullRangeMakeupGain^0.6 — включён всегда, и ниже порога
+  aAtt = 1 - std::exp(-1.0 / (att * sr));
+  aRel = 1 - std::exp(-1.0 / (rel * sr));
+  dly = static_cast<int>(0.006 * sr + 0.5);
+  if (dly > DLY - 1) dly = DLY - 1;
+}
+
+void Host::Comp::run(double& l, double& r) {
+  const double x = std::fmax(std::fabs(l), std::fabs(r));   // связанный детектор: одно усиление на оба канала
+  double target = 0;                                    // желаемое усиление, дБ
+  if (x > lin) target = 20 * std::log10(saturate(x) / x);
+  if (target < gDb) gDb += aAtt * (target - gDb);       // сжимаем сильнее — атака
+  else if (gDb < 0) { gDb += aRel * (target - gDb); if (gDb > 0) gDb = 0; }   // отпускаем — релиз
+  buf[0][pos] = static_cast<float>(l); buf[1][pos] = static_cast<float>(r);
+  const int rd = (pos - dly + DLY) % DLY;               // сигнал идёт с задержкой, детектор — по входу (lookahead 6 мс)
+  const double g = (gDb < -1e-9 ? std::pow(10.0, gDb / 20) : 1.0) * makeup;
+  l = buf[0][rd] * g; r = buf[1][rd] * g;
+  pos = (pos + 1) % DLY;
+}
 
 int Host::addLfo(int world, const char* key, double base, int shape) {
   sdk::RowLfo lfo;

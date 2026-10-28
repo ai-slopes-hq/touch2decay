@@ -64,6 +64,7 @@ class Cymatica : public sdk::World, private Sink {
   void restore(const std::string& js) override { model_.restore(js); }
   bool sounding() const override;
   const Plate& plate() const { return plate_; }
+  double trim() const override { return 2.5; }          // как engine.js: сухой выход ×2.5 перед каналом микшера
   const Model& model() const { return model_; }
 
  private:

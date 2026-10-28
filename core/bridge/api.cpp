@@ -130,7 +130,10 @@ T2D_API const float* t2d_arc_land(int which) { return which ? arc.land().lake : 
 T2D_API void t2d_master_lpf(double hz) { host.masterLpf(hz); }
 T2D_API void t2d_master_comp(double thr, double ratio) { host.masterComp(thr, ratio); }
 T2D_API void t2d_master_ceil(double db) { host.masterCeil(db); }
-T2D_API const float* t2d_master(int ch) { return host.master(ch); }
+T2D_API void t2d_sum(float* L, float* R, int n) { host.sum(L, R, n); }
+T2D_API void t2d_master_run(float* L, float* R, int n) { host.masterRun(L, R, n); }
+T2D_API void t2d_mix(float* L, float* R, int n) { host.sum(L, R, n); host.masterRun(L, R, n); }
+T2D_API double t2d_master_makeup(void) { return host.masterMakeup(); }
 
 // LFO: world — слот, key — ключ параметра, base — базовое значение, shape — форма (0=classic, 1=random)
 // spec: morph/rate/depth — по два числа (начало, конец), value — текущее значение

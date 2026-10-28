@@ -45,6 +45,7 @@ class Firmamentum : public sdk::World {
   std::string snapshot() const override { return model_.snapshot(); }
   void restore(const std::string& js) override { model_.restore(js); }
   bool sounding() const override { return model_.count() > 0; }
+  double trim() const override { return 2.5; }          // как engine.js: сухой выход ×2.5 перед каналом микшера
   const Model& model() const { return model_; }
 
  private:

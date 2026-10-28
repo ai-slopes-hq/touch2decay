@@ -3,14 +3,16 @@
 // хост обнуляет после. Буферы фиксированные, под 128 кадров; в process аллокаций нет. Объект ~1.2 МБ (4 ревербера) —
 // на стек не класть. Контракт: prepare до process.
 //
-// Дополнено: мастер (LPF, компрессор, потолок knee), LFO строк (tick + хранилище), тик моделей (dt), единый C-ABI мост.
+// Дополнено: микс (sum) и мастер по цепочке веба (masterRun; веб держит свой мастер в JS), LFO строк (tick + хранилище), тик моделей (dt), единый C-ABI мост.
 #pragma once
 #include <cstdint>
+#include <cstring>
 #include <vector>
 #include "../sdk/world.hpp"
 #include "../sdk/lfo.hpp"
 #include "../sdk/biquad.hpp"
 #include "../sdk/knee.hpp"
+#include "../sdk/shaper.hpp"
 #include "scale.hpp"
 
 class Host {
@@ -39,11 +41,15 @@ class Host {
   const sdk::Clock& clock() const { return clk_; }
   int events(double* buf, int cap);                     // по 2 числа: код (sdk::Follower::Ev), bpm; очищает
 
-  // Мастер: LPF, компрессор (thr, ratio), потолок knee. Применяются к ret_ после суммы ревербов, до выхода.
-  void masterLpf(double hz);                            // cutoff LPF
-  void masterComp(double thr, double ratio);            // компрессор: порог дБ, отношение
-  void masterCeil(double db);                           // потолок knee: db от −12…0
-  const float* master(int ch) const;                    // выход мастера (ch 0 — L, 1 — R)
+  // Микс для приложения: sum — Σ dry[s]·фейдер·trim(s) + ret (фейдер на сухой части; в ret посыл уже после фейдера, ×RET);
+  // masterRun — мастер на месте, цепь host/audio.js: HP 30 Гц → LPF → компрессор (модель Chromium) → ×0.8·volGain → ×0.5 →
+  // knee(2.6/tanh 2.6, 0.6, 0.98) 4× → ×10^(ceil/20). Веб эти два не зовёт: его мастер — узлы Web Audio. n ≤ 128, без аллокаций.
+  void sum(float* L, float* R, int n) const;
+  void masterRun(float* L, float* R, int n);
+  void masterLpf(double hz);                            // срез LPF; не выше 0.45·sr (на Найквисте бикуад вырождается)
+  void masterComp(double thr, double ratio);            // компрессор: порог дБ, отношение (колено 10 дБ, атака .01, релиз .4)
+  void masterCeil(double db);                           // усиление после knee, дБ (−12…0; по умолчанию 0)
+  double masterMakeup() const { return comp_.makeup; }  // авто-подъём компрессора (1/fullRangeGain)^0.6: Chromium даёт его и ниже порога
 
   // LFO строк: add/remove/tick, get возвращает текущее значение строки.
   int addLfo(int world, const char* key, double base, int shape);   // shape 0 — classic, 1 — random; возвращает индекс
@@ -63,7 +69,6 @@ class Host {
   float rin_[4][2][BLOCK] = {}, rout_[4][2][BLOCK] = {};
   float ext_[4][2][BLOCK] = {};
   float ret_[2][BLOCK] = {};
-  float master_[2][BLOCK] = {};                         // выход мастера (после LPF, компрессора, потолка)
   Scale scale_;
   sdk::Reverb rev_[4];
   void follow(const sdk::MidiMsg& m, double at);
@@ -75,11 +80,27 @@ class Host {
   int nev_ = 0;
 
   // Мастер
-  sdk::Biquad lpf_[2];                                  // LPF стерео
-  double compThr_ = -10, compRatio_ = 2.5;              // компрессор
-  double compEnv_[2] = {0, 0};                          // огибающая на канал (для peak detector)
-  sdk::Knee knee_;                                      // потолок
-  double masterGain_ = 1.0;                             // усиление потолка
+  static constexpr double VOL_GAIN = 1.0;               // volGain(vol) по умолчанию (vol 0 дБ); 0.8·VOL_GAIN — усилитель мастера в вебе
+  struct Comp {                                         // DynamicsCompressor Chromium: связанный детектор max|L|,|R|, задержка 6 мс, авто-подъём
+    static constexpr int DLY = 1024;                    // кольцо задержки (6 мс ≤ 1023 кадров до 170 кГц)
+    double thr = -10, knee = 10, ratio = 2.5, att = 0.01, rel = 0.4;
+    double lin = 0, k = 5, kneeDb = 0, yKneeDb = 0, slope = 0.4, makeup = 1;
+    double aAtt = 0, aRel = 0, gDb = 0;                 // коэффициенты одного полюса и текущее усиление, дБ (≤ 0)
+    int dly = 0, pos = 0;
+    float buf[2][DLY] = {};
+    void set(double thr_, double ratio_, double sr);
+    void reset() { gDb = 0; pos = 0; std::memset(buf, 0, sizeof buf); }
+    void run(double& l, double& r);
+   private:
+    double kneeCurve(double x, double kk) const;
+    double saturate(double x) const;
+    double slopeAt(double x, double kk) const;
+  };
+  sdk::Biquad hp_[2], lpf_[2];
+  double lpfHz_ = 22000;
+  Comp comp_;
+  sdk::Shaper2<4096> knee_;                             // потолок: кривая knee() веба (4096 точек), oversample 4×
+  double ceilGain_ = 1.0;                               // 10^(ceil/20)
 
   // LFO строк
   std::vector<sdk::RowLfo> lfos_;
