@@ -7,7 +7,7 @@ struct T2DApp: App {
   @State private var audio = Audio(log: .shared, seed: T2DApp.shot ? 7 : 1)
   var body: some Scene {
     WindowGroup {
-      StageView().ignoresSafeArea().background(Color.black)
+      StageView(audio: audio).ignoresSafeArea().background(Color.black)
         .onAppear { audio.start(); if T2DApp.shot { T2DApp.shotScene() } }
     }
   }

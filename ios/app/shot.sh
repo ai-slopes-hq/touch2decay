@@ -6,6 +6,7 @@ DEV="iPhone 16"
 xcodegen
 xcodebuild -project T2D.xcodeproj -scheme T2D -sdk iphonesimulator -destination "platform=iOS Simulator,name=$DEV" -derivedDataPath build build
 if ! xcrun simctl list devices booted | grep -q "$DEV"; then xcrun simctl boot "$DEV"; fi
+xcrun simctl bootstatus "$DEV" -b >/dev/null
 xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/T2D.app
 xcrun simctl terminate booted dev.uvarov.t2d 2>/dev/null || true
 mkdir -p ../../.shots
