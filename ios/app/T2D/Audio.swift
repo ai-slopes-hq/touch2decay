@@ -5,13 +5,13 @@ import T2DCore
 
 // что делать движку по событию сессии: пересобрать граф и/или переинициализировать ядро (init стирает состояние всех миров —
 // только при смене частоты). Чистая функция — решение проверяется тестом без железа.
-enum AudioTrigger { case start, interruptionEnded, mediaServicesReset, route(AVAudioSession.RouteChangeReason) }
+enum AudioTrigger { case start, interruptionEnded, mediaServicesReset, engineConfigChange, route(AVAudioSession.RouteChangeReason) }
 struct AudioPlan: Equatable {
   var rebuild: Bool, reinit: Bool
   static func make(_ t: AudioTrigger, coreRate: Double, rate: Double, running: Bool) -> AudioPlan {
     let changed = rate != coreRate
     switch t {
-    case .start, .interruptionEnded, .mediaServicesReset:   // движок остановлен системой или пропал — граф собираем заново
+    case .start, .interruptionEnded, .mediaServicesReset, .engineConfigChange:   // движок остановлен системой или пропал — граф собираем заново
       return AudioPlan(rebuild: true, reinit: changed)
     case .route(let why):                                    // категория, override, wake и прочее — не смена устройства
       guard why == .newDeviceAvailable || why == .oldDeviceUnavailable else { return AudioPlan(rebuild: false, reinit: false) }
@@ -94,6 +94,13 @@ final class Audio {
       try? self.session.setCategory(.playback)
       try? self.session.setActive(true)
       self.handle(.mediaServicesReset, "media services reset")
+    }
+    // смена железа вывода (наушники, частота, каналы): движок сам останавливается, и route change об этом может не сказать.
+    // От заменённого движка событие пропускаем — граф уже собран заново.
+    nc.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] n in
+      guard let self, let e = n.object as? AVAudioEngine, e === self.engine else { return }
+      self.log.add("audio", "engine configuration change")
+      self.handle(.engineConfigChange, "engine configuration change")
     }
   }
 }

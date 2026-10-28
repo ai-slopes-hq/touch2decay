@@ -13,7 +13,7 @@ final class AudioPlanTests: XCTestCase {
   }
 
   func testInterruptionAndMediaResetKeepCoreState() {
-    for t in [AudioTrigger.interruptionEnded, .mediaServicesReset] {
+    for t in [AudioTrigger.interruptionEnded, .mediaServicesReset, .engineConfigChange] {
       XCTAssertEqual(plan(t, running: false), AudioPlan(rebuild: true, reinit: false), "граф заново, ядро не трогаем")
       XCTAssertEqual(plan(t, rate: 44100), AudioPlan(rebuild: true, reinit: true), "частота сменилась — init")
     }
