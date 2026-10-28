@@ -64,6 +64,7 @@ final class Draw {
     case .read: name = italic ? "EBGaramond-Italic" : "EBGaramond-Regular"
     }
     let f = CTFontCreateWithName(name as CFString, size, nil)
+    assert(CTFontCopyPostScriptName(f) as String == name, "шрифт \(name) не найден, подставлен другой")
     fonts[k] = f
     return f
   }

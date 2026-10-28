@@ -41,14 +41,37 @@ final class DrawTests: XCTestCase {
     XCTAssertEqual(Draw.scale, min(UIScreen.main.scale, 2))
   }
 
-  func testTextAndSunDrawSomething() {
-    let c = ctx(200, 200)
-    let d = Draw(g: c, W: 200, H: 200)
+  // контекст как в UIKit: начало слева сверху; строка bitmap i — это y = i
+  private func flipped(_ n: Int) -> CGContext {
+    let c = ctx(n, n)
+    c.translateBy(x: 0, y: CGFloat(n)); c.scaleBy(x: 1, y: -1)
+    return c
+  }
+  private func rowsWithInk(_ c: CGContext, _ n: Int) -> [Int] {
+    let p = c.data!.assumingMemoryBound(to: UInt8.self), bpr = c.bytesPerRow
+    return (0..<n).filter { r in (0..<n).contains { p[r * bpr + $0 * 4 + 3] != 0 } }
+  }
+
+  func testTextInkAroundBaselineBand() {
+    let n = 200
+    let c = flipped(n)
+    let d = Draw(g: c, W: CGFloat(n), H: CGFloat(n))
     d.text("Abc", 10, 100, 12, 1)
-    d.reading { d.mapText("Xyz", 100, 50, 14, 1, align: .center) }
+    d.reading { d.mapText("Xyz", 100, 100, 14, 1, align: .center) }
     XCTAssertEqual(d.face, .map)
+    let rows = rowsWithInk(c, n)
+    XCTAssertFalse(rows.isEmpty)
+    XCTAssertTrue(rows.allSatisfy { (85...115).contains($0) }, "ink outside the band around y: \(rows.first!)...\(rows.last!)")
+    XCTAssertTrue(rows.contains { (90...100).contains($0) } && rows.contains { (100...108).contains($0) })
+  }
+
+  func testSunGlyphDraws() {
+    let n = 200
+    let c = flipped(n)
+    let d = Draw(g: c, W: CGFloat(n), H: CGFloat(n))
     d.sunGlyph(100, 100, -.pi / 2, 0, scale: 1, now: 0, col: (237, 237, 237), disc: UIColor.black)
-    let p = c.data!.assumingMemoryBound(to: UInt8.self)
-    XCTAssertTrue((0..<200 * 200 * 4).contains { p[$0] != 0 })
+    let rows = rowsWithInk(c, n)
+    XCTAssertFalse(rows.isEmpty)
+    XCTAssertTrue(rows.allSatisfy { (40...160).contains($0) })
   }
 }
