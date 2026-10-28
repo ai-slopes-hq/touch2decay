@@ -43,12 +43,17 @@ async def main():
         await pg.goto(URL)
         await pg.wait_for_function('window.__ready === true', timeout=15000)
         stdin = await pg.evaluate('window.__stdin')
+        unknown = [n for n in ONLY if n not in stdin]
+        if unknown:
+            await b.close()
+            sys.exit(f"unknown scene: {', '.join(unknown)} (known: {', '.join(stdin)})")
         for name, inp in stdin.items():
             if ONLY and name not in ONLY: continue
             c = core(inp)
             ch = await pg.evaluate('([n, l, r]) => window.__run(n, l, r)', [name, b64(c[0]), b64(c[1])])
             res[name] = (c, [np.frombuffer(base64.b64decode(s), dtype=np.float32).astype(np.float64) for s in ch])
         await b.close()
+    if not res: sys.exit('no scene ran')
     bad = 0
     for name, (c, ref) in res.items():
         for lab, i in (('mix L', 0), ('mix R', 1)):
