@@ -98,7 +98,6 @@ class Host {
     double slopeAt(double x, double kk) const;
   };
   sdk::Biquad hp_[2], lpf_[2];
-  double lpfHz_ = 22000;
   Comp comp_;
   sdk::Shaper2<4096> knee_;                             // потолок: кривая knee() веба (4096 точек), oversample 4×
   double ceilGain_ = 1.0;                               // 10^(ceil/20)

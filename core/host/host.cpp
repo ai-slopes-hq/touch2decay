@@ -18,7 +18,7 @@ void Host::prepare(double sr, uint32_t seed) {
   
   // Мастер-цепь (по умолчанию как MIX_DEF веба: LPF 22 кГц, компрессор −10/10/2.5, потолок 0 дБ)
   for (auto& f : hp_) f.set(sdk::Biquad::highpass, 30, 1, clk_.sr);
-  masterLpf(22000);                                     // и в lpfHz_: срез прежней сцены не переживает t2d_init
+  masterLpf(22000);                                     // срез прежней сцены не переживает t2d_init
   for (auto& f : lpf_) { f.x1 = f.x2 = f.y1 = f.y2 = 0; }
   for (auto& f : hp_) { f.x1 = f.x2 = f.y1 = f.y2 = 0; }
   comp_.set(-10, 2.5, clk_.sr);
@@ -151,7 +151,6 @@ void Host::masterRun(float* L, float* R, int n) {
 
 void Host::masterLpf(double hz) {
   const double sr = clk_.sr, top = 0.45 * sr;
-  lpfHz_ = hz;
   const double cutoff = hz > top ? top : (hz < 10 ? 10 : hz);   // 22 кГц на 44.1 кГц — это Найквист
   for (auto& f : lpf_) f.set(sdk::Biquad::lowpass, cutoff, 0.5, sr);
 }
