@@ -1,0 +1,4 @@
+module T2DCore {
+  header "../../../core/app/t2d_app.h"
+  export *
+}

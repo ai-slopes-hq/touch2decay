@@ -15,6 +15,7 @@ typedef struct {
   unsigned heard_lost;        // записей heard не влезло, всего
 } t2d_app_stats_t;
 
+// init не потокобезопасен относительно render (переписывает поля и чистит кольца): перед повторным вызовом остановить аудиодвижок.
 void t2d_app_init(double sr, unsigned seed, double ticks_per_sec, unsigned watch); // watch — маска слотов
 void t2d_app_render(float* L, float* R, int n, uint64_t host_time);
 int  t2d_app_action(int slot, int kind, int i, const double* a, int n, uint64_t touch_time); // 0 — отброшено; touch_time 0 — без замера

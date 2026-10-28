@@ -1,0 +1,67 @@
+# Нативное приложение touch2decay: ядро C++ (core/) — статической библиотекой, звук — AVAudioEngine. Проект — xcodegen generate.
+name: T2D
+options:
+  bundleIdPrefix: dev.uvarov
+  deploymentTarget: { iOS: "17.0" }
+settings:
+  base:
+    DEVELOPMENT_TEAM: 8N8KQ5985C
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+targets:
+  T2DCore:
+    type: library.static
+    platform: iOS
+    sources:
+      - path: ../../core
+        includes: ["**/*.cpp"]
+        excludes: ["tests/**", "render-cli/**", "build/**", "bridge/wasm.cpp", "bridge/wasi.cpp"]
+    settings:
+      base:
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        GCC_OPTIMIZATION_LEVEL: "2"
+        OTHER_CPLUSPLUSFLAGS: -ffp-contract=off
+        TARGETED_DEVICE_FAMILY: "1"
+      configs:
+        Debug: { GCC_OPTIMIZATION_LEVEL: "2" }
+        Release: { GCC_OPTIMIZATION_LEVEL: "2" }
+  T2D:
+    type: application
+    platform: iOS
+    sources: [T2D]
+    dependencies:
+      - target: T2DCore
+    info:
+      path: T2D/Info.plist
+      properties:
+        CFBundleDisplayName: touch2decay
+        UIBackgroundModes: [audio]
+        NSLocalNetworkUsageDescription: Log to your computer over the network
+        NSAppTransportSecurity: { NSAllowsLocalNetworking: true }
+        UILaunchScreen: {}
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.uvarov.t2d
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/T2DCore
+        OTHER_LDFLAGS: -lc++
+  T2DTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [T2DTests]
+    dependencies:
+      - target: T2DCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.uvarov.t2d.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/T2DCore
+        OTHER_LDFLAGS: -lc++
+schemes:
+  T2D:
+    build: { targets: { T2D: all, T2DTests: [test] } }
+    test: { targets: [T2DTests] }
