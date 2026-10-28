@@ -1007,6 +1007,29 @@ async def sc_legenda(p):                           # тап по заголов�
     assert await p.js('()=>t2d.nav.settings'), 'tap the concordia label — settings'
 
 
+async def sc_firmtop(p):                           # Firmamentum с верхней строкой: лад dorian / тоника D# (подпись), список ладов (зажата кнопка лада), легенда — пары к ios/app/shot.sh topbar | scales | legend
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(10)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 10], 'the card right of Tenebrae opens Firmamentum'
+    for _ in range(30):
+        if await p.js('()=>t2d.firm.ready'): break
+        await p.pg.wait_for_timeout(100)
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
+    b = await p.js("()=>t2d.btnPos('scl')"); top = b['y'] + 40; bx = W - 12 - 88 - 150; rx = bx + 158; ch = 7 * 46 / 6
+    pid = await p.hold(b['x'], b['y'], ms=100)
+    x, y = bx + 40, top + 46 * 3.5                    # строка dorian (off, major, minor, dorian)
+    await p.drag(pid, b['x'], b['y'], x, y, steps=8); await p.pg.wait_for_timeout(200); await p.T('touchMove', [{'x': x, 'y': y + 1, 'id': pid}]); await p.pg.wait_for_timeout(200)
+    x, y = rx + 20, top + ch * 3.5                    # тоника: колонка 0, ряд 3 — D#
+    await p.drag(pid, bx + 40, top + 46 * 3.5, x, y, steps=8); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>[t2d.scl.on, t2d.scl.idx, t2d.scl.root]') == [True, 2, 3], 'dorian, root D#'
+    await p.shot('firmtop-scales'); await p.up(); await p.pg.wait_for_timeout(700)
+    await p.shot('firmtop-topbar')
+    tw = await p.js('()=>t2d.titleW()')
+    await p.tap(46 + tw / 2, await p.js('()=>t2d.scopeY()') + 20); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.legenda()'), 'tap the title — legenda'
+    await p.shot('firmtop-legend')
+
+
 async def sc_inferno(p):                           # Inferno: удар, тление, высота вдоль круга, грешник, арфа, плашка круга, FX, кубик, корзина, отмена, тьма — карта
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     await p.shot('map-rows')
@@ -1840,7 +1863,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'tenscale': sc_tenscale, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'firmtop': sc_firmtop, 'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'tenscale': sc_tenscale, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

@@ -135,6 +135,12 @@ final class Host {
 
   private func setScene(_ w: String, _ s: Scl) { scene = (w, s); dirtyAt = now }
 
+  // только -shot: состояние сцены без касаний (список ладов и легенда открываются жестом, снимку нужен готовый кадр)
+  func shotState(scl s: Scl, sclOpen: Bool = false, legendOpen: Bool = false) {
+    scl = s; core.scale(s)
+    self.sclOpen = sclOpen; self.legendOpen = legendOpen
+  }
+
   // ---------- кадр и сохранение ----------
   func tick(now: Double, dt: Double) {
     self.now = now
