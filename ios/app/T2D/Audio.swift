@@ -1,11 +1,12 @@
 // Звук: AVAudioEngine + AVAudioSourceNode, блок рендера вызывает t2d_app_render (ядро). Сессия .playback, буфер ~256 кадров.
 // t2d_app_init не потокобезопасен против render: любой повторный init — только при остановленном движке (reset()).
 import AVFoundation
+import UIKit
 import T2DCore
 
 // что делать движку по событию сессии: пересобрать граф и/или переинициализировать ядро (init стирает состояние всех миров —
 // только при смене частоты). Чистая функция — решение проверяется тестом без железа.
-enum AudioTrigger { case start, interruptionEnded, mediaServicesReset, engineConfigChange, route(AVAudioSession.RouteChangeReason) }
+enum AudioTrigger { case start, interruptionEnded, mediaServicesReset, engineConfigChange, becameActive, route(AVAudioSession.RouteChangeReason) }
 struct AudioPlan: Equatable {
   var rebuild: Bool, reinit: Bool
   static func make(_ t: AudioTrigger, coreRate: Double, rate: Double, running: Bool) -> AudioPlan {
@@ -13,6 +14,8 @@ struct AudioPlan: Equatable {
     switch t {
     case .start, .interruptionEnded, .mediaServicesReset, .engineConfigChange:   // движок остановлен системой или пропал — граф собираем заново
       return AudioPlan(rebuild: true, reinit: changed)
+    case .becameActive:                                      // из фона сессию не активировать ('!int') — без рендера стоят и звук, и картинка
+      return AudioPlan(rebuild: !running, reinit: changed && !running)
     case .route(let why):                                    // категория, override, wake и прочее — не смена устройства
       guard why == .newDeviceAvailable || why == .oldDeviceUnavailable else { return AudioPlan(rebuild: false, reinit: false) }
       return AudioPlan(rebuild: changed || !running, reinit: changed)
@@ -101,6 +104,12 @@ final class Audio {
       guard let self, let e = n.object as? AVAudioEngine, e === self.engine else { return }
       self.log.add("audio", "engine configuration change")
       self.handle(.engineConfigChange, "engine configuration change")
+    }
+    // конец прерывания мог прийти в фоне — тогда старт отклонён, и поднять движок можно только здесь
+    nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+      guard let self, !(self.engine?.isRunning ?? false) else { return }
+      do { try self.session.setActive(true) } catch { self.log.add("audio", "session error \(error)") }
+      self.handle(.becameActive, "became active")
     }
   }
 }

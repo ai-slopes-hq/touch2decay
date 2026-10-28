@@ -19,6 +19,12 @@ final class AudioPlanTests: XCTestCase {
     }
   }
 
+  func testBecameActiveRestartsOnlyStoppedEngine() {   // старт из фона отклонён ('!int') — поднимаем при возврате
+    XCTAssertEqual(plan(.becameActive), AudioPlan(rebuild: false, reinit: false), "движок идёт — ничего")
+    XCTAssertEqual(plan(.becameActive, running: false), AudioPlan(rebuild: true, reinit: false))
+    XCTAssertEqual(plan(.becameActive, rate: 44100, running: false), AudioPlan(rebuild: true, reinit: true))
+  }
+
   func testRouteChangeOnlyOnDeviceChange() {
     for r in [AVAudioSession.RouteChangeReason.categoryChange, .override, .wakeFromSleep, .routeConfigurationChange, .unknown] {
       XCTAssertEqual(plan(.route(r), rate: 44100, running: false), AudioPlan(rebuild: false, reinit: false), "\(r)")
