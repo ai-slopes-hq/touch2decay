@@ -5,7 +5,9 @@
 #include <complex>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 #include "../sdk/biquad.hpp"
 #include "../sdk/chorus.hpp"
@@ -27,6 +29,9 @@
 #include "../sdk/world.hpp"
 #include "../host/host.hpp"
 #include "../bridge/t2d.h"
+#include "../app/spsc.hpp"
+#include "../app/triple.hpp"
+#include "../app/t2d_app.h"
 #include "../host/scale.hpp"
 #include "../sdk/ad.hpp"
 #include "../sdk/pingpong.hpp"
@@ -2594,6 +2599,185 @@ static void mixMaster() {
   CHECK(pk <= 0.98 * std::pow(10.0, -6.0 / 20) * 1.0001);
 }
 
+// ===== core/app: кольца, чанкинг render, мост, heard, статистика =====
+// Spsc: два потока, 1e6 элементов по порядку, ёмкость 256, производитель повторяет push при полном кольце
+static void appSpscThreads() {
+  static Spsc<uint32_t, 256> q;
+  const uint32_t N = 1000000;
+  std::thread prod([&] { for (uint32_t i = 0; i < N; i++) while (!q.push(i)) std::this_thread::yield(); });
+  uint32_t want = 0; bool order = true;
+  while (want < N) {
+    uint32_t v;
+    if (q.pop(v)) { if (v != want) { order = false; break; } want++; } else std::this_thread::yield();
+  }
+  if (!order) { uint32_t v; while (q.pop(v)) {} }                         // разгрести, чтобы производитель вышел (не гарантия, но не вешаем при провале)
+  prod.join();
+  CHECK(order);
+  CHECK(want == N);
+  uint32_t v;
+  CHECK(!q.pop(v));
+  Spsc<int, 4> s;                                                         // ёмкость ровно N
+  int k = 0; while (s.push(k)) k++;
+  CHECK(k == 4);
+}
+
+// Triple: читатель видит номера по возрастанию, внутри снимка все поля равны (без разрывов); последний снимок доходит
+static void appTripleThreads() {
+  struct Snap { uint64_t seq; uint64_t f[32]; };
+  static Triple<Snap> t;
+  const uint64_t N = 200000;
+  std::thread wr([&] {
+    for (uint64_t i = 1; i <= N; i++) { Snap& w = t.write(); w.seq = i; for (auto& x : w.f) x = i; t.publish(); }
+  });
+  uint64_t last = 0, reads = 0; bool mono = true, whole = true;
+  Snap s;
+  while (last < N) {
+    if (!t.read(s)) { std::this_thread::yield(); continue; }
+    reads++;
+    if (s.seq <= last) mono = false;
+    for (auto x : s.f) if (x != s.seq) whole = false;
+    last = s.seq;
+  }
+  wr.join();
+  CHECK(mono);
+  CHECK(whole);
+  CHECK(reads >= 1);
+  CHECK(!t.read(s));                                                      // нового нет
+}
+
+static void appScene(double sr) {
+  t2d_app_init(sr, 7, 1e9, 1u << 10);
+  const double pts[3][2] = {{0.3, 0.1}, {0.6, 0.5}, {0.8, 0.2}};
+  for (const auto& p : pts) t2d_app_action(10, 0, 0, p, 2, 0);
+}
+
+// Один и тот же звук при любой нарезке буфера: 128·k и вперемешку {100, 333, 470, 1024}
+static void appChunking() {
+  const int total = 128 * 40;                                             // 5120 сэмплов
+  std::vector<float> aL(total), aR(total), bL(total + 1024), bR(total + 1024);
+  appScene(48000);
+  for (int o = 0; o < total; o += 128 * 4) t2d_app_render(aL.data() + o, aR.data() + o, 128 * 4, 0);
+  appScene(48000);
+  const int sizes[4] = {100, 333, 470, 1024};
+  int o = 0, k = 0;
+  while (o < total) { const int n = sizes[k++ % 4]; t2d_app_render(bL.data() + o, bR.data() + o, n, 0); o += n; }
+  bool same = true, sound = false;
+  for (int i = 0; i < total; i++) {
+    same = same && std::memcmp(&aL[i], &bL[i], 4) == 0 && std::memcmp(&aR[i], &bR[i], 4) == 0;
+    sound = sound || aL[i] != 0.f;
+  }
+  CHECK(same);
+  CHECK(sound);
+}
+
+// Те же действия через кольцо и напрямую в начале 128-блока → зеркало Firmamentum равно до бита
+static void appVsBridge() {
+  const double a1[2] = {0.3, 0.1}, a2[2] = {0.6, 0.5};
+  t2d_app_init(48000, 3, 1e9, 1u << 10);
+  t2d_app_action(10, 0, 0, a1, 2, 0);
+  t2d_app_action(10, 0, 0, a2, 2, 0);
+  float L[512], R[512];
+  t2d_app_render(L, R, 512, 0);
+  double m1[1024]; const int n1 = t2d_app_mirror(10, m1, 1024);
+  t2d_init(48000, 3);
+  t2d_action(10, 0, 0, a1, 2);
+  t2d_action(10, 0, 0, a2, 2);
+  for (int b = 0; b < 4; b++) { t2d_time(b * 128.0 / 48000); t2d_process(128); }
+  const int n2 = t2d_mirror(10);
+  CHECK(n1 > 17);
+  CHECK(n1 == n2);
+  CHECK(n1 == n2 && std::memcmp(m1, t2d_mbuf(), static_cast<size_t>(n1) * sizeof(double)) == 0);
+}
+
+// Heard копится без чтения: те же записи, что отдаёт мост по блокам; при > 64 растёт heard_lost
+static void appHeardAccumulates() {
+  const double a[2] = {0.3, 0.1};
+  t2d_app_init(48000, 5, 1e9, 1u << 10);
+  t2d_app_action(10, 0, 0, a, 2, 0);
+  float L[256], R[256];
+  for (int r = 0; r < 10; r++) t2d_app_render(L, R, 256, 0);
+  t2d_init(48000, 5);
+  t2d_action(10, 0, 0, a, 2);
+  std::vector<double> want; int recs = 0;
+  for (int b = 0; b < 20; b++) {
+    t2d_time(b * 128.0 / 48000); t2d_process(128);
+    const int len = t2d_heard(10); bool any = false;
+    for (int k = 0; k < len; k++) any = any || t2d_mbuf()[k] != 0;
+    if (any) { recs++; want.insert(want.end(), t2d_mbuf(), t2d_mbuf() + len); }
+  }
+  CHECK(recs > 0);
+  std::vector<double> got(4096);
+  const int len = t2d_app_heard(10, got.data(), 4096);
+  CHECK(len == static_cast<int>(want.size()));
+  CHECK(len == static_cast<int>(want.size()) && std::memcmp(got.data(), want.data(), want.size() * sizeof(double)) == 0);
+  CHECK(t2d_app_heard(10, got.data(), 4096) == 0);                        // забрали всё
+  t2d_app_stats_t st; t2d_app_stats(&st);
+  CHECK(st.heard_lost == 0);
+  // много блоков без чтения: записей больше 64 → потеря
+  t2d_app_init(48000, 5, 1e9, 1u << 10);
+  for (int k = 0; k < 6; k++) { const double p[2] = {0.1 + 0.15 * k, 0.1 + 0.12 * k}; t2d_app_action(10, 0, 0, p, 2, 0); }
+  for (int r = 0; r < 1500; r++) t2d_app_render(L, R, 256, 0);
+  t2d_app_stats(&st);
+  CHECK(st.heard_lost > 0);
+}
+
+// 300 действий без render при ёмкости 256 → 44 отброшено
+static void appOverflow() {
+  t2d_app_init(48000, 1, 1e9, 1u << 10);
+  const double a[2] = {0.3, 0.1};
+  int ok = 0;
+  for (int i = 0; i < 300; i++) ok += t2d_app_action(10, 0, 0, a, 2, 0);
+  t2d_app_stats_t st; t2d_app_stats(&st);
+  CHECK(ok == 256);
+  CHECK(st.dropped == 44);
+}
+
+// Задержка = (host − касание)/ticks + смещение куска в выходе; остаток прошлого куска сдвигает блок
+static void appLatency() {
+  t2d_app_init(48000, 1, 1e9, 1u << 10);
+  const double a[2] = {0.3, 0.1};
+  const uint64_t host = 5000000000ull;
+  float L[256], R[256];
+  t2d_app_action(10, 0, 0, a, 2, host - 2000000);                         // 0.002 с
+  t2d_app_render(L, R, 128, host);
+  t2d_app_stats_t st; t2d_app_stats(&st);
+  CHECK(st.lat_n == 1);
+  NEAR(st.lat_avg, 0.002, 1e-8);
+  NEAR(st.lat_max, 0.002, 1e-8);
+  CHECK(st.frames == 128);
+  t2d_app_stats(&st);                                                     // окно снято
+  CHECK(st.lat_n == 0 && st.lat_avg == 0);
+  t2d_app_render(L, R, 100, host);                                        // остаток 28 сэмплов
+  t2d_app_action(10, 0, 0, a, 2, host - 2000000);
+  t2d_app_action(10, 0, 0, a, 2, 0);                                      // без метки — не считается
+  t2d_app_render(L, R, 256, host);
+  t2d_app_stats(&st);
+  CHECK(st.lat_n == 1);
+  NEAR(st.lat_avg, 0.002 + 28.0 / 48000, 1e-8);
+  CHECK(st.load_avg > 0 && st.load_max >= st.load_avg);
+}
+
+// Повторный init с другой частотой — полный сброс: зеркало пусто, кадры, статистика; звук после новой звезды есть
+static void appReinitRate() {
+  appScene(48000);
+  float L[128], R[128];
+  t2d_app_render(L, R, 128, 0);
+  double m[1024];
+  CHECK(t2d_app_mirror(10, m, 1024) > 17);
+  t2d_app_init(44100, 7, 1e9, 1u << 10);
+  CHECK(t2d_app_mirror(10, m, 1024) == 0);
+  t2d_app_stats_t st; t2d_app_stats(&st);
+  CHECK(st.frames == 0 && st.dropped == 0 && st.heard_lost == 0 && st.lat_n == 0);
+  CHECK(t2d_app_heard(10, m, 1024) == 0);
+  const double a[2] = {0.3, 0.1};
+  t2d_app_action(10, 0, 0, a, 2, 0);
+  bool sound = false;
+  for (int r = 0; r < 40; r++) { t2d_app_render(L, R, 128, 0); for (int i = 0; i < 128; i++) sound = sound || L[i] != 0.f; }
+  CHECK(sound);
+  CHECK(t2d_app_mirror(10, m, 1024) > 17);
+  CHECK(m[16] == 1);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
@@ -2601,6 +2785,7 @@ int main(int argc, char** argv) {
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
   tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
+  appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

@@ -8,7 +8,7 @@ STACK=STACK_SIZE
 if [ "$(printf '%s\n' "$(emcc -dumpversion)" 3.1.25 | sort -V | head -1)" != 3.1.25 ]; then STACK=TOTAL_STACK; fi
 clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/render-cli core/render-cli/main.cpp core/worlds/goetia/goetia.cpp core/worlds/firmamentum/sound.cpp core/worlds/oceanus/ocean.cpp core/host/scale.cpp core/worlds/cymatica/model.cpp core/worlds/cymatica/plate.cpp core/worlds/cymatica/world.cpp
 echo "core/build/render-cli"
-clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o core/build/sdk-test core/tests/sdk_test.cpp core/bridge/api.cpp core/sdk/reverb.cpp core/sdk/lfo.cpp core/host/host.cpp core/host/scale.cpp \
+clang++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -pthread -o core/build/sdk-test core/tests/sdk_test.cpp core/app/engine.cpp core/app/t2d_app.cpp core/bridge/api.cpp core/sdk/reverb.cpp core/sdk/lfo.cpp core/host/host.cpp core/host/scale.cpp \
   core/worlds/firmamentum/model.cpp core/worlds/firmamentum/world.cpp core/worlds/firmamentum/sound.cpp \
   core/worlds/monochord/model.cpp core/worlds/monochord/world.cpp core/worlds/monochord/sound.cpp core/worlds/cymatica/model.cpp core/worlds/cymatica/plate.cpp core/worlds/cymatica/world.cpp core/worlds/portus/model.cpp core/worlds/portus/world.cpp core/worlds/natura/model.cpp core/worlds/natura/world.cpp core/worlds/inferno/model.cpp core/worlds/inferno/world.cpp core/worlds/inferno/sound.cpp core/worlds/tenebrae/waves.cpp core/worlds/tenebrae/voice.cpp core/worlds/tenebrae/world.cpp \
   core/worlds/oceanus/model.cpp core/worlds/oceanus/world.cpp core/worlds/oceanus/ocean.cpp core/worlds/goetia/model.cpp core/worlds/goetia/world.cpp core/worlds/goetia/goetia.cpp \
