@@ -2902,14 +2902,35 @@ static void appHostVolScale() {
     out.assign(N, 0.f);
     t2d_app_render(out.data(), R.data(), N, 0);
   };
-  std::vector<float> full, half, sc1, sc2;
+  std::vector<float> full, half;
   run(1, true, false, full); run(0.5, true, false, half);
   double e1 = 0, e2 = 0;
   for (int i = N - 128 * 8; i < N; i++) { e1 += full[i] * full[i]; e2 += half[i] * half[i]; }
   CHECK(e1 > 0);
   NEAR(std::sqrt(e2 / e1), 0.5, 0.005);
-  run(1, true, true, sc1); run(1, false, true, sc2);
-  CHECK(sc1 == sc2);
+  // SCALE: сцена, чувствительная к ладу (Tenebrae, голос x = 0.6 — не на ноте мажора от B♭): после блока включаем лад
+  auto tun = [&](int mode, std::vector<float>& out) {       // 0 — без лада, 1 — кольцо (1, 2, 5), 2 — прямой t2d_scale, 3 — кольцо с idx и root наоборот
+    t2d_app_init(48000, 11, 1e9, 1u << 1);
+    t2d_scale(0, 0, 0);                                     // init лад не сбрасывает
+    const double one = 1, v[11] = {0.6, 0.4, 0.6, 0.2, 0.25, 1.5, 0.1, 0.5, 0.8, 0, 1};
+    t2d_app_action(1, tenebrae::LIVE, 0, &one, 1, 0);
+    t2d_app_action(1, tenebrae::ON, 0, nullptr, 0, 0);
+    t2d_app_action(1, tenebrae::VOICE, 0, v, 11, 0);
+    std::vector<float> R(128 * 40);
+    out.assign(128 * 40, 0.f);
+    t2d_app_render(out.data(), R.data(), 128, 0);
+    if (mode == 2) t2d_scale(1, 2, 5);
+    if (mode == 1 || mode == 3) {
+      const double sc[3] = {1, mode == 1 ? 2.0 : 5.0, mode == 1 ? 5.0 : 2.0};
+      t2d_app_action(T2D_HOST, T2D_H_SCALE, 0, sc, 3, 0);
+    }
+    t2d_app_render(out.data() + 128, R.data(), 128 * 39, 0);
+  };
+  std::vector<float> t0, t1, t2, t3;
+  tun(0, t0); tun(1, t1); tun(2, t2); tun(3, t3);
+  CHECK(t1 == t2);
+  CHECK(t1 != t0);
+  CHECK(t1 != t3);
 }
 
 static void appStrCap() { CHECK(t2d_str_cap() == Engine::STR); }
