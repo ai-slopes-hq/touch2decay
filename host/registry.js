@@ -9,7 +9,7 @@ export const onRegister = [];
 
 // выключенные миры (автор, 22.10): номера за ними, код на месте — не регистрируются: нет на карте (рубашка), в микшере, звуке, легенде.
 // Вернуть мир — убрать его номер отсюда.
-export const HIDDEN = new Set([3, 17, 18]), hiddenW = {};   // 17, 18 — DLC vol. I в бэклоге (22.10: «скучные»)
+export const HIDDEN = new Set([3, 15, 17, 18]), hiddenW = {};   // 15 — Goetia скрыт 30.10; 17, 18 — DLC vol. I в бэклоге (22.10: «скучные»)
 export function registerWorld(n, w) {
   if (HIDDEN.has(n)) { hiddenW[n] = w; return; }
   if (n > 2) ENTER.add(n);                     // III и IV — модули-эскизы: пока без звука, но в них можно влететь

@@ -1724,6 +1724,7 @@ async def sc_vitrea(p):                            # Harmonica vitrea: трёш�
 
 
 async def sc_goetia(p):                            # Goetia: печать от знака к знаку — дух звучит и встаёт в треугольник; треугольник вверх — выше, влево — удары (release); плашка; тап — изгнать; четвёртый гонит старого; кубик; корзина; отмена; сосуд — карта
+    if await p.js('()=>t2d.hidden.includes(15)'): print('  switched off — skipped'); return
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(15)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
     assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 15], 'the card opens Goetia'
