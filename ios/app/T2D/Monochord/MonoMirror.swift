@@ -17,17 +17,21 @@ struct MonoMirror {
   var str: [MonoString] = [1, 2.0 / 3, 0.5, 1.0 / 3].map { MonoString(r: $0) }
 
   init() {}
-  // короче 52 — nil (мир ещё не отдал снимок)
-  init?(_ b: [Double], n len: Int) {
-    guard len >= MonoMirror.size, b.count >= len else { return nil }
-    fx = Array(b[0..<MonoMirror.nfx])
+  // разбор на месте, без выделений: короче 52 — false, мирор не тронут (мир ещё не отдал снимок)
+  @discardableResult mutating func load(_ b: [Double], n len: Int) -> Bool {
+    guard len >= MonoMirror.size, b.count >= len else { return false }
+    for k in 0..<MonoMirror.nfx { fx[k] = b[k] }
     var o = MonoMirror.nfx
     wind = b[o]; lastWind = b[o + 1]; o += 2
-    auto = Array(b[o..<(o + MonoMirror.nauto)]); o += MonoMirror.nauto
+    for k in 0..<MonoMirror.nauto { auto[k] = b[o + k] }
+    o += MonoMirror.nauto
     step = b[o]; o += 1
     for i in 0..<MonoMirror.n {
       let s = o + i * MonoMirror.strN
-      str[i] = MonoString(r: b[s], sus: b[s + 1] != 0, bright: b[s + 2], decay: b[s + 3], level: b[s + 4], bow: b[s + 5], en: b[s + 6], eh: b[s + 7], hn: b[s + 8])
+      str[i].r = b[s]; str[i].sus = b[s + 1] != 0; str[i].bright = b[s + 2]; str[i].decay = b[s + 3]; str[i].level = b[s + 4]
+      str[i].bow = b[s + 5]; str[i].en = b[s + 6]; str[i].eh = b[s + 7]; str[i].hn = b[s + 8]
     }
+    return true
   }
+  init?(_ b: [Double], n len: Int) { if !load(b, n: len) { return nil } }
 }

@@ -80,7 +80,7 @@ final class MonochordView: World {
   func tick(now: Double, dt: Double) {
     self.now = now
     let len = min(max(0, readMirror(&mbuf)), mbuf.count)
-    if let m = MonoMirror(mbuf, n: len) { mirror = m }
+    mirror.load(mbuf, n: len)
     let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
     if hn > 0 && hbuf[0] > 0 { hitAt = now }
     for (k, var t) in holds where !t.sheet {
@@ -88,7 +88,7 @@ final class MonochordView: World {
       case .earth where now - t.t0 > Touch.holdMs / 1000: t.sheet = true; holds[k] = t; openSheet?(earthSpec())
       case .wind where !t.moved && now - t.t0 > Touch.holdMs / 1000: t.sheet = true; holds[k] = t; openSheet?(windSpec())
       case .string where !t.moved && now - t.t0 > Touch.holdMs / 1000: t.sheet = true; holds[k] = t; openSheet?(stringSpec(t.i))
-      case .string where !t.strum && mirror.str[t.i].bow > 0 && now - t.mv > 0.12:   // смычок гаснет, когда палец стоит
+      case .string where !t.moved && mirror.str[t.i].bow > 0 && now - t.mv > 0.12:   // как в вебе (view.js:129-133): гаснет только у не двигавшегося пальца; двигавшийся и остановившийся — тянет
         let b = mirror.str[t.i].bow * 0.8
         core.action(Act.bow, t.i, [b < 0.01 ? 0 : b], touchTime: 0)
       default: break
@@ -99,10 +99,13 @@ final class MonochordView: World {
     if mirror.auto[0] != 0 { rot += dt * (mirror.auto[1] / 60) * 0.6 }   // Земля вращается при автопереборе
   }
 
-  var held: [Int: Hold] {                                  // струны под пальцем: для подсветки и подписи кобылки
-    var out: [Int: Hold] = [:]
-    for t in holds.values where t.kind == .bridge || t.kind == .string { out[t.i] = t }
-    return out
+  func held(_ i: Int) -> Hold? {                            // струна под пальцем (кобылка или щипок): подсветка; без выделений
+    for t in holds.values where (t.kind == .bridge || t.kind == .string) && t.i == i { return t }
+    return nil
+  }
+  func bridgeHeld(_ i: Int) -> Bool {                       // тянут кобылку — подпись «нота · Гц»
+    for t in holds.values where t.kind == .bridge && t.i == i { return true }
+    return false
   }
   var windHeld: Bool { holds.values.contains { $0.kind == .wind } }
 

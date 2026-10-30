@@ -145,10 +145,9 @@ final class MonochordTests: XCTestCase {
     view.tick(now: 5.4, dt: 0.016)
     view.move(finger(f1, CGPoint(x: p.x + 12, y: p.y), t0: 5, now: 5.4, p0: p))
     XCTAssertEqual(rec.acts.count, n + 1); XCTAssertEqual(rec.acts.last?.kind, 2)
-    setMirror(bow: [0, 0.5, 0, 0], now: 5.45)                                 // палец стоит < 120 мс — смычок держится
-    XCTAssertEqual(rec.acts.count, n + 1)
-    view.tick(now: 5.6, dt: 0.016)                                            // > 120 мс — затухание ×0.8
-    XCTAssertEqual(rec.acts.last?.kind, 2); XCTAssertEqual(rec.acts.last?.a[0] ?? 0, 0.4, accuracy: 1e-9)
+    setMirror(bow: [0, 0.5, 0, 0], now: 5.45)
+    view.tick(now: 5.9, dt: 0.016)
+    XCTAssertEqual(rec.acts.count, n + 1, "двигавшийся палец смычок не гасит: как в вебе (view.js:129-133)")
     view.up(finger(f1, p, t0: 5, now: 5.7))
     XCTAssertEqual(rec.acts.last?.a, [0], "подъём снимает смычок")
   }
@@ -316,5 +315,28 @@ final class MonochordTests: XCTestCase {
     view.clear()
     XCTAssertEqual(log, ["off7@0"], "LFO ветра снят раньше CLEAR")
     XCTAssertEqual(rec.acts.count, 1); XCTAssertEqual(rec.acts[0].kind, 10)
+  }
+}
+
+extension MonochordTests {
+  func testFadeOnlyForUnmovedFinger() {
+    setMirror(bow: [0, 0.5, 0, 0], now: 5)
+    view.down(Finger(id: ObjectIdentifier(f1), x: G.xs[1], y: G.y0 + 0.2 * (G.yOfR(2.0 / 3) - G.y0), x0: 0, y0: 0, t0: 5, moved: false, touchTime: 5))
+    rec.acts.removeAll()
+    view.tick(now: 5.1, dt: 0.016); XCTAssertTrue(rec.acts.isEmpty)
+    view.tick(now: 5.2, dt: 0.016)
+    XCTAssertEqual(rec.acts.last?.kind, 2); XCTAssertEqual(rec.acts.last?.a[0] ?? 0, 0.4, accuracy: 1e-9)
+  }
+
+  func testNonLfoRowCodesAreFree() {
+    let specs = [view.earthSpec(), view.windSpec(), view.stringSpec(0), view.fx!]
+    for s in specs { for r in s.rows where s.lfo?.keys.contains(r.key) != true { XCTAssertFalse((0...25).contains(r.code), "\(s.title) \(r.key)") } }
+    XCTAssertEqual(view.earthSpec().rows.filter { !(0...25).contains($0.code) }.map(\.key), ["tempo", "rate", "pattern"])
+  }
+
+  func testHeldQueries() {
+    setMirror(now: 5)
+    view.down(finger(f1, CGPoint(x: G.xs[0], y: yb(0)), t0: 5, now: 5))
+    XCTAssertNotNil(view.held(0)); XCTAssertNil(view.held(1)); XCTAssertTrue(view.bridgeHeld(0)); XCTAssertFalse(view.bridgeHeld(1))
   }
 }

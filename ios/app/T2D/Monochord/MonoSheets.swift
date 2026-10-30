@@ -56,7 +56,7 @@ extension MonochordView {
     func step(_ v: Double) -> Double { Double(min(3, Int((v * 4).rounded(.down)))) }
     return SheetSpec(
       title: "terra", hint: "the earth strums — tap outside to close",
-      rows: [SheetRow(key: "tempo", label: "tempo", code: 0), SheetRow(key: "rate", label: "rate", code: 0), SheetRow(key: "pattern", label: "pattern", code: 0),
+      rows: [SheetRow(key: "tempo", label: "tempo", code: -1), SheetRow(key: "rate", label: "rate", code: -1), SheetRow(key: "pattern", label: "pattern", code: -1),
              SheetRow(key: "strength", label: "strength", code: 8), SheetRow(key: "swing", label: "swing", code: 9)],
       get: { k in
         switch k {
