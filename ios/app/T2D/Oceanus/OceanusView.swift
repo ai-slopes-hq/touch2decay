@@ -4,7 +4,7 @@ import T2DCore
 // рябь на воде: точка касания, сила (1 — тап, 0.5 — конец протяжки), время рождения (view.js:164)
 struct Ripple { var x, y: CGFloat; var k: Double; var t0: Double }
 // что нужно рисованию помимо зеркала: рябь, палец на поле (подписи), удерживаемый город
-struct OceanUI { var ripples: [Ripple]; var touching: Bool; var heldCity: Int? }
+struct OceanUI { var ripples: [Ripple]; var touching: Bool; var heldCity: Int?; var heldCities: [Int] = [] }   // heldCities — по времени касания, ранний первым
 
 // Oceanus — касания и состояние: карта T-O и Мировой океан (порт worlds/oceanus/view.js; модель и звук — в ядре)
 final class OceanusView: World {
@@ -34,6 +34,7 @@ final class OceanusView: World {
   let core: Core
   typealias Reader = (inout [Double]) -> Int
   private let readMirror: Reader
+  static let appMirror: Reader = { b in Int(t2d_app_mirror(Int32(OceanusView.slotN), &b, Int32(b.count))) }   // зеркало ядра приложения
   private var mbuf = [Double](repeating: 0, count: 256), mprev = [Double](repeating: 0, count: 256)   // буферы кадра — выделены раз
   private var mlen = 0, mprevLen = -1                      // -1: разбирать всегда (первый кадр)
   private var prevIds: Set<Int> = []                       // id всех городов прошлого разбора
@@ -43,6 +44,7 @@ final class OceanusView: World {
   private var issued = 0                                   // наибольший выданный Swift id
   private var fingerSeq = 0                                // номер пальца в воде для PUSH / RELEASE
   private var now = 0.0
+  let dr: OceanDrawState                                   // кеш стены, пена, буфер кольца (OceanusDraw.swift)
   private(set) var ripples: [Ripple] = []
 
   private enum Kind { case moon, city, water, none }
@@ -50,13 +52,14 @@ final class OceanusView: World {
   private var holds: [ObjectIdentifier: Hold] = [:]
   private var lastTap: (id: Int?, x: CGFloat, y: CGFloat, t: Double)?
 
-  init(core: Core, geo: OceanGeo, readMirror: @escaping Reader) {
+  init(core: Core, geo: OceanGeo, foamSeed: UInt64 = 8, readMirror: @escaping Reader) {
+    dr = OceanDrawState(seed: foamSeed)
     self.core = core; self.geo = geo; self.readMirror = readMirror
   }
 
   var ui: OceanUI {
-    let cs = holds.values.filter { $0.kind == .city }
-    return OceanUI(ripples: ripples, touching: holds.values.contains { $0.kind == .water || $0.kind == .city }, heldCity: cs.first?.id)
+    let cs = holds.values.filter { $0.kind == .city }.sorted { $0.t0 < $1.t0 }.map(\.id)
+    return OceanUI(ripples: ripples, touching: holds.values.contains { $0.kind == .water || $0.kind == .city }, heldCity: cs.first, heldCities: cs)
   }
   var objs: Int { mirror.cities.count }
 
@@ -229,6 +232,8 @@ final class OceanusView: World {
     if t.kind == .city && t.temp && city(t.id) != nil { core.action(1, t.id, [], touchTime: f.touchTime); remove(t.id) }   // временный — отпущен
   }
 
-  // кадр — задача 5 (view.js:111-257)
-  func draw(_ d: Draw, now: Double) {}
+  func scale(pcs: [Int]?, root: Int) { dr.pcs = pcs; dr.root = root }   // лад — часть ключа стены: длинные риски на ступенях
+  // кадр — OceanusDraw.swift (view.js:111-257); снимок для карты — без солнца
+  func draw(_ d: Draw, now: Double) { frame(d, now, sun: true) }
+  func drawShot(_ d: Draw, now: Double) { frame(d, now, sun: false) }
 }

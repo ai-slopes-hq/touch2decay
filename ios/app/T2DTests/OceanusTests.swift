@@ -270,4 +270,91 @@ final class OceanusTests: XCTestCase {
     XCTAssertFalse(view.cornerHit(200, 400))
     XCTAssertFalse(view.cornerHit(10, geo.sun.y - 1))
   }
+
+  // ---------- рисование (задача 5) ----------
+  // кадр в битмап 1×: RGBA, строки сверху вниз (контекст — началом сверху, как у хоста)
+  private func render(_ v: OceanusView, now: Double, sun: Bool = false) -> [UInt8] {
+    let W = Int(v.geo.W), H = Int(v.geo.H)
+    let g = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: W * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    g.translateBy(x: 0, y: CGFloat(H)); g.scaleBy(x: 1, y: -1)
+    let d = Draw(g: g, W: CGFloat(W), H: CGFloat(H)); d.setTheme(v.theme)
+    sun ? v.draw(d, now: now) : v.drawShot(d, now: now)
+    let p = g.data!.bindMemory(to: UInt8.self, capacity: W * H * 4)
+    return Array(UnsafeBufferPointer(start: p, count: W * H * 4))
+  }
+  // пиксели стены (масштаб Draw.scale), строки сверху вниз
+  private func wallPixels(_ v: OceanusView) -> (px: [UInt8], w: Int, sc: CGFloat) {
+    let img = v.wallImage()!, w = img.width, h = img.height
+    let g = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    g.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+    let p = g.data!.bindMemory(to: UInt8.self, capacity: w * h * 4)
+    return (Array(UnsafeBufferPointer(start: p, count: w * h * 4)), w, Draw.scale)
+  }
+  // самый яркий красный канал в окрестности 3×3 точки (в пунктах)
+  private func lit(_ w: (px: [UInt8], w: Int, sc: CGFloat), _ p: CGPoint) -> Int {
+    let x = Int((p.x * w.sc).rounded()), y = Int((p.y * w.sc).rounded())
+    var m = 0
+    for dy in -1...1 { for dx in -1...1 { m = max(m, Int(w.px[((y + dy) * w.w + x + dx) * 4])) } }
+    return m
+  }
+
+  func testWallCachedByKey() {
+    setMirror()
+    _ = render(view, now: 1); _ = render(view, now: 1.1)
+    XCTAssertEqual(view.wallBuilds, 1, "два кадра — одна стена")
+    view.scale(pcs: [0, 2, 4, 5, 7, 9, 11], root: 0); _ = render(view, now: 1.2)
+    XCTAssertEqual(view.wallBuilds, 2, "лад сменился")
+    view.scale(pcs: [0, 2, 4, 5, 7, 9, 11], root: 0); _ = render(view, now: 1.3)
+    XCTAssertEqual(view.wallBuilds, 2, "тот же лад — кеш")
+    view.scale(pcs: [0, 2, 4, 5, 7, 9, 11], root: 3); _ = render(view, now: 1.4)
+    XCTAssertEqual(view.wallBuilds, 3, "тоника сменилась")
+    view.layout(W: 390, H: 800, topY: 59, safeBot: 34); _ = view.wallImage()
+    XCTAssertEqual(view.wallBuilds, 4, "размер сменился")
+  }
+
+  func testWallScaleTicks() {
+    func longTicks(_ v: OceanusView) -> [Int] {
+      let w = wallPixels(v), G = v.geo
+      // оси T (k = 3, 6, 9) и так залиты линией T — их не берём; радиус Rd − 6: короткая риска (до Rd − 3) его не достаёт
+      return [0, 1, 2, 4, 5, 7, 8, 10, 11].filter { lit(w, G.at(Double($0) / 12 * 2 * .pi, G.Rd - 6)) > 60 }
+    }
+    view.scale(pcs: nil, root: 0)
+    XCTAssertEqual(longTicks(view), [0, 1, 2, 4, 5, 7, 8, 10, 11], "лад выключен — как в вебе (!pcs): все ноты считаются ступенями")
+    view.scale(pcs: [0, 2, 4, 5, 7, 9, 11], root: 0)
+    XCTAssertEqual(longTicks(view), [0, 2, 4, 5, 7, 11], "длинные — на ступенях лада")
+    view.scale(pcs: [0, 2, 4, 5, 7, 9, 11], root: 1)         // тоника 1: ступень k ↔ нота (k + 1) % 12
+    XCTAssertEqual(longTicks(view), [1, 4, 8, 10, 11], "тоника сдвигает риски")
+  }
+
+  func testFoamDeterministic() {
+    func frames(_ seed: UInt64) -> [[UInt8]] {
+      var buf: [Double] = []
+      let v = OceanusView(core: Rec(), geo: geo, foamSeed: seed, readMirror: { b in let n = min(buf.count, b.count); b.replaceSubrange(0..<n, with: buf[0..<n]); return n })
+      let shape: [Double] = (0..<64).map { 0.3 * sin(Double($0) / 5) }
+      buf = [0.45, 0.4, 0.3, 0.55, 0.4, 0.45, 0, 0, 0, 0.2]
+      buf += shape; buf += [0]
+      return [1.0, 1.4, 2.2].map { v.tick(now: $0, dt: 0.4); return render(v, now: $0) }
+    }
+    XCTAssertEqual(frames(8), frames(8), "один сид — один кадр")
+    XCTAssertNotEqual(frames(8)[2], frames(9)[2], "другой сид — другая пена")
+  }
+
+  func testLabelsOnlyWhileTouching() {
+    let c: C = (id: 1, slot: 0, ang: 1.0, rn: 0.7, pinned: true)
+    setMirror(cities: [c])
+    let a = render(view, now: 2)
+    view.down(finger(f1, geo.at(1.0, 0.7 * geo.Rd), t0: 2, now: 2))        // палец на оставленном городе
+    let b = render(view, now: 2)
+    let p = geo.at(1.0, 0.7 * geo.Rd), W = Int(geo.W)
+    var inZone = 0, outside = 0
+    for y in 0..<Int(geo.H) { for x in 0..<W where a[(y * W + x) * 4] != b[(y * W + x) * 4] {
+      if abs(CGFloat(x) - p.x) < 60 && CGFloat(y) > p.y - 34 && CGFloat(y) < p.y - 6 { inZone += 1 } else { outside += 1 }
+    } }
+    XCTAssertGreaterThan(inZone, 80, "под пальцем — подпись ноты и климата")
+    XCTAssertEqual(outside, 0, "больше ничего не меняется")
+    view.up(finger(f1, geo.at(1.0, 0.7 * geo.Rd), t0: 2, now: 2.5))
+    XCTAssertEqual(render(view, now: 2), a, "палец поднят — подписей нет")
+  }
 }

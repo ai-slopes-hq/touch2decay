@@ -19,12 +19,16 @@ struct T2DApp: App {
   }()
   @State private var audio: Audio
   @State private var world: FirmamentumView          // нужен только -shot (плашка звезды); Host держит миры сам
+  @State private var ocean: OceanusView              // нужен только -shot oceanus*; Host держит миры сам
   @State private var host: Host
 
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
   private static func makeView(_ slot: Int) -> World? {
     switch slot {
     case FirmamentumView.slotN: return FirmamentumView(core: AppCore(slot: slot), geo: Geo(W: 390, H: 844, topY: 59, safeBot: 34))
+    case OceanusView.slotN:
+      return OceanusView(core: AppCore(slot: slot), geo: OceanGeo(W: 390, H: 844, topY: 59, safeBot: 34),
+                         readMirror: OceanusView.appMirror)
     default: return nil
     }
   }
@@ -38,7 +42,7 @@ struct T2DApp: App {
     a.onInit = { h.reapply() }
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -63,6 +67,7 @@ struct T2DApp: App {
     case "peek": shotPeek(); return
     case "concordia", "mixer": shotConcordia(mixer: T2DApp.shotName == "mixer"); return
     case "audio": shotAudio(); return
+    case "oceanus", "oceanus-sheet", "oceanus-luna", "oceanus-fan": shotOcean(T2DApp.shotName); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -153,6 +158,28 @@ struct T2DApp: App {
       for i in 1...6 { f.x = x0 - 10 * CGFloat(i); f.moved = true; host.move(f) }
       host.up(f)
       touch(g.mx, y, at: 2.2)
+    }
+  }
+
+  // Oceanus: два оставленных города; oceanus — ещё и временный под пальцем (веб oceanus-held), -sheet — плашка города,
+  // -luna — плашка Луны (качание 0.8 на pitch), -fan — веер FX с панелью LFO на tide (полоса classic); сиды фиксированы (init: 7, пена: 8)
+  private func shotOcean(_ name: String) {
+    host.go(OceanusView.slotN)
+    let core = AppCore(slot: OceanusView.slotN), q = DispatchQueue.main
+    core.action(0, 0, [1.2, 0.5, 1, 0, 1], touchTime: 0); core.action(0, 0, [4.0, 0.6, 1, 1, 2], touchTime: 0)
+    switch name {
+    case "oceanus":
+      q.asyncAfter(deadline: .now() + 1.5) {
+        let p = ocean.geo.at(0.3, 0.8 * ocean.geo.Rd)
+        host.down(Finger(id: ObjectIdentifier(host), x: p.x, y: p.y, x0: p.x, y0: p.y, t0: 1.5, moved: false, touchTime: 1.5))
+      }
+    case "oceanus-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(ocean.citySpec(1)) }
+    case "oceanus-luna":
+      core.action(5, 2, [0.8], touchTime: 0); core.action(5, 3, [1], touchTime: 0); core.action(4, 3, [0.55], touchTime: 0)
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(ocean.lunaSpec()) }
+    default:
+      core.action(4, 3, [0.55], touchTime: 0)
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(ocean.fxSpec, lfoKey: "tide"); host.shotLfo(rate: 1, depth: 0.5) }
     }
   }
 
