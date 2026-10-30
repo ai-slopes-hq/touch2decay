@@ -44,6 +44,7 @@ final class MonochordView: World {
   private(set) var rot = 0.0, roseA = 0.0                    // поворот Земли и розы ветров — свои часы для картинки
   private(set) var root = 0                                  // тоника лада (0, когда лада нет) — для подписи ноты
   private var now = 0.0
+  let dr = MonoDrawState()                                 // кеш стены и буфер волны (MonoDraw.swift)
 
   enum Kind { case wind, earth, bridge, string, strum, none }
   struct Hold {
@@ -209,7 +210,4 @@ final class MonochordView: World {
     guard let t = holds.removeValue(forKey: f.id) else { return }
     if t.kind == .string && (t.bowing || mirror.str[t.i].bow > 0) { core.action(Act.bow, t.i, [0], touchTime: f.touchTime) }
   }
-
-  // кадр — MonoDraw.swift (задача 4); пока без рисования
-  func draw(_ d: Draw, now: Double) {}
 }

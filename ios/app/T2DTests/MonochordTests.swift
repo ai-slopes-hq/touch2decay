@@ -339,4 +339,36 @@ extension MonochordTests {
     view.down(finger(f1, CGPoint(x: G.xs[0], y: yb(0)), t0: 5, now: 5))
     XCTAssertNotNil(view.held(0)); XCTAssertNil(view.held(1)); XCTAssertTrue(view.bridgeHeld(0)); XCTAssertFalse(view.bridgeHeld(1))
   }
+
+  // ---------- рисование ----------
+  private func render(_ v: MonochordView, now: Double) {
+    let W = Int(v.geo.W), H = Int(v.geo.H)
+    let g = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: W * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    g.translateBy(x: 0, y: CGFloat(H)); g.scaleBy(x: 1, y: -1)
+    let d = Draw(g: g, W: CGFloat(W), H: CGFloat(H)); d.setTheme(v.theme)
+    v.draw(d, now: now)
+  }
+
+  func testWallCached() {
+    setMirror()
+    render(view, now: 1); render(view, now: 1.1)
+    XCTAssertEqual(view.wallBuilds, 1, "два кадра — одна стена")
+    view.layout(W: 390, H: 800, topY: 59, safeBot: 34); render(view, now: 1.2)
+    XCTAssertEqual(view.wallBuilds, 2, "высота сменилась")
+  }
+
+  func testDrawNoCrashEmpty() {
+    mirrorBuf = []; view.tick(now: 1, dt: 0.016)       // мир ещё не отдал снимок — зеркало по умолчанию
+    render(view, now: 1)
+    XCTAssertEqual(view.wallBuilds, 1)
+  }
+
+  func testWaveBufferReused() {
+    setMirror()
+    render(view, now: 1); let a = view.waveBase
+    render(view, now: 1.1); render(view, now: 1.2)
+    XCTAssertNotNil(a); XCTAssertEqual(view.waveBase, a, "буфер волны — один между кадрами")
+    XCTAssertEqual(view.waveCount, 41)
+  }
 }

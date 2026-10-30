@@ -6,7 +6,8 @@ import SwiftUI
 //   nav — go(10), кубик, через 2 с тап по стрелке назад (выход), переход заморожен на k = 0.5;
 //   peek — тап по карточке Cymatica (лицо без вида), peek заморожен на середине («nondum»);
 //   concordia — тап по солнцу на карте; mixer — карта → солнце → строка mixer, фейдер Arcadia сдвинут влево и мир заглушён (как nav-mixer-set веба);
-//   audio — go(10), через 1 с тап по кнопке громкости: панель audio.
+//   audio — go(10), через 1 с тап по кнопке громкости: панель audio;
+//   monochord | monochord-sheet | monochord-earth-sheet | monochord-wind | monochord-fan — go(7), см. shotMono.
 @main
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
@@ -20,6 +21,7 @@ struct T2DApp: App {
   @State private var audio: Audio
   @State private var world: FirmamentumView          // нужен только -shot (плашка звезды); Host держит миры сам
   @State private var ocean: OceanusView              // нужен только -shot oceanus*; Host держит миры сам
+  @State private var mono: MonochordView             // нужен только -shot monochord*; Host держит миры сам
   @State private var host: Host
 
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
@@ -29,6 +31,7 @@ struct T2DApp: App {
     case OceanusView.slotN:
       return OceanusView(core: AppCore(slot: slot), geo: OceanGeo(W: 390, H: 844, topY: 59, safeBot: 34),
                          readMirror: OceanusView.appMirror)
+    case MonochordView.slotN: return MonochordView(core: AppCore(slot: slot))
     default: return nil
     }
   }
@@ -42,7 +45,7 @@ struct T2DApp: App {
     a.onInit = { h.reapply() }
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -68,6 +71,7 @@ struct T2DApp: App {
     case "concordia", "mixer": shotConcordia(mixer: T2DApp.shotName == "mixer"); return
     case "audio": shotAudio(); return
     case "oceanus", "oceanus-sheet", "oceanus-luna", "oceanus-fan": shotOcean(T2DApp.shotName); return
+    case "monochord", "monochord-sheet", "monochord-earth-sheet", "monochord-wind", "monochord-fan": shotMono(T2DApp.shotName); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -180,6 +184,25 @@ struct T2DApp: App {
     default:
       core.action(4, 3, [0.55], touchTime: 0)
       q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(ocean.fxSpec, lfoKey: "tide"); host.shotLfo(rate: 1, depth: 0.5) }
+    }
+  }
+
+  // Monochordum: monochord — кобылка I на 1/2, III поёт сама (sus), щипок II; -sheet — плашка струны II, -earth-sheet — плашка Земли,
+  // -wind — плашка ветра (0.6) с LFO на wind (полоса random), -fan — веер FX с LFO на decay (полоса classic); сид init 7
+  private func shotMono(_ name: String) {
+    host.go(MonochordView.slotN)
+    let core = AppCore(slot: MonochordView.slotN), q = DispatchQueue.main
+    switch name {
+    case "monochord":
+      core.action(4, 0, [0.5], touchTime: 0); core.action(3, 2, [1], touchTime: 0)
+      q.asyncAfter(deadline: .now() + 1) { core.action(0, 1, [0.3, 0.9], touchTime: 0) }
+    case "monochord-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono.stringSpec(1)) }
+    case "monochord-earth-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono.earthSpec()) }
+    case "monochord-wind":
+      core.action(6, 0, [0.6], touchTime: 0)
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono.windSpec(), lfoKey: "wind"); host.shotLfo(rate: 1, depth: 0.5) }
+    default:
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono.fxSpec, lfoKey: "decay"); host.shotLfo(rate: 1, depth: 0.5) }
     }
   }
 
