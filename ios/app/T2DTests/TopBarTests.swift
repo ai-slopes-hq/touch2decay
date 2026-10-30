@@ -90,10 +90,25 @@ final class TopBarTests: XCTestCase {
                       space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     let d = Draw(g: c, W: 390, H: 300)
     var s = TopBar.State(title: "Firmamentum", vol: 0.5, volHeld: true, scl: Scl(on: true, idx: 1, root: 3),
-                        sclOpen: true, canUndo: true, hasFx: false, diceAt: -1e9)
+                        sclOpen: true, canUndo: true, fxArc: nil, fxHeld: false, diceAt: -1e9)
     XCTAssertGreaterThan(bar.draw(d, s, now: 1000), 0)
     s.volHeld = false; s.sclOpen = false
     bar.draw(d, s, now: 1000)
   }
-}
 
+  func testFxArcPixel() {
+    func px(_ arc: Double?) -> Int {
+      let c = CGContext(data: nil, width: 390, height: 300, bitsPerComponent: 8, bytesPerRow: 0,
+                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+      c.translateBy(x: 0, y: 300); c.scaleBy(x: 1, y: -1)
+      let d = Draw(g: c, W: 390, H: 300)
+      let s = TopBar.State(title: "x", vol: 0.5, volHeld: false, scl: Scl(on: false, idx: 0, root: 0), sclOpen: false,
+                           canUndo: false, fxArc: arc, fxHeld: false, diceAt: -1e9)
+      bar.draw(d, s, now: 0)
+      let r = bar.pos(.rev), p = c.data!.assumingMemoryBound(to: UInt8.self)
+      return Int(p[Int(r.y) * c.bytesPerRow + Int(r.x + TopBar.btnR + 5) * 4])   // 90° дуги; фон — чёрный, дуга — светлая
+    }
+    XCTAssertGreaterThan(px(0.5), 200)
+    XCTAssertLessThan(px(nil), 20)
+  }
+}

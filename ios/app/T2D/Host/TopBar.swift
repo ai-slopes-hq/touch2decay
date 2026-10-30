@@ -24,7 +24,8 @@ struct TopBar {
     var scl: Scl
     var sclOpen: Bool               // открыт список ладов (тап по кнопке, тап по строке)
     var canUndo: Bool
-    var hasFx: Bool
+    var fxArc: Double?              // дуга на кнопке FX; nil — у мира нет веера
+    var fxHeld: Bool
     var diceAt: Double              // мс, момент броска; кость крутится 400 мс
   }
 
@@ -166,10 +167,14 @@ struct TopBar {
       let p = pos(k), rr = p.r + 1
       g.setFillColor(d.paper(0.88)); g.fillEllipse(in: CGRect(x: p.x - rr, y: p.y - rr, width: 2 * rr, height: 2 * rr))
     }
-    // FX: три кольца; плашки в 2b-1 нет — кнопка тусклая всегда (в вебе так, когда у мира нет веера)
-    let r = pos(.rev), dimFx: CGFloat = 0.35
-    d.ring(r.x, r.y, TopBar.btnR, 0.45 * dimFx, 1.2)
-    for (rr, a) in [(CGFloat(6), CGFloat(0.9)), (11, 0.55), (16, 0.3)] { d.ring(r.x, r.y, rr, a * 0.8 * dimFx, 1) }
+    // FX: три кольца; у мира нет веера — кнопка тусклая; с веером — дуга по кольцу (ui-top.js:116-123)
+    let r = pos(.rev), dimFx: CGFloat = s.fxArc != nil ? 1 : 0.35
+    d.ring(r.x, r.y, TopBar.btnR, (s.fxHeld ? 1 : 0.45) * dimFx, 1.2)
+    for (rr, a) in [(CGFloat(6), CGFloat(0.9)), (11, 0.55), (16, 0.3)] { d.ring(r.x, r.y, rr, a * (s.fxHeld ? 1 : 0.8) * dimFx, 1) }
+    if let arc = s.fxArc {
+      g.setStrokeColor(d.ink(0.9)); g.setLineWidth(2)
+      g.beginPath(); g.addArc(center: CGPoint(x: r.x, y: r.y), radius: TopBar.btnR + 5, startAngle: -.pi / 2, endAngle: -.pi / 2 + CGFloat(arc) * .pi * 2, clockwise: false); g.strokePath()
+    }
 
     // кубик: кружок с костью; после броска кость крутится
     let dq = pos(.dice), since = now - s.diceAt

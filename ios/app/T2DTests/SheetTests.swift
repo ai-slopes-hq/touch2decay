@@ -62,4 +62,42 @@ final class SheetTests: XCTestCase {
     XCTAssertEqual(Pad.depth(p, p.pad.y + 12), 1, accuracy: 1e-9)
     XCTAssertEqual(Pad.depth(p, p.pad.y + p.pad.h - 12), 0, accuracy: 1e-9)
   }
+
+  // ---------- рисование ----------
+  override class func setUp() {   // шрифты бандла тестов (как в DrawTests)
+    let urls = Bundle(for: SheetTests.self).urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
+    for u in urls { CTFontManagerRegisterFontsForURL(u as CFURL, .process, nil) }
+  }
+  private func bitmap() -> (CGContext, Draw) {
+    let c = CGContext(data: nil, width: 390, height: 844, bitsPerComponent: 8, bytesPerRow: 0,
+                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    c.translateBy(x: 0, y: 844); c.scaleBy(x: 1, y: -1)   // начало слева сверху: строка bitmap i — это y = i
+    return (c, Draw(g: c, W: 390, H: 844))
+  }
+  private func render(_ s: Sheet, _ lfos: [LfoSnap], held: SheetHit? = nil) -> CGContext {
+    let (c, d) = bitmap()
+    SheetDraw.draw(d, s, geo(s), lfos: lfos, held: held, sample: { _, m, u, _ in sin(u * 6.28 + m) })
+    return c
+  }
+  private func lum(_ c: CGContext, _ x: Int, _ y: Int) -> Int {
+    let p = c.data!.assumingMemoryBound(to: UInt8.self), i = y * c.bytesPerRow + x * 4
+    return Int(p[i]) + Int(p[i + 1]) + Int(p[i + 2])
+  }
+  private func snap(_ key: Int) -> LfoSnap {
+    LfoSnap(slot: 10, obj: -1, key: key, base: 0.5, morph: 0.4, rate: 1.5, depth: 0.5, u: 0.3, shape: 1, seed: 5)
+  }
+
+  func testDrawStates() {
+    _ = render(sheet(lfo: false), [])
+    _ = render(sheet(), [snap(8)])                       // LFO на строке без панели
+    _ = render(sheet(open: "cometa"), [])                // панель без LFO: drag the pad
+    _ = render(sheet(open: "cometa"), [snap(8)], held: .pad)   // панель с LFO
+  }
+
+  func testLfoTildeFilled() {   // заливка ink 0.14 под «~» у строки с LFO
+    let s = sheet(), g = geo(s), r = g.rows[2]   // cometa, код 8
+    let x = Int(g.lfoX) - 13, y = Int(r.y + r.h / 2) - 8
+    let without = lum(render(s, []), x, y), with = lum(render(s, [snap(8)]), x, y)
+    XCTAssertNotEqual(with, without)
+  }
 }

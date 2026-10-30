@@ -185,7 +185,7 @@ final class Host {
   func draw(_ d: Draw, now: Double) {
     world.draw(d, now: now)
     let st = TopBar.State(title: world.title, vol: vol, volHeld: volF != nil, scl: scl, sclOpen: sclOpen,
-                          canUndo: undo.depth(slot: world.slot) > 0, hasFx: world.hasFx, diceAt: diceAt)
+                          canUndo: undo.depth(slot: world.slot) > 0, fxArc: world.fx?.arc?(), fxHeld: false, diceAt: diceAt)
     titleW = bar.draw(d, st, now: now * 1000)
     if legendOpen { Legend.draw(d, title: "L E G E N D A", rows: world.legend, W: W, H: H, top: top, safeBot: safeBot) }
   }
