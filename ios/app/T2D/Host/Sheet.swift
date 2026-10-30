@@ -15,6 +15,7 @@ struct SheetSpec {
   var lfo: SheetLfo?
   var reset: ((String) -> Void)?               // двойной тап по строке
   var arc: (() -> Double)?                     // дуга на кнопке FX
+  var obj: Int? = nil                          // объект-владелец плашки без LFO (город Oceanus): пропал — хост её закрывает
 }
 
 // открытая плашка: что показывает, у какой строки открыта панель LFO, мир-владелец

@@ -74,7 +74,10 @@ final class OceanusView: World {
     core.action(9, 0, [], touchTime: 0)
   }
   // prevIds остаётся: города, снятые откатом, дадут objGone на следующем разборе
-  func restored() { holds.removeAll(); ripples.removeAll(); local.removeAll(); gone.removeAll(); lastTap = nil; rebuild() }
+  func restored() {
+    for t in holds.values where t.kind == .water { core.action(7, 0, [Double(t.fid)], touchTime: 0) }   // палец в воде бросаем: PUSH в ядре не зависнет
+    holds.removeAll(); ripples.removeAll(); local.removeAll(); gone.removeAll(); lastTap = nil; rebuild()
+  }
 
   func tick(now: Double, dt: Double) {
     self.now = now

@@ -71,6 +71,6 @@ extension OceanusView {
         return k == "oct" ? ["octave −1", "octave 0", "octave +1"][min(2, max(0, Int(c.oct) + 1))]
           : k == "path" ? OceanusView.paths[min(2, max(0, Int(c.path)))] : "\(Int((c.lvl * 100).rounded()))%"
       },
-      lfo: nil, reset: nil, arc: nil)
+      lfo: nil, reset: nil, arc: nil, obj: id)
   }
 }

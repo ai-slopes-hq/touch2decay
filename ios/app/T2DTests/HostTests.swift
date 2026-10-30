@@ -641,6 +641,26 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(core.calls.last, "lfoDrop:10:5"); XCTAssertNil(host.sheet)
   }
 
+  // плашка города Oceanus (без LFO): город пропал из зеркала — хост закрывает её по владельцу
+  func testCitySheetClosesWhenCityGone() {
+    final class NoCore: Core { func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) -> Bool { true } }
+    var buf: [Double] = []
+    func mirror(_ ids: [Int]) -> [Double] {
+      var b = [Double](repeating: 0, count: 74) + [Double(ids.count)]
+      for id in ids { b += [0, Double(id), 1, 0.5, 1, 0.8, 0, 0, 220, 0] }
+      return b
+    }
+    let ov = OceanusView(core: NoCore(), geo: OceanGeo(W: 390, H: 844, topY: 47, safeBot: 34), readMirror: { b in
+      let n = min(buf.count, b.count); b.replaceSubrange(0..<n, with: buf[0..<n]); return n
+    })
+    let h = makeHost(views: [ov])
+    buf = mirror([3]); ov.tick(now: 1, dt: 0.016)
+    ov.openSheet?(ov.citySpec(3))
+    XCTAssertNotNil(h.sheet)
+    buf = mirror([]); ov.tick(now: 2, dt: 0.016)
+    XCTAssertNil(h.sheet, "города нет — плашка закрыта")
+  }
+
   func testAddDroppedKeepsPanelWithoutLfo() {
     core.addOk = false
     openFx(); tilde("b")

@@ -197,10 +197,20 @@ final class OceanusTests: XCTestCase {
     sp.set("lvl", 0.4)
     XCTAssertEqual(rec.acts.last?.kind, 3)
     setMirror(cities: [], now: 2)
-    XCTAssertEqual(gone, [3])
+    XCTAssertEqual(gone, [3]); XCTAssertEqual(sp.obj, 3)
     rec.acts.removeAll()
     sp.set("lvl", 0.9)
     XCTAssertTrue(rec.acts.isEmpty, "правки в чужой id не уходят")
+  }
+
+  func testRestoredReleasesWater() {
+    setMirror()
+    view.down(finger(f1, waterPt, t0: 5, now: 5))
+    let fid = rec.acts[0].a[0]
+    view.restored()
+    XCTAssertEqual(rec.acts.last?.kind, 7); XCTAssertEqual(rec.acts.last?.a, [fid])
+    view.up(finger(f1, waterPt, t0: 5, now: 5.1))
+    XCTAssertEqual(rec.acts.filter { $0.kind == 7 }.count, 1, "палец брошен — второго RELEASE нет")
   }
 
   func testLunaRows() {

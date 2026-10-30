@@ -87,7 +87,7 @@ final class Host {
       v.objGone = { [weak self] id in
         guard let self else { return }
         self.core.lfoDrop(slot: slot, obj: id)
-        if self.sheet?.slot == slot && self.sheet?.spec.lfo?.obj == id { self.sheet = nil }
+        if self.sheet?.slot == slot && (self.sheet?.spec.lfo?.obj == id || self.sheet?.spec.obj == id) { self.sheet = nil }
       }
     }
     pushScale()                                            // didSet в init не срабатывает: мирам — текущий лад один раз
