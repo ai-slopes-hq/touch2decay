@@ -29,6 +29,15 @@ enum Concordia {
     return b.rows.first { abs(y - $0.y) < 20 }?.key
   }
 
+  // круговая стрелка «перезапуск» (k — 1 сразу после перезапуска, до 0): общая у concordia и панели audio
+  static func restartArrow(_ d: Draw, _ bx: CGFloat, _ y: CGFloat, _ k: CGFloat) {
+    let g = d.g
+    g.setStrokeColor(d.ink(0.5 + 0.5 * k)); g.setLineWidth(1.1); g.beginPath()
+    g.addArc(center: CGPoint(x: bx, y: y), radius: 8, startAngle: -0.3, endAngle: .pi * 1.6, clockwise: false); g.strokePath()
+    let tx = bx + 8 * cos(-0.3), ty = y + 8 * sin(-0.3)
+    g.beginPath(); g.move(to: CGPoint(x: tx - 4, y: ty - 1)); g.addLine(to: CGPoint(x: tx, y: ty)); g.addLine(to: CGPoint(x: tx + 1, y: ty - 4.5)); g.strokePath()
+  }
+
   // restartK — 1 сразу после перезапуска, до 0 за 0.9 с
   static func draw(_ d: Draw, _ b: Box, link: Link, stable: Bool, restartK: CGFloat) {
     d.reading {
@@ -50,10 +59,7 @@ enum Concordia {
         case .restart:                                       // действие, не переключатель: круговая стрелка; только что — ярко
           let k = restartK
           d.mapText(k > 0 ? "audio restarted" : r.label, b.x + 16, r.y - 6, 15, 0.6 + 0.35 * k); d.mapText(r.sub, b.x + 16, r.y + 10, 11, 0.45)
-          g.setStrokeColor(d.ink(0.5 + 0.5 * k)); g.setLineWidth(1.1); g.beginPath()
-          g.addArc(center: CGPoint(x: bx, y: r.y), radius: 8, startAngle: -0.3, endAngle: .pi * 1.6, clockwise: false); g.strokePath()
-          let tx = bx + 8 * cos(-0.3), ty = r.y + 8 * sin(-0.3)
-          g.beginPath(); g.move(to: CGPoint(x: tx - 4, y: ty - 1)); g.addLine(to: CGPoint(x: tx, y: ty)); g.addLine(to: CGPoint(x: tx + 1, y: ty - 4.5)); g.strokePath()
+          restartArrow(d, bx, r.y, k)
         default:
           let on = r.key == .stable ? stable : (r.key == .clock ? link.clock : link.scale)
           d.mapText(r.label, b.x + 16, r.y - 6, 15, on ? 0.95 : 0.6); d.mapText(r.sub, b.x + 16, r.y + 10, 11, 0.45)

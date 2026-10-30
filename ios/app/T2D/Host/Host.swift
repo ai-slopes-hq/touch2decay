@@ -28,6 +28,8 @@ final class Host {
   private var perScl: [Int: Scl] = [:]                     // свой лад у каждого мира, когда лад не общий (в памяти, как perScl веба)
   private var lastSlot: Int?                               // мир, в котором были последним
   private var prefsDirtyAt: Double?                        // настройки изменились; запись — через autosave секунд
+  private(set) var audioPanel = false                        // панель audio под кнопкой громкости (только в мире)
+  private var apGeo = AudioPanel.geo(bar: TopBar(W: 0, top: 0), W: 0)   // раз на layout
   private var cBox = Concordia.box(W: 0, H: 0, safeBot: 0, sunY: 0)   // коробка настроек: раз на layout, не на кадр
   private(set) var scl = Scl.off
   private(set) var legendOpen = false, sclOpen = false
@@ -46,7 +48,7 @@ final class Host {
   private var diceAt = -1e9                                    // мс: кость крутится 400 мс после броска
 
   // у пальца, начатого на хосте, своя цель до подъёма — миру он не уходит
-  private enum Route { case world(Int), btn(Btn), title, list, sheet(SheetHit), edge, corner, eat, mix(Mixer.Key, Double) }   // mix: строка и её база на касании
+  private enum Route { case world(Int), btn(Btn), title, list, sheet(SheetHit), edge, corner, eat, mix(Mixer.Key, Double), panel(AudioPanel.Key) }   // panel: строка панели audio; // mix: строка и её база на касании
   private var routes: [ObjectIdentifier: Route] = [:]
   private var volF: (id: ObjectIdentifier, v0: Double, y0: CGFloat)?
   private var rowF: (id: ObjectIdentifier, key: String, v0: Double)?    // строка плашки в руках: база на момент касания
@@ -91,6 +93,7 @@ final class Host {
     bar = TopBar(W: W, top: top)
     field = MapGeo.field(W: W, H: H, top: top, safeBot: safeBot)
     mixGeo = Mixer.geo(W: W, H: H, top: top, safeBot: safeBot)
+    apGeo = AudioPanel.geo(bar: bar, W: W)
     cBox = Concordia.box(W: W, H: H, safeBot: safeBot, sunY: field.sy)
     for v in views.values { v.layout(W: W, H: H, topY: top + 44, safeBot: safeBot) }
   }
@@ -111,6 +114,7 @@ final class Host {
     routes[f.id] = r
     switch r {
     case .btn(.vol): volF = (f.id, vol, f.y)
+    case .panel(let k): panelDown(k)
     case .world(let s): touched.insert(s); views[s]?.down(f)
     case .sheet(let h): sheetDown(h, f)
     default: break
@@ -161,14 +165,19 @@ final class Host {
     switch Concordia.hit(cBox, x: f.x, y: f.y) {
     case .clock?: link.clock.toggle(); markPrefs()
     case .scale?: link.scale.toggle(); markPrefs()
-    case .stable?:
-      audioPref.stable.toggle(); markPrefs(); savePrefs()   // сразу: настройка нужна и после падения звука
-      onStable?(audioPref.stable)
-    case .restart?: restartAt = now; onRestart?()
+    case .stable?: toggleStable()
+    case .restart?: restartAudio()
     case .mixer?: settings = .mixer
     case nil: break
     }
   }
+
+  // stable audio и restart audio — общие у concordia и панели audio
+  private func toggleStable() {
+    audioPref.stable.toggle(); markPrefs(); savePrefs()     // сразу: настройка нужна и после падения звука
+    onStable?(audioPref.stable)
+  }
+  private func restartAudio() { restartAt = now; onRestart?() }
 
   // настройки (общие темп и лад, stable) изменились — запись через autosave секунд (tick) или в фон
   func markPrefs() { if prefsDirtyAt == nil { prefsDirtyAt = now } }
@@ -177,9 +186,37 @@ final class Host {
     store.savePrefs(PrefsFile(vol: vol, mix: mix, link: link, audio: audioPref))
   }
 
+  // действие строки панели — на касании (audio-panel.js panelDown)
+  private func panelDown(_ k: AudioPanel.Key) {
+    switch k {
+    case .stop: press(.clr)                                  // без часов — заглушить мир, как корзина (отмена вернёт)
+    case .restart: restartAudio()
+    case .stable: toggleStable()
+    case .tempo: break
+    }
+  }
+
+  // тап по громкости — открыть или закрыть панель; повёл или держал — это была громкость.
+  // t0 и touchTime — UITouch.timestamp, секунды (как Host.now): Touch.tapMs в мс
+  private func volTap(_ f: Finger) {
+    guard world != nil, !f.moved, hypot(f.x - f.x0, f.y - f.y0) < Touch.tapMove, (f.touchTime - f.t0) * 1000 < Touch.tapMs else { return }
+    audioPanel.toggle()
+  }
+
   // легенда → плашка → список ладов → верхняя строка → левый край (свайп на карту) → предмет-угол (на карту) → мир
   private func route(_ f: Finger) -> Route {
     guard let w = world else { return .eat }
+    if audioPanel {                                          // панель открыта — первая: строка, закрыть, громкость как всегда
+      switch AudioPanel.hit(apGeo, bar: bar, x: f.x, y: f.y) {
+      case .vol: return .btn(.vol)
+      case .close:                                           // мимо: закрыть и съесть; левая полоса — всё же свайп на карту
+        audioPanel = false
+        return f.x < Host.edgeW && f.y > top + 44 ? .edge : .eat
+      case .none: return .eat
+      case .row(.tempo): return .eat                         // часов у мира нет — съедено
+      case .row(let k): return .panel(k)
+      }
+    }
     if legendOpen { return .title }
     if let s = sheet { return .sheet(sheetHit(s, geo(s), x: f.x, y: f.y, fxBtn: bar.pos(.rev))) }
     if sclOpen { return .list }
@@ -222,11 +259,11 @@ final class Host {
       else if bar.hit(f.x, f.y, titleW: titleW) == .title { legendOpen = true }
     case .list: pick(bar.sclPick(f.x, f.y))
     case .btn(let b):
-      if b == .vol { volF = nil; savePrefs() }
+      if b == .vol { volF = nil; savePrefs(); volTap(f) }
       else if bar.hit(f.x, f.y, titleW: titleW) == .btn(b) { press(b) }
     case .corner: if world?.cornerHit(f.x, f.y) == true { goMap() }   // на подъёме с повторным попаданием, как кнопки
     case .mix: applyMix(); markPrefs()
-    case .edge, .eat: break
+    case .edge, .eat, .panel: break
     }
     endGesture()
   }
@@ -264,7 +301,7 @@ final class Host {
   }
 
   // ---------- карта ↔ мир ----------
-  private func closeOverlays() { sheet = nil; legendOpen = false; sclOpen = false; settings = .off }
+  private func closeOverlays() { audioPanel = false; sheet = nil; legendOpen = false; sclOpen = false; settings = .off }
 
   // тап по карточке: переход 520 мс; режим .world и tick мира — по концу (Nav.step)
   // internal — для теста; из кода зовёт тап по карточке
@@ -436,8 +473,9 @@ final class Host {
   func tick(now: Double, dt: Double) {
     self.now = now
     _ = nav.step(now)                                        // закрыл кончившиеся переход и peek; по концу входа — режим .world
+    if audioPanel && !onMap { levels.poll(now: now, read: core.levels) }   // в мире уровни — только для stop панели
     if onMap {                                               // карта и переход: мир не тикает
-      levels.poll(now: now, read: core.levels)               // лучи карты — пока она видна; в мире уровни не нужны
+      levels.poll(now: now, read: core.levels)               // лучи карты — пока она видна
       for v in views.values { v.idle() }                     // слить кольца миров, чтобы вход не отыграл старое
     } else { world?.tick(now: now, dt: dt) }                 // мир тикает вне перехода
     if sheet != nil { lfos = core.lfoSnap() }
@@ -508,6 +546,12 @@ final class Host {
       var held: SheetHit?
       for r in routes.values { if case .sheet(let h) = r { held = h } }
       SheetDraw.draw(d, s, geo(s), lfos: lfos, held: held, sample: core.lfoSample)
+    }
+    if audioPanel {
+      var held: AudioPanel.Key?
+      for r in routes.values { if case .panel(let k) = r { held = k } }
+      AudioPanel.draw(d, apGeo, stable: audioPref.stable, sounding: levels.lv[w.slot] > 0.0025, held: held,
+                      restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
     }
     if legendOpen { Legend.draw(d, title: "L E G E N D A", rows: w.legend, W: W, H: H, top: top, safeBot: safeBot) }
   }
