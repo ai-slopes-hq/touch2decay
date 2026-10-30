@@ -75,6 +75,22 @@ final class DrawTests: XCTestCase {
     XCTAssertTrue(rows.allSatisfy { (40...160).contains($0) })
   }
 
+  // concordia: коробка закрашивает карту под собой, вспышка restart ярче покоя
+  func testConcordiaDrawSmoke() {
+    let W = 390, H = 844
+    let b = Concordia.box(W: CGFloat(W), H: CGFloat(H), safeBot: 34, sunY: 400)
+    func lit(_ k: CGFloat) -> Int {
+      let c = flipped2(W, H), d = Draw(g: c, W: CGFloat(W), H: CGFloat(H))
+      Concordia.draw(d, b, link: Link(), stable: true, restartK: k)
+      let p = c.data!.assumingMemoryBound(to: UInt8.self)
+      var n = 0
+      for y in Int(b.y)..<Int(b.y + b.h) { for x in Int(b.x)..<Int(b.x + b.w) where p[y * c.bytesPerRow + x * 4 + 1] > 40 { n += 1 } }
+      return n
+    }
+    XCTAssertGreaterThan(lit(0), 50, "рамка, подписи и кружки нарисованы")
+    XCTAssertGreaterThan(lit(1), lit(0), "audio restarted ярче")
+  }
+
   // кадр карты: рубашка рисуется, лучи звучащего слота — только при lv > 0
   func testMapDrawSmoke() {
     let W = 390, H = 844

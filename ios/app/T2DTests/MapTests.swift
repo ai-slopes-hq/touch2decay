@@ -47,8 +47,9 @@ final class MapTests: XCTestCase {
       XCTAssertEqual(MapGeo.hit(f, W: W, x: p.maxX + f.gap / 2, y: p.midY), want, "gap right \(c),\(r)")
       if r != 1 { XCTAssertEqual(MapGeo.hit(f, W: W, x: p.midX, y: p.maxY + f.gap / 2), want, "gap below \(c),\(r)") }   // под рядом 1 — солнце и concordia съедают
     }
-    XCTAssertEqual(MapGeo.hit(f, W: W, x: W / 2, y: f.sy), .eat)
-    XCTAssertEqual(MapGeo.hit(f, W: W, x: W / 2 + 60, y: f.sy), .eat)
+    XCTAssertEqual(MapGeo.hit(f, W: W, x: W / 2, y: f.sy), .sun)
+    XCTAssertEqual(MapGeo.hit(f, W: W, x: W / 2 + 60, y: f.sy), .sun)
+    XCTAssertEqual(MapGeo.hit(f, W: W, x: W / 2 + 130, y: f.sy), .eat, "за подписью concordia — пусто")
     XCTAssertEqual(MapGeo.hit(f, W: W, x: 2, y: 20), .eat)
   }
 

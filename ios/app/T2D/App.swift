@@ -34,6 +34,8 @@ struct T2DApp: App {
     a.probe = T2DApp.shot && T2DApp.shotName == "lfo"
     let h = Host(views: views, core: AppHostCore(), store: Store(dir: T2DApp.storeDir(), log: { Log.shared.add("store", $0) }))
     a.onInit = { h.reapply() }
+    a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
+    h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
     _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _host = State(initialValue: h)
   }
 

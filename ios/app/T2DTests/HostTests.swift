@@ -604,4 +604,117 @@ final class HostTests: XCTestCase {
     g.translateBy(x: 0, y: 1688); g.scaleBy(x: 2, y: -2)
     let d = Draw(g: g, W: 390, H: 844); d.setTheme(world.theme); return d
   }
+
+  // ---------- concordia: тап по солнцу, строки, общий лад ----------
+  private func mapField() -> Field { MapGeo.field(W: 390, H: 844, top: 47, safeBot: 34) }
+  private func box() -> Concordia.Box { Concordia.box(W: 390, H: 844, safeBot: 34, sunY: mapField().sy) }
+  private func tapRow(_ k: Concordia.Key) {
+    let b = box(), r = b.rows.first { $0.key == k }!
+    tap(b.x + b.w / 2, r.y)
+  }
+
+  func testSunOpensConcordia() {
+    host = makeHost(); tick(1)
+    let sy = mapField().sy
+    tap(195, sy)
+    XCTAssertEqual(host.settings, .concordia)
+    tap(5, 5); XCTAssertEqual(host.settings, .off)
+    tap(195 + 60, sy)                                        // подпись concordia
+    XCTAssertEqual(host.settings, .concordia)
+  }
+
+  func testConcordiaOutsideCloses() {
+    host = makeHost(); tick(1); tap(195, mapField().sy)
+    let b = box()
+    tap(b.x - 8, b.y + 100)
+    XCTAssertEqual(host.settings, .off)
+    XCTAssertNil(host.nav.peek); XCTAssertNil(host.nav.anim)
+  }
+
+  func testConcordiaEatsMap() {
+    host = makeHost(); tick(1); tap(195, mapField().sy)
+    let p = mapField().rect(col: 3, row: 1)                  // клетка Firmamentum
+    tap(p.midX, p.midY)
+    XCTAssertNil(host.nav.anim, "касание мимо коробки закрыло настройки и входа не начало")
+    XCTAssertEqual(host.settings, .off)
+    tap(195, mapField().sy)
+    let b = box()
+    tap(b.x + b.w / 2, b.y + 8)                              // внутри коробки, но не на строке
+    XCTAssertEqual(host.settings, .concordia); XCTAssertNil(host.nav.anim); XCTAssertNil(host.nav.peek)
+  }
+
+  func testConcordiaToggles() {
+    host = makeHost(); tick(1); tap(195, mapField().sy)
+    XCTAssertEqual(host.link, Link(clock: false, scale: true))
+    tapRow(.clock); tapRow(.scale)
+    XCTAssertEqual(host.link, Link(clock: true, scale: false))
+    XCTAssertEqual(host.settings, .concordia, "строка не закрывает коробку")
+    tick(4.2)                                                // автосохранение через 3 с
+    XCTAssertEqual(store.loadPrefs()?.link, Link(clock: true, scale: false))
+  }
+
+  func testStableTogglesAudioAndSaves() {
+    host = makeHost(); tick(1); tap(195, mapField().sy)
+    var got: [Bool] = []; host.onStable = { got.append($0) }
+    tapRow(.stable)
+    XCTAssertEqual(got, [true]); XCTAssertTrue(host.audioPref.stable)
+    XCTAssertEqual(store.loadPrefs()?.audio, AudioPref(stable: true), "переключение сохраняется сразу")
+    tapRow(.stable)
+    XCTAssertEqual(got, [true, false]); XCTAssertEqual(store.loadPrefs()?.audio, AudioPref(stable: false))
+  }
+
+  func testRestartCallsAudio() {
+    host = makeHost(); tick(2); tap(195, mapField().sy)
+    XCTAssertLessThan(host.restartAt, -1, "до первого перезапуска вспышки нет")
+    var n = 0; host.onRestart = { n += 1 }
+    tapRow(.restart)
+    XCTAssertEqual(n, 1); XCTAssertEqual(host.restartAt, 2)
+    XCTAssertEqual(host.settings, .concordia)
+  }
+
+  func testGoWorldResetsSettings() {
+    host = makeHost(); tick(1)
+    tap(195, mapField().sy); tap(5, 5)                       // открыть и закрыть тапом мимо
+    XCTAssertEqual(host.settings, .off)
+    tapCell(3, 1); tick(2)
+    XCTAssertEqual(host.nav.view, .world(10)); XCTAssertEqual(host.settings, .off)
+    host.goMap(); tick(3)
+    XCTAssertEqual(host.settings, .off)
+    tap(195, mapField().sy)
+    XCTAssertEqual(host.settings, .concordia)
+    host.goWorld(10)                                         // из кода, при открытой коробке
+    XCTAssertEqual(host.settings, .off)
+  }
+
+  func testPerSclWhenUnlinked() {
+    let w2 = HWorld(2)
+    host = makeHost(views: [world, w2]); tick(1)
+    tap(195, mapField().sy); tapRow(.scale); tap(5, 5)       // лад не общий
+    XCTAssertFalse(host.link.scale)
+    host.go(10)
+    let a = Scl(on: true, idx: 1, root: 2), b = Scl(on: true, idx: 3, root: 5)
+    host.shotState(scl: a)
+    host.goMap(); tick(2)
+    host.goWorld(2); XCTAssertEqual(host.scl, a, "у мира 2 лада ещё нет — остаётся текущий")
+    tick(3); host.shotState(scl: b)
+    host.goMap(); tick(4)
+    host.goWorld(10)
+    XCTAssertEqual(core.scales.last, a); XCTAssertEqual(host.scl, a)
+  }
+
+  func testSclSharedWhenLinked() {
+    let w2 = HWorld(2)
+    host = makeHost(inWorld: true, views: [world, w2]); tick(1)
+    let a = Scl(on: true, idx: 1, root: 2), b = Scl(on: true, idx: 3, root: 5)
+    host.shotState(scl: a); host.goMap(); tick(2)
+    host.goWorld(2); tick(3); host.shotState(scl: b)
+    host.goMap(); tick(4); host.goWorld(10)
+    XCTAssertEqual(host.scl, b, "лад общий — при входе не меняется")
+  }
+
+  func testPrefsLoadAppliesLink() {
+    store.savePrefs(PrefsFile(vol: 0.5, mix: nil, link: Link(clock: true, scale: false), audio: AudioPref(stable: true)))
+    let h = makeHost()
+    XCTAssertEqual(h.link, Link(clock: true, scale: false)); XCTAssertEqual(h.audioPref, AudioPref(stable: true))
+  }
 }

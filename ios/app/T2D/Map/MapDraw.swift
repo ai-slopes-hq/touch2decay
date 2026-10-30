@@ -1,7 +1,6 @@
 import UIKit
 
 // кадр карты Universum: порт host/map.js drawNav (:284-333) и drawMapChrome (:336-359).
-// Солнце и concordia приглушены (×0.3, как приглушённые кнопки TopBar): нажатие на них пока ничего не делает (2b-3b).
 enum MapDraw {
   private static let T2 = CGFloat.pi * 2
   private static var cW: CGFloat?                          // ширина подписи concordia: шрифт один — считаем раз
@@ -11,7 +10,7 @@ enum MapDraw {
   }
 
   // now — секунды; в формулах веба — мс. snap — снимок мира, участвующего в переходе (nil — рисуем только карточки)
-  static func draw(_ d: Draw, nav: Nav, field F: Field, lv: [Float], snap: CGImage?, now: Double) {
+  static func draw(_ d: Draw, nav: Nav, field F: Field, lv: [Float], snap: CGImage?, settings: Bool = false, now: Double) {
     let g = d.g, ms = now * 1000
     d.setTheme(.base)                                   // карта — чёрная, как Tenebrae
     g.setAlpha(1)
@@ -34,7 +33,7 @@ enum MapDraw {
         g.setAlpha(1 - out); image(g, shot, r); g.setAlpha(1)
       }
     }
-    if out > 0.02 { chrome(d, F, al: out, ms: ms) }
+    if out > 0.02 { chrome(d, F, al: out, settings: settings, ms: ms) }
   }
 
   private static func q(_ pk: (t0: Double, col: Int, row: Int), _ now: Double) -> CGFloat { CGFloat(sin(Double.pi * (now - pk.t0) / Nav.peekDur)) }
@@ -76,7 +75,7 @@ enum MapDraw {
   }
 
   // эклиптика с делениями, солнце в центре расклада, concordia, имя карты
-  private static func chrome(_ d: Draw, _ F: Field, al: CGFloat, ms: Double) {
+  private static func chrome(_ d: Draw, _ F: Field, al: CGFloat, settings: Bool, ms: Double) {
     let g = d.g, cx = F.x0 + F.fw / 2, cy = F.sy, bg = Theme.base.bg.cgColor
     g.setAlpha(al); g.setLineWidth(1)
     g.setStrokeColor(d.ink(0.45)); g.beginPath()
@@ -91,13 +90,11 @@ enum MapDraw {
     }
     g.strokePath()
     g.setFillColor(bg); g.fillEllipse(in: CGRect(x: cx - 20, y: cy - 20, width: 40, height: 40))   // солнце в середине расклада
-    g.setAlpha(al * 0.3)
     d.sunGlyph(cx, cy, 0, T2, scale: 0.6, now: ms)
-    let lw = concordiaW(d)
-    g.setAlpha(al); g.setFillColor(bg); g.fill(CGRect(x: cx + 34, y: cy - 9, width: lw, height: 18))
-    g.setAlpha(al * 0.3)
-    d.mapText("concordia", cx + 41, cy, 12, 0.65)
-    g.setAlpha(al)
+    if !settings {                                           // подпись солнца — что за ним: общие настройки
+      g.setFillColor(bg); g.fill(CGRect(x: cx + 34, y: cy - 9, width: concordiaW(d), height: 18))
+      d.mapText("concordia", cx + 41, cy, 12, 0.65)
+    }
     let tw: CGFloat = 184, sy = F.top
     g.setFillColor(d.paper(0.7)); g.fill(CGRect(x: d.W / 2 - tw / 2, y: sy - 6, width: tw, height: 34))   // имя всей карты
     d.mapText("U N I V E R S U M", d.W / 2, sy + 11, 20, 0.95, align: .center, italic: false)

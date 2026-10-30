@@ -6,13 +6,13 @@ import T2DCore
 
 // что делать движку по событию сессии: пересобрать граф и/или переинициализировать ядро (init стирает состояние всех миров —
 // только при смене частоты). Чистая функция — решение проверяется тестом без железа.
-enum AudioTrigger { case start, interruptionEnded, mediaServicesReset, engineConfigChange, becameActive, route(AVAudioSession.RouteChangeReason) }
+enum AudioTrigger { case start, user, interruptionEnded, mediaServicesReset, engineConfigChange, becameActive, route(AVAudioSession.RouteChangeReason) }
 struct AudioPlan: Equatable {
   var rebuild: Bool, reinit: Bool
   static func make(_ t: AudioTrigger, coreRate: Double, rate: Double, running: Bool) -> AudioPlan {
     let changed = rate != coreRate
     switch t {
-    case .start, .interruptionEnded, .mediaServicesReset, .engineConfigChange:   // движок остановлен системой или пропал — граф собираем заново
+    case .start, .user, .interruptionEnded, .mediaServicesReset, .engineConfigChange:   // движок остановлен системой или пропал — граф собираем заново
       return AudioPlan(rebuild: true, reinit: changed)
     case .becameActive:                                      // из фона сессию не активировать ('!int') — без рендера стоят и звук, и картинка
       return AudioPlan(rebuild: !running, reinit: changed && !running)
@@ -28,6 +28,19 @@ final class Audio {
   private let session = AVAudioSession.sharedInstance()
   private var engine: AVAudioEngine?
   private var started = false
+  // stable audio: буфер 1024 вместо 256 кадров (USB-интерфейсы). До start() — просто значение; после — новый буфер и перезапуск звука
+  var stable = false {
+    didSet {
+      guard started, stable != oldValue else { return }
+      applyBuffer(); handle(.user, "stable \(stable)")
+    }
+  }
+  private func applyBuffer() {
+    do { try session.setPreferredIOBufferDuration((stable ? 1024.0 : 256.0) / 48000.0) }
+    catch { log.add("audio", "session error \(error)") }
+  }
+  // restart audio: граф заново, ядро (сцена) не трогаем — init только при смене частоты (reset)
+  func restart() { guard started else { return }; handle(.user, "user restart") }
   private var coreRate = 0.0                 // частота, с которой инициализировано ядро
 
   private let seed: UInt32
@@ -53,7 +66,7 @@ final class Audio {
     started = true
     do {
       try session.setCategory(.playback)
-      try session.setPreferredIOBufferDuration(256.0 / 48000.0)
+      try session.setPreferredIOBufferDuration((stable ? 1024.0 : 256.0) / 48000.0)
       try session.setActive(true)
     } catch { log.add("audio", "session error \(error)") }
     log.add("audio", String(format: "session ioBuffer %.5f s, rate %.0f, outputLatency %.5f s", session.ioBufferDuration, session.sampleRate, session.outputLatency))

@@ -16,6 +16,16 @@ final class Host {
   private var field = MapGeo.field(W: 0, H: 0, top: 0, safeBot: 0)
 
   private(set) var vol: Double
+  private(set) var settings = Settings.off                 // открытые общие настройки на карте (concordia / микшер)
+  private(set) var link = Link()                           // общие темп и лад миров
+  private(set) var audioPref = AudioPref()
+  private(set) var restartAt = -Double.infinity            // когда последний раз перезапускали звук (с): вспышка «audio restarted» 0.9 с
+  var onRestart: (() -> Void)?                             // ставит App: Audio.restart
+  var onStable: ((Bool) -> Void)?                          // ставит App: Audio.stable
+  private var perScl: [Int: Scl] = [:]                     // свой лад у каждого мира, когда лад не общий (в памяти, как perScl веба)
+  private var lastSlot: Int?                               // мир, в котором были последним
+  private var prefsDirtyAt: Double?                        // настройки изменились; запись — через autosave секунд
+  private var cBox = Concordia.box(W: 0, H: 0, safeBot: 0, sunY: 0)   // коробка настроек: раз на layout, не на кадр
   private(set) var scl = Scl.off
   private(set) var legendOpen = false, sclOpen = false
   private(set) var sheet: Sheet? {                         // открытая плашка: забирает касания целиком
@@ -58,6 +68,8 @@ final class Host {
     // prefs: нечисло и выход за 0…1 — не доверяем
     let v = store.loadPrefs()?.vol ?? Vol.def
     vol = v.isFinite ? min(max(v, 0), 1) : Vol.def
+    if let l = store.loadPrefs()?.link { link = l }
+    if let a = store.loadPrefs()?.audio { audioPref = a }
     for v in views {
       let slot = v.slot
       v.openSheet = { [weak self] spec in self?.sheet = Sheet(spec: spec, slot: slot) }
@@ -74,13 +86,14 @@ final class Host {
     self.W = W; self.H = H; self.top = top; self.safeBot = safeBot
     bar = TopBar(W: W, top: top)
     field = MapGeo.field(W: W, H: H, top: top, safeBot: safeBot)
+    cBox = Concordia.box(W: W, H: H, safeBot: safeBot, sunY: field.sy)
     for v in views.values { v.layout(W: W, H: H, topY: top + 44, safeBot: safeBot) }
   }
 
   // вход сразу, без перехода — только тесты и -shot (как t2d.go веба)
   func go(_ slot: Int) {
     guard views[slot] != nil else { return }
-    nav.anim = nil; nav.view = .world(slot)
+    nav.anim = nil; nav.view = .world(slot); lastSlot = slot
   }
 
   // ---------- касания ----------
@@ -101,11 +114,35 @@ final class Host {
 
   private func mapDown(_ f: Finger) {
     guard !nav.busy(now) else { return }                   // во время перехода касания съедены
+    if settings != .off { settingsDown(f); return }        // открытые настройки забирают касание целиком
     switch MapGeo.hit(field, W: W, x: f.x, y: f.y) {
     case .world(let s): goWorld(s)
     case .peek(let c, let r): nav.peek = (now, c, r)
+    case .sun: settings = .concordia
     case .eat: break
     }
+  }
+
+  // строка — переключить или выполнить, мимо коробки — закрыть (concordia.js settingsDown)
+  private func settingsDown(_ f: Finger) {
+    guard Concordia.inside(cBox, x: f.x, y: f.y) else { settings = .off; return }
+    switch Concordia.hit(cBox, x: f.x, y: f.y) {
+    case .clock?: link.clock.toggle(); markPrefs()
+    case .scale?: link.scale.toggle(); markPrefs()
+    case .stable?:
+      audioPref.stable.toggle(); markPrefs(); savePrefs()   // сразу: настройка нужна и после падения звука
+      onStable?(audioPref.stable)
+    case .restart?: restartAt = now; onRestart?()
+    case .mixer?: break                                    // микшер подключает задача 4
+    case nil: break
+    }
+  }
+
+  // настройки (общие темп и лад, stable) изменились — запись через autosave секунд (tick) или в фон
+  func markPrefs() { if prefsDirtyAt == nil { prefsDirtyAt = now } }
+  private func savePrefs() {
+    prefsDirtyAt = nil
+    store.savePrefs(PrefsFile(vol: vol, mix: nil, link: link, audio: audioPref))
   }
 
   // легенда → плашка → список ладов → верхняя строка → левый край (свайп на карту) → предмет-угол (на карту) → мир
@@ -149,7 +186,7 @@ final class Host {
       else if bar.hit(f.x, f.y, titleW: titleW) == .title { legendOpen = true }
     case .list: pick(bar.sclPick(f.x, f.y))
     case .btn(let b):
-      if b == .vol { volF = nil; store.savePrefs(PrefsFile(vol: vol)) }
+      if b == .vol { volF = nil; savePrefs() }
       else if bar.hit(f.x, f.y, titleW: titleW) == .btn(b) { press(b) }
     case .corner: if world?.cornerHit(f.x, f.y) == true { goMap() }   // на подъёме с повторным попаданием, как кнопки
     case .edge, .eat: break
@@ -161,7 +198,7 @@ final class Host {
   func cancel(_ f: Finger) {
     guard let r = routes.removeValue(forKey: f.id) else { return }
     if case .world(let s) = r { views[s]?.cancel(f) }
-    if case .btn(.vol) = r { volF = nil; store.savePrefs(PrefsFile(vol: vol)) }
+    if case .btn(.vol) = r { volF = nil; savePrefs() }
     if case .sheet = r { releaseSheet(f) }
     endGesture()
   }
@@ -189,11 +226,17 @@ final class Host {
   }
 
   // ---------- карта ↔ мир ----------
-  private func closeOverlays() { sheet = nil; legendOpen = false; sclOpen = false }
+  private func closeOverlays() { sheet = nil; legendOpen = false; sclOpen = false; settings = .off }
 
   // тап по карточке: переход 520 мс; режим .world и tick мира — по концу (Nav.step)
-  private func goWorld(_ slot: Int) {
+  // internal — для теста; из кода зовёт тап по карточке
+  func goWorld(_ slot: Int) {
     guard views[slot] != nil, !nav.busy(now) else { return }
+    if !link.scale, let from = lastSlot, from != slot {     // лад не общий: у каждого мира свой (map.js goWorld)
+      perScl[from] = scl
+      if let s = perScl[slot] { scl = s; core.scale(s) }
+    }
+    lastSlot = slot; settings = .off
     nav.anim = (now, false, slot)
   }
 
@@ -362,6 +405,7 @@ final class Host {
     if sheet != nil { lfos = core.lfoSnap() }
     for b in undo.pollAll() { setScene(b.slot, b.w, b.scl) }
     for (slot, t) in dirtyAt where now - t >= Host.autosave { saveScene(slot) }
+    if let t = prefsDirtyAt, now - t >= Host.autosave { savePrefs() }
   }
 
   private func saveScene(_ slot: Int) {
@@ -373,7 +417,7 @@ final class Host {
   func background() {
     for b in undo.pollAll() { setScene(b.slot, b.w, b.scl) }  // ответ, пришедший без тика, иначе потеряется
     for slot in dirtyAt.keys.sorted() { saveScene(slot) }
-    store.savePrefs(PrefsFile(vol: vol))
+    savePrefs()
   }
 
   // из Audio.onInit — после t2d_app_init (запуск и смена частоты): init стёр миры и сбросил громкость, лад остался.
@@ -410,7 +454,10 @@ final class Host {
     if onMap {
       // только -shot: peek с замороженным k — время кадра подменяем (иначе он кончится за 420 мс)
       let t = nav.anim == nil ? nav.peek.flatMap { p in nav.freeze.map { p.t0 + $0 * Nav.peekDur } } ?? now : now
-      MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, snap: nav.anim.flatMap { snaps[$0.slot] }, now: t)
+      MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, snap: nav.anim.flatMap { snaps[$0.slot] }, settings: settings != .off, now: t)
+      if settings == .concordia && !nav.busy(now) {
+        Concordia.draw(d, cBox, link: link, stable: audioPref.stable, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
+      }
       return
     }
     guard let w = world else { return }

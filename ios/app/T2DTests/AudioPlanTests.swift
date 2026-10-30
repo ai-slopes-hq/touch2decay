@@ -19,6 +19,11 @@ final class AudioPlanTests: XCTestCase {
     }
   }
 
+  func testUserRestartRebuildsWithoutReinit() {         // restart audio / stable: звук заново, сцена ядра жива
+    XCTAssertEqual(plan(.user), AudioPlan(rebuild: true, reinit: false))
+    XCTAssertEqual(plan(.user, running: false), AudioPlan(rebuild: true, reinit: false))
+  }
+
   func testBecameActiveRestartsOnlyStoppedEngine() {   // старт из фона отклонён ('!int') — поднимаем при возврате
     XCTAssertEqual(plan(.becameActive), AudioPlan(rebuild: false, reinit: false), "движок идёт — ничего")
     XCTAssertEqual(plan(.becameActive, running: false), AudioPlan(rebuild: true, reinit: false))
