@@ -175,6 +175,7 @@ final class Host {
   // stable audio и restart audio — общие у concordia и панели audio
   private func toggleStable() {
     audioPref.stable.toggle(); markPrefs(); savePrefs()     // сразу: настройка нужна и после падения звука
+    restartAt = now                                         // как в вебе: смена буфера перезапускает звук — вспышка «audio restarted»
     onStable?(audioPref.stable)
   }
   private func restartAudio() { restartAt = now; onRestart?() }

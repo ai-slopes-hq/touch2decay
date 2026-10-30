@@ -663,6 +663,20 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(got, [true, false]); XCTAssertEqual(store.loadPrefs()?.audio, AudioPref(stable: false))
   }
 
+  func testStableFlashesRestart() {
+    host = makeHost(); tick(2); tap(195, mapField().sy)
+    XCTAssertLessThan(host.restartAt, -1)
+    tapRow(.stable)
+    XCTAssertEqual(host.restartAt, 2, "stable перезапускает звук — как в вебе вспыхивает «audio restarted»")
+  }
+
+  func testMixDecodeClampsToUnit() throws {
+    let j = #"{"g":{"10":2,"11":-1},"mute":{},"lpf":5,"thr":-3,"ratio":1.5,"ceil":99}"#
+    let m = try JSONDecoder().decode(Mix.self, from: Data(j.utf8))
+    XCTAssertEqual(m.g[10], 1); XCTAssertEqual(m.g[11], 0)
+    XCTAssertEqual(m.lpf, 1); XCTAssertEqual(m.thr, 0); XCTAssertEqual(m.ratio, 1); XCTAssertEqual(m.ceil, 1)
+  }
+
   func testRestartCallsAudio() {
     host = makeHost(); tick(2); tap(195, mapField().sy)
     XCTAssertLessThan(host.restartAt, -1, "до первого перезапуска вспышки нет")

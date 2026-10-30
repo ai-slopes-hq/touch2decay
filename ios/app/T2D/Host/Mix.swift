@@ -43,12 +43,14 @@ extension Mix: Codable {
   init(from d: Decoder) throws {
     let c = try d.container(keyedBy: K.self)
     func ints<V>(_ m: [String: V]) -> [Int: V] { Dictionary(uniqueKeysWithValues: m.compactMap { k, v in Int(k).map { ($0, v) } }) }
-    g = ints(try c.decodeIfPresent([String: Double].self, forKey: .g) ?? [:])
+    // prefs: значения вне 0…1 не доверяем — g: 2 дало бы +48 дБ в ядро
+    func unit(_ v: Double) -> Double { v.isFinite ? min(max(v, 0), 1) : 0 }
+    g = ints(try c.decodeIfPresent([String: Double].self, forKey: .g) ?? [:]).mapValues(unit)
     mute = ints(try c.decodeIfPresent([String: Bool].self, forKey: .mute) ?? [:])
-    lpf = try c.decodeIfPresent(Double.self, forKey: .lpf) ?? 1
-    thr = try c.decodeIfPresent(Double.self, forKey: .thr) ?? 0.75
-    ratio = try c.decodeIfPresent(Double.self, forKey: .ratio) ?? 0.136
-    ceil = try c.decodeIfPresent(Double.self, forKey: .ceil) ?? 1
+    lpf = unit(try c.decodeIfPresent(Double.self, forKey: .lpf) ?? 1)
+    thr = unit(try c.decodeIfPresent(Double.self, forKey: .thr) ?? 0.75)
+    ratio = unit(try c.decodeIfPresent(Double.self, forKey: .ratio) ?? 0.136)
+    ceil = unit(try c.decodeIfPresent(Double.self, forKey: .ceil) ?? 1)
   }
 
   func encode(to e: Encoder) throws {

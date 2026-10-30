@@ -13,7 +13,7 @@
 1. **Всё как в вебе** (`host/concordia.js`, `host/mixer.js`, `host/audio-panel.js`, `host/audio.js:134-170`): геометрия, подписи, числа, жесты. Новых решений в картинке нет; шрифт — как в вебе (`mapText` — IM Fell курсив, `text` — EB Garamond, панели в `reading`).
 2. **Браузерные строки — с нативным смыслом** (вариант 1, рекомендованный):
    - `stable audio` — больший буфер: `setPreferredIOBufferDuration` 1024/48000 вместо 256/48000, затем перезапуск звука; подпись та же (`larger buffer — for USB interfaces`).
-   - `restart audio` — перезапуск аудиодвижка тем же путём, что после прерывания (`Audio.reset(reinit: true)`), новый повод `AudioTrigger.user`; вспышка `audio restarted` 900 мс, как в вебе (`restartAt`).
+   - `restart audio` — пересборка аудиодвижка (новый повод `AudioTrigger.user` в AudioPlan: rebuild — да, reinit ядра — нет), ядро переинициализируется только при смене частоты дискретизации; сцена и микшер остаются живыми; вспышка `audio restarted` 900 мс, как в вебе (`restartAt`).
    - `midi clock` — не показывается (Web MIDI на iPhone нет и в вебе; CoreMIDI — фаза 5). В concordia подпись `shared tempo` всегда `one bpm in every sequencer`.
 3. **Солнце и `concordia` на карте — без приглушения** (снимается ×0.3 решения 11 спеки 2b-3а). Попадание — как сейчас (`< 34` от солнца, `concordia` — `dx 26…120, |dy| < 20`), тап открывает concordia. Пока открыта concordia или микшер, подпись `concordia` не рисуется (`!nav.settings`, `map.js:346`).
 4. **Состояние настроек — в `Host`**, как `nav.settings` веба: `settings: off / concordia / mixer`. Открываются только на карте без перехода; карта под ними тап не получает (съедается). Вход в мир (`goWorld`) сбрасывает `settings`. Порядок роутера на карте: настройки → карта.
