@@ -1,7 +1,10 @@
 import Foundation
 
 // файлы настроек и сцен в Application Support: prefs.json, scene-<слот>.json
-struct PrefsFile: Codable, Equatable { var v = 1; var vol: Double }
+struct PrefsFile: Codable, Equatable {
+  var v = 1; var vol: Double
+  var mix: Mix? = nil; var link: Link? = nil; var audio: AudioPref? = nil   // нет в старом файле — nil
+}
 struct SceneFile: Codable, Equatable { var v = 1; var w: String; var scl: Scl }
 
 final class Store {

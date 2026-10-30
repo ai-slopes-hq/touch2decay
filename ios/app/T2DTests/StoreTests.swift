@@ -18,6 +18,20 @@ final class StoreTests: XCTestCase {
     try s.write(to: dir.appendingPathComponent(name), atomically: true, encoding: .utf8)
   }
 
+  func testPrefsOldFileReads() throws {
+    try put("prefs.json", "{\"v\":1,\"vol\":0.5}")
+    let p = store().loadPrefs()
+    XCTAssertEqual(p?.vol, 0.5)
+    XCTAssertNil(p?.mix); XCTAssertNil(p?.link); XCTAssertNil(p?.audio)
+  }
+
+  func testPrefsMixRoundtrip() {
+    var m = Mix(); m.g[10] = 0.4; m.mute[4] = true; m.lpf = 0.5
+    let p = PrefsFile(vol: 0.6, mix: m, link: Link(clock: true, scale: false), audio: AudioPref(stable: true))
+    store().savePrefs(p)
+    XCTAssertEqual(store().loadPrefs(), p)
+  }
+
   func testPrefsRoundtrip() {
     XCTAssertFalse(FileManager.default.fileExists(atPath: dir.path))
     store().savePrefs(PrefsFile(vol: 0.37))

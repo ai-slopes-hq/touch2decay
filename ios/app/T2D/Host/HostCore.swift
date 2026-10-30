@@ -11,6 +11,8 @@ struct Scl: Codable, Equatable {
 protocol HostCore: AnyObject {
   @discardableResult func vol(_ gain: Double) -> Bool                 // false — действие отброшено (кольцо полно)
   @discardableResult func scale(_ s: Scl) -> Bool
+  @discardableResult func fader(slot: Int, g: Double) -> Bool         // линейный коэффициент фейдера слота (ядро сглаживает)
+  @discardableResult func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool   // Гц, дБ, N, дБ
   @discardableResult func snap(slot: Int, id: Int) -> Bool            // запросить снимок мира; готовый заберёт takeSnap
   @discardableResult func restore(slot: Int, _ w: String) -> Bool     // false — отброшено
   func takeSnap() -> (id: Int, slot: Int, w: String)?                 // по одному; nil — нет
@@ -46,6 +48,8 @@ final class AppHostCore: HostCore {
 
   func vol(_ gain: Double) -> Bool { act(Int32(T2D_H_VOL), 0, [gain]) }
   func scale(_ s: Scl) -> Bool { act(Int32(T2D_H_SCALE), 0, [s.on ? 1 : 0, Double(s.idx), Double(s.root)]) }
+  func fader(slot: Int, g: Double) -> Bool { act(Int32(T2D_H_FADER), slot, [g]) }
+  func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { act(Int32(T2D_H_MASTER), 0, [lpf, thr, ratio, ceil]) }
   func snap(slot: Int, id: Int) -> Bool { act(Int32(T2D_H_SNAP), slot, [Double(id)]) }
 
   func lfoAdd(slot: Int, obj: Int, key: Int, base: Double, shape: Int) -> Bool {

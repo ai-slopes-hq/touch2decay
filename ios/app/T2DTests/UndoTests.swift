@@ -9,6 +9,8 @@ final class FakeCore: HostCore {
   var full = false
   var snapFull = false
   func vol(_ gain: Double) -> Bool { true }
+  func fader(slot: Int, g: Double) -> Bool { true }
+  func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { true }
   func scale(_ s: Scl) -> Bool { true }
   func snap(slot: Int, id: Int) -> Bool { if snapFull { return false }; snaps.append((slot, id)); return true }
   func restore(slot: Int, _ w: String) -> Bool { if full { return false }; restores.append((slot, w)); return true }

@@ -9,6 +9,9 @@ private final class HCore: HostCore {
   var restores: [(slot: Int, w: String)] = []
   var queue: [(id: Int, slot: Int, w: String)] = []
   func vol(_ gain: Double) -> Bool { vols.append(gain); calls.append("vol"); return true }
+  var faders: [(Int, Double)] = [], masters: [[Double]] = []
+  func fader(slot: Int, g: Double) -> Bool { faders.append((slot, g)); return true }
+  func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { masters.append([lpf, thr, ratio, ceil]); return true }
   func scale(_ s: Scl) -> Bool { scales.append(s); calls.append("scale"); return true }
   func snap(slot: Int, id: Int) -> Bool { snaps.append((slot, id)); return true }
   func restore(slot: Int, _ w: String) -> Bool { restores.append((slot, w)); calls.append("restore:\(w)"); return true }

@@ -9,6 +9,8 @@ private final class Rec: Core {
 
 private final class NullHostCore: HostCore {
   func vol(_ gain: Double) -> Bool { true }
+  func fader(slot: Int, g: Double) -> Bool { true }
+  func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { true }
   func scale(_ s: Scl) -> Bool { true }
   func snap(slot: Int, id: Int) -> Bool { true }
   func restore(slot: Int, _ w: String) -> Bool { true }
