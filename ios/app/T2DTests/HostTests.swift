@@ -14,11 +14,15 @@ private final class HCore: HostCore {
   func restore(slot: Int, _ w: String) -> Bool { restores.append((slot, w)); calls.append("restore:\(w)"); return true }
   func takeSnap() -> (id: Int, slot: Int, w: String)? { queue.isEmpty ? nil : queue.removeFirst() }
   var lfoSnaps: [LfoSnap] = []
-  func lfoAdd(slot: Int, obj: Int, key: Int, base: Double, shape: Int) -> Bool { calls.append("lfoAdd:\(obj):\(key):\(base)"); return true }
-  func lfoSpec(slot: Int, obj: Int, key: Int, morph: Double, rate: Double, depth: Double) -> Bool { calls.append("lfoSpec:\(obj):\(key)"); return true }
+  var addOk = true                         // false — кольцо полно, lfoAdd отброшен
+  var specs: [(morph: Double, rate: Double, depth: Double)] = []
+  func lfoAdd(slot: Int, obj: Int, key: Int, base: Double, shape: Int) -> Bool { calls.append("lfoAdd:\(obj):\(key):\(base)"); return addOk }
+  func lfoSpec(slot: Int, obj: Int, key: Int, morph: Double, rate: Double, depth: Double) -> Bool {
+    calls.append("lfoSpec:\(obj):\(key)"); specs.append((morph, rate, depth)); return true
+  }
   func lfoBase(slot: Int, obj: Int, key: Int, base: Double) -> Bool { calls.append("lfoBase:\(obj):\(key):\(base)"); return true }
   func lfoOff(slot: Int, obj: Int, key: Int) -> Bool { calls.append("lfoOff:\(obj):\(key)"); return true }
-  func lfoDrop(slot: Int, obj: Int) -> Bool { calls.append("lfoDrop:\(obj)"); return true }
+  func lfoDrop(slot: Int, obj: Int) -> Bool { calls.append("lfoDrop:\(slot):\(obj)"); return true }
   func lfoSnap() -> [LfoSnap] { lfoSnaps }
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { sin(2 * .pi * u) }
 }
@@ -30,9 +34,10 @@ private final class HWorld: World {
   var title: String { "Fake" }
   var sub: String { "" }
   var legend: [LegendRow] { [] }
-  var fx: SheetSpec? { nil }
+  var fx: SheetSpec?
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
+  var sets: [(String, Double)] = []
   var downs = 0, moves = 0, ups = 0, cancels = 0, dices = 0, clears = 0, restoredN = 0
   func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat) {}
   func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool { x >= 300 && y >= 700 }
@@ -56,6 +61,10 @@ final class HostTests: XCTestCase {
   private let bar = TopBar(W: 390, top: 47)
   private var ids: [NSObject] = []
 
+  override class func setUp() {   // шрифты бандла тестов (как в DrawTests): draw хоста рисует плашку
+    let urls = Bundle(for: HostTests.self).urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
+    for u in urls { CTFontManagerRegisterFontsForURL(u as CFURL, .process, nil) }
+  }
   override func setUp() {
     dir = FileManager.default.temporaryDirectory.appendingPathComponent("host-\(UUID().uuidString)")
     store = Store(dir: dir, log: { _ in })
@@ -211,5 +220,149 @@ final class HostTests: XCTestCase {
     host.reapply(); answer("w0", now: 10)
     host.tick(now: 12.9, dt: 0.016); XCTAssertNil(store.loadScene(slot: 10))
     host.tick(now: 13.1, dt: 0.016); XCTAssertEqual(store.loadScene(slot: 10)?.w, "w0")
+  }
+
+  // ---------- плашка и LFO строк ----------
+  private func fxSpec() -> SheetSpec {
+    let rows = [SheetRow(key: "a", label: "a", code: 6), SheetRow(key: "b", label: "b", code: 7), SheetRow(key: "c", label: "c", code: 8)]
+    return SheetSpec(title: "FX", hint: "", rows: rows, get: { _ in 0.5 }, set: { [world] k, v in world.sets.append((k, v)) },
+                     text: { _ in "" }, lfo: SheetLfo(obj: -1, keys: ["a", "b", "c"], shape: 1))
+  }
+  private func openFx() { world.fx = fxSpec(); tap(bar.pos(.rev).x, bar.pos(.rev).y) }
+  private func geo() -> SheetGeo { SheetGeo.make(host.sheet!, W: 390, H: 844, safeBot: 34) }
+  private func rowY(_ k: String) -> CGFloat { let g = geo(); return g.rows.first { $0.k == k }!.y + 23 }
+  private func tilde(_ k: String) { tap(geo().lfoX, rowY(k)) }
+  private func snap(_ key: Int, base: Double = 0.5, depth: Double = 0.5) -> LfoSnap {
+    LfoSnap(slot: 10, obj: -1, key: key, base: base, morph: 0.5, rate: 1, depth: depth, u: 0, shape: 1, seed: 1)
+  }
+  private func setSnaps(_ l: [LfoSnap]) { core.lfoSnaps = l; host.tick(now: 1, dt: 0.016) }
+  private func lfoCalls() -> [String] { core.calls.filter { $0.hasPrefix("lfo") } }
+
+  func testFxOpensAndClosesSheet() {
+    world.fx = nil
+    tap(bar.pos(.rev).x, bar.pos(.rev).y)
+    XCTAssertNil(host.sheet, "у мира без веера плашки нет")
+    openFx(); XCTAssertNotNil(host.sheet)
+    tap(bar.pos(.rev).x, bar.pos(.rev).y); XCTAssertNil(host.sheet)
+    openFx(); tap(195, geo().top - 20); XCTAssertNil(host.sheet)
+  }
+
+  func testSheetEatsTouches() {
+    openFx()
+    tap(100, rowY("a")); tap(geo().lfoX, rowY("b"))
+    XCTAssertNotNil(host.sheet)
+    tilde("a")
+    let g = geo()
+    tap(100, g.panel.pad.y + 20); tap(100, g.panel.shape.y + 5)
+    tap(195, g.top - 20)
+    XCTAssertEqual(world.downs, 0)
+  }
+
+  func testTildeAddsAndCollapses() {
+    openFx()
+    tilde("b")
+    XCTAssertEqual(lfoCalls(), ["lfoAdd:-1:7:0.5"]); XCTAssertEqual(host.sheet?.lfoKey, "b")
+    tilde("b")
+    XCTAssertNil(host.sheet?.lfoKey); XCTAssertEqual(lfoCalls(), ["lfoAdd:-1:7:0.5"], "свернуть — LFO остаётся")
+  }
+
+  func testOffRemoves() {
+    openFx(); setSnaps([snap(7)])
+    tilde("b"); XCTAssertEqual(lfoCalls(), [], "LFO уже стоит — «~» только открывает панель")
+    let o = geo().off
+    tap(o.midX, o.midY)
+    XCTAssertEqual(lfoCalls(), ["lfoOff:-1:7"])
+  }
+
+  func testPadAfterOffReadds() {
+    openFx(); tilde("b"); core.calls.removeAll()
+    let g = geo(), f = finger(0, 200, g.panel.pad.y + 40)
+    host.down(f)
+    XCTAssertEqual(lfoCalls(), ["lfoAdd:-1:7:0.5", "lfoSpec:-1:7"])
+    XCTAssertTrue(core.specs[0].morph.isNaN); XCTAssertFalse(core.specs[0].rate.isNaN); XCTAssertFalse(core.specs[0].depth.isNaN)
+    host.up(f)
+  }
+
+  func testPadDepthZeroRemoves() {
+    openFx(); setSnaps([snap(7)]); tilde("b")
+    let g = geo(), f = finger(0, 200, g.panel.pad.y + 40)
+    host.down(f)
+    var m = f; m.y = g.panel.bottom; host.move(m); host.up(m)
+    XCTAssertEqual(core.calls.last, "lfoOff:-1:7")
+    XCTAssertEqual(core.specs.last!.depth, 0, accuracy: 1e-9)
+  }
+
+  func testPadDepthKept() {
+    openFx(); setSnaps([snap(7)]); tilde("b")
+    let g = geo(), f = finger(0, 200, g.panel.pad.y + 40)
+    host.down(f); host.up(f)
+    XCTAssertNotEqual(core.calls.last, "lfoOff:-1:7")
+  }
+
+  func testStripSetsMorph() {
+    openFx(); setSnaps([snap(7)]); tilde("b")
+    let g = geo()
+    tap(g.panel.x + g.panel.w / 2, g.panel.shape.y + 20)
+    XCTAssertEqual(core.specs.count, 1)
+    XCTAssertEqual(core.specs[0].morph, 0.5, accuracy: 1e-9)
+    XCTAssertTrue(core.specs[0].rate.isNaN); XCTAssertTrue(core.specs[0].depth.isNaN)
+  }
+
+  func testRowDragWithLfoMovesBase() {
+    openFx(); setSnaps([snap(6, base: 0.4)])
+    let g = geo(), y = rowY("a"), f = finger(0, 100, y)
+    host.down(f)
+    var m = f; m.x = 100 + 0.25 * (g.tx1 - g.tx0); host.move(m); host.up(m)
+    XCTAssertEqual(core.calls.last, "lfoBase:-1:6:0.65")
+    XCTAssertTrue(world.sets.isEmpty)
+  }
+
+  func testRowDragWithoutLfoSets() {
+    openFx()
+    let g = geo(), y = rowY("a"), f = finger(0, 100, y)
+    host.down(f)
+    var m = f; m.x = 100 + 0.25 * (g.tx1 - g.tx0); host.move(m); host.up(m)
+    XCTAssertEqual(world.sets.last?.0, "a"); XCTAssertEqual(world.sets.last?.1 ?? 0, 0.75, accuracy: 1e-9)
+    XCTAssertTrue(lfoCalls().isEmpty)
+  }
+
+  func testObjGoneDropsAndClosesSheet() {
+    var sp = fxSpec(); sp.lfo = SheetLfo(obj: 5, keys: ["a"], shape: 1)
+    world.openSheet?(sp)
+    XCTAssertNotNil(host.sheet)
+    world.objGone?(6); XCTAssertNotNil(host.sheet)
+    world.objGone?(5)
+    XCTAssertEqual(core.calls.last, "lfoDrop:10:5"); XCTAssertNil(host.sheet)
+  }
+
+  func testAddDroppedKeepsPanelWithoutLfo() {
+    core.addOk = false
+    openFx(); tilde("b")
+    XCTAssertEqual(host.sheet?.lfoKey, "b", "панель открыта и без LFO: «drag the pad»")
+    host.tick(now: 1, dt: 0.016)
+    host.draw(drawCtx(), now: 1)
+    tilde("b"); XCTAssertNil(host.sheet?.lfoKey)
+  }
+
+  func testSnapshotEmptyAfterReinit() {
+    openFx(); setSnaps([snap(7)]); tilde("b")
+    host.reapply(); setSnaps([])
+    host.draw(drawCtx(), now: 2)
+    core.calls.removeAll()
+    tilde("b"); tilde("b")                                      // свернуть и открыть снова
+    XCTAssertEqual(lfoCalls(), ["lfoAdd:-1:7:0.5"])
+  }
+
+  func testFxHeldWhileFingerOnRev() {
+    world.fx = fxSpec()
+    let p = bar.pos(.rev), f = finger(0, p.x, p.y)
+    host.down(f); XCTAssertTrue(host.fxHeld); host.up(f); XCTAssertFalse(host.fxHeld)
+  }
+
+  private func drawCtx() -> Draw {
+    let g = CGContext(data: nil, width: 780, height: 1688, bitsPerComponent: 8, bytesPerRow: 0,
+                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)!
+    g.translateBy(x: 0, y: 1688); g.scaleBy(x: 2, y: -2)
+    let d = Draw(g: g, W: 390, H: 844); d.setTheme(world.theme); return d
   }
 }

@@ -61,9 +61,9 @@ final class AppHostCore: HostCore {
 
   func lfoSnap() -> [LfoSnap] {
     let n = Int(t2d_app_lfo(&lfoBuf, Int32(AppHostCore.lfoCap * 10)))
+    let b = lfoBuf
     return stride(from: 0, to: n - n % 10, by: 10).map { i in
-      let b = lfoBuf
-      return LfoSnap(slot: Int(b[i]), obj: Int(b[i + 1]), key: Int(b[i + 2]), base: b[i + 3], morph: b[i + 4], rate: b[i + 5],
+      LfoSnap(slot: Int(b[i]), obj: Int(b[i + 1]), key: Int(b[i + 2]), base: b[i + 3], morph: b[i + 4], rate: b[i + 5],
                      depth: b[i + 6], u: b[i + 7], shape: Int(b[i + 8]), seed: Int(b[i + 9]))
     }
   }

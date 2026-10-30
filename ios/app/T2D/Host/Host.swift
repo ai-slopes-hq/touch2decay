@@ -10,6 +10,8 @@ final class Host {
   private(set) var vol: Double
   private(set) var scl = Scl.off
   private(set) var legendOpen = false, sclOpen = false
+  private(set) var sheet: Sheet?                               // открытая плашка: забирает касания целиком
+  private(set) var lfos: [LfoSnap] = []                        // последний снимок LFO ядра (раз в кадр)
 
   private var bar = TopBar(W: 0, top: 0)
   private var W: CGFloat = 0, H: CGFloat = 0, top: CGFloat = 0, safeBot: CGFloat = 0
@@ -18,9 +20,12 @@ final class Host {
   private var diceAt = -1e9                                    // мс: кость крутится 400 мс после броска
 
   // у пальца, начатого на хосте, своя цель до подъёма — миру он не уходит
-  private enum Route { case world, btn(Btn), title, list, eat }
+  private enum Route { case world, btn(Btn), title, list, sheet(SheetHit), eat }
   private var routes: [ObjectIdentifier: Route] = [:]
   private var volF: (id: ObjectIdentifier, v0: Double, y0: CGFloat)?
+  private var rowF: (id: ObjectIdentifier, key: String, v0: Double)?    // строка плашки в руках: база на момент касания
+  private var padDepth: Double?                                          // последняя посланная глубина пада — для снятия на подъёме
+  var fxHeld: Bool { routes.values.contains { if case .btn(.rev) = $0 { return true } else { return false } } }
 
   private var scene: (w: String, scl: Scl)?                    // последний известный снимок: из него автосохранение и reinit
   private var dirtyAt: Double?                                 // когда сцена изменилась; запись — через autosave секунд
@@ -34,6 +39,15 @@ final class Host {
     // prefs: нечисло и выход за 0…1 — не доверяем
     let v = store.loadPrefs()?.vol ?? Vol.def
     vol = v.isFinite ? min(max(v, 0), 1) : Vol.def
+    world.openSheet = { [weak self] spec in
+      guard let self else { return }
+      self.sheet = Sheet(spec: spec, slot: self.world.slot)
+    }
+    world.objGone = { [weak self] id in
+      guard let self else { return }
+      self.core.lfoDrop(slot: self.world.slot, obj: id)
+      if self.sheet?.spec.lfo?.obj == id { self.sheet = nil }
+    }
   }
 
   // top — верхний inset (safe area); строка кнопок и мир считают от него
@@ -50,13 +64,15 @@ final class Host {
     switch r {
     case .btn(.vol): volF = (f.id, vol, f.y)
     case .world: world.down(f)
+    case .sheet(let h): sheetDown(h, f)
     default: break
     }
   }
 
-  // легенда → список ладов → верхняя строка / предмет-угол → мир
+  // легенда → плашка → список ладов → верхняя строка / предмет-угол → мир
   private func route(_ f: Finger) -> Route {
     if legendOpen { return .title }
+    if let s = sheet { return .sheet(sheetHit(s, geo(s), x: f.x, y: f.y, fxBtn: bar.pos(.rev))) }
     if sclOpen { return .list }
     switch bar.hit(f.x, f.y, titleW: titleW) {
     case .title: return .title
@@ -71,6 +87,7 @@ final class Host {
     guard let r = routes[f.id] else { return }
     switch r {
     case .world: world.move(f)
+    case .sheet(let h): sheetMove(h, f)
     case .btn(.vol):
       guard let d = volF, d.id == f.id else { return }
       vol = min(max(d.v0 - Double((f.y - d.y0) / Vol.travel), 0), 1)
@@ -83,6 +100,7 @@ final class Host {
     guard let r = routes.removeValue(forKey: f.id) else { return }
     switch r {
     case .world: world.up(f)
+    case .sheet(let h): sheetUp(h, f)
     case .title:
       if legendOpen { legendOpen = false }
       else if bar.hit(f.x, f.y, titleW: titleW) == .title { legendOpen = true }
@@ -100,6 +118,7 @@ final class Host {
     guard let r = routes.removeValue(forKey: f.id) else { return }
     if case .world = r { world.cancel(f) }
     if case .btn(.vol) = r { volF = nil; store.savePrefs(PrefsFile(vol: vol)) }
+    if case .sheet = r { rowF = nil; padDepth = nil }
     endGesture()
   }
 
@@ -111,8 +130,68 @@ final class Host {
     case .dice: world.dice(); diceAt = now * 1000
     case .clr: world.clear()
     case .undo: undoStep()
-    case .back, .rev, .vol: break                           // приглушены в 2b-1: тап съеден
+    case .rev: if let fx = world.fx { sheet = Sheet(spec: fx, slot: world.slot) }
+    case .back, .vol: break                                 // приглушены: тап съеден
     }
+  }
+
+  // ---------- плашка и LFO строк (host/sheet.js) ----------
+  private func geo(_ s: Sheet) -> SheetGeo { SheetGeo.make(s, W: W, H: H, safeBot: safeBot) }
+  private func code(_ s: Sheet, _ k: String) -> Int? { s.spec.rows.first { $0.key == k }?.code }
+  // LFO строки в снимке ядра (nil — нет: не поставлен, отброшен или ядро переинициализировано)
+  private func lfo(_ s: Sheet, _ k: String) -> LfoSnap? {
+    guard let l = s.spec.lfo, let c = code(s, k) else { return nil }
+    return lfos.first { $0.slot == s.slot && $0.obj == l.obj && $0.key == c }
+  }
+  // поставить LFO строки, если его нет (как slAdd); панель открывается и когда кольцо отбросило lfoAdd — пад поставит заново
+  private func ensureLfo(_ s: Sheet, _ k: String) {
+    guard let l = s.spec.lfo, let c = code(s, k), lfo(s, k) == nil else { return }
+    core.lfoAdd(slot: s.slot, obj: l.obj, key: c, base: s.spec.get(k), shape: l.shape)
+  }
+
+  private func sheetDown(_ h: SheetHit, _ f: Finger) {
+    guard let s = sheet else { return }
+    switch h {
+    case .close: sheet = nil
+    case .off:
+      if let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) { core.lfoOff(slot: s.slot, obj: l.obj, key: c) }
+    case .lfo(let k):
+      if s.lfoKey == k { s.lfoKey = nil } else { ensureLfo(s, k); s.lfoKey = k }
+    case .strip, .pad: padApply(h, f)
+    case .row(let k): rowF = (f.id, k, lfo(s, k)?.base ?? s.spec.get(k))
+    case .none: break
+    }
+  }
+
+  private func padApply(_ h: SheetHit, _ f: Finger) {
+    guard let s = sheet, let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) else { return }
+    let p = geo(s).panel
+    ensureLfo(s, k)
+    if h == .strip { core.lfoSpec(slot: s.slot, obj: l.obj, key: c, morph: Pad.shapeT(p, f.x), rate: .nan, depth: .nan) }
+    else {
+      let d = Pad.depth(p, f.y)
+      padDepth = d
+      core.lfoSpec(slot: s.slot, obj: l.obj, key: c, morph: .nan, rate: Pad.rate(p, f.x), depth: d)
+    }
+  }
+
+  private func sheetMove(_ h: SheetHit, _ f: Finger) {
+    guard let s = sheet else { return }
+    switch h {
+    case .strip, .pad: padApply(h, f)
+    case .row:
+      guard let r = rowF, r.id == f.id else { return }
+      let g = geo(s), v = min(1, max(0, r.v0 + Double((f.x - f.x0) / (g.tx1 - g.tx0))))
+      if let l = s.spec.lfo, lfo(s, r.key) != nil, let c = code(s, r.key) { core.lfoBase(slot: s.slot, obj: l.obj, key: c, base: v) }
+      else { s.spec.set(r.key, v) }
+    default: break
+    }
+  }
+
+  private func sheetUp(_ h: SheetHit, _ f: Finger) {
+    defer { rowF = nil; padDepth = nil }
+    guard let s = sheet, h == .pad, let d = padDepth, d < 0.03, let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) else { return }
+    core.lfoOff(slot: s.slot, obj: l.obj, key: c)     // глубина в ноль — LFO снимается (sheet.js:81)
   }
 
   // выбор в списке — по подъёму (задержку веба на смену строки не переносим); список остаётся — можно выбрать и тонику
@@ -147,6 +226,7 @@ final class Host {
   func tick(now: Double, dt: Double) {
     self.now = now
     world.tick(now: now, dt: dt)
+    lfos = core.lfoSnap()
     if let b = undo.poll() { setScene(b.w, b.scl) }
     if let t = dirtyAt, now - t >= Host.autosave { saveScene() }
   }
@@ -185,7 +265,12 @@ final class Host {
   func draw(_ d: Draw, now: Double) {
     world.draw(d, now: now)
     let st = TopBar.State(title: world.title, vol: vol, volHeld: volF != nil, scl: scl, sclOpen: sclOpen,
-                          canUndo: undo.depth(slot: world.slot) > 0, fxArc: world.fx?.arc?(), fxHeld: false, diceAt: diceAt)
+                          canUndo: undo.depth(slot: world.slot) > 0, fxArc: world.fx?.arc?(), fxHeld: fxHeld, diceAt: diceAt)
+    if let s = sheet {
+      var held: SheetHit?
+      for r in routes.values { if case .sheet(let h) = r { held = h } }
+      SheetDraw.draw(d, s, geo(s), lfos: lfos, held: held, sample: core.lfoSample)
+    }
     titleW = bar.draw(d, st, now: now * 1000)
     if legendOpen { Legend.draw(d, title: "L E G E N D A", rows: world.legend, W: W, H: H, top: top, safeBot: safeBot) }
   }
