@@ -57,11 +57,13 @@ class Host {
   // LFO строк: таблица фиксированная, 64 записи; on=false — пустая. add/−1 при переполнении (потерянные считаются).
   int lfoAdd(int slot, int obj, int key, double base, int shape);
   void lfoSpec(int idx, double morph, double rate, double depth);
-  void lfoOff(int idx);                                 // строке уходит base (применение — в задаче 2)
+  void lfoOff(int idx, sdk::World* const worlds[SLOTS], double* args);  // строке base, ячейка свободна
+  void lfoOff(int idx) { lfoOff(idx, nullptr, nullptr); }               // тестовая форма без мира
   bool lfoState(int idx, sdk::RowLfo& out) const;       // копия живой записи (для UI и тестов)
   void lfoClear(int slot);
   void lfoClear(int slot, int obj);
   void lfoTick(double dt);                              // фаза каждой живой записи (значение миру — задача 2)
+  int lfoApply(double dt, sdk::World* const worlds[SLOTS], double* args);  // блок LFO: фазы и значения мирам (ACT_LFO)
   unsigned lfoLost() const { return lost_; }
 
   // Тик моделей: вызывается раз в блок, dt — время блока в секундах. Миры с tick() получают dt.

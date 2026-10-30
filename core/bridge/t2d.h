@@ -35,6 +35,8 @@ void t2d_master_run(float* L, float* R, int n);   // мастер по цепо�
 void t2d_mix(float* L, float* R, int n);          // sum + master_run
 double t2d_master_makeup(void);                   // авто-подъём компрессора (для тестов)
 int t2d_lfo_add(int slot, int obj, int key, double base, int shape);
+double t2d_world_value(int slot, int obj, int key);
+int t2d_lfo_apply(double dt);                 // один блок LFO: значения мирам; число применений
 void t2d_lfo_spec(int idx, double morph, double rate, double depth);
 void t2d_lfo_off(int idx);
 int t2d_lfo_state(int idx, double* out);                 // 10 чисел: slot, obj, key, base, morph, rate, depth, u, shape, seed; 0 — нет

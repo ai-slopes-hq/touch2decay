@@ -63,6 +63,7 @@ class Model {
   int count() const { return n_; }
   const Star& star(int i) const { return stars_[i]; }
   Star* find(int id);
+  const Star* find(int id) const;
   double fx(int k) const { return fx_[k]; }
   double time() const { return time_; }
   int comets() const { return comets_; }

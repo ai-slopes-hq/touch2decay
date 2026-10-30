@@ -3013,6 +3013,74 @@ static void lfoBridge() {
   CHECK(t2d_lfo_lost() == 0);
 }
 
+// Логгер для lfoApply / lfoOff: мир собирает ACT_LFO в записи (obj, key, v)
+struct LogWorld : sdk::World {
+  struct Rec { int obj, key; double v; };
+  Rec rec[16] = {}; int n = 0;
+  void prepare(double, uint32_t) override {}
+  void action(int kind, int i, const double* a, int cnt) override {
+    if (kind == sdk::ACT_LFO && cnt >= 2 && n < 16) { rec[n].obj = i; rec[n].key = static_cast<int>(a[0]); rec[n].v = a[1]; n++; }
+  }
+  void process(const sdk::Out&, int) override {}
+  sdk::Rev rev() const override { return sdk::Rev::hall; }
+  int mirror(double*, int) const override { return 0; }
+  int heard(double*, int) override { return 0; }
+  std::string snapshot() const override { return "{}"; }
+  void restore(const std::string&) override {}
+  bool sounding() const override { return false; }
+};
+
+// apply двигает фазу и пишет мирам значение вокруг базы; dead obj — мир без него молча пропускает (как Firmamentum)
+static void lfoApply() {
+  Host h;
+  h.prepare(48000, 7);
+  static LogWorld w[16];
+  for (auto& x : w) x.n = 0;
+  sdk::World* worlds[16] = {};
+  worlds[10] = &w[10];
+  double args[4];
+  const int a = h.lfoAdd(10, -1, 0, 0.5, 0);
+  const int b = h.lfoAdd(10, 3, 1, 0.4, 1);
+  CHECK(a >= 0 && b >= 0);
+  h.lfoSpec(a, 0, 2.0, 0.5);
+  CHECK(h.lfoApply(0.25, worlds, args) == 2);
+  CHECK(w[10].n == 2);
+  CHECK(w[10].rec[0].obj == -1 && w[10].rec[0].key == 0);
+  CHECK(w[10].rec[1].obj == 3 && w[10].rec[1].key == 1);
+  CHECK(std::fabs(w[10].rec[0].v - 0.5) <= 0.25 + 1e-9);
+  CHECK(std::fabs(w[10].rec[1].v - 0.4) <= 0.15 + 1e-9);
+  sdk::RowLfo s;
+  CHECK(h.lfoState(a, s));
+  NEAR(s.u, 0.5, 1e-12);
+  // неживой слот — без падения и без применений
+  const int c = h.lfoAdd(12, -1, 0, 0.5, 0);
+  CHECK(c >= 0);
+  CHECK(h.lfoApply(0.25, worlds, args) == 2);           // слот 12 пуст
+  h.lfoOff(b, worlds, args);
+  CHECK(w[10].n == 5);
+  NEAR(w[10].rec[4].v, 0.4, 1e-12);                     // remove вернул base
+  CHECK(!h.lfoState(b, s));
+  // dead obj: мир без звезды — Firmamentum::value NaN (задача 4 примет), action молча пропускает
+  const int d = h.lfoAdd(10, 99, 2, 0.5, 0);
+  CHECK(d >= 0);
+  CHECK(h.lfoApply(0.1, worlds, args) == 2);
+  CHECK(w[10].n == 7);
+}
+
+// t2d_world_value у Firmamentum и NaN у чужого мира (Cymatica не знает строк)
+static void worldValue() {
+  t2d_init(48000, 7);
+  const double a[2] = {0.5, 0.2};
+  t2d_action(10, 0, 0, a, 2);                           // ADD h=0.5, u=0.2
+  CHECK(t2d_world_value(10, -1, 6) >= 0);               // hall по умолчанию
+  const double base = t2d_world_value(10, -1, 6);
+  NEAR(base, 0.45, 1e-9);
+  const double uval = t2d_world_value(10, 1, 5);        // u звезды id 1
+  NEAR(uval, 0.6, 1e-9);
+  CHECK(std::isnan(t2d_world_value(10, 99, 5)));
+  CHECK(std::isnan(t2d_world_value(2, -1, 0)));         // Cymatica — value по умолчанию NaN
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
@@ -3022,7 +3090,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); hostLfoTable(); hostLfoReinit(); lfoBridge();
+  lfoForms(); hostLfoTable(); hostLfoReinit(); lfoBridge(); lfoApply(); worldValue();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

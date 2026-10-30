@@ -99,6 +99,7 @@ void Engine::block(uint64_t host, int offset) {
     }
   }
   t2d_time(samples_ / sr_);
+  t2d_lfo_apply(BLOCK / sr_);                       // LFO строк — до process, как slTick веба (частоты ~375/с, звук глаже)
   t2d_process(BLOCK);
   samples_ += BLOCK;
   for (int s = 0; s < SLOTS; s++) {

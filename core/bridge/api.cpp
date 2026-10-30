@@ -1,6 +1,7 @@
 // Общий мост ядра SDK (C-ABI, объявлен в t2d.h): wasm (t2d.wasm) и нативные цели (iOS, sdk-test). Хост и все миры SDK в одном модуле, его крутит t2d-worklet.js (в Node — tools/t2d-core.mjs).
 // Один экземпляр на модуль, всё статическое (хост ~1.2 МБ — не на стек). Миры — по слотам хоста (номер мира): Tenebrae — 1 (этап 1: только звук), Cymatica — 2, Natura — 4, Inferno — 5, Monochordum — 7, Oceanus — 8, Horologium — 9, Firmamentum — 10, Tria — 11, Arcadia — 12, Portus — 13, Goetia — 15.
 // Обмен — через буферы ядра: аргументы action (t2d_args), зеркало и услышанное (t2d_mbuf), строка снимка (t2d_str_buf + длина).
+#include <cmath>
 #include <cstring>
 #include <string>
 
@@ -141,7 +142,7 @@ T2D_API int t2d_lfo_add(int slot, int obj, int key, double base, int shape) {
   return host.lfoAdd(slot, obj, key, base, shape);
 }
 T2D_API void t2d_lfo_spec(int idx, double morph, double rate, double depth) { host.lfoSpec(idx, morph, rate, depth); }
-T2D_API void t2d_lfo_off(int idx) { host.lfoOff(idx); }
+T2D_API void t2d_lfo_off(int idx) { host.lfoOff(idx, worlds, args); }
 T2D_API int t2d_lfo_state(int idx, double* out) {
   sdk::RowLfo l;
   if (!out || !host.lfoState(idx, l)) return 0;
@@ -151,6 +152,15 @@ T2D_API int t2d_lfo_state(int idx, double* out) {
   return 10;
 }
 T2D_API unsigned t2d_lfo_lost(void) { return host.lfoLost(); }
+T2D_API double t2d_world_value(int slot, int obj, int key) {
+  sdk::World* w = at(slot);
+  return w ? w->value(obj, key) : std::nan("");
+}
+
+// LFO: один блок (раз в 128): значения мирам тем же action, что касания; base при remove — в Host (задача 2 плана 2b-2)
+T2D_API int t2d_lfo_apply(double dt) {
+  return host.lfoApply(dt, worlds, args);
+}
 
 // model tick — обновление модели вне аудио-потока
 T2D_API void t2d_model_tick(double dt) { host.modelTick(dt); }

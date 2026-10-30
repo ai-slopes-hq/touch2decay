@@ -246,9 +246,14 @@ void Host::lfoSpec(int idx, double morph, double rate, double depth) {
   l.morph = morph; l.rate = rate; l.depth = depth;
 }
 
-void Host::lfoOff(int idx) {
+void Host::lfoOff(int idx, sdk::World* const worlds[SLOTS], double* args) {
   if (idx < 0 || idx >= sdk::LFO_MAX || !lfos_[idx].on) return;
-  lfos_[idx].on = false;
+  auto& l = lfos_[idx];
+  if (worlds && l.slot >= 0 && l.slot < SLOTS && worlds[l.slot]) {
+    args[0] = l.key; args[1] = l.base;
+    worlds[l.slot]->action(sdk::ACT_LFO, l.obj, args, 2);
+  }
+  l.on = false;
 }
 
 bool Host::lfoState(int idx, sdk::RowLfo& out) const {
@@ -267,6 +272,21 @@ void Host::lfoClear(int slot, int obj) {
 
 void Host::lfoTick(double dt) {
   for (auto& l : lfos_) if (l.on) l.tick(dt);
+}
+
+// Значения живых LFO мирам тем же action (аудиопоток): сдвиг фазы, затем value → [key, v]; мир без obj/ключа пропускает сам
+int Host::lfoApply(double dt, sdk::World* const worlds[SLOTS], double* args) {
+  int n = 0;
+  for (auto& l : lfos_) {
+    if (!l.on) continue;
+    l.tick(dt);
+    if (l.slot < 0 || l.slot >= SLOTS || !worlds[l.slot]) continue;
+    const auto& m = l.shape == sdk::WaveMorph::RANDOM ? morphRandom_ : morphClassic_;
+    args[0] = l.key; args[1] = l.value(m);
+    worlds[l.slot]->action(sdk::ACT_LFO, l.obj, args, 2);
+    n++;
+  }
+  return n;
 }
 
 void Host::modelTick(double dt) {
