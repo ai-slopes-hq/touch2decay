@@ -215,6 +215,7 @@ final class FirmamentumTests: XCTestCase {
     let sp = try XCTUnwrap(view.fx)
     XCTAssertEqual(sp.rows.map(\.key), ["scintilla", "drift", "cometa", "crepitus", "fulgur", "spread", "hall"])
     XCTAssertEqual(sp.rows.map(\.code), Array(6...12))
+    XCTAssertEqual(sp.title, "aether"); XCTAssertEqual(sp.hint, "FX — tap outside to close")
     view.mirror.fx[6] = 0.7
     XCTAssertEqual(sp.get("hall"), 0.7); XCTAssertEqual(sp.arc?(), 0.7)
     sp.set("drift", 0.3)

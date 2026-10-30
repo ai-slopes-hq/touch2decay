@@ -42,6 +42,16 @@ struct T2DApp: App {
     if T2DApp.shotName == "undo" { shotUndo(); return }
     let core = AppCore(slot: FirmamentumView.slotN)
     host.world.dice()
+    // плашки: сцена веба (firmsheet = firmtop) — только кубик; fx и комета остаются теми, что дал кубик
+    if ["sheet", "starsheet", "lfo"].contains(T2DApp.shotName) {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+        switch T2DApp.shotName {
+        case "sheet": host.shotSheet(world.fxSpec)
+        default: openStarSheet(lfo: T2DApp.shotName == "lfo")
+        }
+      }
+      return
+    }
     core.action(4, 0, [0.6], touchTime: 0); core.action(4, 1, [0.6], touchTime: 0); core.action(4, 2, [1], touchTime: 0)
     core.action(7, 0, [], touchTime: 0)
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
@@ -53,9 +63,6 @@ struct T2DApp: App {
     case "topbar": host.shotState(scl: on)
     case "scales": host.shotState(scl: on, sclOpen: true)
     case "legend": host.shotState(scl: Scl.off, legendOpen: true)
-    case "sheet": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { host.shotSheet(world.fxSpec) }
-    case "starsheet": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { openStarSheet(lfo: false) }
-    case "lfo": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { openStarSheet(lfo: true) }
     default: break
     }
   }

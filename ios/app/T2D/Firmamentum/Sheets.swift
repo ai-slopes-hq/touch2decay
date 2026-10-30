@@ -8,7 +8,7 @@ extension FirmamentumView {
     let keys = FirmamentumView.fxKeys
     func idx(_ k: String) -> Int { keys.firstIndex(of: k) ?? 0 }
     return SheetSpec(
-      title: "", hint: "",
+      title: "aether", hint: "FX — tap outside to close",
       rows: keys.enumerated().map { SheetRow(key: $1, label: $1, code: 6 + $0) },
       get: { [unowned self] k in mirror.fx[idx(k)] },
       set: { [unowned self] k, v in core.action(4, idx(k), [v], touchTime: 0) },
