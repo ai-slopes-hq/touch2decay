@@ -99,6 +99,16 @@ void Model::clear() {
   setAuto(false);
 }
 
+void Model::dice() {                                    // порядок rng — как dice() эталона: на струну набор, sus; затем ветер
+  static const double PICK[8] = {1, 3.0 / 4, 2.0 / 3, 1.0 / 2, 4.0 / 9, 3.0 / 8, 1.0 / 3, 8.0 / 9};
+  for (int i = 0; i < N; i++) {
+    const double p = PICK[static_cast<int>(std::floor(rng_.next() * 8))];
+    setString(i, R, scale_.on ? snapR(p) : p);
+    setSus(i, rng_.next() < 0.4);
+  }
+  setWind(rng_.next() < 0.3 ? 0.15 + 0.35 * rng_.next() : 0);
+}
+
 std::string Model::snapshot() const {
   using sdk::Json;
   Json st = Json::object(), arr = Json::array(), fx = Json::object(), au = Json::object();

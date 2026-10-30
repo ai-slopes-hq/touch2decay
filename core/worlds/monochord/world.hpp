@@ -19,8 +19,9 @@ namespace monochord {
 //   PLUCK i, a = [pos, vel];  HARM i, a = [n, vel];  BOW i, a = [amp];  SUS i, a = [on]
 //   BRIDGE i, a = [r] (прилипает к ладам);  STRING i, a = [key (Key: pitch, bright, decay, level, r), v]
 //   WIND a = [v];  FX i = key (Fx), a = [v];  AUTO a = [on];  AUTOPAR i = key (AutoKey: bpm, div, pattern, strength, swing), a = [v]
-//   CLEAR
-enum Act { PLUCK, HARM, BOW, SUS, BRIDGE, STRING, WIND, FX, AUTO, AUTOPAR, CLEAR };
+//   CLEAR;  DICE (подставки на лады, струны поют сами, ветер — как кубик фасада)
+//   ACT_LFO (i = −1), a = [код, v]: FX 0…6 = Fx; ветер 7; strength 8; swing 9; струна i, строка k (pitch, bright, decay, level) — 10 + 4·i + k
+enum Act { PLUCK, HARM, BOW, SUS, BRIDGE, STRING, WIND, FX, AUTO, AUTOPAR, CLEAR, DICE };
 
 // зеркало: fx [NFX], wind, lastWind, auto [NAUTO], шаг автострама, затем на струну STR_M: r, sus, bright, decay, level, bow, en, eh, hn
 constexpr int STR_M = 9, MIRROR_HEAD = NFX + 2 + NAUTO + 1, MIRROR_N = MIRROR_HEAD + N * STR_M;

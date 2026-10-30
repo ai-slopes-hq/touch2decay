@@ -65,6 +65,17 @@ void World::action(int kind, int i, const double* a, int n) {
     case AUTO: model_.setAuto(arg(0, 0) != 0); break;
     case AUTOPAR: if (n >= 1) model_.setAutoPar(i, a[0]); break;
     case CLEAR: model_.clear(); break;
+    case DICE: model_.dice(); break;
+    case sdk::ACT_LFO: {                                // LFO плашек: FX 0…6, ветер 7, strength 8, swing 9, строки струн 10 + 4·i + k (i == -1 у плашек мира)
+      if (n < 2 || i != -1) break;
+      const int key = static_cast<int>(a[0]);
+      if (key >= 0 && key < NFX) model_.setFx(key, a[1]);
+      else if (key == NFX) model_.setWind(a[1]);
+      else if (key == NFX + 1) model_.setAutoPar(STRENGTH, a[1]);
+      else if (key == NFX + 2) model_.setAutoPar(SWING, a[1]);
+      else if (key >= 10 && key < 10 + 4 * N) model_.setString((key - 10) / 4, (key - 10) % 4, a[1]);   // k = PITCH…LEVEL
+      break;
+    }
     default: break;
   }
 }

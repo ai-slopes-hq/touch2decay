@@ -3184,6 +3184,82 @@ static void oceanLfoIgnores() {
   CHECK(n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
 }
 
+// Monochordum: ACT_LFO — FX 0…6, ветер 7, strength 8, swing 9, строки струн 10 + 4·i + k; кубик
+static int monoMirror(double* m, int cap) {
+  float L[128], R[128];
+  t2d_app_render(L, R, 128, 0);
+  return t2d_app_mirror(7, m, cap);
+}
+static void monoLfo() {
+  t2d_app_init(48000, 7, 1e9, 1u << 7);
+  const double a[5][2] = {{4, 0.6}, {7, 0.4}, {8, 0.7}, {9, 0.2}, {10 + 4 * 2 + 2, 0.3}};
+  for (const auto& v : a) CHECK(t2d_app_action(7, sdk::ACT_LFO, -1, v, 2, 0) == 1);
+  const double b[2] = {10 + 4 * 1 + 0, 0.5};
+  t2d_app_action(7, sdk::ACT_LFO, -1, b, 2, 0);
+  double m[64];
+  CHECK(monoMirror(m, 64) == 52);
+  NEAR(m[4], 0.6, 1e-9);                                          // fx[CHORUS]
+  NEAR(m[7], 0.4, 1e-9);                                          // wind
+  NEAR(m[9 + 4], 0.7, 1e-9);                                      // auto[STRENGTH]
+  NEAR(m[9 + 5], 0.2, 1e-9);                                      // auto[SWING]
+  NEAR(m[16 + 9 * 2 + 3], 0.3, 1e-9);                             // струна 2: decay
+  NEAR(m[16 + 9 * 1], 0.5, 1e-9);                                 // струна 1: r = 2^-1, без прилипания
+}
+static void monoLfoIgnores() {
+  double m0[64], m1[64];
+  t2d_app_init(48000, 7, 1e9, 1u << 7);
+  const int n0 = monoMirror(m0, 64);
+  t2d_app_init(48000, 7, 1e9, 1u << 7);
+  const double a0[2] = {4, 0.5}, a1[2] = {26, 0.5}, a2[2] = {-1, 0.5}, a3[1] = {4};
+  t2d_app_action(7, sdk::ACT_LFO, 0, a0, 2, 0);
+  t2d_app_action(7, sdk::ACT_LFO, -1, a1, 2, 0);
+  t2d_app_action(7, sdk::ACT_LFO, -1, a2, 2, 0);
+  t2d_app_action(7, sdk::ACT_LFO, -1, a3, 1, 0);
+  const int n1 = monoMirror(m1, 64);
+  CHECK(n0 == 52 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
+}
+static void monoDice() {
+  const double pick[8] = {1, 3.0 / 4, 2.0 / 3, 1.0 / 2, 4.0 / 9, 3.0 / 8, 1.0 / 3, 8.0 / 9};
+  double m[2][64];
+  const double off[3] = {0, 0, 0};                                // лад хоста переживает init — выключаем явно
+  for (int w = 0; w < 2; w++) {
+    t2d_app_init(48000, 5, 1e9, 1u << 7);
+    t2d_app_action(T2D_HOST, T2D_H_SCALE, 0, off, 3, 0);
+    t2d_app_action(7, 11, -1, nullptr, 0, 0);                     // DICE
+    CHECK(monoMirror(m[w], 64) == 52);
+  }
+  CHECK(std::memcmp(m[0], m[1], sizeof(double) * 52) == 0);       // одно зерно — одна раскладка
+  for (int i = 0; i < 4; i++) {
+    const double r = m[0][16 + 9 * i], sus = m[0][16 + 9 * i + 1];
+    bool ok = false;
+    for (double p : pick) if (std::fabs(r - p) < 1e-12) ok = true;
+    CHECK(ok);
+    CHECK(sus == 0 || sus == 1);
+  }
+  CHECK(m[0][7] == 0 || (m[0][7] >= 0.15 && m[0][7] <= 0.5));
+  int winds = 0;                                                  // по разным зёрнам ветер бывает и там и там
+  for (uint32_t seed = 1; seed <= 30; seed++) {
+    t2d_app_init(48000, seed, 1e9, 1u << 7);
+    t2d_app_action(T2D_HOST, T2D_H_SCALE, 0, off, 3, 0);
+    t2d_app_action(7, 11, -1, nullptr, 0, 0);
+    double q[64]; monoMirror(q, 64);
+    CHECK(q[7] == 0 || (q[7] >= 0.15 && q[7] <= 0.5));
+    winds += q[7] > 0;
+  }
+  CHECK(winds > 0 && winds < 30);
+  t2d_app_init(48000, 5, 1e9, 1u << 7);                           // с ладом (major, root 0) — на ступени лада
+  const double sc[3] = {1, 0, 0};
+  t2d_app_action(T2D_HOST, T2D_H_SCALE, 0, sc, 3, 0);
+  t2d_app_action(7, 11, -1, nullptr, 0, 0);
+  double q[64]; monoMirror(q, 64);
+  t2d_app_action(T2D_HOST, T2D_H_SCALE, 0, off, 3, 0);
+  Scale s; s.on = true; s.idx = 0; s.root = 0;
+  for (int i = 0; i < 4; i++) {
+    const double r = q[16 + 9 * i];
+    CHECK(r >= 0.25 && r <= 1 && s.inScale(static_cast<int>(std::floor(-12 * std::log2(r) + 0.5))));
+  }
+}
+
 // ступени лада наружу: таблица host/scale.js
 static void appScaleSteps() {
   const int want[6][7] = {{0, 2, 4, 5, 7, 9, 11}, {0, 2, 3, 5, 7, 8, 10}, {0, 2, 3, 5, 7, 9, 10},
@@ -3364,7 +3440,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

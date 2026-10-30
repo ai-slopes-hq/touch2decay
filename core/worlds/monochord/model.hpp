@@ -49,6 +49,7 @@ class Model {
   void setAuto(bool on);
   void setAutoPar(int k, double v);                     // bpm, div, pattern, strength, swing — читаются на каждом шаге
   void clear();
+  void dice();                                          // подставки — на пифагоровы лады (с ладом — к его ступеням), у каждой струны sus с шансом, ветер
 
   double stepSec() const { return 60 / auto_[BPM] / DIVS[div()]; }
   double stepDur(long step) const;
