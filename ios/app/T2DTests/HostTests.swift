@@ -288,6 +288,31 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(host.scl, live); XCTAssertEqual(core.scales.last, live)
   }
 
+  func testUnlinkedReapplyKeepsEachSceneScale() {
+    let w11 = HWorld(11); unlinkedSetup(w11)
+    host = makeHost(views: [world, w11])                    // на карте, лад карты — off
+    host.reapply()
+    for sn in core.snaps { core.queue.append((sn.id, sn.slot, "w\(sn.slot)")) }
+    host.tick(now: 1, dt: 0.016); host.tick(now: 5, dt: 0.016)   // ответы приняты, автосохранение прошло
+    XCTAssertEqual(store.loadScene(slot: 10)?.scl, Scl(on: true, idx: 2, root: 2))
+    XCTAssertEqual(store.loadScene(slot: 11)?.scl, Scl(on: true, idx: 4, root: 7))
+  }
+
+  func testLinkedScaleChangeMarksPrefs() {
+    link(true)
+    host = makeHost(views: [world])
+    host.reapply()
+    let s = Scl(on: true, idx: 1, root: 3)
+    host.shotState(scl: s)
+    host.tick(now: 1, dt: 0.016); host.tick(now: 5, dt: 0.016)
+    XCTAssertEqual(store.loadPrefs()?.scl, s)
+  }
+
+  func testReapplyWakesCurrentWorld() {
+    host.reapply()                                           // host уже в мире 10
+    XCTAssertGreaterThan(world.enters, 0)
+  }
+
   func testNoFileNoRestore() {
     host.reapply()
     XCTAssertTrue(core.restores.isEmpty)

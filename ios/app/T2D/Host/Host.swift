@@ -32,7 +32,7 @@ final class Host {
   private var apGeo = AudioPanel.geo(bar: TopBar(W: 0, top: 0), W: 0)   // раз на layout
   private var cBox = Concordia.box(W: 0, H: 0, safeBot: 0, sunY: 0)   // коробка настроек: раз на layout, не на кадр
   private(set) var scl = Scl.off {
-    didSet { pushScale() }
+    didSet { guard scl != oldValue else { return }; pushScale(); if link.scale { markPrefs() } }   // не общий — в prefs свой лад не пишем (там лад карты)
   }
   private var prefsScl = Scl.off                           // лад из prefs.json: общий (link.scale) и стартовый на карте
   private(set) var legendOpen = false, sclOpen = false
@@ -536,7 +536,14 @@ final class Host {
     core.vol(Vol.gain(vol))
     applyMix()
     // первый снимок после восстановления — база отмены (текст после restore может отличаться от сохранённого)
-    for slot in slots { undo.base(slot: slot, w: nil, scl: scl); undo.commit(slot: slot, scl: scl) }
+    // лад не общий: у каждого мира свой (у текущего — живой), иначе сцены чужих миров перепишутся ладом карты
+    var curSlot: Int? = nil
+    if case .world(let c) = nav.view { curSlot = c }
+    for slot in slots {
+      let s = (!link.scale && slot != curSlot) ? (perScl[slot] ?? scl) : scl
+      undo.base(slot: slot, w: nil, scl: s); undo.commit(slot: slot, scl: s)
+    }
+    if let c = curSlot { views[c]?.enter() }                 // init ядра сбросил «проснулся» (веб: restartAudio → enter)
   }
 
   // ---------- рисование ----------

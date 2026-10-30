@@ -103,6 +103,7 @@ final class OceanusView: World {
   // новое зеркало: снять то, что оно догнало, сказать о пропавших оставленных, пересобрать видимое
   private func absorb() {
     let ids = Set(raw.cities.map(\.id)), pinned = Set(raw.cities.filter(\.pinned).map(\.id))
+    issued = max(issued, ids.max() ?? 0)                     // id уже видели в ядре: после подтверждённого drop его не выдать снова
     for (id, l) in local {
       if let c = raw.cities.first(where: { $0.id == id }) { if same(c, l) { local[id] = nil } }
       else if prevIds.contains(id) { local[id] = nil }       // город был и пропал — ядро убрало
