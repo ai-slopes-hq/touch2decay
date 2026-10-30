@@ -19,6 +19,7 @@ private final class NullHostCore: HostCore {
   func lfoOff(slot: Int, obj: Int, key: Int) -> Bool { true }
   func lfoDrop(slot: Int, obj: Int) -> Bool { true }
   func lfoSnap() -> [LfoSnap] { [] }
+  func levels(_ out: inout [Float]) {}
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { 0 }
 }
 

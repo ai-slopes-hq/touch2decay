@@ -24,6 +24,7 @@ private final class HCore: HostCore {
   func lfoOff(slot: Int, obj: Int, key: Int) -> Bool { calls.append("lfoOff:\(obj):\(key)"); return true }
   func lfoDrop(slot: Int, obj: Int) -> Bool { calls.append("lfoDrop:\(slot):\(obj)"); return true }
   func lfoSnap() -> [LfoSnap] { lfoSnaps }
+  func levels(_ out: inout [Float]) { for i in out.indices { out[i] = 0 } }
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { sin(2 * .pi * u) }
 }
 
