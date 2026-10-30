@@ -4,10 +4,10 @@ import XCTest
 // геометрия и попадания плашки (порт host/sheet.js): W 390, H 844, safeBot 34, 7 строк с lfo
 final class SheetTests: XCTestCase {
   private let keys = ["scintilla", "drift", "cometa", "crepitus", "fulgur", "spread", "hall"]
-  private func sheet(lfo: Bool = true, open: String? = nil) -> Sheet {
+  private func sheet(lfo: Bool = true, open: String? = nil, shape: Int = 1) -> Sheet {
     let rows = keys.enumerated().map { SheetRow(key: $1, label: $1, code: 6 + $0) }
     let spec = SheetSpec(title: "aether", hint: "", rows: rows, get: { _ in 0.5 }, set: { _, _ in }, text: { _ in "" },
-                         lfo: lfo ? SheetLfo(obj: -1, keys: ["cometa", "hall"], shape: 1) : nil, reset: nil, arc: nil)
+                         lfo: lfo ? SheetLfo(obj: -1, keys: ["cometa", "hall"], shape: shape) : nil, reset: nil, arc: nil)
     let s = Sheet(spec: spec, slot: 10)
     s.lfoKey = open
     return s
@@ -74,9 +74,10 @@ final class SheetTests: XCTestCase {
     c.translateBy(x: 0, y: 844); c.scaleBy(x: 1, y: -1)   // начало слева сверху: строка bitmap i — это y = i
     return (c, Draw(g: c, W: 390, H: 844))
   }
-  private func render(_ s: Sheet, _ lfos: [LfoSnap], held: SheetHit? = nil) -> CGContext {
+  private func render(_ s: Sheet, _ lfos: [LfoSnap], held: SheetHit? = nil,
+                      sample: @escaping (Int, Double, Double, Int) -> Double = { _, m, u, _ in sin(u * 6.28 + m) }) -> CGContext {
     let (c, d) = bitmap()
-    SheetDraw.draw(d, s, geo(s), lfos: lfos, held: held, sample: { _, m, u, _ in sin(u * 6.28 + m) })
+    SheetDraw.draw(d, s, geo(s), lfos: lfos, held: held, sample: sample)
     return c
   }
   private func lum(_ c: CGContext, _ x: Int, _ y: Int) -> Int {
@@ -99,5 +100,38 @@ final class SheetTests: XCTestCase {
     let x = Int(g.lfoX) - 13, y = Int(r.y + r.h / 2) - 8
     let without = lum(render(s, []), x, y), with = lum(render(s, [snap(8)]), x, y)
     XCTAssertNotEqual(with, without)
+  }
+
+  // полоса формы: чернила в колонке x±12 по строкам сh.y+2 ... sh.y+sh.h-2 (фон — угол полосы)
+  private func stripInk(_ c: CGContext, _ g: SheetGeo, _ cx: CGFloat, _ half: CGFloat, bright: Bool = false) -> Bool {
+    let sh = g.panel.shape, bg = lum(c, Int(g.panel.x) + 3, Int(sh.y) + 3)
+    for y in Int(sh.y) + 2..<Int(sh.y + sh.h) - 2 {
+      for x in Int(cx - half)...Int(cx + half) where bright ? lum(c, x, y) > bg + 300 : lum(c, x, y) != bg { return true }
+    }
+    return false
+  }
+  private func shapeSheet(_ shape: Int) -> Sheet {
+    sheet(open: "cometa", shape: shape)
+  }
+  private func snapShape(_ shape: Int, morph: Double) -> LfoSnap {
+    LfoSnap(slot: 10, obj: -1, key: 8, base: 0.5, morph: morph, rate: 1.5, depth: 0.5, u: 0.3, shape: shape, seed: 5)
+  }
+
+  func testClassicStripNineForms() {
+    let s = shapeSheet(0), g = geo(s), p = g.panel
+    var shapes = Set<Int>()
+    let c = render(s, [snapShape(0, morph: 0.5)], sample: { sh, m, u, _ in shapes.insert(sh); return sin(u * 6.28 + m) })
+    for i in 0..<9 { XCTAssertTrue(stripInk(c, g, p.x + 22 + CGFloat(i) / 8 * (p.w - 44), 12), "column \(i)") }
+    // рамка выбора: яркие пиксели в x = середина ± 26 (в соседней колонке слева без рамки, но кривая — не такой яркой)
+    XCTAssertTrue(stripInk(c, g, p.x + 22 + 0.5 * (p.w - 44), 26, bright: true))
+    XCTAssertTrue(shapes.contains(0))
+    XCTAssertFalse(shapes.contains(1))
+  }
+
+  func testRandomStripUnchanged() {
+    let s = shapeSheet(1), g = geo(s), p = g.panel
+    let c = render(s, [snapShape(1, morph: 0.1)])
+    for i in 0..<4 { XCTAssertTrue(stripInk(c, g, p.x + 22 + CGFloat((Double(i) + 0.5) / 4) * (p.w - 44), 12), "icon \(i)") }
+    XCTAssertFalse(stripInk(c, g, p.x + 22, 8), "classic edge column must be empty")
   }
 }

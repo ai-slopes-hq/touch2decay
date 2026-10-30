@@ -91,8 +91,13 @@ final class Draw {
   }
 
   // draw.js:47-50
-  func mapText(_ s: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ a: CGFloat, align: Align = .left, italic: Bool = true) {
-    drawString(s, x, y, font(italic, size), a, align)
+  func mapText(_ s: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ a: CGFloat, align: Align = .left, italic: Bool = true, angle: CGFloat = 0) {
+    if angle == 0 { drawString(s, x, y, font(italic, size), a, align); return }
+    // поворот вокруг (x, y), радианы, по часовой (как ctx.rotate в вебе; ось y вниз)
+    g.saveGState()
+    g.translateBy(x: x, y: y); g.rotate(by: angle)
+    drawString(s, 0, 0, font(italic, size), a, align)
+    g.restoreGState()
   }
   // draw.js:79-83 — в интерфейсе прямой, кегль +2 (у Fell мельче очко); жирного нет — акцент яркостью
   func text(_ s: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ a: CGFloat, align: Align = .left) {

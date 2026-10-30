@@ -65,6 +65,30 @@ final class DrawTests: XCTestCase {
     XCTAssertTrue(rows.contains { (90...100).contains($0) } && rows.contains { (100...108).contains($0) })
   }
 
+  private func inkBox(_ c: CGContext, _ n: Int) -> (w: Int, h: Int) {
+    let p = c.data!.assumingMemoryBound(to: UInt8.self), bpr = c.bytesPerRow
+    var x0 = n, x1 = -1, y0 = n, y1 = -1
+    for y in 0..<n { for x in 0..<n where p[y * bpr + x * 4 + 3] != 0 { x0 = min(x0, x); x1 = max(x1, x); y0 = min(y0, y); y1 = max(y1, y) } }
+    return (x1 - x0 + 1, y1 - y0 + 1)
+  }
+  func testMapTextAngle() {
+    let n = 300
+    for (angle, tall) in [(CGFloat.pi / 2, true), (0, false)] {
+      let c = flipped(n), d = Draw(g: c, W: CGFloat(n), H: CGFloat(n))
+      d.mapText("Mare Magnum", 150, 150, 14, 1, align: .center, angle: angle)
+      let b = inkBox(c, n)
+      if tall { XCTAssertGreaterThan(b.h, 3 * b.w, "angle pi/2: \(b)") } else { XCTAssertGreaterThan(b.w, 3 * b.h, "angle 0: \(b)") }
+    }
+  }
+  func testMapTextAngleClockwise() {   // +pi/2 по часовой: начало строки (слева) уходит вверх, конец — вниз
+    let n = 300, c = flipped(n), d = Draw(g: c, W: CGFloat(n), H: CGFloat(n))
+    d.mapText("MMMM", 150, 150, 14, 1, angle: .pi / 2)   // left: идёт от (150,150) вниз
+    let p = c.data!.assumingMemoryBound(to: UInt8.self), bpr = c.bytesPerRow
+    var up = 0, down = 0
+    for y in 0..<n { for x in 0..<n where p[y * bpr + x * 4 + 3] != 0 { if y < 148 { up += 1 } else if y > 152 { down += 1 } } }
+    XCTAssertGreaterThan(down, 5 * max(up, 1))
+  }
+
   func testSunGlyphDraws() {
     let n = 200
     let c = flipped(n)

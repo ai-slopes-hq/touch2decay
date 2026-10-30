@@ -76,11 +76,24 @@ enum SheetDraw {
       }
       c.strokePath()
     }
-    for i in 0..<4 { icon((Double(i) + 0.5) / 4, p.x + 22 + CGFloat((Double(i) + 0.5) / 4) * (p.w - 44), 34, 16, 0.3, 1.1) }
-    if let e {
-      let m = e.morph.isFinite ? e.morph : 0                 // NaN из снимка — не роняем Int(floor)
-      let i = max(0, min(3, Int(floor(m * 4)))), cx = p.x + 22 + CGFloat((Double(i) + 0.5) / 4) * (p.w - 44)
-      d.hairBox(cx - 26, sh.y + 4, 52, sh.h - 8, 0.9); icon(m, cx, 40, 22, 1, 1.6)
+    if l.shape == 1 {                                      // random: 4 значка
+      for i in 0..<4 { icon((Double(i) + 0.5) / 4, p.x + 22 + CGFloat((Double(i) + 0.5) / 4) * (p.w - 44), 34, 16, 0.3, 1.1) }
+      if let e {
+        let m = e.morph.isFinite ? e.morph : 0                 // NaN из снимка — не роняем Int(floor)
+        let i = max(0, min(3, Int(floor(m * 4)))), cx = p.x + 22 + CGFloat((Double(i) + 0.5) / 4) * (p.w - 44)
+        d.hairBox(cx - 26, sh.y + 4, 52, sh.h - 8, 0.9); icon(m, cx, 40, 22, 1, 1.6)
+      }
+    } else {                                               // classic: 9 форм вдоль полосы (host/sheet.js:148)
+      for i in 0..<9 {
+        let k = Double(i) / 8
+        d.drawCurve({ u in sample(0, k, u, 0) }, p.x + 22 + CGFloat(k) * (p.w - 44), sh.y + sh.h / 2, 24, 16, 0.3, cycles: 1, lw: 1.1)
+      }
+      if let e {
+        let m = e.morph.isFinite ? e.morph : 0
+        let mx = p.x + 22 + CGFloat(m) * (p.w - 44)
+        d.hairBox(mx - 24, sh.y + 4, 48, sh.h - 8, 0.9)
+        d.drawCurve({ u in sample(0, m, u, 0) }, mx, sh.y + sh.h / 2, 38, 22, 1, cycles: 1.5, lw: 1.6)
+      }
     }
     let on = held == .pad, by = pd.y + pd.h - 0.5
     d.hairBox(p.x, pd.y, p.w, pd.h, on ? 0.8 : 0.3)
