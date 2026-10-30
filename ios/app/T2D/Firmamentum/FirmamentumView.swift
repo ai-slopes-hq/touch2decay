@@ -13,6 +13,7 @@ final class FirmamentumView: World {
   private(set) lazy var fx: SheetSpec? = fxSpec            // плашка собрана раз: замыкания читают зеркало вживую
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
+  var rowLfoOff: ((Int) -> Void)?
   // view.js:194-196
   let legend: [LegendRow] = [
     LegendRow(glyph: .tap, gesture: "tap the sky", does: "pierce the firmament — a star pulses"),

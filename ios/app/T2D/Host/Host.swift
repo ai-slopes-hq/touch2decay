@@ -89,6 +89,11 @@ final class Host {
         self.core.lfoDrop(slot: slot, obj: id)
         if self.sheet?.slot == slot && (self.sheet?.spec.lfo?.obj == id || self.sheet?.spec.obj == id) { self.sheet = nil }
       }
+      v.rowLfoOff = { [weak self] code in
+        guard let self else { return }
+        self.core.lfoOff(slot: slot, obj: -1, key: code)
+        self.pending[LfoKey(slot: slot, obj: -1, key: code)] = nil
+      }
     }
     pushScale()                                            // didSet в init не срабатывает: мирам — текущий лад один раз
   }

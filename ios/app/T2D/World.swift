@@ -23,6 +23,7 @@ protocol World: AnyObject {
   var fx: SheetSpec? { get }                             // веер мира; nil — кнопка FX приглушена
   var openSheet: ((SheetSpec) -> Void)? { get set }      // ставит хост: мир просит открыть плашку
   var objGone: ((Int) -> Void)? { get set }              // ставит хост: объект мира пропал (его LFO гасит хост)
+  var rowLfoOff: ((Int) -> Void)? { get set }            // ставит хост: снять LFO строки мира (obj −1) по коду, база вернётся
   func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat)
   func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool     // предмет, ведущий на карту
   func dice()

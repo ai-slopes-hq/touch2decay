@@ -16,6 +16,7 @@ final class OceanusView: World {
   private(set) lazy var fx: SheetSpec? = fxSpec            // плашка собрана раз: замыкания читают зеркало вживую
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
+  var rowLfoOff: ((Int) -> Void)?
   // view.js:259-262
   let legend: [LegendRow] = [
     LegendRow(glyph: .tap, gesture: "touch the land", does: "a city sings while you hold it"),

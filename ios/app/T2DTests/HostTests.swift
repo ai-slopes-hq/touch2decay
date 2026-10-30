@@ -50,12 +50,14 @@ private final class HWorld: World {
   var fx: SheetSpec?
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
+  var rowLfoOff: ((Int) -> Void)?
+  var onClear: (() -> Void)?
   var sets: [(String, Double)] = []
   var downs = 0, moves = 0, ups = 0, cancels = 0, dices = 0, clears = 0, restoredN = 0
   func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat) {}
   func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool { x >= 300 && y >= 700 }
   func dice() { dices += 1 }
-  func clear() { clears += 1 }
+  func clear() { onClear?(); clears += 1 }
   func restored() { restoredN += 1 }
   var enters = 0, scales: [(pcs: [Int]?, root: Int)] = []
   func enter() { enters += 1 }
@@ -186,6 +188,15 @@ final class HostTests: XCTestCase {
   func testDiceAndClearGoToWorld() {
     tap(bar.pos(.dice).x, bar.pos(.dice).y); tap(bar.pos(.clr).x, bar.pos(.clr).y)
     XCTAssertEqual(world.dices, 1); XCTAssertEqual(world.clears, 1); XCTAssertEqual(world.downs, 0)
+  }
+
+  func testClearDropsOnlyWindLfo() {
+    let w7 = HWorld(7)
+    host = makeHost(views: [w7]); host.go(7)
+    core.lfoSnaps = [7, 12, 0].map { LfoSnap(slot: 7, obj: -1, key: $0, base: 0.5, morph: 0, rate: 1, depth: 0.5, u: 0, shape: 0, seed: 0) }
+    w7.onClear = { [core, w7] in w7.rowLfoOff?(7); core.calls.append("CLEAR") }
+    tap(bar.pos(.clr).x, bar.pos(.clr).y)
+    XCTAssertEqual(core.calls.filter { $0.hasPrefix("lfoOff") || $0 == "CLEAR" }, ["lfoOff:-1:7", "CLEAR"])
   }
 
   func testReinitReappliesScene() {
