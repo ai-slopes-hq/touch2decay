@@ -64,6 +64,15 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(view.ringHit[2], 4, "без ударов вспышка не обновляется")
   }
 
+  func testHeardTwoRecords() {
+    setMirror(now: 3)
+    heardBuf = [1, 2.5, 3, 2, 3.25, 2, 4]; view.tick(now: 4, dt: 0.016)
+    XCTAssertEqual([view.ringHit[3], view.ringHit[2], view.ringHit[4]], [4, 4, 4])
+    XCTAssertEqual(view.concAt, 4); XCTAssertEqual(view.concA, 0.25 * 2 * .pi, accuracy: 1e-9, "луч — по P второй записи")
+    heardBuf = [1, 0.5, 1, 5, 0.5, 6]; view.tick(now: 5, dt: 0.016)   // обрыв: вторая запись не влезает
+    XCTAssertEqual(view.ringHit[1], 5); XCTAssertLessThan(view.ringHit[6], 5)
+  }
+
   func testIdleDrainsWithoutFlash() {
     let v2 = HorologiumView(core: rec, readMirror: { _ in 0 }, readHeard: { [unowned self] b in
       let n = min(self.heardBuf.count, b.count); b.replaceSubrange(0..<n, with: self.heardBuf[0..<n]); self.heardBuf = []; return n })

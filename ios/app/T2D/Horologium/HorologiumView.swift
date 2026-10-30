@@ -93,11 +93,14 @@ final class HorologiumView: World {
     let len = min(max(0, readMirror(&mbuf)), mbuf.count)
     if let m = HoroMirror(mbuf, n: len) { mirror = m; mirrorAt = now }
     let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
-    if hn > 2 && hbuf[0] > 0 {
-      let k = min(Int(hbuf[0]), hn - 2)
+    var o = 0                                              // heard: записи [удары, P, кольца…] подряд, без разделителя — по каждой свои вспышки и луч
+    while o + 2 < hn {
+      let c = Int(hbuf[o])
+      if c <= 0 || o + 2 + c > hn { break }
       var hit = Set<Int>()
-      for j in 0..<k { let i = Int(hbuf[2 + j]); if i >= 0 && i < Horo.nr { ringHit[i] = now; hit.insert(i) } }
-      if hit.count > 1 && mirror.fx[2] > 0.05 { concAt = now; concA = (hbuf[1] - hbuf[1].rounded(.down)) * 2 * .pi }
+      for j in 0..<c { let i = Int(hbuf[o + 2 + j]); if i >= 0 && i < Horo.nr { ringHit[i] = now; hit.insert(i) } }
+      if hit.count > 1 && mirror.fx[2] > 0.05 { concAt = now; concA = (hbuf[o + 1] - hbuf[o + 1].rounded(.down)) * 2 * .pi }
+      o += 2 + c
     }
     for (k, var t) in holds where !t.sheet && !t.moved && now - t.t0 > Touch.holdMs / 1000 {
       switch t.kind {
