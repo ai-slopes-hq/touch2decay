@@ -25,7 +25,7 @@ private final class HCore: HostCore {
   func lfoDrop(slot: Int, obj: Int) -> Bool { calls.append("lfoDrop:\(slot):\(obj)"); return true }
   func lfoSnap() -> [LfoSnap] { lfoSnaps }
   var levelReads = 0
-  func levels(_ out: inout [Float]) { levelReads += 1; for i in out.indices { out[i] = 0 } }
+  func levels(_ out: inout [Float]) -> Bool { levelReads += 1; for i in out.indices { out[i] = 0 }; return true }
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { sin(2 * .pi * u) }
 }
 
@@ -47,7 +47,9 @@ private final class HWorld: World {
   func dice() { dices += 1 }
   func clear() { clears += 1 }
   func restored() { restoredN += 1 }
-  func tick(now: Double, dt: Double) {}
+  var ticks = 0, idles = 0
+  func tick(now: Double, dt: Double) { ticks += 1 }
+  func idle() { idles += 1 }
   func draw(_ d: Draw, now: Double) {}
   func down(_ f: Finger) { downs += 1 }
   func move(_ f: Finger) { moves += 1 }
@@ -410,6 +412,16 @@ final class HostTests: XCTestCase {
     tick(3); tick(4)
     XCTAssertEqual(host.nav.view, .world(10))
     XCTAssertEqual(core.levelReads, n, "в мире уровни не опрашиваем")
+  }
+
+  func testWorldIdlesOnMapAndTicksInWorld() {
+    host = makeHost(); tick(1); tick(1.1)
+    XCTAssertEqual(world.idles, 2, "на карте мир не тикает, но кольца сливает"); XCTAssertEqual(world.ticks, 0)
+    tapCell(3, 1); tick(1.2); tick(1.5)                // переход: мир ещё не тикает
+    XCTAssertEqual(world.ticks, 0); XCTAssertEqual(world.idles, 4)
+    tick(3); tick(3.1)
+    XCTAssertEqual(host.nav.view, .world(10))
+    XCTAssertEqual(world.ticks, 2); XCTAssertEqual(world.idles, 4, "в мире idle не зовём")
   }
 
   // ---------- плашка и LFO строк ----------

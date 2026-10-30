@@ -202,6 +202,7 @@ final class Host {
     guard case .world(let slot) = nav.view, let w = views[slot] else { return }
     closeOverlays()
     rowF = nil; padDepth = nil
+    levels = Levels()                                        // лучи с нуля: первый опрос берёт настоящий rms, без призраков
     snaps[slot] = snapshot(w)
     touched.insert(slot)
     // пальцы мира остаются миру до подъёма; пальцы плашки, легенды, кнопок и выходов — съедены (громкость держится сама)
@@ -354,8 +355,10 @@ final class Host {
   func tick(now: Double, dt: Double) {
     self.now = now
     _ = nav.step(now)                                        // закрыл кончившиеся переход и peek; по концу входа — режим .world
-    if onMap { levels.poll(now: now, read: core.levels) }    // лучи карты — пока она видна; в мире уровни не нужны
-    else { world?.tick(now: now, dt: dt) }                   // мир тикает вне перехода
+    if onMap {                                               // карта и переход: мир не тикает
+      levels.poll(now: now, read: core.levels)               // лучи карты — пока она видна; в мире уровни не нужны
+      for v in views.values { v.idle() }                     // слить кольца миров, чтобы вход не отыграл старое
+    } else { world?.tick(now: now, dt: dt) }                 // мир тикает вне перехода
     if sheet != nil { lfos = core.lfoSnap() }
     for b in undo.pollAll() { setScene(b.slot, b.w, b.scl) }
     for (slot, t) in dirtyAt where now - t >= Host.autosave { saveScene(slot) }

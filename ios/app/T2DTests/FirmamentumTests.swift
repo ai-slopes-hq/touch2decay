@@ -55,6 +55,18 @@ final class FirmamentumTests: XCTestCase {
     XCTAssertEqual(fm.stars[0].id, 7); XCTAssertEqual(fm.stars[0].h, 0.4, accuracy: 1e-9); XCTAssertEqual(fm.stars[0].u, 0.25, accuracy: 1e-9)
   }
 
+  func testIdleDrainsHeardRingWithoutReplay() {
+    var pending = 3, reads = 0
+    let v = FirmamentumView(core: rec, geo: geo, readMirror: { _ in 0 }, readHeard: { b in
+      reads += 1; guard pending > 0 else { return 0 }
+      pending -= 1; b.replaceSubrange(0..<6, with: [1, 0, 1, 0.5, 0.3, 0]); return 6
+    })
+    v.idle()
+    XCTAssertEqual(pending, 0, "кольцо слито"); XCTAssertEqual(reads, 4)
+    reads = 0; v.tick(now: 1, dt: 0.016)
+    XCTAssertEqual(reads, 1, "после слива tick читает пустое кольцо")
+  }
+
   func testHeardParse() {
     let h = Heard.parse([1, 10, 1, 0.3, 0.5, 0])
     XCTAssertEqual(h.count, 1)

@@ -29,6 +29,7 @@ protocol World: AnyObject {
   func clear()
   func restored()                                        // после restore: бросить временное (пальцы, удержания, вспышки); id звёзд — по зеркалу
   func tick(now: Double, dt: Double)
+  func idle()                                            // вызывает хост каждый кадр, пока мир не тикает (карта, переход)
   func draw(_ d: Draw, now: Double)
   func drawShot(_ d: Draw, now: Double)                  // кадр для снимка при уходе на карту: без предмета-угла (host/map.js mapShot)
   var objs: Int { get }                                  // число объектов мира для строки замеров (звёзды); на карте — 0
@@ -42,4 +43,5 @@ extension World {
   var hasFx: Bool { fx != nil }
   func drawShot(_ d: Draw, now: Double) { draw(d, now: now) }
   var objs: Int { 0 }
+  func idle() {}                                         // карта: мир не тикает — слить то, что копится в ядре (кольцо heard)
 }

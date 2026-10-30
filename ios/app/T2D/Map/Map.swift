@@ -21,7 +21,7 @@ enum MapHit: Equatable {
 }
 
 enum MapGeo {
-  // top — низ верхней панели (аналог scopeY веба)
+  // top — верх строки кнопок (safe inset; аналог scopeY веба)
   static func field(W: CGFloat, H: CGFloat, top: CGFloat, safeBot: CGFloat) -> Field {
     let g = CGFloat(mapGrid), t = top + 40, bot = H - safeBot - 10
     let gap = min(9, max(4, W * 0.014))
@@ -85,18 +85,20 @@ struct Nav {
   }
 }
 
-// RMS слотов до фейдера: опрос не чаще 60 мс, спад 0.82 за опрос
+// RMS слотов до фейдера: опрос не чаще 60 мс, спад 0.82 за опрос; нет свежего снимка дольше 0.3 с (движок встал) — уровни 0
 struct Levels {
+  static let stale = 0.3
   private(set) var lv = [Float](repeating: 0, count: 16)
   private var raw = [Float](repeating: 0, count: 16)
-  private var last = -Double.infinity
+  private var last = -Double.infinity, fresh = -Double.infinity
 
-  mutating func poll(now: Double, read: (inout [Float]) -> Void) {
+  mutating func poll(now: Double, read: (inout [Float]) -> Bool) {
     if now - last < 0.06 - 1e-9 { return }
     last = now
-    read(&raw)
+    if read(&raw) { fresh = now }
+    let live = now - fresh <= Levels.stale
     for i in 0..<16 {
-      let r = raw[i].isFinite && raw[i] > 0 ? raw[i] : 0
+      let r = live && raw[i].isFinite && raw[i] > 0 ? raw[i] : 0
       lv[i] = max(r, lv[i] * 0.82)
     }
   }

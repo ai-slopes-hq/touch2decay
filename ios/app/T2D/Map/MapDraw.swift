@@ -4,6 +4,11 @@ import UIKit
 // Солнце и concordia приглушены (×0.3, как приглушённые кнопки TopBar): нажатие на них пока ничего не делает (2b-3b).
 enum MapDraw {
   private static let T2 = CGFloat.pi * 2
+  private static var cW: CGFloat?                          // ширина подписи concordia: шрифт один — считаем раз
+  private static func concordiaW(_ d: Draw) -> CGFloat {
+    if let w = cW { return w }
+    let w = d.mapTextWidth("concordia", 12) + 14; cW = w; return w
+  }
 
   // now — секунды; в формулах веба — мс. snap — снимок мира, участвующего в переходе (nil — рисуем только карточки)
   static func draw(_ d: Draw, nav: Nav, field F: Field, lv: [Float], snap: CGImage?, now: Double) {
@@ -88,7 +93,7 @@ enum MapDraw {
     g.setFillColor(bg); g.fillEllipse(in: CGRect(x: cx - 20, y: cy - 20, width: 40, height: 40))   // солнце в середине расклада
     g.setAlpha(al * 0.3)
     d.sunGlyph(cx, cy, 0, T2, scale: 0.6, now: ms)
-    let lw = d.mapTextWidth("concordia", 12) + 14
+    let lw = concordiaW(d)
     g.setAlpha(al); g.setFillColor(bg); g.fill(CGRect(x: cx + 34, y: cy - 9, width: lw, height: 18))
     g.setAlpha(al * 0.3)
     d.mapText("concordia", cx + 41, cy, 12, 0.65)

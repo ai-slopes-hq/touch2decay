@@ -101,15 +101,29 @@ final class MapTests: XCTestCase {
   func testLevelsDecayAndSanitize() {
     var l = Levels()
     var calls = 0
-    func poll(_ t: Double, _ v: Float) { l.poll(now: t) { b in calls += 1; b[3] = v } }
+    func poll(_ t: Double, _ v: Float) { l.poll(now: t) { b in calls += 1; b[3] = v; return true } }
     poll(0, 0.5); XCTAssertEqual(l.lv[3], 0.5, accuracy: 1e-6)
     poll(0.06, 0); XCTAssertEqual(l.lv[3], 0.41, accuracy: 1e-6)
     poll(0.12, 0); XCTAssertEqual(l.lv[3], 0.3362, accuracy: 1e-6)
     poll(0.15, 0.9); XCTAssertEqual(calls, 3)
     XCTAssertEqual(l.lv[3], 0.3362, accuracy: 1e-6)
     var s = Levels()
-    s.poll(now: 0) { $0[0] = .nan; $0[1] = -1; $0[2] = .infinity }
+    s.poll(now: 0) { $0[0] = .nan; $0[1] = -1; $0[2] = .infinity; return true }
     XCTAssertEqual(s.lv[0], 0); XCTAssertEqual(s.lv[1], 0); XCTAssertEqual(s.lv[2], 0)
+  }
+
+  func testLevelsExpireWithoutFreshSnapshot() {
+    var l = Levels()
+    l.poll(now: 0) { $0[3] = 0.5; return true }
+    XCTAssertEqual(l.lv[3], 0.5, accuracy: 1e-6)
+    l.poll(now: 0.2) { _ in false }                    // снимка нет, но 0.3 с ещё не прошло — держим rms
+    XCTAssertEqual(l.lv[3], 0.5, accuracy: 1e-6)
+    l.poll(now: 0.4) { _ in false }                    // движок встал: уровни 0, лучи спадают
+    XCTAssertEqual(l.lv[3], 0.5 * 0.82, accuracy: 1e-6)
+    l.poll(now: 0.46) { _ in false }
+    XCTAssertEqual(l.lv[3], 0.5 * 0.82 * 0.82, accuracy: 1e-6)
+    l.poll(now: 0.52) { $0[3] = 0.9; return true }      // движок ожил
+    XCTAssertEqual(l.lv[3], 0.9, accuracy: 1e-6)
   }
 
   func testEmblemsAllSlots() {

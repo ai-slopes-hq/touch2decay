@@ -59,6 +59,8 @@ final class FirmamentumView: World {
   func clear() { core.action(5, 0, [], touchTime: 0) }
   func restored() { holds.removeAll(); flash.removeAll() }   // id звёзд — по зеркалу; prevIds остаётся: звёзды, снятые откатом, дадут objGone на следующем разборе
 
+  func idle() { while readHeard(&hbuf) > 0 {} }   // слить кольцо heard без разбора: вход в мир не отыграет вспышки со звуком из прошлого
+
   func tick(now: Double, dt: Double) {
     self.now = now
     mlen = min(max(0, readMirror(&mbuf)), mbuf.count)

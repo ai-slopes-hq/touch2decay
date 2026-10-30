@@ -21,7 +21,7 @@ protocol HostCore: AnyObject {
   @discardableResult func lfoOff(slot: Int, obj: Int, key: Int) -> Bool
   @discardableResult func lfoDrop(slot: Int, obj: Int) -> Bool        // obj −2 — все объекты слота (строки FX, obj −1, остаются)
   func lfoSnap() -> [LfoSnap]                                         // последний снимок ядра
-  func levels(_ out: inout [Float])                                   // RMS слотов до фейдера (16); без нового снимка out не трогает
+  @discardableResult func levels(_ out: inout [Float]) -> Bool        // RMS слотов до фейдера (16); true — снимок новее прошлого чтения (иначе в out прошлый)
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double
 }
 
@@ -57,7 +57,7 @@ final class AppHostCore: HostCore {
   func lfoBase(slot: Int, obj: Int, key: Int, base: Double) -> Bool {
     act(Int32(T2D_H_LFO_BASE), slot, [Double(obj), Double(key), base])
   }
-  func levels(_ out: inout [Float]) { _ = t2d_app_levels(&out, Int32(out.count)) }
+  func levels(_ out: inout [Float]) -> Bool { t2d_app_levels(&out, Int32(out.count)) != 0 }
   func lfoOff(slot: Int, obj: Int, key: Int) -> Bool { act(Int32(T2D_H_LFO_OFF), slot, [Double(obj), Double(key)]) }
   func lfoDrop(slot: Int, obj: Int) -> Bool { act(Int32(T2D_H_LFO_DROP), slot, [Double(obj)]) }
 
