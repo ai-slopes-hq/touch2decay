@@ -74,4 +74,33 @@ final class DrawTests: XCTestCase {
     XCTAssertFalse(rows.isEmpty)
     XCTAssertTrue(rows.allSatisfy { (40...160).contains($0) })
   }
+
+  // кадр карты: рубашка рисуется, лучи звучащего слота — только при lv > 0
+  func testMapDrawSmoke() {
+    let W = 390, H = 844
+    let f = MapGeo.field(W: CGFloat(W), H: CGFloat(H), top: 60, safeBot: 34)
+    func frame(_ l: Float) -> CGContext {
+      let c = flipped2(W, H)
+      let d = Draw(g: c, W: CGFloat(W), H: CGFloat(H))
+      var lv = [Float](repeating: 0, count: 16); lv[10] = l
+      MapDraw.draw(d, nav: Nav(), field: f, lv: lv, snap: nil, now: 1)
+      return c
+    }
+    func px(_ c: CGContext, _ x: Int, _ y: Int) -> [UInt8] {
+      let p = c.data!.assumingMemoryBound(to: UInt8.self), o = y * c.bytesPerRow + x * 4
+      return [p[o], p[o + 1], p[o + 2]]
+    }
+    let a = frame(0.1), b = frame(0)
+    let back = f.rect(col: 0, row: 0)
+    XCTAssertNotEqual(px(a, Int(back.midX), Int(back.midY)), [0, 0, 0])
+    let w = Worlds.info(10)!, cell = f.rect(col: w.col, row: w.row)
+    var diff = 0
+    for y in Int(cell.minY)..<Int(cell.maxY) { for x in Int(cell.maxX) + 2...Int(cell.maxX) + 6 where px(a, x, y) != px(b, x, y) { diff += 1 } }
+    XCTAssertGreaterThan(diff, 0, "лучей нет у края клетки")
+  }
+  private func flipped2(_ w: Int, _ h: Int) -> CGContext {
+    let c = ctx(w, h)
+    c.translateBy(x: 0, y: CGFloat(h)); c.scaleBy(x: 1, y: -1)
+    return c
+  }
 }

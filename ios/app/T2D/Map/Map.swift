@@ -7,6 +7,7 @@ let mapGrid = 4, mapEcl: CGFloat = 40   // GRID и ECL: эклиптика ме�
 
 struct Field {
   let x0, y0, cw, ch, gap, sy, fw: CGFloat
+  var top: CGFloat = 0   // scopeY веба: верх строки кнопок, нужен плашке UNIVERSUM
   // клетка [столбец, ряд]; ряды от 2-го сдвинуты на эклиптику
   func rect(col: Int, row: Int) -> CGRect {
     CGRect(x: x0 + CGFloat(col) * (cw + gap), y: y0 + CGFloat(row) * (ch + gap) + (row >= mapGrid / 2 ? mapEcl - gap : 0), width: cw, height: ch)
@@ -29,7 +30,7 @@ enum MapGeo {
     ch = min(ch, cw / 0.52); cw = min(cw, ch * 0.72)   // карта не уже 0.52 и не шире 0.72 высоты
     let fw = g * cw + (g - 1) * gap, fh = g * ch + (g - 2) * gap + mapEcl
     let x0 = (W - fw) / 2, y0 = t + max(0, (bot - t - fh) / 2)
-    return Field(x0: x0, y0: y0, cw: cw, ch: ch, gap: gap, sy: y0 + g / 2 * ch + (g / 2 - 1) * gap + mapEcl / 2, fw: fw)
+    return Field(x0: x0, y0: y0, cw: cw, ch: ch, gap: gap, sy: y0 + g / 2 * ch + (g / 2 - 1) * gap + mapEcl / 2, fw: fw, top: top)
   }
 
   // как navDown: солнце и concordia съедаются; клетка — с зазором вправо и вниз

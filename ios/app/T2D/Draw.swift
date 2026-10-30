@@ -84,6 +84,12 @@ final class Draw {
     g.restoreGState()
   }
 
+  // ширина строки в пунктах (measureText); italic как у mapText
+  func mapTextWidth(_ s: String, _ size: CGFloat, italic: Bool = true) -> CGFloat {
+    let attrs: [CFString: Any] = [kCTFontAttributeName: font(italic, size)]
+    return CGFloat(CTLineGetTypographicBounds(CTLineCreateWithAttributedString(CFAttributedStringCreate(nil, s as CFString, attrs as CFDictionary)), nil, nil, nil))
+  }
+
   // draw.js:47-50
   func mapText(_ s: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ a: CGFloat, align: Align = .left, italic: Bool = true) {
     drawString(s, x, y, font(italic, size), a, align)
