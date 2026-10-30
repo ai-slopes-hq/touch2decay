@@ -11,6 +11,7 @@ struct Scl: Codable, Equatable {
 protocol HostCore: AnyObject {
   @discardableResult func vol(_ gain: Double) -> Bool                 // false — действие отброшено (кольцо полно)
   @discardableResult func scale(_ s: Scl) -> Bool
+  func scaleSteps(_ idx: Int) -> [Int]                                // 7 ступеней лада в полутонах от тоники; [] — нет такого лада
   @discardableResult func fader(slot: Int, g: Double) -> Bool         // линейный коэффициент фейдера слота (ядро сглаживает)
   @discardableResult func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool   // Гц, дБ, N, дБ
   @discardableResult func snap(slot: Int, id: Int) -> Bool            // запросить снимок мира; готовый заберёт takeSnap
@@ -48,6 +49,11 @@ final class AppHostCore: HostCore {
 
   func vol(_ gain: Double) -> Bool { act(Int32(T2D_H_VOL), 0, [gain]) }
   func scale(_ s: Scl) -> Bool { act(Int32(T2D_H_SCALE), 0, [s.on ? 1 : 0, Double(s.idx), Double(s.root)]) }
+  func scaleSteps(_ idx: Int) -> [Int] {
+    var out = [Int32](repeating: 0, count: 7)
+    let n = Int(t2d_app_scale_steps(Int32(idx), &out))
+    return n == 7 ? out.map(Int.init) : []
+  }
   func fader(slot: Int, g: Double) -> Bool { act(Int32(T2D_H_FADER), slot, [g]) }
   func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { act(Int32(T2D_H_MASTER), 0, [lpf, thr, ratio, ceil]) }
   func snap(slot: Int, id: Int) -> Bool { act(Int32(T2D_H_SNAP), slot, [Double(id)]) }

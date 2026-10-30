@@ -31,7 +31,10 @@ final class Host {
   private(set) var audioPanel = false                        // панель audio под кнопкой громкости (только в мире)
   private var apGeo = AudioPanel.geo(bar: TopBar(W: 0, top: 0), W: 0)   // раз на layout
   private var cBox = Concordia.box(W: 0, H: 0, safeBot: 0, sunY: 0)   // коробка настроек: раз на layout, не на кадр
-  private(set) var scl = Scl.off
+  private(set) var scl = Scl.off {
+    didSet { pushScale() }
+  }
+  private var prefsScl = Scl.off                           // лад из prefs.json: общий (link.scale) и стартовый на карте
   private(set) var legendOpen = false, sclOpen = false
   private(set) var sheet: Sheet? {                         // открытая плашка: забирает касания целиком
     didSet { lfos = sheet == nil ? [] : core.lfoSnap(); pending.removeAll() }   // снимок свежий с открытия
@@ -76,6 +79,8 @@ final class Host {
     if let l = store.loadPrefs()?.link { link = l }
     if let a = store.loadPrefs()?.audio { audioPref = a }
     if let m = store.loadPrefs()?.mix { mix = m }
+    prefsScl = store.loadPrefs()?.scl ?? .off
+    if link.scale { scl = prefsScl }                       // лад общий: из prefs, лад из файлов сцен не берём
     for v in views {
       let slot = v.slot
       v.openSheet = { [weak self] spec in self?.sheet = Sheet(spec: spec, slot: slot) }
@@ -85,6 +90,15 @@ final class Host {
         if self.sheet?.slot == slot && self.sheet?.spec.lfo?.obj == id { self.sheet = nil }
       }
     }
+    pushScale()                                            // didSet в init не срабатывает: мирам — текущий лад один раз
+  }
+
+  // лад миру: ноты по модулю 12 от A ((ступень + тоника) % 12, как scalePCs веба); nil — выключен
+  private func pushScale() {
+    var pcs: [Int]? = nil
+    if scl.on { let st = core.scaleSteps(scl.idx); if !st.isEmpty { pcs = st.map { ($0 + scl.root) % 12 } } }
+    let root = scl.on ? scl.root : 0
+    for v in views.values { v.scale(pcs: pcs, root: root) }
   }
 
   // top — верхний inset (safe area); строка кнопок и мир считают от него
@@ -102,6 +116,7 @@ final class Host {
   func go(_ slot: Int) {
     guard views[slot] != nil else { return }
     nav.anim = nil; nav.view = .world(slot); lastSlot = slot
+    views[slot]?.enter()
   }
 
   // ---------- касания ----------
@@ -184,7 +199,7 @@ final class Host {
   func markPrefs() { if prefsDirtyAt == nil { prefsDirtyAt = now } }
   private func savePrefs() {
     prefsDirtyAt = nil
-    store.savePrefs(PrefsFile(vol: vol, mix: mix, link: link, audio: audioPref))
+    store.savePrefs(PrefsFile(vol: vol, mix: mix, link: link, audio: audioPref, scl: scl))
   }
 
   // действие строки панели — на касании (audio-panel.js panelDown)
@@ -308,11 +323,12 @@ final class Host {
   // internal — для теста; из кода зовёт тап по карточке
   func goWorld(_ slot: Int) {
     guard views[slot] != nil, !nav.busy(now) else { return }
-    if !link.scale, let from = lastSlot, from != slot {     // лад не общий: у каждого мира свой (map.js goWorld)
-      perScl[from] = scl
+    if !link.scale, lastSlot != slot {                      // лад не общий: у каждого мира свой (map.js goWorld); первый вход тоже
+      if let from = lastSlot { perScl[from] = scl }
       if let s = perScl[slot] { scl = s; core.scale(s) }
     }
     lastSlot = slot; settings = .off
+    views[slot]?.enter()
     nav.anim = (now, false, slot)
   }
 
@@ -508,9 +524,12 @@ final class Host {
       loaded.insert(slot)
       if let sc = scenes[slot] {
         core.restore(slot: slot, sc.w)
-        if first { scl = sc.scl }                            // лад из файла — только при запуске; при reinit живой новее снимка
+        if first && !link.scale { perScl[slot] = sc.scl }    // лад не общий: свой у мира из его сцены, только при запуске; при reinit живой новее
         w.restored()
       }
+    }
+    if first && !link.scale {                                // старт в мире — его лад, на карте — из prefs
+      if case .world(let slot) = nav.view, let s = perScl[slot] { scl = s } else { scl = prefsScl }
     }
     pending.removeAll()                                      // reinit ядра стирает LFO и без сцены
     core.scale(scl)

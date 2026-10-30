@@ -2,6 +2,12 @@ import XCTest
 @testable import T2D
 
 // поддельное ядро хоста: порядок вызовов, снимки — из очереди
+// таблица ладов веба (host/scale.js) — общая для фейков ядра
+func webScaleSteps(_ idx: Int) -> [Int] {
+  let t = [[0, 2, 4, 5, 7, 9, 11], [0, 2, 3, 5, 7, 8, 10], [0, 2, 3, 5, 7, 9, 10], [0, 1, 3, 5, 7, 8, 10], [0, 2, 4, 6, 7, 9, 11], [0, 2, 4, 5, 7, 9, 10]]
+  return t.indices.contains(idx) ? t[idx] : []
+}
+
 private final class HCore: HostCore {
   var calls: [String] = []                 // restore / scale / vol — в порядке вызова
   var vols: [Double] = [], scales: [Scl] = []
@@ -13,6 +19,7 @@ private final class HCore: HostCore {
   func fader(slot: Int, g: Double) -> Bool { faders.append((slot, g)); return true }
   func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { masters.append([lpf, thr, ratio, ceil]); return true }
   func scale(_ s: Scl) -> Bool { scales.append(s); calls.append("scale"); return true }
+  func scaleSteps(_ idx: Int) -> [Int] { webScaleSteps(idx) }
   func snap(slot: Int, id: Int) -> Bool { snaps.append((slot, id)); return true }
   func restore(slot: Int, _ w: String) -> Bool { restores.append((slot, w)); calls.append("restore:\(w)"); return true }
   func takeSnap() -> (id: Int, slot: Int, w: String)? { queue.isEmpty ? nil : queue.removeFirst() }
@@ -50,6 +57,9 @@ private final class HWorld: World {
   func dice() { dices += 1 }
   func clear() { clears += 1 }
   func restored() { restoredN += 1 }
+  var enters = 0, scales: [(pcs: [Int]?, root: Int)] = []
+  func enter() { enters += 1 }
+  func scale(pcs: [Int]?, root: Int) { scales.append((pcs, root)) }
   var ticks = 0, idles = 0
   func tick(now: Double, dt: Double) { ticks += 1 }
   func idle() { idles += 1 }
@@ -196,9 +206,86 @@ final class HostTests: XCTestCase {
   func testLaunchFromFile() {
     let s = Scl(on: true, idx: 3, root: 2)
     store.saveScene(slot: 10, SceneFile(w: "wf", scl: s))
+    store.savePrefs(PrefsFile(vol: 0.5, scl: s))             // лад общий — из prefs, не из сцены
     let h = makeHost()
     h.reapply()
     XCTAssertEqual(core.restores.map(\.w), ["wf"]); XCTAssertEqual(core.scales.last, s); XCTAssertEqual(h.scl, s)
+  }
+
+  // ---------- вход в мир и лад ----------
+  private let major3 = Scl(on: true, idx: 0, root: 3)
+  private func link(_ scale: Bool) { store.savePrefs(PrefsFile(vol: 0.5, link: Link(clock: false, scale: scale))) }
+
+  func testGoWorldCallsEnter() {
+    let w = HWorld(10); host = makeHost(views: [w])
+    host.goWorld(10); XCTAssertEqual(w.enters, 1)
+    let w2 = HWorld(10); host = makeHost(views: [w2])
+    host.go(10); XCTAssertEqual(w2.enters, 1)
+  }
+
+  func testScalePushedToWorlds() {
+    let w = HWorld(10), w2 = HWorld(11); host = makeHost(views: [w, w2])
+    XCTAssertEqual(w.scales.count, 1); XCTAssertNil(w.scales[0].pcs); XCTAssertEqual(w.scales[0].root, 0, "init: текущий лад")
+    host.shotState(scl: major3)
+    for x in [w, w2] { XCTAssertEqual(x.scales.last?.pcs, [3, 5, 7, 8, 10, 0, 2]); XCTAssertEqual(x.scales.last?.root, 3) }
+    host.shotState(scl: .off)
+    for x in [w, w2] { XCTAssertNil(x.scales.last?.pcs); XCTAssertEqual(x.scales.last?.root, 0) }
+  }
+
+  func testLinkedScaleFromPrefs() {
+    let minor5 = Scl(on: true, idx: 1, root: 5)
+    store.savePrefs(PrefsFile(vol: 0.5, scl: minor5))
+    let w11 = HWorld(11)
+    store.saveScene(slot: 10, SceneFile(w: "a", scl: Scl(on: true, idx: 2, root: 1)))
+    store.saveScene(slot: 11, SceneFile(w: "b", scl: Scl(on: true, idx: 4, root: 9)))
+    host = makeHost(views: [world, w11])
+    XCTAssertEqual(host.scl, minor5)
+    host.reapply()
+    XCTAssertEqual(host.scl, minor5); XCTAssertEqual(core.scales.last, minor5)
+    host.background()
+    XCTAssertEqual(store.loadPrefs()?.scl, minor5)
+  }
+
+  private func unlinkedSetup(_ w11: HWorld) {
+    link(false)
+    store.saveScene(slot: 10, SceneFile(w: "a", scl: Scl(on: true, idx: 2, root: 2)))
+    store.saveScene(slot: 11, SceneFile(w: "b", scl: Scl(on: true, idx: 4, root: 7)))
+  }
+
+  func testUnlinkedSeedsPerSclFromScenes() {
+    let w11 = HWorld(11); unlinkedSetup(w11)
+    host = makeHost(views: [world, w11])
+    host.reapply()
+    XCTAssertEqual(host.scl, .off, "на карте — лад из prefs")
+    host.goWorld(11); XCTAssertEqual(host.scl, Scl(on: true, idx: 4, root: 7)); XCTAssertEqual(core.scales.last, host.scl)
+    tick(5); host.goMap(); tick(10)
+    host.goWorld(10); XCTAssertEqual(host.scl, Scl(on: true, idx: 2, root: 2))
+  }
+
+  func testUnlinkedFirstEnterAppliesWorldScale() {
+    let w11 = HWorld(11); unlinkedSetup(w11)
+    host = makeHost(views: [world, w11])
+    host.reapply()
+    host.goWorld(10)
+    XCTAssertEqual(host.scl, Scl(on: true, idx: 2, root: 2)); XCTAssertEqual(core.scales.last, host.scl)
+    XCTAssertEqual(world.scales.last?.root, 2)
+  }
+
+  func testUnlinkedStartInWorldUsesItsScale() {
+    let w11 = HWorld(11); unlinkedSetup(w11)
+    host = makeHost(views: [world, w11]); host.go(11)
+    host.reapply()
+    XCTAssertEqual(host.scl, Scl(on: true, idx: 4, root: 7))
+  }
+
+  func testReinitKeepsLiveScale() {
+    let w11 = HWorld(11); unlinkedSetup(w11)
+    host = makeHost(views: [world, w11])
+    host.reapply(); host.goWorld(10)
+    let live = Scl(on: true, idx: 3, root: 4)
+    host.shotState(scl: live)
+    host.reapply()
+    XCTAssertEqual(host.scl, live); XCTAssertEqual(core.scales.last, live)
   }
 
   func testNoFileNoRestore() {
@@ -367,7 +454,7 @@ final class HostTests: XCTestCase {
     host = makeHost()
     host.reapply()
     XCTAssertEqual(core.restores.map(\.slot), [10]); XCTAssertEqual(host.nav.view, .map)
-    XCTAssertEqual(core.scales.last, Scl(on: true, idx: 1, root: 2), "лад из файла — при запуске")
+    XCTAssertEqual(core.scales.last, .off, "лад общий — из prefs (его нет), не из сцены")
     XCTAssertEqual(core.vols.last!, Vol.gain(host.vol), accuracy: 1e-12)
     // смена частоты: лад хоста новее файла — уходит в ядро заново, из файла не перечитывается
     let live = Scl(on: true, idx: 3, root: 5)

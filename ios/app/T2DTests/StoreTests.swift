@@ -25,6 +25,15 @@ final class StoreTests: XCTestCase {
     XCTAssertNil(p?.mix); XCTAssertNil(p?.link); XCTAssertNil(p?.audio)
   }
 
+  func testPrefsSclOptional() throws {
+    try put("prefs.json", "{\"v\":1,\"vol\":0.5}")
+    XCTAssertNil(store().loadPrefs()?.scl)
+    let p = PrefsFile(vol: 0.5, scl: Scl(on: true, idx: 1, root: 5))
+    store().savePrefs(p)
+    XCTAssertEqual(store().loadPrefs(), p)
+    XCTAssertEqual(store().loadPrefs()?.scl, Scl(on: true, idx: 1, root: 5))
+  }
+
   func testPrefsMixRoundtrip() {
     var m = Mix(); m.g[10] = 0.4; m.mute[4] = true; m.lpf = 0.5
     let p = PrefsFile(vol: 0.6, mix: m, link: Link(clock: true, scale: false), audio: AudioPref(stable: true))

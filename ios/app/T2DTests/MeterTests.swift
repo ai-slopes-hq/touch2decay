@@ -12,6 +12,7 @@ private final class NullHostCore: HostCore {
   func fader(slot: Int, g: Double) -> Bool { true }
   func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { true }
   func scale(_ s: Scl) -> Bool { true }
+  func scaleSteps(_ idx: Int) -> [Int] { webScaleSteps(idx) }
   func snap(slot: Int, id: Int) -> Bool { true }
   func restore(slot: Int, _ w: String) -> Bool { true }
   func takeSnap() -> (id: Int, slot: Int, w: String)? { nil }

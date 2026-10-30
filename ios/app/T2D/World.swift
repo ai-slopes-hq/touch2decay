@@ -27,6 +27,8 @@ protocol World: AnyObject {
   func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool     // предмет, ведущий на карту
   func dice()
   func clear()
+  func enter()                                           // хост вошёл в мир (goWorld, go): разбудить ядро мира
+  func scale(pcs: [Int]?, root: Int)                     // лад сменился: ноты лада по модулю 12 от A, nil — выключен; root — тоника (0, когда выключен)
   func restored()                                        // после restore: бросить временное (пальцы, удержания, вспышки); id звёзд — по зеркалу
   func tick(now: Double, dt: Double)
   func idle()                                            // вызывает хост каждый кадр, пока мир не тикает (карта, переход)
@@ -43,5 +45,7 @@ extension World {
   var hasFx: Bool { fx != nil }
   func drawShot(_ d: Draw, now: Double) { draw(d, now: now) }
   var objs: Int { 0 }
+  func enter() {}
+  func scale(pcs: [Int]?, root: Int) {}
   func idle() {}                                         // карта: мир не тикает — слить то, что копится в ядре (кольцо heard)
 }

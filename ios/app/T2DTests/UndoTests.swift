@@ -12,6 +12,7 @@ final class FakeCore: HostCore {
   func fader(slot: Int, g: Double) -> Bool { true }
   func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { true }
   func scale(_ s: Scl) -> Bool { true }
+  func scaleSteps(_ idx: Int) -> [Int] { webScaleSteps(idx) }
   func snap(slot: Int, id: Int) -> Bool { if snapFull { return false }; snaps.append((slot, id)); return true }
   func restore(slot: Int, _ w: String) -> Bool { if full { return false }; restores.append((slot, w)); return true }
   func takeSnap() -> (id: Int, slot: Int, w: String)? { queue.isEmpty ? nil : queue.removeFirst() }
