@@ -56,7 +56,7 @@ class Host {
 
   // LFO строк: фиксированная таблица на 64, только аудиопоток. Строка — тройка (slot, obj, key): obj ≥ 0 — объект мира (звезда),
   // obj −1 — строка мира (FX). Значения — миру слота как action(ACT_LFO, obj, [key, v], 2); мир без obj / ключа пропускает.
-  static constexpr int LFO_MAX = sdk::LFO_MAX, LFO_OBJS = sdk::LFO_OBJS;
+  static constexpr int LFO_MAX = sdk::LFO_MAX, LFO_OBJS = sdk::LFO_OBJS, LFO_REC = sdk::LFO_REC;
   bool lfoAdd(int slot, int obj, int key, double base, int shape);  // тройка есть — ничего (true); нет места — false, lost++
   void lfoSpec(int slot, int obj, int key, double morph, double rate, double depth);   // NaN — не менять
   void lfoBase(int slot, int obj, int key, double base);

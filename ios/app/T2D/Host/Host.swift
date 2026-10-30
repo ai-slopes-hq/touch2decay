@@ -160,8 +160,9 @@ final class Host {
   // поставить LFO строки, если его нет (как slAdd); панель открывается и когда кольцо отбросило lfoAdd — пад поставит заново
   private func ensureLfo(_ s: Sheet, _ k: String) {
     guard let l = s.spec.lfo, let c = code(s, k), !hasLfo(s, k) else { return }
-    core.lfoAdd(slot: s.slot, obj: l.obj, key: c, base: s.spec.get(k), shape: l.shape)
-    pending[LfoKey(slot: s.slot, obj: l.obj, key: c)] = now
+    if core.lfoAdd(slot: s.slot, obj: l.obj, key: c, base: s.spec.get(k), shape: l.shape) {   // кольцо отбросило — не ждём
+      pending[LfoKey(slot: s.slot, obj: l.obj, key: c)] = now
+    }
   }
 
   private func sheetDown(_ h: SheetHit, _ f: Finger) {
@@ -249,8 +250,8 @@ final class Host {
   // только -shot: плашка открыта без касаний (FX мира или звезда id), при lfoKey — с панелью LFO этой строки
   func shotSheet(_ spec: SheetSpec, lfoKey: String? = nil) {
     let s = Sheet(spec: spec, slot: world.slot)
+    sheet = s                                                // сначала плашка: её didSet чистит pending
     if let k = lfoKey { ensureLfo(s, k); s.lfoKey = k }
-    sheet = s
   }
   // только -shot: LFO строки 1 Гц, глубина 0.5 (как пад в веб-сценарии firmsheet); nil — строки нет
   func shotLfo(rate: Double, depth: Double) {
@@ -288,8 +289,9 @@ final class Host {
     if let s = scene {
       core.restore(slot: world.slot, s.w)
       if first { scl = s.scl }                               // лад из файла — только при запуске; при reinit живой новее снимка
-      world.restored(); pending.removeAll()
+      world.restored()
     }
+    pending.removeAll()                                      // reinit ядра стирает LFO и без сцены
     core.scale(scl)
     core.vol(Vol.gain(vol))
     // первый снимок после восстановления — база отмены (текст после restore может отличаться от сохранённого)

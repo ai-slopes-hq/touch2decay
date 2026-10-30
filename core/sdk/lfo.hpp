@@ -9,6 +9,7 @@
 namespace sdk {
 
 constexpr int LFO_MAX = 64;                               // таблица LFO хоста (фиксированная, без аллокаций)
+constexpr int LFO_REC = 10;                               // чисел на LFO в снимке (Host::lfoState)
 constexpr int LFO_OBJS = -2;                              // obj ≥ 0 — объект мира, −1 — строка мира (FX); −2 — «все объекты» (Host::lfoDrop)
 
 // Морфинг волн для LFO: 9 форм (triangle, sharp, saw, pulse, fold, sync, crush, metal, grain), morph 0…1.
@@ -20,7 +21,7 @@ class WaveMorph {
  private:
   Shape shape_;
   static constexpr int N = 1024;
-  float tables_[9][N];                                  // 9 циклов × 1024 сэмпла
+  float tables_[9][N]{};                                // 9 циклов × 1024 сэмпла
   void initClassic();
   static double hash(int n);
 };

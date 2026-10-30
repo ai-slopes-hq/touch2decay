@@ -290,11 +290,11 @@ void Host::lfoTick(double dt) {
 int Host::lfoState(double* buf, int cap) const {
   int n = 0;
   for (const auto& l : lfos_) {
-    if (!l.on || n + 10 > cap) continue;
+    if (!l.on || n + LFO_REC > cap) continue;
     double* p = buf + n;
     p[0] = l.slot; p[1] = l.obj; p[2] = l.key; p[3] = l.base; p[4] = l.morph;
     p[5] = l.rate; p[6] = l.depth; p[7] = l.u; p[8] = l.shape; p[9] = l.seed;
-    n += 10;
+    n += LFO_REC;
   }
   return n;
 }
