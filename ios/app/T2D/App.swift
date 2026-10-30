@@ -4,7 +4,9 @@ import SwiftUI
 //   firmamentum (по умолчанию) | topbar | scales | legend | sheet | starsheet | lfo | undo — сначала host.go(10): вход в Firmamentum без перехода;
 //   map — старт на карте, через 2 с кубик в Firmamentum (через ядро, без входа): к снимку (5 с) у его карточки лучи;
 //   nav — go(10), кубик, через 2 с тап по стрелке назад (выход), переход заморожен на k = 0.5;
-//   peek — тап по карточке Cymatica (лицо без вида), peek заморожен на середине («nondum»).
+//   peek — тап по карточке Cymatica (лицо без вида), peek заморожен на середине («nondum»);
+//   concordia — тап по солнцу на карте; mixer — карта → солнце → строка mixer, фейдер Arcadia сдвинут влево и мир заглушён (как nav-mixer-set веба);
+//   audio — go(10), через 1 с тап по кнопке громкости: панель audio.
 @main
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
@@ -59,6 +61,8 @@ struct T2DApp: App {
     case "map": shotMap(); return
     case "nav": shotNav(); return
     case "peek": shotPeek(); return
+    case "concordia", "mixer": shotConcordia(mixer: T2DApp.shotName == "mixer"); return
+    case "audio": shotAudio(); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -131,6 +135,32 @@ struct T2DApp: App {
       let p = MapGeo.field(W: b.width, H: b.height, top: 59, safeBot: 34).rect(col: c.col, row: c.row)
       touch(p.midX, p.midY, at: 2); host.shotFreeze(0.5)
     }
+  }
+
+  // карта (iPhone 16: inset 59 / 34): тап по солнцу — concordia; mixer — дальше строка mixer, фейдер Arcadia влево на 60 pt, тап по mute её строки
+  private func shotConcordia(mixer: Bool) {
+    let b = UIScreen.main.bounds, q = DispatchQueue.main
+    let sy = MapGeo.field(W: b.width, H: b.height, top: 59, safeBot: 34).sy
+    q.asyncAfter(deadline: .now() + 1) { touch(b.width / 2, sy, at: 1) }
+    guard mixer else { return }
+    let box = Concordia.box(W: b.width, H: b.height, safeBot: 34, sunY: sy)
+    q.asyncAfter(deadline: .now() + 1.5) { touch(b.width / 2, box.rows.first { $0.key == .mixer }!.y, at: 1.5) }
+    q.asyncAfter(deadline: .now() + 2) {
+      let g = Mixer.geo(W: b.width, H: b.height, top: 59, safeBot: 34), y = g.rows.first { $0.slot == 12 }!.y
+      let x0 = g.tx0 + (g.tx1 - g.tx0) * CGFloat(Mix.faderDef)
+      var f = Finger(id: ObjectIdentifier(host), x: x0, y: y, x0: x0, y0: y, t0: 2, moved: false, touchTime: 2)
+      host.down(f)
+      for i in 1...6 { f.x = x0 - 10 * CGFloat(i); f.moved = true; host.move(f) }
+      host.up(f)
+      touch(g.mx, y, at: 2.2)
+    }
+  }
+
+  // -shot audio: в Firmamentum тап по кнопке громкости (W − 238, top + 20)
+  private func shotAudio() {
+    host.go(FirmamentumView.slotN)
+    world.dice()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { touch(UIScreen.main.bounds.width - 238, 59 + 20, at: 1) }
   }
 
   // -shot undo: тап по небу → звезда → кнопка undo → звезды нет; касания идут через Host, число звёзд — в консоль (stdout)
