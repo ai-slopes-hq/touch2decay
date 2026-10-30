@@ -20,7 +20,8 @@ typedef struct {
 } t2d_app_stats_t;
 
 // Слот хоста: действия не мира, а ядра хоста — в том же кольце, так что порядок относительно касаний сохраняется.
-//   t2d_app_action(T2D_HOST, kind, i, a, n, 0): VOL a=[gain]; SCALE a=[on, idx, root]; SNAP i=слот мира, a=[id].
+//   t2d_app_action(T2D_HOST, kind, i, a, n, 0): VOL a=[gain]; SCALE a=[on, idx, root]; SNAP i=слот мира, a=[id];
+//   FADER i=слот, a=[g] (линейное усиление); MASTER a=[lpfHz, thrDb, ratio, ceilDb] — оба со сглаживанием 30 мс, как VOL.
 #define T2D_HOST (-1)
 //   LFO строк — тоже слот хоста, в том же кольце (порядок с касаниями и restore сохраняется); строка = тройка (слот, obj, key):
 //   LFO_ADD  i = слот мира, a = [obj, key, base, shape]            shape 0 — classic, 1 — random; тройка уже есть — ничего
@@ -30,7 +31,7 @@ typedef struct {
 //   LFO_DROP i = слот, a = [obj]                                   погасить без base; obj −2 — все объекты слота (obj ≥ 0), FX (−1) остаются
 // снимок LFO для UI: до T2D_APP_LFO_MAX записей по T2D_APP_LFO_REC чисел (= sdk::LFO_MAX и Host::lfoState; static_assert в engine.cpp)
 enum { T2D_APP_LFO_MAX = 64, T2D_APP_LFO_REC = 10 };
-enum { T2D_H_VOL = 0, T2D_H_SCALE = 1, T2D_H_SNAP = 2, T2D_H_LFO_ADD = 3, T2D_H_LFO_SPEC = 4, T2D_H_LFO_BASE = 5, T2D_H_LFO_OFF = 6, T2D_H_LFO_DROP = 7 };
+enum { T2D_H_VOL = 0, T2D_H_SCALE = 1, T2D_H_SNAP = 2, T2D_H_LFO_ADD = 3, T2D_H_LFO_SPEC = 4, T2D_H_LFO_BASE = 5, T2D_H_LFO_OFF = 6, T2D_H_LFO_DROP = 7, T2D_H_FADER = 8, T2D_H_MASTER = 9 };
 
 // init не потокобезопасен относительно render (переписывает поля и чистит кольца): перед повторным вызовом остановить аудиодвижок.
 void t2d_app_init(double sr, unsigned seed, double ticks_per_sec, unsigned watch); // watch — маска слотов

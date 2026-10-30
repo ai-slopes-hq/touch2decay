@@ -19,6 +19,8 @@ void Engine::init(double sr, unsigned seed, double ticksPerSec, unsigned watch) 
   for (int s = 0; s < SLOTS; s++) { mir_[s].clear(); last_[s].len = 0; heard_[s].clear(); }
   loadSum_ = loadMax_ = loadN_ = latSum_ = latMax_ = latN_ = snapSum_ = snapMax_ = snapN_ = 0;
   frames_ = 0; dropped_ = 0; heardLost_ = 0; snapLost_ = 0; lfoLost_ = 0;
+  for (int s = 0; s < SLOTS; s++) fadT_[s] = fadN_[s] = 1.0;
+  mT_[0] = mN_[0] = std::log(22000.0); mT_[1] = mN_[1] = -10; mT_[2] = mN_[2] = 2.5; mT_[3] = mN_[3] = 0;
   t2d_init(sr, seed);
 }
 
@@ -64,6 +66,13 @@ void Engine::addMax(std::atomic<uint64_t>& m, uint64_t v) {
 void Engine::hostAction(const Act& act) {
   switch (act.kind) {
     case T2D_H_VOL: if (act.n >= 1) t2d_vol(act.a[0]); break;
+    case T2D_H_FADER: if (act.n >= 1 && act.i >= 0 && act.i < SLOTS) fadT_[act.i] = act.a[0]; break;
+    case T2D_H_MASTER:
+      if (act.n >= 4) {
+        mT_[0] = std::log(std::max(act.a[0], 1.0));         // lpf сглаживаем в логарифме частоты
+        mT_[1] = act.a[1]; mT_[2] = act.a[2]; mT_[3] = act.a[3];
+      }
+      break;
     case T2D_H_SCALE: if (act.n >= 3) t2d_scale(act.a[0] != 0, static_cast<int>(act.a[1]), static_cast<int>(act.a[2])); break;
     case T2D_H_LFO_ADD:                                     // a = [obj, key, base, shape]; i = слот
       if (act.n >= 4) t2d_lfo_add(act.i, static_cast<int>(act.a[0]), static_cast<int>(act.a[1]), act.a[2], static_cast<int>(act.a[3]));
@@ -100,6 +109,27 @@ void Engine::hostAction(const Act& act) {
   }
 }
 
+// шаг 1 − exp(−BLOCK / (0.03·sr)) раз в блок (как VOL в хосте); дошли — порог 1e-5 и точное значение цели
+void Engine::stepSmooth() {
+  const double k = 1 - std::exp(-BLOCK / (0.03 * sr_));
+  for (int s = 0; s < SLOTS; s++) {
+    if (fadN_[s] == fadT_[s]) continue;
+    fadN_[s] += (fadT_[s] - fadN_[s]) * k;
+    if (std::fabs(fadT_[s] - fadN_[s]) < 1e-5) fadN_[s] = fadT_[s];
+    t2d_fader(s, fadN_[s]);
+  }
+  bool ch[4];
+  for (int j = 0; j < 4; j++) {
+    ch[j] = mN_[j] != mT_[j];
+    if (!ch[j]) continue;
+    mN_[j] += (mT_[j] - mN_[j]) * k;
+    if (std::fabs(mT_[j] - mN_[j]) < 1e-5) mN_[j] = mT_[j];
+  }
+  if (ch[0]) t2d_master_lpf(std::exp(mN_[0]));
+  if (ch[1] || ch[2]) t2d_master_comp(mN_[1], mN_[2]);
+  if (ch[3]) t2d_master_ceil(mN_[3]);
+}
+
 // offset — сколько сэмплов уже отдано в выход до этого блока (остаток и прошлые блоки этого render): блок прозвучит на столько позже начала буфера
 void Engine::block(uint64_t host, int offset) {
   Act act;
@@ -115,6 +145,7 @@ void Engine::block(uint64_t host, int offset) {
       addMax(latMax_, ns);
     }
   }
+  stepSmooth();                                     // после кольца: цели от действий этого блока, до process
   t2d_time(samples_ / sr_);
   t2d_lfo_tick(BLOCK / sr_);                        // LFO строк: после кольца, до process (раз в блок; веб шлёт ~30/с — звучит глаже)
   t2d_process(BLOCK);

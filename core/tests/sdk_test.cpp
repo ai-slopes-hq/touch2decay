@@ -3213,6 +3213,75 @@ static void appLevelsPreFader() {
   CHECK(peak == 0.f);
 }
 
+// фейдер и мастер через кольцо хоста: тот же сглаженный путь, что у VOL
+static void hostStar(bool act = true) {
+  t2d_app_init(48000, 7, 1e9, 1u << 10);
+  const double star[4] = {0.3, 0.1, -1, 1};
+  if (act) t2d_app_action(10, 0, 0, star, 4, 0);
+}
+
+// сухая часть последнего блока после фейдера (Σ dry·g·trim): хвост ревербера (hall — секунды) в выходе остаётся и от выключенного слота
+static float dryAfterFader() {
+  float a[128], b[128], m = 0;
+  t2d_sum(a, b, 128);
+  for (int i = 0; i < 128; i++) m = std::max({m, std::fabs(a[i] - t2d_ret(0)[i]), std::fabs(b[i] - t2d_ret(1)[i])});
+  return m;
+}
+
+static void appHostFader() {
+  hostStar();
+  const double g0[1] = {0};
+  t2d_app_action(T2D_HOST, T2D_H_FADER, 10, g0, 1, 0);
+  float L[128], R[128], peak = 0;
+  for (int k = 0; k < 120; k++) t2d_app_render(L, R, 128, 0);   // 0.32 с — сглаживание дошло
+  CHECK(levelPeak10(L, R, &peak) > 0.0025f);                    // слот звучит до фейдера
+  float p2 = 0;
+  for (int k = 0; k < 188; k++) { t2d_app_render(L, R, 128, 0); p2 = std::max(p2, dryAfterFader()); }
+  CHECK(p2 < 1e-4f);
+}
+
+static void appHostFaderSmooth() {
+  hostStar();
+  const double g1[1] = {1}, g0[1] = {0};
+  t2d_app_action(T2D_HOST, T2D_H_FADER, 10, g1, 1, 0);
+  float L[128], R[128];
+  float before = 0, prev = 0;
+  for (int k = 0; k < 188; k++) {                               // 0.5 с до действия: максимум разницы соседних сэмплов
+    t2d_app_render(L, R, 128, 0);
+    for (int i = 0; i < 128; i++) { before = std::max(before, std::fabs(L[i] - prev)); prev = L[i]; }
+  }
+  t2d_app_action(T2D_HOST, T2D_H_FADER, 10, g0, 1, 0);
+  float first = 0, after = 0;
+  for (int k = 0; k < 120; k++) {                               // 0.32 с перехода
+    t2d_app_render(L, R, 128, 0);
+    for (int i = 0; i < 128; i++) {
+      if (k == 0) first = std::max(first, std::fabs(L[i]));
+      after = std::max(after, std::fabs(L[i] - prev)); prev = L[i];
+    }
+  }
+  CHECK(first > 0.01f);                                         // не обрубило в первом блоке
+  CHECK(after <= before * 1.5f);
+  float tail = 0;
+  for (int k = 0; k < 188; k++) { t2d_app_render(L, R, 128, 0); tail = std::max(tail, dryAfterFader()); }
+  CHECK(tail < 1e-3f);
+}
+
+static float masterPeak(double ceilDb) {
+  hostStar();
+  const double m[4] = {22000, -10, 2.5, ceilDb};
+  t2d_app_action(T2D_HOST, T2D_H_MASTER, 0, m, 4, 0);
+  float L[128], R[128], peak = 0;
+  for (int k = 0; k < 120; k++) t2d_app_render(L, R, 128, 0);   // сглаживание дошло
+  levelPeak10(L, R, &peak);
+  return peak;
+}
+
+static void appHostMaster() {
+  const float lo = masterPeak(-12), hi = masterPeak(0);
+  CHECK(hi > 0.0025f);
+  CHECK(lo * 2 < hi);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
@@ -3222,7 +3291,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); appLfo(); appLevels(); appLevelsPreFader();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

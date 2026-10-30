@@ -16,7 +16,7 @@ class Engine {
   static constexpr int MIRROR_CAP = 1024;                   // = MBUF ядра
   static constexpr int LFO_N = T2D_APP_LFO_MAX * T2D_APP_LFO_REC;   // снимок LFO: LFO_MAX · 10 чисел
   static constexpr int STR = 1 << 16;                       // строка снимка, = t2d_str_cap()
-  enum { RESTORE = 8 };                                     // внутренний kind слота хоста (после T2D_H_*): строка из кольца UI → аудио
+  enum { RESTORE = 15 };                                    // внутренний kind слота хоста (после T2D_H_*, не пересекается с ними): строка из кольца UI → аудио
 
   // полный сброс (кольца, остаток, статистика) + t2d_init; только пока аудио стоит
   void init(double sr, unsigned seed, double ticksPerSec, unsigned watch);
@@ -39,12 +39,15 @@ class Engine {
   struct Rec { int len; double d[HEARD_REC]; };
 
   void hostAction(const Act& act);                                // действие слота хоста
+  void stepSmooth();                                        // шаг сглаживания фейдеров и мастера (раз в блок)
   void block(uint64_t host, int offset);                    // один 128-блок в blk_
   void publishMirrors();
   static void addMax(std::atomic<uint64_t>& m, uint64_t v);
 
   double sr_ = 48000, ticks_ = 1e9;
   unsigned watch_ = 0;
+  // цели (T) и текущие (N) значения: фейдер слота — линейное усиление; мастер — [ln lpf, thr дБ, ratio, ceil дБ]; старт = Host::prepare
+  double fadT_[SLOTS], fadN_[SLOTS], mT_[4], mN_[4];
   double samples_ = 0;                                      // обработано сэмплов с init (для t2d_time)
   float blkL_[BLOCK], blkR_[BLOCK];
   int remOff_ = 0, remN_ = 0;                               // остаток блока: blk_[remOff_ .. remOff_ + remN_)
