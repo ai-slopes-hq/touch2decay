@@ -12,8 +12,9 @@ namespace horologium {
 
 // action(kind, i, a, n):
 //   RING i, a = [key (RingKey: on, under, phi, lvl), v];  FX i = key (Fx), a = [v]
-//   RUN a = [on, u?] (u нет — uT);  HELD a = [on];  STEP a = [d];  BPM a = [bpm];  SPEED a = [u, uT, strip];  CLEAR
-enum Act { RING, FX, RUN, HELD, STEP, BPM, SPEED, CLEAR };
+//   RUN a = [on, u?] (u нет — uT);  HELD a = [on];  STEP a = [d];  BPM a = [bpm];  SPEED a = [u, uT, strip];  CLEAR;  DICE
+//   ACT_LFO (i == -1) a = [key, v]: key 0…4 — Fx, 5…20 — кольцо (key − 5) / 2: нечётный — phi, чётный — lvl
+enum Act { RING, FX, RUN, HELD, STEP, BPM, SPEED, CLEAR, DICE };
 
 // зеркало: fx [NFX], run, u, uT, bpm, strip, held, P, F, ударов всего, замок, затем на кольцо RING_M: on, under, phi, lvl
 constexpr int RING_M = 4, MIRROR_HEAD = NFX + 10, MIRROR_N = MIRROR_HEAD + NR * RING_M;

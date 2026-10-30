@@ -7,7 +7,7 @@ namespace horologium {
 
 void World::prepare(double sr, uint32_t seed) {
   sr_ = sr > 0 ? sr : 48000;
-  model_.reset();
+  model_.reset(seed);                                   // ГСЧ кубика — зерно мира
   sound_.prepare(sr_, seed + 1);                        // ГСЧ колец (chance, шорох дерева)
   hallG_ = sdk::OnePole();
   hallC_ = 1 - std::exp(-1 / (0.05 * sr_));
@@ -25,6 +25,14 @@ void World::action(int kind, int i, const double* a, int n) {
     case BPM: if (n >= 1 && a[0] > 0) model_.setBpm(a[0]); break;
     case SPEED: model_.setSpeed(arg(0, 0), arg(1, 0), arg(2, 0) != 0); break;
     case CLEAR: model_.clear(); break;
+    case DICE: model_.dice(); break;
+    case sdk::ACT_LFO: {                                // LFO плашек: Fx 0…4, кольца 5 + 2·i (phi) и 6 + 2·i (lvl) (i == -1 у плашек мира)
+      if (n < 2 || i != -1) break;
+      const int key = static_cast<int>(a[0]);
+      if (key >= 0 && key < NFX) model_.setFx(key, a[1]);
+      else if (key >= NFX && key < NFX + 2 * NR) model_.setRing((key - NFX) / 2, key % 2 ? PHI : LVL, a[1]);
+      break;
+    }
     default: break;
   }
 }

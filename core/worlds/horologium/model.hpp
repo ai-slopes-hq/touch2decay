@@ -1,10 +1,11 @@
 // Horologium — модель в ядре: кольца II…IX, fx, ход часов. Порт tools/ref/horologium-model.js (worlds/horologium/model.js до SDK D2)
 // без маятника: где груз, бросок и проход через низ — касание и картинка, они в фасаде веба; сюда приходят итоги (пуск, u, «в руке»,
 // спуск). Ход успокаивается здесь, каждый блок (tick) — и в фоне без кадров. Скорость колеса F = bpm/240 · 2^u (0 — стоит или в руке),
-// тоника B — 55 Гц × лад хоста. Своего ГСЧ у модели нет: кубик — в фасаде.
+// тоника B — 55 Гц × лад хоста. Кубик (dice) — на ГСЧ ядра (зерно мира), только для нативной стороны: веб бросает его сам, в фасаде.
 #pragma once
 #include <string>
 #include "../../host/scale.hpp"
+#include "../../sdk/rng.hpp"
 
 namespace horologium {
 
@@ -20,7 +21,7 @@ struct Clock { bool run = false, strip = false, held = false; double u = 0, uT =
 class Model {
  public:
   explicit Model(const Scale& scale) : scale_(scale) { reset(); }
-  void reset();
+  void reset(uint32_t seed = 1);
 
   double Ft() const { return clock_.bpm / 240; }
   double Fnow() const;
@@ -34,6 +35,7 @@ class Model {
   void setBpm(double bpm) { clock_.bpm = bpm; }
   void setSpeed(double u, double uT, bool strip) { clock_.u = u; clock_.uT = uT; clock_.strip = strip; }
   void clear() { for (Ring& r : r_) r.on = false; clock_.run = false; }
+  void dice();                                          // волшебное отношение, иногда унтертонами; фаза — у одного кольца; часы идут (как dice в model.js)
   void tick(double dt);                                 // ход успокаивается к uT: сверху τ 6 с, снизу τ 1.5 с; палец на шкале — стоит
 
   std::string snapshot() const;                         // тот же JSON, что у model.js: {r: [{on, under, phi, lvl}], fx, bpm, run, u, uT}
@@ -49,6 +51,7 @@ class Model {
   Ring r_[NR];
   double fx_[NFX] = {};
   Clock clock_;
+  sdk::Rng rng_{1};
 };
 
 }  // namespace horologium

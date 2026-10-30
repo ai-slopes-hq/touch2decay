@@ -3260,6 +3260,82 @@ static void monoDice() {
   }
 }
 
+// Horologium: ACT_LFO — FX 0…4, кольца 5 + 2·i (phi) и 6 + 2·i (lvl); кубик (слот 9)
+static int horoMirror(double* m, int cap) {
+  float L[128], R[128];
+  t2d_app_render(L, R, 128, 0);
+  return t2d_app_mirror(9, m, cap);
+}
+static void horoLfo() {
+  t2d_app_init(48000, 7, 1e9, 1u << 9);
+  const double a[4][2] = {{1, 0.7}, {4, 0.2}, {5 + 2 * 3, 0.25}, {6 + 2 * 7, 0.3}};
+  for (const auto& v : a) CHECK(t2d_app_action(9, sdk::ACT_LFO, -1, v, 2, 0) == 1);
+  double m[64];
+  CHECK(horoMirror(m, 64) == 47);
+  NEAR(m[1], 0.7, 1e-9);                                          // fx[MATERIA]
+  NEAR(m[4], 0.2, 1e-9);                                          // fx[HALL]
+  NEAR(m[15 + 4 * 3 + 2], 0.25, 1e-9);                            // кольцо 3: phi
+  NEAR(m[15 + 4 * 7 + 3], 0.3, 1e-9);                             // кольцо 7: lvl
+}
+static void horoLfoIgnores() {
+  double m0[64], m1[64];
+  t2d_app_init(48000, 7, 1e9, 1u << 9);
+  const int n0 = horoMirror(m0, 64);
+  t2d_app_init(48000, 7, 1e9, 1u << 9);
+  const double a0[2] = {1, 0.5}, a1[2] = {21, 0.5}, a2[2] = {-1, 0.5}, a3[1] = {1};
+  t2d_app_action(9, sdk::ACT_LFO, 0, a0, 2, 0);
+  t2d_app_action(9, sdk::ACT_LFO, -1, a1, 2, 0);
+  t2d_app_action(9, sdk::ACT_LFO, -1, a2, 2, 0);
+  t2d_app_action(9, sdk::ACT_LFO, -1, a3, 1, 0);
+  const int n1 = horoMirror(m1, 64);
+  CHECK(n0 == 47 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
+}
+static void horoDice() {
+  static const int MAGIC[12][5] = {{2, 3}, {3, 4}, {4, 5, 6}, {3, 4, 5}, {2, 3, 5}, {4, 5, 6, 7}, {5, 7, 9}, {6, 7, 8, 9}, {8, 9}, {2, 3, 4, 5, 6}, {5, 6}, {4, 5}};
+  static const int MAGIC_N[12] = {2, 2, 3, 3, 3, 4, 3, 4, 2, 5, 2, 2};
+  double m[2][64];
+  for (int w = 0; w < 2; w++) {
+    t2d_app_init(48000, 5, 1e9, 1u << 9);
+    t2d_app_action(9, 8, -1, nullptr, 0, 0);                      // DICE
+    CHECK(horoMirror(m[w], 64) == 47);
+  }
+  CHECK(std::memcmp(m[0], m[1], sizeof(double) * 47) == 0);       // одно зерно — одна раскладка
+  const auto check = [&](const double* q, bool* under, bool* phase) {
+    int on[8], k = 0, phis = 0;
+    for (int i = 0; i < 8; i++) {
+      const double* r = q + 15 + 4 * i;
+      if (r[0] != 0) on[k++] = i + 2;
+      CHECK(r[1] == q[15 + 1]);                                   // under у всех одинаков
+      CHECK(r[3] == 0.8);
+      if (r[2] != 0) { phis++; CHECK(r[0] != 0 && (r[2] == 0.25 || r[2] == 0.5 || r[2] == 0.75)); }
+    }
+    CHECK(phis <= 1);
+    bool found = false;
+    for (int s = 0; s < 12; s++) {
+      if (MAGIC_N[s] != k) continue;
+      bool same = true;
+      for (int j = 0; j < k; j++) same = same && MAGIC[s][j] == on[j];
+      found = found || same;
+    }
+    CHECK(found);
+    CHECK(q[5] == 1 && q[6] == 0 && q[7] == 0);                   // run, u, uT
+    CHECK(q[1] >= 0 && q[1] < 1);                                 // materia
+    *under = q[15 + 1] != 0; *phase = phis > 0;
+  };
+  bool u0, p0;
+  check(m[0], &u0, &p0);
+  int unders = 0, phases = 0;
+  for (uint32_t seed = 1; seed <= 40; seed++) {
+    t2d_app_init(48000, seed, 1e9, 1u << 9);
+    t2d_app_action(9, 8, -1, nullptr, 0, 0);
+    double q[64]; horoMirror(q, 64);
+    bool u, p;
+    check(q, &u, &p);
+    unders += u; phases += p;
+  }
+  CHECK(unders > 0 && unders < 40 && phases > 0 && phases < 40);
+}
+
 // ступени лада наружу: таблица host/scale.js
 static void appScaleSteps() {
   const int want[6][7] = {{0, 2, 4, 5, 7, 9, 11}, {0, 2, 3, 5, 7, 8, 10}, {0, 2, 3, 5, 7, 9, 10},
@@ -3440,7 +3516,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

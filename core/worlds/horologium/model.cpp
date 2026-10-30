@@ -8,9 +8,14 @@ namespace horologium {
 
 const char* const FX_NAMES[NFX] = {"aequalis", "materia", "concursus", "chance", "hall"};
 const double FX_DEF[NFX] = {0, 0.35, 0.4, 1, 0.35};
+// волшебные наборы колец (n) — MAGIC в model.js
+static const int MAGIC[][5] = {{2, 3}, {3, 4}, {4, 5, 6}, {3, 4, 5}, {2, 3, 5}, {4, 5, 6, 7}, {5, 7, 9}, {6, 7, 8, 9}, {8, 9}, {2, 3, 4, 5, 6}, {5, 6}, {4, 5}};
+static const int MAGIC_N[] = {2, 2, 3, 3, 3, 4, 3, 4, 2, 5, 2, 2};
+static const int NMAGIC = 12;
 static const char* const RING_KEYS[NRK] = {"on", "under", "phi", "lvl"};
 
-void Model::reset() {
+void Model::reset(uint32_t seed) {
+  rng_ = sdk::Rng(seed);
   for (int i = 0; i < NR; i++) { r_[i] = Ring{}; r_[i].n = i + 2; r_[i].on = (i + 2 >= 4 && i + 2 <= 6); }
   for (int k = 0; k < NFX; k++) fx_[k] = FX_DEF[k];
   clock_ = Clock{};
@@ -37,6 +42,23 @@ void Model::setRing(int i, int key, double v) {
     case LVL: r.lvl = v; break;
     default: break;
   }
+}
+
+void Model::dice() {                                    // порядок вызовов rng_ — как в model.js
+  const int s = static_cast<int>(rng_.next() * NMAGIC);
+  const bool under = rng_.next() < 0.25;
+  for (Ring& r : r_) {
+    r.on = false;
+    for (int j = 0; j < MAGIC_N[s]; j++) if (MAGIC[s][j] == r.n) r.on = true;
+    r.under = under; r.phi = 0; r.lvl = 0.8;
+  }
+  if (rng_.next() < 0.4) {
+    Ring* on[NR]; int k = 0;
+    for (Ring& r : r_) if (r.on) on[k++] = &r;
+    on[static_cast<int>(rng_.next() * k)]->phi = 0.25 * (1 + static_cast<int>(rng_.next() * 3));
+  }
+  fx_[MATERIA] = rng_.next();
+  clock_.uT = 0; clock_.run = true; clock_.u = 0;
 }
 
 void Model::tick(double dt) {
