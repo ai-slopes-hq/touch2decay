@@ -375,4 +375,35 @@ final class HorologiumTests: XCTestCase {
                                    "speed: rhythm … tone · double tap — back to tempo", "run / stop · hold — tempo", "map of worlds"])
     XCTAssertEqual(view.title, "Horologium"); XCTAssertEqual(view.sub, "numeri · horae")
   }
+  // ---------- рисование ----------
+  private func render(_ v: HorologiumView, now: Double) {
+    let W = Int(v.geo.W), H = Int(v.geo.H)
+    let g = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: W * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    g.translateBy(x: 0, y: CGFloat(H)); g.scaleBy(x: 1, y: -1)
+    let d = Draw(g: g, W: CGFloat(W), H: CGFloat(H)); d.setTheme(v.theme)
+    v.draw(d, now: now)
+  }
+
+  func testWallCached() {
+    setMirror(on: [0, 2])
+    render(view, now: 1); render(view, now: 1.1)
+    XCTAssertEqual(view.wallBuilds, 1, "два кадра — одна стена")
+    view.layout(W: 390, H: 800, topY: 59, safeBot: 34); render(view, now: 1.2)
+    XCTAssertEqual(view.wallBuilds, 2, "высота сменилась")
+  }
+
+  func testDrawNoCrashEmpty() {
+    mirrorBuf = []; view.tick(now: 1, dt: 0.016)       // мир ещё не отдал снимок — зеркало по умолчанию
+    render(view, now: 1)
+    XCTAssertEqual(view.wallBuilds, 1)
+  }
+
+  func testDrawSpin() {
+    setMirror(run: true, u: 7.5, uT: 0, P: 3.4, F: 30, on: [0, 1, 4], under: [1])
+    _ = view.pend.grab(0.3); _ = view.pend.release(th: 0.3, om: 12)    // бросок через верх: spin
+    XCTAssertTrue(view.pend.spin)
+    render(view, now: 2)
+    XCTAssertEqual(view.wallBuilds, 1)
+  }
 }

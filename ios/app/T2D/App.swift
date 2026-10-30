@@ -7,7 +7,8 @@ import SwiftUI
 //   peek — тап по карточке Cymatica (лицо без вида), peek заморожен на середине («nondum»);
 //   concordia — тап по солнцу на карте; mixer — карта → солнце → строка mixer, фейдер Arcadia сдвинут влево и мир заглушён (как nav-mixer-set веба);
 //   audio — go(10), через 1 с тап по кнопке громкости: панель audio;
-//   monochord | monochord-sheet | monochord-earth-sheet | monochord-wind | monochord-fan — go(7), см. shotMono.
+//   monochord | monochord-sheet | monochord-earth-sheet | monochord-wind | monochord-fan — go(7), см. shotMono;
+//   horologium | horologium-ring-sheet | horologium-hub-sheet | horologium-fan | horologium-spin — go(9), см. shotHoro.
 @main
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
@@ -22,6 +23,7 @@ struct T2DApp: App {
   @State private var world: FirmamentumView          // нужен только -shot (плашка звезды); Host держит миры сам
   @State private var ocean: OceanusView              // нужен только -shot oceanus*; Host держит миры сам
   @State private var mono: MonochordView             // нужен только -shot monochord*; Host держит миры сам
+  @State private var horo: HorologiumView            // нужен только -shot horologium*; Host держит миры сам
   @State private var host: Host
 
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
@@ -32,6 +34,7 @@ struct T2DApp: App {
       return OceanusView(core: AppCore(slot: slot), geo: OceanGeo(W: 390, H: 844, topY: 59, safeBot: 34),
                          readMirror: OceanusView.appMirror)
     case MonochordView.slotN: return MonochordView(core: AppCore(slot: slot))
+    case HorologiumView.slotN: return HorologiumView(core: AppCore(slot: slot))
     default: return nil
     }
   }
@@ -45,7 +48,7 @@ struct T2DApp: App {
     a.onInit = { h.reapply() }
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -72,6 +75,7 @@ struct T2DApp: App {
     case "audio": shotAudio(); return
     case "oceanus", "oceanus-sheet", "oceanus-luna", "oceanus-fan": shotOcean(T2DApp.shotName); return
     case "monochord", "monochord-sheet", "monochord-earth-sheet", "monochord-wind", "monochord-fan": shotMono(T2DApp.shotName); return
+    case "horologium", "horologium-ring-sheet", "horologium-hub-sheet", "horologium-fan", "horologium-spin": shotHoro(T2DApp.shotName); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -203,6 +207,22 @@ struct T2DApp: App {
       q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono.windSpec(), lfoKey: "wind"); host.shotLfo(rate: 1, depth: 0.5) }
     default:
       q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono.fxSpec, lfoKey: "decay"); host.shotLfo(rate: 1, depth: 0.5) }
+    }
+  }
+
+  // Horologium: horologium — кольцо II включено, ход RUN [1, 0], кадр через 1.5 с; -ring-sheet — плашка кольца IV, -hub-sheet — плашка ступицы,
+  // -fan — веер FX с LFO на materia (полоса random), -spin — бросок через верх RUN [1, 7.5]; сид init 7
+  private func shotHoro(_ name: String) {
+    host.go(HorologiumView.slotN)
+    let core = AppCore(slot: HorologiumView.slotN), q = DispatchQueue.main
+    switch name {
+    case "horologium-ring-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(horo.ringSpec(3)) }
+    case "horologium-hub-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(horo.hubSpec()) }
+    case "horologium-fan":
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(horo.fx!, lfoKey: "materia"); host.shotLfo(rate: 1, depth: 0.5) }
+    case "horologium-spin": core.action(HorologiumView.Act.run, 0, [1, 7.5], touchTime: 0)
+    default:
+      core.action(HorologiumView.Act.ring, 0, [0, 1], touchTime: 0); core.action(HorologiumView.Act.run, 0, [1, 0], touchTime: 0)
     }
   }
 

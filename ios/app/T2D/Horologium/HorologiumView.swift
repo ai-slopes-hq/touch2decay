@@ -39,6 +39,7 @@ final class HorologiumView: World {
   private(set) var concAt = -1e9, concA = 0.0                // concursus: когда кольца совпали и где — луч
   private var mirrorAt = 0.0                                 // когда прочитано зеркало — для pVis
   private var now = 0.0
+  let dr = HoroDrawState()                                 // кеш стены и буферы кадра (HoroDraw.swift)
 
   enum Kind { case pend, strip, hub, ring, none }
   struct Hold {
@@ -217,5 +218,6 @@ final class HorologiumView: World {
     if t.kind == .strip { core.action(Act.speed, 0, [mirror.u, mirror.uT, 0], touchTime: f.touchTime) }
   }
 
-  func draw(_ d: Draw, now: Double) {}                     // рисование — HoroDraw.swift (задача 4)
+  func draw(_ d: Draw, now: Double) { frame(d, now, sun: true) }          // рисование — HoroDraw.swift
+  func drawShot(_ d: Draw, now: Double) { frame(d, now, sun: false) }
 }

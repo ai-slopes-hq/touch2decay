@@ -23,7 +23,7 @@ enum Worlds {
     WorldInfo(slot: 5, title: "Inferno", roman: "V", theme: th((207, 196, 182), (5, 4, 3), (5, 4, 3)), col: 2, row: 0, view: false),
     WorldInfo(slot: 7, title: "Monochordum", roman: "VII", theme: .base, col: 1, row: 3, view: true),
     WorldInfo(slot: 8, title: "Oceanus", roman: "VIII", theme: th((206, 222, 226), (8, 16, 24), (8, 16, 24)), col: 3, row: 2, view: true),
-    WorldInfo(slot: 9, title: "Horologium", roman: "IX", theme: th((214, 180, 110), (12, 10, 7), (12, 10, 7)), col: 0, row: 2, view: false),
+    WorldInfo(slot: 9, title: "Horologium", roman: "IX", theme: th((214, 180, 110), (12, 10, 7), (12, 10, 7)), col: 0, row: 2, view: true),
     WorldInfo(slot: 10, title: "Firmamentum", roman: "X", theme: th((232, 224, 200), (10, 9, 20), (10, 9, 20)), col: 3, row: 1, view: true),
     WorldInfo(slot: 11, title: "Tria corpora", roman: "XI", theme: th((222, 198, 152), (19, 15, 10), (19, 15, 10)), col: 3, row: 0, view: false),
     WorldInfo(slot: 12, title: "Arcadia", roman: "XII", theme: th((40, 46, 32), (224, 221, 198), (224, 221, 198)), col: 0, row: 3, view: false),
