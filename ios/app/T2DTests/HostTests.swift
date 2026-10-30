@@ -367,11 +367,18 @@ final class HostTests: XCTestCase {
     // смена частоты: лад хоста новее файла — уходит в ядро заново, из файла не перечитывается
     let live = Scl(on: true, idx: 3, root: 5)
     host.shotState(scl: live)
+    let v0 = host.vol
+    host.go(10)                                      // громкость — ползунок верхней строки: тянем в мире, возвращаемся на карту
+    let vp = bar.pos(.vol), f0 = finger(0, vp.x, vp.y)
+    host.down(f0); var f = f0; f.y = vp.y - 110; host.move(f); host.up(f)
+    host.goMap()
     let v = host.vol
+    XCTAssertNotEqual(v, v0, "громкость хоста сменилась")
     core.scales.removeAll(); core.vols.removeAll()
     host.reapply()
     XCTAssertEqual(core.scales, [live]); XCTAssertEqual(host.scl, live)
     XCTAssertEqual(core.vols.count, 1); XCTAssertEqual(core.vols[0], Vol.gain(v), accuracy: 1e-12)
+    XCTAssertEqual(host.vol, v); XCTAssertNotEqual(core.vols[0], Vol.gain(v0), "не из файла / по умолчанию")
     XCTAssertEqual(host.nav.view, .map)
   }
 
