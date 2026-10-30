@@ -3171,6 +3171,48 @@ static void appLfo() {
   NEAR(t2d_app_lfo_sample(1, 0.6, 1.2, 3), -0.252532571321, 1e-9);
 }
 
+// уровни слотов для карты: RMS сухого выхода (до фейдера), индекс = слот
+// звезда Firmamentum звучит импульсами (между ними тишина) — берём максимум уровня за 0.5 с, а не последний отсчёт
+static float levelPeak10(float* L, float* R, float* peakOut = nullptr) {
+  float lv[16], top = 0;
+  for (int k = 0; k < 188; k++) {
+    t2d_app_render(L, R, 128, 0);
+    if (peakOut) for (int i = 0; i < 128; i++) *peakOut = std::max(*peakOut, std::max(std::fabs(L[i]), std::fabs(R[i])));
+    t2d_app_levels(lv, 16);
+    top = std::max(top, lv[10]);
+  }
+  return top;
+}
+
+static void appLevels() {
+  t2d_app_init(48000, 7, 1e9, 1u << 10);
+  float L[128], R[128], lv[16];
+  for (int k = 0; k < 20; k++) t2d_app_render(L, R, 128, 0);
+  CHECK(t2d_app_levels(lv, 16) == 1);
+  for (int s = 0; s < 16; s++) CHECK(lv[s] < 1e-6f);
+  const double star[4] = {0.3, 0.1, -1, 1};
+  t2d_app_action(10, 0, 0, star, 4, 0);
+  CHECK(levelPeak10(L, R) > 0.0025f);
+  t2d_app_levels(lv, 16);
+  CHECK(lv[2] < 1e-6f);
+  float five[5] = {0, 0, 0, 0, -7};
+  t2d_app_render(L, R, 128, 0);
+  CHECK(t2d_app_levels(five, 4) == 1);
+  CHECK(five[4] == -7.f);                                         // n = 4 — пятое не тронуто
+  CHECK(t2d_app_levels(lv, 16) == 0);                             // без нового render — тот же снимок
+}
+
+// фейдер слота в 0 с самого начала: в выходе слот молчит (посыл в ревербер тоже после фейдера), а уровень для карты есть
+static void appLevelsPreFader() {
+  t2d_app_init(48000, 7, 1e9, 1u << 10);
+  t2d_fader(10, 0);
+  const double star[4] = {0.3, 0.1, -1, 1};
+  t2d_app_action(10, 0, 0, star, 4, 0);
+  float L[128], R[128], peak = 0;
+  CHECK(levelPeak10(L, R, &peak) > 0.0025f);
+  CHECK(peak == 0.f);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
@@ -3180,7 +3222,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); appLfo();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); appLfo(); appLevels(); appLevelsPreFader();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

@@ -42,6 +42,7 @@ int  t2d_app_restore(int slot, const char* s, int len, uint64_t touch_time); // 
 int  t2d_app_snap_take(int* id, int* slot, char* buf, int cap);  // UI: забрать готовый снимок; длина, 0 — нет (не влез в cap — потерян, считается)
 void t2d_app_stats(t2d_app_stats_t* out);             // снять окно (avg/max обнуляются)
 
+int  t2d_app_levels(float* out, int n);               // UI: RMS (моно, окно 256 сэмплов) сухого выхода слотов до фейдера, индекс = слот; копирует min(n, 16); 1 — снимок новее прошлого чтения, 0 — тот же
 int  t2d_app_lfo(double* buf, int cap);               // UI: последний снимок LFO (как зеркало): по 10 чисел (slot, obj, key, base, morph, rate, depth, u, shape, seed); длина
 double t2d_app_lfo_sample(int shape, double morph, double u, int seed);   // форма LFO для картинки: −1…1, по тем же таблицам, что звук
 

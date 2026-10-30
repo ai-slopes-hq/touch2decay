@@ -1,6 +1,7 @@
 #include "engine.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include "../bridge/t2d.h"
 #include "../sdk/lfo.hpp"
@@ -13,6 +14,8 @@ void Engine::init(double sr, unsigned seed, double ticksPerSec, unsigned watch) 
   samples_ = 0; remOff_ = remN_ = 0;
   acts_.clear(); ustr_.clear(); snaps_.clear();
   lfoMir_.clear(); lastLfo_.len = 0;
+  lvl_.clear(); lastLvl_ = Lvl{};
+  for (int s = 0; s < SLOTS; s++) sqCur_[s] = sqPrev_[s] = 0;
   for (int s = 0; s < SLOTS; s++) { mir_[s].clear(); last_[s].len = 0; heard_[s].clear(); }
   loadSum_ = loadMax_ = loadN_ = latSum_ = latMax_ = latN_ = snapSum_ = snapMax_ = snapN_ = 0;
   frames_ = 0; dropped_ = 0; heardLost_ = 0; snapLost_ = 0; lfoLost_ = 0;
@@ -116,6 +119,17 @@ void Engine::block(uint64_t host, int offset) {
   t2d_lfo_tick(BLOCK / sr_);                        // LFO строк: после кольца, до process (раз в блок; веб шлёт ~30/с — звучит глаже)
   t2d_process(BLOCK);
   samples_ += BLOCK;
+  for (int s = 0; s < SLOTS; s++) {                         // уровень слота — сухой выход до фейдера и без trim, как chans[n].in в вебе; для всех слотов, независимо от watch
+    const float* l = t2d_dry(s, 0);
+    const float* r = t2d_dry(s, 1);
+    float sq = 0;
+    for (int i = 0; i < BLOCK; i++) {
+      const float m = ((l ? l[i] : 0.f) + (r ? r[i] : 0.f)) * 0.5f;
+      sq += m * m;
+    }
+    sqPrev_[s] = sqCur_[s];
+    sqCur_[s] = sq;
+  }
   for (int s = 0; s < SLOTS; s++) {
     if (!(watch_ >> s & 1)) continue;
     const int len = t2d_heard(s);
@@ -147,6 +161,9 @@ void Engine::publishMirrors() {
   l.len = t2d_lfo_state();
   std::memcpy(l.d, t2d_mbuf(), static_cast<size_t>(l.len) * sizeof(double));
   lfoMir_.publish();
+  Lvl& v = lvl_.write();
+  for (int s = 0; s < SLOTS; s++) v.rms[s] = std::sqrt((sqCur_[s] + sqPrev_[s]) / 256.f);
+  lvl_.publish();
   lfoLost_.store(t2d_lfo_lost(), std::memory_order_relaxed);
 }
 
@@ -185,6 +202,12 @@ int Engine::mirror(int slot, double* buf, int cap) {
   if (m.len <= 0 || cap < m.len || !buf) return 0;
   std::memcpy(buf, m.d, static_cast<size_t>(m.len) * sizeof(double));
   return m.len;
+}
+
+int Engine::levels(float* out, int n) {
+  const bool fresh = lvl_.read(lastLvl_);
+  if (out && n > 0) std::memcpy(out, lastLvl_.rms, static_cast<size_t>(std::min(n, SLOTS)) * sizeof(float));
+  return fresh ? 1 : 0;
 }
 
 int Engine::lfo(double* buf, int cap) {

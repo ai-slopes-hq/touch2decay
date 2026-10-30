@@ -25,6 +25,7 @@ class Engine {
   int mirror(int slot, double* buf, int cap);               // UI
   bool restore(int slot, const char* s, int len, uint64_t touch);  // UI: строка в кольцо + действие; false — отброшено
   int snapTake(int* id, int* slot, char* buf, int cap);     // UI: готовый снимок; длина, 0 — нет (не влез в cap — потерян)
+  int levels(float* out, int n);                            // UI: RMS слотов до фейдера (индекс = слот); 1 — снимок новее прошлого чтения
   int lfo(double* buf, int cap);                            // UI: снимок LFO (по 10 чисел), длина
   int heard(int slot, double* buf, int cap);                // UI
   void stats(t2d_app_stats_t* out);                         // UI: снимает окно
@@ -34,6 +35,7 @@ class Engine {
   struct Str { int slot, id, len; char d[STR]; };
   struct Mir { int len; double d[MIRROR_CAP]; };
   struct Lfo { int len; double d[LFO_N]; };
+  struct Lvl { float rms[SLOTS]; };
   struct Rec { int len; double d[HEARD_REC]; };
 
   void hostAction(const Act& act);                                // действие слота хоста
@@ -51,6 +53,9 @@ class Engine {
   Triple<Mir> mir_[SLOTS];
   Triple<Lfo> lfoMir_;                                      // снимок таблицы LFO, как зеркало
   Lfo lastLfo_;
+  Triple<Lvl> lvl_;                                         // уровни слотов для карты
+  Lvl lastLvl_{};
+  float sqCur_[SLOTS] = {}, sqPrev_[SLOTS] = {};            // Σ моно² последнего и предыдущего блока (256 сэмплов, как fftSize анализатора веба)
   Mir last_[SLOTS];                                         // последнее прочитанное UI
   Spsc<Rec, HEARD_RECS> heard_[SLOTS];
   Spsc<Str, 2> ustr_, snaps_;                               // строки UI → аудио (restore) и аудио → UI (снимки)
