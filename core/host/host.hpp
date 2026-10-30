@@ -54,17 +54,18 @@ class Host {
   void masterCeil(double db);                           // усиление после knee, дБ (−12…0; по умолчанию 0)
   double masterMakeup() const { return comp_.makeup; }  // авто-подъём компрессора (1/fullRangeGain)^0.6: Chromium даёт его и ниже порога
 
-  // LFO строк: таблица фиксированная, 64 записи; on=false — пустая. add/−1 при переполнении (потерянные считаются).
-  int lfoAdd(int slot, int obj, int key, double base, int shape);
-  void lfoSpec(int idx, double morph, double rate, double depth);
-  void lfoOff(int idx, sdk::World* const worlds[SLOTS], double* args);  // строке base, ячейка свободна
-  void lfoOff(int idx) { lfoOff(idx, nullptr, nullptr); }               // тестовая форма без мира
-  bool lfoState(int idx, sdk::RowLfo& out) const;       // копия живой записи (для UI и тестов)
-  void lfoClear(int slot);
-  void lfoClear(int slot, int obj);
-  void lfoTick(double dt);                              // фаза каждой живой записи (значение миру — задача 2)
-  int lfoApply(double dt, sdk::World* const worlds[SLOTS], double* args);  // блок LFO: фазы и значения мирам (ACT_LFO)
+  // LFO строк: фиксированная таблица на 64, только аудиопоток. Строка — тройка (slot, obj, key): obj ≥ 0 — объект мира (звезда),
+  // obj −1 — строка мира (FX). Значения — миру слота как action(ACT_LFO, obj, [key, v], 2); мир без obj / ключа пропускает.
+  static constexpr int LFO_MAX = sdk::LFO_MAX, LFO_OBJS = sdk::LFO_OBJS;
+  bool lfoAdd(int slot, int obj, int key, double base, int shape);  // тройка есть — ничего (true); нет места — false, lost++
+  void lfoSpec(int slot, int obj, int key, double morph, double rate, double depth);   // NaN — не менять
+  void lfoBase(int slot, int obj, int key, double base);
+  void lfoOff(int slot, int obj, int key);              // строке base, ячейка свободна
+  void lfoDrop(int slot, int obj);                      // без base: obj ≥ 0 — его строки, LFO_OBJS — все obj ≥ 0 слота; FX (−1) не трогает
+  void lfoTick(double dt);                              // u += dt·rate, значения мирам (раз в блок, после кольца, до process)
+  int lfoState(double* buf, int cap) const;             // снимок для UI: по 10 чисел (slot, obj, key, base, morph, rate, depth, u, shape, seed); длина
   unsigned lfoLost() const { return lost_; }
+  double lfoSample(int shape, double morph, double u, int seed) const;   // чистая форма по готовым таблицам (shape 0 — classic, 1 — random)
 
   // Тик моделей: вызывается раз в блок, dt — время блока в секундах. Миры с tick() получают dt.
   void modelTick(double dt);
@@ -111,6 +112,8 @@ class Host {
   sdk::Shaper2<4096> knee_;                             // потолок: кривая knee() веба (4096 точек), oversample 4×
   double ceilGain_ = 1.0;                               // 10^(ceil/20)
 
+  sdk::RowLfo* lfoFind(int slot, int obj, int key);
+  void lfoSend(const sdk::RowLfo& l, double v);
   // LFO строк: фиксированная таблица (без vector / string — ни аллокаций, ни переезда указателей)
   sdk::RowLfo lfos_[sdk::LFO_MAX];
   sdk::Rng rng_{0x51F0u};                                // зерно случайности записей (0…999), prepare пересевает

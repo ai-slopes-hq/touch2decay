@@ -2,7 +2,6 @@
 // Правила: process пишет out.* целиком (не прибавляет); посыл — уже с ручкой мира, фейдер микшера применяет хост.
 // Время модели — в сэмплах process, шаг — раз в блок (n ≤ 128). action и process — в одном потоке.
 #pragma once
-#include <cmath>
 #include <cstdint>
 #include <string>
 #include "reverb.hpp"                                   // Rev — одно определение, здесь не повторяем
@@ -10,8 +9,8 @@
 
 namespace sdk {
 
-// Код LFO строки для всех миров (host): action(ACT_LFO, obj, [key, v], 2), v 0…1.
-// Не 0… (свои коды у миров) и не −1 (тик моделей, Host::modelTick).
+// Код LFO строки для всех миров (host): action(ACT_LFO, obj, [key, v], 2), v 0…1; obj −1 — строка мира (FX), obj ≥ 0 — объект.
+// Мир, который его не знает, игнорирует. Вне кодов миров (у них свои Act с 0) и не −1 (тик моделей: action(−1, 0, [dt], 1), Host::modelTick).
 constexpr int ACT_LFO = -2;
 
 struct Out { float* L; float* R; float* sL; float* sR; };   // сухое стерео и посыл (в ревербер rev())
@@ -30,7 +29,6 @@ class World {
   virtual bool sounding() const = 0;
   virtual double trim() const { return 1; }                             // множитель сухого выхода в миксе (в вебе — узел перед каналом мира)
   virtual void attach(const Clock*) {}                                  // часы хоста (время блока, сетка MIDI) — мирам с шагами
-  virtual double value(int obj, int key) const { return std::nan(""); }  // базовое значение строки LFO; NaN — нет объекта/ключа
 };
 
 }  // namespace sdk

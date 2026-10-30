@@ -9,7 +9,7 @@
 namespace sdk {
 
 constexpr int LFO_MAX = 64;                               // таблица LFO хоста (фиксированная, без аллокаций)
-constexpr int LFO_OBJS = -2;                              // obj: −1 — строка мира без объекта; −2 — нет LFO
+constexpr int LFO_OBJS = -2;                              // obj ≥ 0 — объект мира, −1 — строка мира (FX); −2 — «все объекты» (Host::lfoDrop)
 
 // Морфинг волн для LFO: 9 форм (triangle, sharp, saw, pulse, fold, sync, crush, metal, grain), morph 0…1.
 class WaveMorph {
@@ -34,7 +34,6 @@ struct RowLfo {
   int seed = 0;
 
   double value(const WaveMorph& w) const;               // clamp(base + depth·0.5·форма(u)), как slTick
-  void tick(double dt);                                 // фаза без обрезки (для random — номер периода)
 };
 
 }  // namespace sdk

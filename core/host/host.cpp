@@ -223,10 +223,15 @@ void Host::Comp::run(double& l, double& r) {
   pos = (pos + 1) % DLY;
 }
 
-int Host::lfoAdd(int slot, int obj, int key, double base, int shape) {
-  for (int i = 0; i < sdk::LFO_MAX; i++) {
-    if (lfos_[i].on) continue;
-    sdk::RowLfo& l = lfos_[i];
+sdk::RowLfo* Host::lfoFind(int slot, int obj, int key) {
+  for (auto& l : lfos_) if (l.on && l.slot == slot && l.obj == obj && l.key == key) return &l;
+  return nullptr;
+}
+
+bool Host::lfoAdd(int slot, int obj, int key, double base, int shape) {
+  if (lfoFind(slot, obj, key)) return true;             // тройка уже есть — ничего (rate / depth не сбрасываем)
+  for (auto& l : lfos_) {
+    if (l.on) continue;
     l.on = true;
     l.slot = slot; l.obj = obj; l.key = key; l.base = base;
     l.shape = shape == 1 ? sdk::WaveMorph::RANDOM : sdk::WaveMorph::CLASSIC;
@@ -234,59 +239,68 @@ int Host::lfoAdd(int slot, int obj, int key, double base, int shape) {
     l.rate = l.shape == sdk::WaveMorph::RANDOM ? 0.4 : 0.8;
     l.depth = 0.3; l.u = 0;
     l.seed = static_cast<int>(rng_.next() * 1000.0);
-    return i;
+    return true;
   }
   lost_++;
-  return -1;
+  return false;
 }
 
-void Host::lfoSpec(int idx, double morph, double rate, double depth) {
-  if (idx < 0 || idx >= sdk::LFO_MAX || !lfos_[idx].on) return;
-  auto& l = lfos_[idx];
-  l.morph = morph; l.rate = rate; l.depth = depth;
+void Host::lfoSpec(int slot, int obj, int key, double morph, double rate, double depth) {
+  sdk::RowLfo* l = lfoFind(slot, obj, key);
+  if (!l) return;
+  if (!std::isnan(morph)) l->morph = morph;             // NaN — не менять
+  if (!std::isnan(rate)) l->rate = rate;
+  if (!std::isnan(depth)) l->depth = depth;
 }
 
-void Host::lfoOff(int idx, sdk::World* const worlds[SLOTS], double* args) {
-  if (idx < 0 || idx >= sdk::LFO_MAX || !lfos_[idx].on) return;
-  auto& l = lfos_[idx];
-  if (worlds && l.slot >= 0 && l.slot < SLOTS && worlds[l.slot]) {
-    args[0] = l.key; args[1] = l.base;
-    worlds[l.slot]->action(sdk::ACT_LFO, l.obj, args, 2);
+void Host::lfoBase(int slot, int obj, int key, double base) {
+  if (sdk::RowLfo* l = lfoFind(slot, obj, key)) l->base = base;
+}
+
+// значение миру тем же action, что касания; мир без звезды / ключа пропускает сам
+void Host::lfoSend(const sdk::RowLfo& l, double v) {
+  if (l.slot < 0 || l.slot >= SLOTS || !w_[l.slot]) return;
+  const double a[2] = {static_cast<double>(l.key), v};
+  w_[l.slot]->action(sdk::ACT_LFO, l.obj, a, 2);
+}
+
+void Host::lfoOff(int slot, int obj, int key) {
+  sdk::RowLfo* l = lfoFind(slot, obj, key);
+  if (!l) return;
+  lfoSend(*l, l->base);                                 // строке — база
+  l->on = false;
+}
+
+void Host::lfoDrop(int slot, int obj) {                 // без base; obj −1 (FX) не гасим никогда
+  for (auto& l : lfos_) {
+    if (!l.on || l.slot != slot || l.obj < 0) continue;
+    if (obj == LFO_OBJS || l.obj == obj) l.on = false;
   }
-  l.on = false;
-}
-
-bool Host::lfoState(int idx, sdk::RowLfo& out) const {
-  if (idx < 0 || idx >= sdk::LFO_MAX || !lfos_[idx].on) return false;
-  out = lfos_[idx];
-  return true;
-}
-
-void Host::lfoClear(int slot) {
-  for (int i = 0; i < sdk::LFO_MAX; i++) if (lfos_[i].on && lfos_[i].slot == slot) lfos_[i].on = false;
-}
-
-void Host::lfoClear(int slot, int obj) {
-  for (int i = 0; i < sdk::LFO_MAX; i++) if (lfos_[i].on && lfos_[i].slot == slot && lfos_[i].obj == obj) lfos_[i].on = false;
 }
 
 void Host::lfoTick(double dt) {
-  for (auto& l : lfos_) if (l.on) l.tick(dt);
-}
-
-// Значения живых LFO мирам тем же action (аудиопоток): сдвиг фазы, затем value → [key, v]; мир без obj/ключа пропускает сам
-int Host::lfoApply(double dt, sdk::World* const worlds[SLOTS], double* args) {
-  int n = 0;
+  const sdk::WaveMorph* m[2] = {&morphClassic_, &morphRandom_};
   for (auto& l : lfos_) {
     if (!l.on) continue;
-    l.tick(dt);
-    if (l.slot < 0 || l.slot >= SLOTS || !worlds[l.slot]) continue;
-    const auto& m = l.shape == sdk::WaveMorph::RANDOM ? morphRandom_ : morphClassic_;
-    args[0] = l.key; args[1] = l.value(m);
-    worlds[l.slot]->action(sdk::ACT_LFO, l.obj, args, 2);
-    n++;
+    l.u += dt * l.rate;
+    lfoSend(l, l.value(*m[l.shape == sdk::WaveMorph::RANDOM ? 1 : 0]));
+  }
+}
+
+int Host::lfoState(double* buf, int cap) const {
+  int n = 0;
+  for (const auto& l : lfos_) {
+    if (!l.on || n + 10 > cap) continue;
+    double* p = buf + n;
+    p[0] = l.slot; p[1] = l.obj; p[2] = l.key; p[3] = l.base; p[4] = l.morph;
+    p[5] = l.rate; p[6] = l.depth; p[7] = l.u; p[8] = l.shape; p[9] = l.seed;
+    n += 10;
   }
   return n;
+}
+
+double Host::lfoSample(int shape, double morph, double u, int seed) const {
+  return (shape == 1 ? morphRandom_ : morphClassic_).sample(morph, u, seed);
 }
 
 void Host::modelTick(double dt) {

@@ -76,6 +76,5 @@ double RowLfo::value(const WaveMorph& w) const {
   return std::max(0.0, std::min(1.0, base + offset));
 }
 
-void RowLfo::tick(double dt) { u += dt * rate; }
 
 }  // namespace sdk

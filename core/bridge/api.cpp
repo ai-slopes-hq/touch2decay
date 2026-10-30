@@ -110,6 +110,7 @@ T2D_API int t2d_snapshot(int slot) {                        // длина стр
 }
 T2D_API void t2d_restore(int slot, int len) {
   sdk::World* w = at(slot);
+  host.lfoDrop(slot, Host::LFO_OBJS);                       // LFO звёзд слота не переживают restore (FX остаются)
   if (w && len >= 0 && len <= STR_CAP) w->restore(std::string(str, static_cast<size_t>(len)));
 }
 T2D_API void t2d_fader(int slot, double g) { host.fader(slot, g); }
@@ -137,30 +138,16 @@ T2D_API void t2d_master_run(float* L, float* R, int n) { host.masterRun(L, R, n)
 T2D_API void t2d_mix(float* L, float* R, int n) { host.sum(L, R, n); host.masterRun(L, R, n); }
 T2D_API double t2d_master_makeup(void) { return host.masterMakeup(); }
 
-// LFO строк: таблица хоста (64); apply миру и снимок для UI — в core/app (задача 3 плана 2b-2)
-T2D_API int t2d_lfo_add(int slot, int obj, int key, double base, int shape) {
-  return host.lfoAdd(slot, obj, key, base, shape);
-}
-T2D_API void t2d_lfo_spec(int idx, double morph, double rate, double depth) { host.lfoSpec(idx, morph, rate, depth); }
-T2D_API void t2d_lfo_off(int idx) { host.lfoOff(idx, worlds, args); }
-T2D_API int t2d_lfo_state(int idx, double* out) {
-  sdk::RowLfo l;
-  if (!out || !host.lfoState(idx, l)) return 0;
-  out[0] = l.slot; out[1] = l.obj; out[2] = l.key; out[3] = l.base;
-  out[4] = l.morph; out[5] = l.rate; out[6] = l.depth; out[7] = l.u;
-  out[8] = l.shape; out[9] = l.seed;
-  return 10;
-}
+// LFO строк: таблица хоста (64), зовёт только аудиопоток (core/app); в wasm не экспортируется — веб держит свои LFO в sl.js
+T2D_API int t2d_lfo_add(int slot, int obj, int key, double base, int shape) { return host.lfoAdd(slot, obj, key, base, shape) ? 1 : 0; }
+T2D_API void t2d_lfo_spec(int slot, int obj, int key, double morph, double rate, double depth) { host.lfoSpec(slot, obj, key, morph, rate, depth); }
+T2D_API void t2d_lfo_base(int slot, int obj, int key, double base) { host.lfoBase(slot, obj, key, base); }
+T2D_API void t2d_lfo_off(int slot, int obj, int key) { host.lfoOff(slot, obj, key); }
+T2D_API void t2d_lfo_drop(int slot, int obj) { host.lfoDrop(slot, obj); }
+T2D_API void t2d_lfo_tick(double dt) { host.lfoTick(dt); }
+T2D_API int t2d_lfo_state() { return host.lfoState(mbuf, MBUF); }
 T2D_API unsigned t2d_lfo_lost(void) { return host.lfoLost(); }
-T2D_API double t2d_world_value(int slot, int obj, int key) {
-  sdk::World* w = at(slot);
-  return w ? w->value(obj, key) : std::nan("");
-}
-
-// LFO: один блок (раз в 128): значения мирам тем же action, что касания; base при remove — в Host (задача 2 плана 2b-2)
-T2D_API int t2d_lfo_apply(double dt) {
-  return host.lfoApply(dt, worlds, args);
-}
+T2D_API double t2d_lfo_sample(int shape, double morph, double u, int seed) { return host.lfoSample(shape, morph, u, seed); }
 
 // model tick — обновление модели вне аудио-потока
 T2D_API void t2d_model_tick(double dt) { host.modelTick(dt); }

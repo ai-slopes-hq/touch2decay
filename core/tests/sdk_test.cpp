@@ -2950,135 +2950,225 @@ static void lfoForms() {
   CHECK(rn.sample(0.6, 1.2, 7) != rn.sample(0.6, 2.2, 7));
 }
 
-// Host: таблица на 64, переполнение без роста памяти, clear по слоту и по объекту
-static void hostLfoTable() {
+// random-формы по хешу периода: эталон — Node по host/sl.js (RND_SHAPES), seed 3
+static void lfoRandom() {
   Host h;
   h.prepare(48000, 7);
-  for (int i = 0; i < sdk::LFO_MAX; i++) CHECK(h.lfoAdd(10, -1, i, 0.5, 1) == i);
-  CHECK(h.lfoAdd(10, -1, 0, 0.5, 1) == -1);
+  NEAR(h.lfoSample(1, 0.6, 0.2, 3), 0.116445177162, 1e-9);        // steps: один шаг на период floor(u)
+  NEAR(h.lfoSample(1, 0.6, 1.2, 3), -0.252532571321, 1e-9);
+  NEAR(h.lfoSample(1, 0.6, 2.2, 3), -0.093040967578, 1e-9);
+  NEAR(h.lfoSample(1, 0.9, 0.5, 3), -0.068043697080, 1e-9);       // smooth
+  NEAR(h.lfoSample(1, 0.9, 1.5, 3), -0.172786769450, 1e-9);
+  CHECK(std::fabs(h.lfoSample(1, 0.9, 1 - 1e-9, 3) - h.lfoSample(1, 0.9, 1 + 1e-9, 3)) < 1e-6);   // непрерывна на границе периода
+  NEAR(h.lfoSample(1, 0.1, 1.25, 3), -0.5, 0.01);                 // ramp up / down — от frac(u)
+  NEAR(h.lfoSample(1, 0.3, 1.25, 3), 0.5, 0.01);
+}
+
+// Host без мира в слоте: только таблица
+static void hostLfo() {
+  Host h;
+  h.prepare(48000, 7);
+  double b[64 * 10];
+  CHECK(h.lfoAdd(10, 4, 4, 0.5, 1));
+  CHECK(h.lfoState(b, 640) == 10);
+  CHECK(b[0] == 10 && b[1] == 4 && b[2] == 4 && b[8] == 1 && b[7] == 0);
+  NEAR(b[3], 0.5, 1e-12); NEAR(b[4], 0.6, 1e-12); NEAR(b[5], 0.4, 1e-12); NEAR(b[6], 0.3, 1e-12);
+  CHECK(b[9] >= 0 && b[9] <= 999);
+  const double seed = b[9];
+  h.lfoSpec(10, 4, 4, 0.1, 2, 0.5);
+  CHECK(h.lfoAdd(10, 4, 4, 0.9, 0));                              // та же тройка — ничего, спека не сброшена
+  CHECK(h.lfoState(b, 640) == 10);
+  NEAR(b[3], 0.5, 1e-12); NEAR(b[4], 0.1, 1e-12); NEAR(b[5], 2, 1e-12); NEAR(b[6], 0.5, 1e-12); CHECK(b[9] == seed);
+  h.lfoSpec(10, 4, 4, NAN, 3, NAN);                               // NaN — не менять
+  h.lfoState(b, 640);
+  NEAR(b[4], 0.1, 1e-12); NEAR(b[5], 3, 1e-12); NEAR(b[6], 0.5, 1e-12);
+  h.lfoSpec(10, 4, 4, 0.1, 2, 0.5);
+  h.lfoTick(0.25);
+  h.lfoState(b, 640);
+  NEAR(b[7], 0.5, 1e-12);                                         // rate 2 · 0.25 с
+  h.lfoBase(10, 4, 4, 0.7);
+  h.lfoState(b, 640);
+  NEAR(b[3], 0.7, 1e-12);
+  h.lfoSpec(10, 5, 4, 1, 1, 1); h.lfoBase(10, 5, 4, 0.1);         // нет тройки — ничего
+  CHECK(h.lfoState(b, 640) == 10);
+  CHECK(h.lfoState(b, 5) == 0);                                   // не влезает в cap
+  // drop: по объекту, по слоту (obj ≥ 0), FX (obj −1) живёт
+  CHECK(h.lfoAdd(10, 5, 0, 0.5, 0)); CHECK(h.lfoAdd(10, -1, 12, 0.5, 0)); CHECK(h.lfoAdd(11, 4, 4, 0.5, 0));
+  h.lfoDrop(10, 4);
+  CHECK(h.lfoState(b, 640) == 30);                                // осталось: (10,5,0), (10,−1,12), (11,4,4)
+  h.lfoDrop(10, Host::LFO_OBJS);
+  const int n = h.lfoState(b, 640);
+  CHECK(n == 20 && b[0] == 10 && b[1] == -1 && b[10] == 11);
+  h.lfoDrop(10, -1);                                              // FX DROP-ом не гасится
+  CHECK(h.lfoState(b, 640) == 20);
+  h.lfoOff(10, -1, 12);
+  CHECK(h.lfoState(b, 640) == 10);
+  h.lfoOff(11, 4, 4);
+  // переполнение
+  h.prepare(48000, 7);
+  for (int i = 0; i < Host::LFO_MAX; i++) CHECK(h.lfoAdd(10, i, 0, 0.5, 1));
+  CHECK(!h.lfoAdd(10, 64, 0, 0.5, 1));
   CHECK(h.lfoLost() == 1);
-  sdk::RowLfo s;
-  CHECK(h.lfoState(0, s));
-  CHECK(s.slot == 10 && s.obj == -1 && s.key == 0 && s.shape == 1);
-  NEAR(s.base, 0.5, 1e-12); NEAR(s.morph, 0.6, 1e-12); NEAR(s.rate, 0.4, 1e-12); NEAR(s.depth, 0.3, 1e-12);
-  CHECK(s.u == 0 && s.seed >= 0 && s.seed <= 999);
-  h.lfoSpec(0, 0.7, 2.5, 0.8);
-  h.lfoTick(0.1);
-  CHECK(h.lfoState(0, s));
-  NEAR(s.u, 0.25, 1e-12); NEAR(s.morph, 0.7, 1e-12); NEAR(s.depth, 0.8, 1e-12);
-  sdk::WaveMorph morphR(sdk::WaveMorph::RANDOM);
-  const double v0 = s.value(morphR);
-  CHECK(v0 >= 0 && v0 <= 1);
-  h.lfoClear(10, -1);                                    // только obj −1
-  CHECK(!h.lfoState(0, s));
-  CHECK(h.lfoState(5, s) == false);                      // все obj −1
-  CHECK(h.lfoAdd(12, 3, 0, 0.4, 0) == 0);
-  h.lfoClear(12);
-  CHECK(!h.lfoState(0, s));
-  h.lfoOff(0);                                           // повторный off — не падает
-  CHECK(!h.lfoState(0, s));
-  h.lfoSpec(0, 1, 1, 1);                                 // мёртвая ячейка — игнор
-  CHECK(!h.lfoState(0, s));
-}
-
-// смена Host (prepare) чистит таблицу и пересевает зерно
-static void hostLfoReinit() {
-  Host h;
+  CHECK(h.lfoState(b, 640) == 640);
+  h.lfoOff(10, 3, 0);
+  CHECK(h.lfoAdd(10, 64, 0, 0.5, 1));                             // ячейка освободилась
+  // prepare чистит таблицу, зерно пересеяно — повторяемость
   h.prepare(48000, 7);
-  const int a = h.lfoAdd(10, 1, 2, 0.5, 1);
-  sdk::RowLfo s;
-  CHECK(h.lfoState(a, s));
-  const int seed = s.seed;
-  h.prepare(44100, 7);
-  CHECK(!h.lfoState(a, s));
-  const int b = h.lfoAdd(10, 1, 2, 0.5, 1);
-  CHECK(h.lfoState(b, s));
-  CHECK(s.seed == seed);                                 // пересев — повторяемость
+  CHECK(h.lfoState(b, 640) == 0 && h.lfoLost() == 0);
+  CHECK(h.lfoAdd(10, 4, 4, 0.5, 1));
+  h.lfoState(b, 640);
+  CHECK(b[9] == seed);
 }
 
-// C API: те же поля, значение в пределах базы
-static void lfoBridge() {
-  t2d_init(48000, 7);
-  const int idx = t2d_lfo_add(10, -1, 6, 0.45, 1);
-  CHECK(idx >= 0);
-  double out[10];
-  CHECK(t2d_lfo_state(idx, out) == 10);
-  CHECK(out[0] == 10 && out[1] == -1 && out[2] == 6 && out[8] == 1);
-  NEAR(out[3], 0.45, 1e-12);
-  t2d_lfo_spec(idx, 0.6, 0.4, 0.3);
-  CHECK(t2d_lfo_state(idx, out) == 10);
-  NEAR(out[4], 0.6, 1e-12);
-  t2d_lfo_off(idx);
-  CHECK(t2d_lfo_state(idx, out) == 0);
-  CHECK(t2d_lfo_lost() == 0);
+// ---- LFO через движок: Firmamentum в слоте 10, действия UI → кольцо → ядро ----
+// зеркало Firmamentum: звезда с m[17] (slot, id, h, u, …), h — m[19], u — m[20]; fx — m[9..15]
+static void lfoStart() {
+  t2d_app_init(48000, 7, 1e9, 1u << 10);
+  const double s[4] = {0.3, 0.1, -1, 1};
+  t2d_app_action(10, 0, 0, s, 4, 0);
 }
-
-// Логгер для lfoApply / lfoOff: мир собирает ACT_LFO в записи (obj, key, v)
-struct LogWorld : sdk::World {
-  struct Rec { int obj, key; double v; };
-  Rec rec[16] = {}; int n = 0;
-  void prepare(double, uint32_t) override {}
-  void action(int kind, int i, const double* a, int cnt) override {
-    if (kind == sdk::ACT_LFO && cnt >= 2 && n < 16) { rec[n].obj = i; rec[n].key = static_cast<int>(a[0]); rec[n].v = a[1]; n++; }
+static void lfoBlocks(int n, double* hOut = nullptr, double* uOut = nullptr) {   // n блоков по 128; hOut / uOut — после последнего
+  float L[128], R[128];
+  double m[1024];
+  for (int k = 0; k < n; k++) {
+    t2d_app_render(L, R, 128, 0);
+    if (hOut || uOut) { t2d_app_mirror(10, m, 1024); if (hOut) *hOut = m[19]; if (uOut) *uOut = m[20]; }
   }
-  void process(const sdk::Out&, int) override {}
-  sdk::Rev rev() const override { return sdk::Rev::hall; }
-  int mirror(double*, int) const override { return 0; }
-  int heard(double*, int) override { return 0; }
-  std::string snapshot() const override { return "{}"; }
-  void restore(const std::string&) override {}
-  bool sounding() const override { return false; }
-};
-
-// apply двигает фазу и пишет мирам значение вокруг базы; dead obj — мир без него молча пропускает (как Firmamentum)
-static void lfoApply() {
-  Host h;
-  h.prepare(48000, 7);
-  static LogWorld w[16];
-  for (auto& x : w) x.n = 0;
-  sdk::World* worlds[16] = {};
-  worlds[10] = &w[10];
-  double args[4];
-  const int a = h.lfoAdd(10, -1, 0, 0.5, 0);
-  const int b = h.lfoAdd(10, 3, 1, 0.4, 1);
-  CHECK(a >= 0 && b >= 0);
-  h.lfoSpec(a, 0, 2.0, 0.5);
-  CHECK(h.lfoApply(0.25, worlds, args) == 2);
-  CHECK(w[10].n == 2);
-  CHECK(w[10].rec[0].obj == -1 && w[10].rec[0].key == 0);
-  CHECK(w[10].rec[1].obj == 3 && w[10].rec[1].key == 1);
-  CHECK(std::fabs(w[10].rec[0].v - 0.5) <= 0.25 + 1e-9);
-  CHECK(std::fabs(w[10].rec[1].v - 0.4) <= 0.15 + 1e-9);
-  sdk::RowLfo s;
-  CHECK(h.lfoState(a, s));
-  NEAR(s.u, 0.5, 1e-12);
-  // неживой слот — без падения и без применений
-  const int c = h.lfoAdd(12, -1, 0, 0.5, 0);
-  CHECK(c >= 0);
-  CHECK(h.lfoApply(0.25, worlds, args) == 2);           // слот 12 пуст
-  h.lfoOff(b, worlds, args);
-  CHECK(w[10].n == 5);
-  NEAR(w[10].rec[4].v, 0.4, 1e-12);                     // remove вернул base
-  CHECK(!h.lfoState(b, s));
-  // dead obj: мир без звезды — Firmamentum::value NaN (задача 4 примет), action молча пропускает
-  const int d = h.lfoAdd(10, 99, 2, 0.5, 0);
-  CHECK(d >= 0);
-  CHECK(h.lfoApply(0.1, worlds, args) == 2);
-  CHECK(w[10].n == 7);
+}
+static void lfoAct(int kind, int slot, std::initializer_list<double> a) {
+  std::vector<double> v(a);
+  t2d_app_action(T2D_HOST, kind, slot, v.data(), static_cast<int>(v.size()), 0);
+}
+static double lfoRms(bool lfo) {                                  // RMS 0.5 с звука Firmamentum с LFO на h и без
+  lfoStart();
+  if (lfo) { lfoAct(T2D_H_LFO_ADD, 10, {1, 4, 0.3, 0}); lfoAct(T2D_H_LFO_SPEC, 10, {1, 4, NAN, 3, 0.8}); }
+  float L[128], R[128];
+  double e = 0;
+  for (int k = 0; k < 188; k++) { t2d_app_render(L, R, 128, 0); for (int i = 0; i < 128; i++) e += double(L[i]) * L[i] + double(R[i]) * R[i]; }
+  return std::sqrt(e / (188 * 256));
 }
 
-// t2d_world_value у Firmamentum и NaN у чужого мира (Cymatica не знает строк)
-static void worldValue() {
-  t2d_init(48000, 7);
-  const double a[2] = {0.5, 0.2};
-  t2d_action(10, 0, 0, a, 2);                           // ADD h=0.5, u=0.2
-  CHECK(t2d_world_value(10, -1, 6) >= 0);               // hall по умолчанию
-  const double base = t2d_world_value(10, -1, 6);
-  NEAR(base, 0.45, 1e-9);
-  const double uval = t2d_world_value(10, 1, 5);        // u звезды id 1
-  NEAR(uval, 0.6, 1e-9);
-  CHECK(std::isnan(t2d_world_value(10, 99, 5)));
-  CHECK(std::isnan(t2d_world_value(2, -1, 0)));         // Cymatica — value по умолчанию NaN
+static void lfoApply() {
+  lfoStart();
+  double h = 0;
+  lfoBlocks(2, &h);
+  NEAR(h, 0.3, 1e-9);
+  lfoAct(T2D_H_LFO_ADD, 10, {1, 4, 0.3, 1});
+  lfoAct(T2D_H_LFO_SPEC, 10, {1, 4, NAN, 1, 0.5});
+  lfoBlocks(94, &h);                                              // ≈ 0.25 с
+  CHECK(h != 0.3);
+  CHECK(h >= 0.05 - 1e-9 && h <= 0.55 + 1e-9);
+}
+
+static void lfoUnits() {
+  lfoStart();
+  lfoAct(T2D_H_LFO_ADD, 10, {1, 5, 0.55, 0});
+  lfoAct(T2D_H_LFO_SPEC, 10, {1, 5, NAN, 5, 1});
+  double u = 0, lo = 9, hi = -9;
+  for (int k = 0; k < 375; k++) {                                 // 1 с
+    lfoBlocks(1, nullptr, &u);
+    CHECK(u >= -1 - 1e-9 && u <= 1 + 1e-9);
+    lo = std::fmin(lo, u); hi = std::fmax(hi, u);
+  }
+  CHECK(lo < 0 && hi > 0.3);
+}
+
+static void lfoOff() {
+  lfoStart();
+  double h = 0, b[640];
+  lfoAct(T2D_H_LFO_ADD, 10, {1, 4, 0.3, 1});
+  lfoAct(T2D_H_LFO_SPEC, 10, {1, 4, NAN, 1, 0.5});
+  lfoBlocks(60, &h);
+  CHECK(t2d_app_lfo(b, 640) == 10);
+  lfoAct(T2D_H_LFO_OFF, 10, {1, 4});
+  lfoBlocks(1, &h);
+  NEAR(h, 0.3, 1e-9);                                             // миру ушёл base
+  CHECK(t2d_app_lfo(b, 640) == 0);
+}
+
+// DROP / restore в том же кольце: порядок — как у касаний
+static void lfoOrder() {
+  lfoStart();
+  lfoBlocks(2);
+  lfoAct(T2D_H_SNAP, 10, {5});
+  lfoBlocks(1);
+  static char scene[1 << 16];
+  int id = 0, slot = 0;
+  const int len = t2d_app_snap_take(&id, &slot, scene, sizeof scene);
+  CHECK(len > 0);
+  lfoAct(T2D_H_LFO_ADD, 10, {1, 4, 0.3, 1});
+  lfoAct(T2D_H_LFO_ADD, 10, {-1, 12, 0.5, 0});
+  lfoAct(T2D_H_LFO_SPEC, 10, {1, 4, NAN, 1, 0.5});
+  t2d_app_restore(10, scene, len, 0);
+  double h = 0, b[640];
+  lfoBlocks(1, &h);
+  CHECK(t2d_app_lfo(b, 640) == 10);
+  CHECK(b[1] == -1 && b[2] == 12);                                // остался LFO hall
+  NEAR(h, 0.3, 1e-9);                                             // h — из сцены
+  lfoBlocks(40, &h);
+  NEAR(h, 0.3, 1e-9);                                             // и не модулируется
+}
+
+static void lfoDeadObj() {
+  const double a = lfoRms(true);
+  lfoStart();
+  lfoAct(T2D_H_LFO_ADD, 10, {1, 4, 0.3, 1});
+  t2d_app_action(10, 1, 1, nullptr, 0, 0);                        // CLOSE звезды 1
+  double m[1024];
+  lfoBlocks(100);
+  t2d_app_mirror(10, m, 1024);
+  CHECK(m[16] == 0);                                              // звёзд нет
+  CHECK(lfoRms(true) == a);                                       // детерминированно
+}
+
+static void lfoSpecNan() {
+  lfoStart();
+  lfoAct(T2D_H_LFO_ADD, 10, {1, 4, 0.5, 1});
+  lfoAct(T2D_H_LFO_SPEC, 10, {1, 4, NAN, 2, 0.4});
+  lfoBlocks(1);
+  double b[640];
+  CHECK(t2d_app_lfo(b, 640) == 10);
+  NEAR(b[4], 0.6, 1e-12); NEAR(b[5], 2, 1e-12); NEAR(b[6], 0.4, 1e-12);
+}
+
+// чужие миры ACT_LFO не знают: не падают и не звучат иначе
+static void lfoForeign() {
+  for (int slot : {1, 2}) {
+    auto run = [&](bool send) {
+      t2d_app_init(48000, 7, 1e9, 0);
+      const double a[2] = {0, 0.5};
+      if (send) t2d_app_action(slot, sdk::ACT_LFO, 0, a, 2, 0);
+      float L[128], R[128];
+      double e = 0;
+      for (int k = 0; k < 50; k++) { t2d_app_render(L, R, 128, 0); for (int i = 0; i < 128; i++) e += double(L[i]) * L[i] + double(R[i]) * R[i]; }
+      return e;
+    };
+    CHECK(run(true) == run(false));
+  }
+}
+
+static void appLfo() {
+  lfoStart();
+  lfoAct(T2D_H_LFO_ADD, 10, {1, 4, 0.3, 1});
+  lfoAct(T2D_H_LFO_ADD, 10, {-1, 12, 0.5, 0});
+  lfoAct(T2D_H_LFO_SPEC, 10, {-1, 12, 0.2, 1.5, 0.6});
+  lfoBlocks(1);
+  double b[640];
+  CHECK(t2d_app_lfo(b, 640) == 20);
+  CHECK(b[0] == 10 && b[1] == 1 && b[2] == 4 && b[8] == 1);
+  NEAR(b[3], 0.3, 1e-12);
+  CHECK(b[10] == 10 && b[11] == -1 && b[12] == 12 && b[18] == 0);
+  NEAR(b[13], 0.5, 1e-12); NEAR(b[14], 0.2, 1e-12); NEAR(b[15], 1.5, 1e-12); NEAR(b[16], 0.6, 1e-12);
+  CHECK(b[17] > 0);                                               // u двинулась за блок
+  CHECK(t2d_app_lfo(b, 19) == 0);                                 // не влезает
+  lfoStart();
+  for (int j = 0; j < 65; j++) lfoAct(T2D_H_LFO_ADD, 10, {double(j), 0, 0.5, 0});
+  lfoBlocks(1);
+  t2d_app_stats_t st;
+  t2d_app_stats(&st);
+  CHECK(st.lfo_lost == 1);
+  CHECK(t2d_app_lfo(b, 640) == 640);
+  NEAR(t2d_app_lfo_sample(1, 0.6, 1.2, 3), -0.252532571321, 1e-9);
 }
 
 int main(int argc, char** argv) {
@@ -3090,7 +3180,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); hostLfoTable(); hostLfoReinit(); lfoBridge(); lfoApply(); worldValue();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); appLfo();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

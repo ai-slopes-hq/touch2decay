@@ -40,23 +40,21 @@ void Firmamentum::action(int kind, int i, const double* a, int n) {
     case CLEAR: model_.clear(); break;
     case DICE: model_.dice(); break;
     case LAUNCH: model_.launch(); break;
+    case sdk::ACT_LFO: {
+      if (n < 2) break;
+      const int key = static_cast<int>(a[0]);
+      const double v = a[1];
+      if (key >= 0 && key < NKEY) {
+        if (i < 0) break;                                // звёздные ключи — только звезде; нет звезды — model_.set промолчит
+        double x = v;
+        if (key == H) x = std::fmin(0.97, std::fmax(0.02, v));
+        else if (key == U) x = 2 * v - 1;
+        else if (key == CYC) x = 1 + std::round(7 * v);
+        model_.set(i, key, x);
+      } else if (key >= NKEY && key < NKEY + NFX && i == -1) model_.setFx(key - NKEY, v);
+      break;
+    }
     default: break;
-  }
-}
-
-// Базовое значение строки LFO: obj −1 — FX (ключи 0…NFX−1), obj ≥ 0 — звезда (ключи 0…NKEY−1)
-double Firmamentum::value(int obj, int key) const {
-  if (obj == -1) return key >= 0 && key < NFX ? model_.fx(key) : std::nan("");
-  const Star* s = model_.find(obj);
-  if (!s || key < 0 || key >= NKEY) return std::nan("");
-  switch (key) {
-    case CYC: return (s->cyc - 1) / 7;
-    case WIN: return s->win;
-    case MASK: return s->mask;
-    case LVL: return s->lvl;
-    case H: return (s->h - 0.02) / 0.95;
-    case U: return (s->u + 1) / 2;
-    default: return std::nan("");
   }
 }
 

@@ -44,11 +44,6 @@ Star* Model::find(int id) {
   return nullptr;
 }
 
-const Star* Model::find(int id) const {
-  for (int i = 0; i < n_; i++) if (stars_[i].id == id) return &stars_[i];
-  return nullptr;
-}
-
 Star* Model::add(double h, double u, int slot, int id) {
   bool used[SMAX] = {};
   for (int i = 0; i < n_; i++) used[stars_[i].slot] = true;

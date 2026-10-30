@@ -1,6 +1,7 @@
 // C-обёртка над Engine (один статический экземпляр: кольца и снимки ~3 МБ — не на стек).
 #include "t2d_app.h"
 #include "engine.hpp"
+#include "../bridge/t2d.h"
 
 static Engine engine;
 
@@ -12,3 +13,5 @@ int t2d_app_heard(int slot, double* buf, int cap) { return engine.heard(slot, bu
 int t2d_app_restore(int slot, const char* s, int len, uint64_t touch_time) { return engine.restore(slot, s, len, touch_time) ? 1 : 0; }
 int t2d_app_snap_take(int* id, int* slot, char* buf, int cap) { return engine.snapTake(id, slot, buf, cap); }
 void t2d_app_stats(t2d_app_stats_t* out) { engine.stats(out); }
+int t2d_app_lfo(double* buf, int cap) { return engine.lfo(buf, cap); }
+double t2d_app_lfo_sample(int shape, double morph, double u, int seed) { return t2d_lfo_sample(shape, morph, u, seed); }

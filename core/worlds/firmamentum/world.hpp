@@ -20,6 +20,9 @@ namespace firmamentum {
 //   SET    i = id, a = [key (Key: cyc, win, mask, lvl, h, u), v]
 //   FX     i = key (Fx: scintilla … hall), a = [v]
 //   CLEAR, DICE, LAUNCH
+//   ACT_LFO (sdk, −2) i = obj, a = [key, v], v 0…1 (LFO строки хоста): key 0…5 — Key звезды i (SET: cyc 0, win 1, mask 2, lvl 3, h 4, u 5),
+//          key 6…12 — NKEY + Fx (scintilla 6 … hall 12) при i = −1 (FX). Перевод 0…1 → модель: h → clamp 0.02…0.97, u → 2v−1,
+//          cyc → 1+round(7v), остальное как есть. Нет звезды или ключа — ничего.
 enum Act { ADD, CLOSE, MOVE, SET, FX, CLEAR, DICE, LAUNCH };
 
 // зеркало: time, comets, comet [on, a.h, a.u, b.h, b.u, t0, dur] (без кометы — on 0 и нули), fx [NFX], число звёзд,
@@ -46,7 +49,6 @@ class Firmamentum : public sdk::World {
   void restore(const std::string& js) override { model_.restore(js); }
   bool sounding() const override { return model_.count() > 0; }
   double trim() const override { return 2.5; }          // как engine.js: сухой выход ×2.5 перед каналом микшера
-  double value(int obj, int key) const override;
   const Model& model() const { return model_; }
 
  private:

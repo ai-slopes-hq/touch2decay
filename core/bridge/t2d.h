@@ -34,13 +34,16 @@ void t2d_sum(float* L, float* R, int n);          // Σ dry·фейдер·trim 
 void t2d_master_run(float* L, float* R, int n);   // мастер по цепочке веба, на месте
 void t2d_mix(float* L, float* R, int n);          // sum + master_run
 double t2d_master_makeup(void);                   // авто-подъём компрессора (для тестов)
-int t2d_lfo_add(int slot, int obj, int key, double base, int shape);
-double t2d_world_value(int slot, int obj, int key);
-int t2d_lfo_apply(double dt);                 // один блок LFO: значения мирам; число применений
-void t2d_lfo_spec(int idx, double morph, double rate, double depth);
-void t2d_lfo_off(int idx);
-int t2d_lfo_state(int idx, double* out);                 // 10 чисел: slot, obj, key, base, morph, rate, depth, u, shape, seed; 0 — нет
+// LFO строк (только аудиопоток, в wasm не экспортируются); подписи как у Host::lfo*
+int t2d_lfo_add(int slot, int obj, int key, double base, int shape);   // 1 — есть / добавлен, 0 — нет места
+void t2d_lfo_spec(int slot, int obj, int key, double morph, double rate, double depth);   // NaN — не менять
+void t2d_lfo_base(int slot, int obj, int key, double base);
+void t2d_lfo_off(int slot, int obj, int key);
+void t2d_lfo_drop(int slot, int obj);             // obj −2 — все объекты слота
+void t2d_lfo_tick(double dt);
+int t2d_lfo_state();                              // в mbuf, по 10 чисел на LFO: slot, obj, key, base, morph, rate, depth, u, shape, seed; длина
 unsigned t2d_lfo_lost(void);
+double t2d_lfo_sample(int shape, double morph, double u, int seed);
 void t2d_model_tick(double dt);
 
 #ifdef __cplusplus

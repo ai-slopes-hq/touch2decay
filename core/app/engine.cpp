@@ -8,9 +8,10 @@ void Engine::init(double sr, unsigned seed, double ticksPerSec, unsigned watch) 
   sr_ = sr; ticks_ = ticksPerSec; watch_ = watch;
   samples_ = 0; remOff_ = remN_ = 0;
   acts_.clear(); ustr_.clear(); snaps_.clear();
+  lfoMir_.clear(); lastLfo_.len = 0;
   for (int s = 0; s < SLOTS; s++) { mir_[s].clear(); last_[s].len = 0; heard_[s].clear(); }
   loadSum_ = loadMax_ = loadN_ = latSum_ = latMax_ = latN_ = snapSum_ = snapMax_ = snapN_ = 0;
-  frames_ = 0; dropped_ = 0; heardLost_ = 0; snapLost_ = 0;
+  frames_ = 0; dropped_ = 0; heardLost_ = 0; snapLost_ = 0; lfoLost_ = 0;
   t2d_init(sr, seed);
 }
 
@@ -57,6 +58,15 @@ void Engine::hostAction(const Act& act) {
   switch (act.kind) {
     case T2D_H_VOL: if (act.n >= 1) t2d_vol(act.a[0]); break;
     case T2D_H_SCALE: if (act.n >= 3) t2d_scale(act.a[0] != 0, static_cast<int>(act.a[1]), static_cast<int>(act.a[2])); break;
+    case T2D_H_LFO_ADD:                                     // a = [obj, key, base, shape]; i = слот
+      if (act.n >= 4) t2d_lfo_add(act.i, static_cast<int>(act.a[0]), static_cast<int>(act.a[1]), act.a[2], static_cast<int>(act.a[3]));
+      break;                                                // нет места — хост считает lfo_lost
+    case T2D_H_LFO_SPEC:
+      if (act.n >= 5) t2d_lfo_spec(act.i, static_cast<int>(act.a[0]), static_cast<int>(act.a[1]), act.a[2], act.a[3], act.a[4]);
+      break;
+    case T2D_H_LFO_BASE: if (act.n >= 3) t2d_lfo_base(act.i, static_cast<int>(act.a[0]), static_cast<int>(act.a[1]), act.a[2]); break;
+    case T2D_H_LFO_OFF: if (act.n >= 2) t2d_lfo_off(act.i, static_cast<int>(act.a[0]), static_cast<int>(act.a[1])); break;
+    case T2D_H_LFO_DROP: if (act.n >= 1) t2d_lfo_drop(act.i, static_cast<int>(act.a[0])); break;
     case T2D_H_SNAP: {
       const auto t0 = std::chrono::steady_clock::now();
       const int len = t2d_snapshot(act.i);
@@ -99,7 +109,7 @@ void Engine::block(uint64_t host, int offset) {
     }
   }
   t2d_time(samples_ / sr_);
-  t2d_lfo_apply(BLOCK / sr_);                       // LFO строк — до process, как slTick веба (частоты ~375/с, звук глаже)
+  t2d_lfo_tick(BLOCK / sr_);                        // LFO строк: после кольца, до process (раз в блок; веб шлёт ~30/с — звучит глаже)
   t2d_process(BLOCK);
   samples_ += BLOCK;
   for (int s = 0; s < SLOTS; s++) {
@@ -129,6 +139,11 @@ void Engine::publishMirrors() {
     std::memcpy(w.d, t2d_mbuf(), static_cast<size_t>(len) * sizeof(double));
     mir_[s].publish();
   }
+  Lfo& l = lfoMir_.write();                                 // снимок LFO публикуем и пустым: погасший LFO должен исчезнуть из UI
+  l.len = t2d_lfo_state();
+  std::memcpy(l.d, t2d_mbuf(), static_cast<size_t>(l.len) * sizeof(double));
+  lfoMir_.publish();
+  lfoLost_.store(t2d_lfo_lost(), std::memory_order_relaxed);
 }
 
 void Engine::render(float* L, float* R, int n, uint64_t host) {
@@ -168,6 +183,13 @@ int Engine::mirror(int slot, double* buf, int cap) {
   return m.len;
 }
 
+int Engine::lfo(double* buf, int cap) {
+  lfoMir_.read(lastLfo_);
+  if (!buf || cap < lastLfo_.len) return 0;
+  std::memcpy(buf, lastLfo_.d, static_cast<size_t>(lastLfo_.len) * sizeof(double));
+  return lastLfo_.len;
+}
+
 // забирает записи подряд, пока влезают в cap; запись длиннее cap остаётся в кольце
 int Engine::heard(int slot, double* buf, int cap) {
   if (slot < 0 || slot >= SLOTS || !buf) return 0;
@@ -196,5 +218,6 @@ void Engine::stats(t2d_app_stats_t* out) {
   out->snap_max = sm * 1e-9;
   out->snap_n = static_cast<int>(sn);
   out->snap_lost = snapLost_.load(std::memory_order_relaxed);
+  out->lfo_lost = lfoLost_.load(std::memory_order_relaxed);
   out->heard_lost = heardLost_.load(std::memory_order_relaxed);
 }

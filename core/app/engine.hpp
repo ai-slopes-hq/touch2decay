@@ -14,8 +14,9 @@ class Engine {
   static constexpr int ACT_CAP = 256, ACT_ARGS = 128;       // кольцо действий; чисел в действии (узор Cymatica — 117)
   static constexpr int HEARD_RECS = 64, HEARD_REC = 256;    // записей heard на слот; чисел в записи (Cymatica ≤ 200)
   static constexpr int MIRROR_CAP = 1024;                   // = MBUF ядра
+  static constexpr int LFO_N = 64 * 10;                     // снимок LFO: LFO_MAX · 10 чисел
   static constexpr int STR = 1 << 16;                       // строка снимка, = t2d_str_cap()
-  enum { RESTORE = 3 };                                     // внутренний kind слота хоста (после T2D_H_*): строка из кольца UI → аудио
+  enum { RESTORE = 8 };                                     // внутренний kind слота хоста (после T2D_H_*): строка из кольца UI → аудио
 
   // полный сброс (кольца, остаток, статистика) + t2d_init; только пока аудио стоит
   void init(double sr, unsigned seed, double ticksPerSec, unsigned watch);
@@ -24,6 +25,7 @@ class Engine {
   int mirror(int slot, double* buf, int cap);               // UI
   bool restore(int slot, const char* s, int len, uint64_t touch);  // UI: строка в кольцо + действие; false — отброшено
   int snapTake(int* id, int* slot, char* buf, int cap);     // UI: готовый снимок; длина, 0 — нет (не влез в cap — потерян)
+  int lfo(double* buf, int cap);                            // UI: снимок LFO (по 10 чисел), длина
   int heard(int slot, double* buf, int cap);                // UI
   void stats(t2d_app_stats_t* out);                         // UI: снимает окно
 
@@ -31,6 +33,7 @@ class Engine {
   struct Act { int slot, kind, i, n; uint64_t touch; double a[ACT_ARGS]; };
   struct Str { int slot, id, len; char d[STR]; };
   struct Mir { int len; double d[MIRROR_CAP]; };
+  struct Lfo { int len; double d[LFO_N]; };
   struct Rec { int len; double d[HEARD_REC]; };
 
   void hostAction(const Act& act);                                // действие слота хоста
@@ -46,6 +49,8 @@ class Engine {
 
   Spsc<Act, ACT_CAP> acts_;
   Triple<Mir> mir_[SLOTS];
+  Triple<Lfo> lfoMir_;                                      // снимок таблицы LFO, как зеркало
+  Lfo lastLfo_;
   Mir last_[SLOTS];                                         // последнее прочитанное UI
   Spsc<Rec, HEARD_RECS> heard_[SLOTS];
   Spsc<Str, 2> ustr_, snaps_;                               // строки UI → аудио (restore) и аудио → UI (снимки)
@@ -53,5 +58,5 @@ class Engine {
   // статистика окна: суммы в целых (нс, 1e-9 доли), чтобы снимать атомарным exchange
   std::atomic<uint64_t> loadSum_{0}, loadMax_{0}, loadN_{0}, latSum_{0}, latMax_{0}, latN_{0}, snapSum_{0}, snapMax_{0}, snapN_{0};
   std::atomic<int> frames_{0};
-  std::atomic<unsigned> dropped_{0}, heardLost_{0}, snapLost_{0};
+  std::atomic<unsigned> dropped_{0}, heardLost_{0}, snapLost_{0}, lfoLost_{0};   // lfoLost_ — копия счётчика хоста для UI
 };
