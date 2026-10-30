@@ -3240,30 +3240,50 @@ static void appHostFader() {
   CHECK(p2 < 1e-4f);
 }
 
+// сухой выход после фейдера (левый канал последнего блока) и сырой уровень слота 10 до фейдера
+static void dryBlock(float* d, float* raw) {
+  float a[128], b[128];
+  t2d_sum(a, b, 128);
+  float m = 0;
+  for (int i = 0; i < 128; i++) { d[i] = a[i] - t2d_ret(0)[i]; m = std::max(m, std::fabs(t2d_dry(10, 0)[i])); }
+  *raw = m;
+}
+
 static void appHostFaderSmooth() {
   hostStar();
   const double g1[1] = {1}, g0[1] = {0};
   t2d_app_action(T2D_HOST, T2D_H_FADER, 10, g1, 1, 0);
-  float L[128], R[128];
-  float before = 0, prev = 0;
-  for (int k = 0; k < 188; k++) {                               // 0.5 с до действия: максимум разницы соседних сэмплов
+  float L[128], R[128], d[128], raw = 0;
+  float before = 0, prev = 0, ampBefore = 0, r0 = 0;
+  for (int k = 0; k < 188; k++) {                               // 0.5 с до действия: максимум разницы соседних сэмплов сухого
     t2d_app_render(L, R, 128, 0);
-    for (int i = 0; i < 128; i++) { before = std::max(before, std::fabs(L[i] - prev)); prev = L[i]; }
+    dryBlock(d, &raw);
+    float m = 0;
+    for (int i = 0; i < 128; i++) { before = std::max(before, std::fabs(d[i] - prev)); prev = d[i]; m = std::max(m, std::fabs(d[i])); }
+    ampBefore = std::max(ampBefore, m);
+    if (raw > 1e-3f) r0 = m / raw;                              // сухое / сырое = trim при фейдере 1
   }
+  CHECK(ampBefore > 0.0025f && r0 > 0);
   t2d_app_action(T2D_HOST, T2D_H_FADER, 10, g0, 1, 0);
-  float first = 0, after = 0;
+  float after = 0;
+  int judged = 0;
   for (int k = 0; k < 120; k++) {                               // 0.32 с перехода
     t2d_app_render(L, R, 128, 0);
-    for (int i = 0; i < 128; i++) {
-      if (k == 0) first = std::max(first, std::fabs(L[i]));
-      after = std::max(after, std::fabs(L[i] - prev)); prev = L[i];
+    dryBlock(d, &raw);
+    float m = 0;
+    for (int i = 0; i < 128; i++) { m = std::max(m, std::fabs(d[i])); after = std::max(after, std::fabs(d[i] - prev)); prev = d[i]; }
+    if (raw > 1e-3f && k < 40) {                                // звезда импульсная: берём блоки, где есть что слышать; фейдер = (1−k)^(блок+1)
+      const float want = static_cast<float>(std::pow(std::exp(-128.0 / (0.03 * 48000)), k + 1));
+      const float ratio = m / raw / r0;
+      CHECK(std::fabs(ratio - want) < 0.03f * want + 1e-4f);
+      judged++;
     }
   }
-  CHECK(first > 0.01f);                                         // не обрубило в первом блоке
-  CHECK(after <= before * 1.5f);
+  CHECK(judged >= 2);                                           // кривая проверена не на одном блоке
+  CHECK(after <= before * 1.5f);                                // ступени блока не рвут сухое
   float tail = 0;
   for (int k = 0; k < 188; k++) { t2d_app_render(L, R, 128, 0); tail = std::max(tail, dryAfterFader()); }
-  CHECK(tail < 1e-3f);
+  CHECK(tail < 1e-4f);
 }
 
 static float masterPeak(double ceilDb) {
