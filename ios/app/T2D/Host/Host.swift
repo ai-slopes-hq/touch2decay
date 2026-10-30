@@ -24,7 +24,7 @@ final class Host {
   private var routes: [ObjectIdentifier: Route] = [:]
   private var volF: (id: ObjectIdentifier, v0: Double, y0: CGFloat)?
   private var rowF: (id: ObjectIdentifier, key: String, v0: Double)?    // строка плашки в руках: база на момент касания
-  private var padDepth: Double?                                          // последняя посланная глубина пада — для снятия на подъёме
+  private var padDepth: (id: ObjectIdentifier, d: Double)?                                        // последняя посланная глубина пада — для снятия на подъёме
   var fxHeld: Bool { routes.values.contains { if case .btn(.rev) = $0 { return true } else { return false } } }
 
   private var scene: (w: String, scl: Scl)?                    // последний известный снимок: из него автосохранение и reinit
@@ -118,7 +118,7 @@ final class Host {
     guard let r = routes.removeValue(forKey: f.id) else { return }
     if case .world = r { world.cancel(f) }
     if case .btn(.vol) = r { volF = nil; store.savePrefs(PrefsFile(vol: vol)) }
-    if case .sheet = r { rowF = nil; padDepth = nil }
+    if case .sheet = r { releaseSheet(f) }
     endGesture()
   }
 
@@ -170,7 +170,7 @@ final class Host {
     if h == .strip { core.lfoSpec(slot: s.slot, obj: l.obj, key: c, morph: Pad.shapeT(p, f.x), rate: .nan, depth: .nan) }
     else {
       let d = Pad.depth(p, f.y)
-      padDepth = d
+      padDepth = (f.id, d)
       core.lfoSpec(slot: s.slot, obj: l.obj, key: c, morph: .nan, rate: Pad.rate(p, f.x), depth: d)
     }
   }
@@ -188,9 +188,16 @@ final class Host {
     }
   }
 
+  // палец ушёл: гасим только то, что держал он сам
+  private func releaseSheet(_ f: Finger) {
+    if rowF?.id == f.id { rowF = nil }
+    if padDepth?.id == f.id { padDepth = nil }
+  }
+
   private func sheetUp(_ h: SheetHit, _ f: Finger) {
-    defer { rowF = nil; padDepth = nil }
-    guard let s = sheet, h == .pad, let d = padDepth, d < 0.03, let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) else { return }
+    let pd = padDepth?.id == f.id ? padDepth?.d : nil
+    releaseSheet(f)
+    guard let s = sheet, h == .pad, let d = pd, d < 0.03, let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) else { return }
     core.lfoOff(slot: s.slot, obj: l.obj, key: c)     // глубина в ноль — LFO снимается (sheet.js:81)
   }
 
@@ -266,12 +273,12 @@ final class Host {
     world.draw(d, now: now)
     let st = TopBar.State(title: world.title, vol: vol, volHeld: volF != nil, scl: scl, sclOpen: sclOpen,
                           canUndo: undo.depth(slot: world.slot) > 0, fxArc: world.fx?.arc?(), fxHeld: fxHeld, diceAt: diceAt)
+    titleW = bar.draw(d, st, now: now * 1000)
     if let s = sheet {
       var held: SheetHit?
       for r in routes.values { if case .sheet(let h) = r { held = h } }
       SheetDraw.draw(d, s, geo(s), lfos: lfos, held: held, sample: core.lfoSample)
     }
-    titleW = bar.draw(d, st, now: now * 1000)
     if legendOpen { Legend.draw(d, title: "L E G E N D A", rows: world.legend, W: W, H: H, top: top, safeBot: safeBot) }
   }
 }

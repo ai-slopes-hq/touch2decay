@@ -353,6 +353,26 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(lfoCalls(), ["lfoAdd:-1:7:0.5"])
   }
 
+  func testSecondFingerDoesNotBreakFirst() {
+    openFx(); setSnaps([snap(6, base: 0.4)])
+    let g = geo(), a = finger(0, 100, rowY("a"))
+    host.down(a)
+    tap(g.lfoX, rowY("b"), n: 1)                               // палец B: «~» и подъём
+    var m = a; m.x = 100 + 0.25 * (g.tx1 - g.tx0); host.move(m)
+    XCTAssertEqual(core.calls.last, "lfoBase:-1:6:0.65", "жест A жив")
+    host.up(m)
+  }
+
+  func testSecondFingerKeepsPadRemoval() {
+    openFx(); setSnaps([snap(7)]); tilde("b")
+    let g = geo(), a = finger(0, 200, g.panel.pad.y + 40)
+    host.down(a)
+    var m = a; m.y = g.panel.bottom; host.move(m)
+    tap(g.panel.x + g.panel.w / 2, g.panel.shape.y + 20, n: 1)  // B на полосе форм
+    host.up(m)
+    XCTAssertEqual(core.calls.last, "lfoOff:-1:7")
+  }
+
   func testFxHeldWhileFingerOnRev() {
     world.fx = fxSpec()
     let p = bar.pos(.rev), f = finger(0, p.x, p.y)
