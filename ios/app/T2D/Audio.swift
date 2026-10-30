@@ -36,7 +36,8 @@ final class Audio {
 
   // только -shot: сумма квадратов левого канала и число кадров с последнего takeRms (гонка с render безвредна — замер для консоли)
   var probe = false
-  private let acc = UnsafeMutablePointer<Double>.allocate(capacity: 2)
+  private let acc: UnsafeMutablePointer<Double> = { let p = UnsafeMutablePointer<Double>.allocate(capacity: 2); p.initialize(repeating: 0, count: 2); return p }()
+  deinit { acc.deallocate() }
   func takeRms() -> Double {
     let s = acc[0], n = acc[1]; acc[0] = 0; acc[1] = 0
     return n > 0 ? (s / n).squareRoot() : 0

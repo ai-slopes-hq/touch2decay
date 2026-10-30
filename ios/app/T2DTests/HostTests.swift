@@ -275,12 +275,26 @@ final class HostTests: XCTestCase {
   }
 
   func testPadAfterOffReadds() {
-    openFx(); tilde("b"); core.calls.removeAll()
+    openFx(); setSnaps([snap(7)]); tilde("b")
+    let o = geo().off
+    tap(o.midX, o.midY); setSnaps([]); core.calls.removeAll()
     let g = geo(), f = finger(0, 200, g.panel.pad.y + 40)
     host.down(f)
     XCTAssertEqual(lfoCalls(), ["lfoAdd:-1:7:0.5", "lfoSpec:-1:7"])
     XCTAssertTrue(core.specs[0].morph.isNaN); XCTAssertFalse(core.specs[0].rate.isNaN); XCTAssertFalse(core.specs[0].depth.isNaN)
     host.up(f)
+  }
+
+  func testPendingAddKeepsRowAndNoSpam() {
+    openFx(); tilde("b")                                 // lfoAdd послан, снимка ещё нет
+    let g = geo(), y = rowY("b"), r = finger(0, 100, y)
+    host.down(r)
+    var m = r; m.x = 100 + 0.25 * (g.tx1 - g.tx0); host.move(m); host.up(m)
+    XCTAssertEqual(core.calls.last, "lfoBase:-1:7:0.75", "строка с LFO в пути — база, не прямая запись")
+    XCTAssertTrue(world.sets.isEmpty)
+    let p = finger(1, 200, g.panel.pad.y + 40)
+    host.down(p); var q = p; q.x = 220; host.move(q); q.x = 240; host.move(q); host.up(q)
+    XCTAssertEqual(lfoCalls().filter { $0.hasPrefix("lfoAdd") }.count, 1)
   }
 
   func testPadDepthZeroRemoves() {

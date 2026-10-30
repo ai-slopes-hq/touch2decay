@@ -41,7 +41,7 @@ void t2d_lfo_base(int slot, int obj, int key, double base);
 void t2d_lfo_off(int slot, int obj, int key);
 void t2d_lfo_drop(int slot, int obj);             // obj −2 — все объекты слота
 void t2d_lfo_tick(double dt);
-int t2d_lfo_state();                              // в mbuf, по 10 чисел на LFO: slot, obj, key, base, morph, rate, depth, u, shape, seed; длина
+int t2d_lfo_state(void);                              // в mbuf, по 10 чисел на LFO: slot, obj, key, base, morph, rate, depth, u, shape, seed; длина
 unsigned t2d_lfo_lost(void);
 double t2d_lfo_sample(int shape, double morph, double u, int seed);
 void t2d_model_tick(double dt);

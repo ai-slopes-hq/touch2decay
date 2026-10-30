@@ -285,4 +285,12 @@ final class FirmamentumTests: XCTestCase {
     setStars([(2, 0.4, 0.1)]); XCTAssertEqual(gone, [1])
     setStars([(2, 0.4, 0.1)]); XCTAssertEqual(gone, [1])
   }
+
+  func testObjGoneAfterRestore() {
+    var gone: [Int] = []
+    view.objGone = { gone.append($0) }
+    setStars([(1, 0.5, 0.2), (2, 0.4, 0.1)])
+    view.restored()                                     // откат убрал звезду 1: следующий разбор сообщает о ней
+    setStars([(2, 0.4, 0.1)]); XCTAssertEqual(gone, [1])
+  }
 }

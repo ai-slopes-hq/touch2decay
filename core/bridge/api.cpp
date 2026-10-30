@@ -145,7 +145,7 @@ T2D_API void t2d_lfo_base(int slot, int obj, int key, double base) { host.lfoBas
 T2D_API void t2d_lfo_off(int slot, int obj, int key) { host.lfoOff(slot, obj, key); }
 T2D_API void t2d_lfo_drop(int slot, int obj) { host.lfoDrop(slot, obj); }
 T2D_API void t2d_lfo_tick(double dt) { host.lfoTick(dt); }
-T2D_API int t2d_lfo_state() { return host.lfoState(mbuf, MBUF); }
+T2D_API int t2d_lfo_state(void) { return host.lfoState(mbuf, MBUF); }
 T2D_API unsigned t2d_lfo_lost(void) { return host.lfoLost(); }
 T2D_API double t2d_lfo_sample(int shape, double morph, double u, int seed) { return host.lfoSample(shape, morph, u, seed); }
 

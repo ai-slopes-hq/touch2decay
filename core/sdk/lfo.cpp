@@ -12,8 +12,7 @@ double WaveMorph::hash(int n) {
 }
 
 WaveMorph::WaveMorph(Shape s) : shape_(s) {
-  if (shape_ == CLASSIC) initClassic();
-  else initRandom();
+  if (shape_ == CLASSIC) initClassic();   // RANDOM считается аналитически в sample(), таблиц не нужно
 }
 
 void WaveMorph::initClassic() {
@@ -25,25 +24,6 @@ void WaveMorph::initClassic() {
     if (peak > 0) for (int i = 0; i < N; i++) tables_[idx][i] /= static_cast<float>(peak);
   };
   for (int idx = 0; idx < waveform::COUNT; idx++) fill(idx, [idx](double t) { return waveform::form(idx, t); });
-}
-
-void WaveMorph::initRandom() {
-  // 4 формы random из host/sl.js: ramp up, ramp down, steps, smooth
-  auto fr = [](double u) { double f = std::fmod(u, 1.0); return f < 0 ? f + 1.0 : f; };
-  for (int idx = 0; idx < 4; idx++) {
-    for (int i = 0; i < N; i++) {
-      const double t = i / double(N);
-      if (idx == 0) tables_[idx][i] = static_cast<float>(2.0 * fr(t) - 1.0);   // ramp up
-      else if (idx == 1) tables_[idx][i] = static_cast<float>(1.0 - 2.0 * fr(t));   // ramp down
-      else if (idx == 2) tables_[idx][i] = static_cast<float>(hash(static_cast<int>(std::floor(t))));   // steps (один сэмпл на период, тут — из 0)
-      else {   // smooth
-        const double a = hash(static_cast<int>(std::floor(t)));
-        const double b = hash(static_cast<int>(std::floor(t)) + 1);
-        tables_[idx][i] = static_cast<float>(a + (b - a) * (0.5 - 0.5 * std::cos(M_PI * fr(t))));
-      }
-    }
-  }
-  for (int idx = 4; idx < 9; idx++) for (int i = 0; i < N; i++) tables_[idx][i] = 0;   // остальные пустые
 }
 
 double WaveMorph::sample(double morph, double phase, int seed) const {

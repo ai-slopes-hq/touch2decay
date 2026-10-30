@@ -28,6 +28,8 @@ typedef struct {
 //   LFO_BASE i = слот, a = [obj, key, base]
 //   LFO_OFF  i = слот, a = [obj, key]                              снять, миру base
 //   LFO_DROP i = слот, a = [obj]                                   погасить без base; obj −2 — все объекты слота (obj ≥ 0), FX (−1) остаются
+// снимок LFO для UI: до T2D_APP_LFO_MAX записей по T2D_APP_LFO_REC чисел (= sdk::LFO_MAX и Host::lfoState; static_assert в engine.cpp)
+enum { T2D_APP_LFO_MAX = 64, T2D_APP_LFO_REC = 10 };
 enum { T2D_H_VOL = 0, T2D_H_SCALE = 1, T2D_H_SNAP = 2, T2D_H_LFO_ADD = 3, T2D_H_LFO_SPEC = 4, T2D_H_LFO_BASE = 5, T2D_H_LFO_OFF = 6, T2D_H_LFO_DROP = 7 };
 
 // init не потокобезопасен относительно render (переписывает поля и чистит кольца): перед повторным вызовом остановить аудиодвижок.

@@ -30,7 +30,7 @@ extension FirmamentumView {
     return SheetSpec(
       title: "stella", hint: "star — tap outside to close",
       rows: rows.map { SheetRow(key: $0.0, label: $0.1, code: $0.2) },
-      get: { k in
+      get: { [unowned self] k in
         guard let s = star() else { return 0 }
         return k == "cyc" ? (s.cyc - 1) / 7 : k == "u" ? (s.u + 1) / 2 : field(s, k)
       },
@@ -39,7 +39,7 @@ extension FirmamentumView {
         let val = k == "cyc" ? 1 + (v * 7).rounded() : k == "u" ? v * 2 - 1 : k == "h" ? min(max(v, 0.02), 0.97) : v
         core.action(3, id, [Double(code), val], touchTime: 0)
       },
-      text: { k in
+      text: { [unowned self] k in
         guard let s = star() else { return "" }
         switch k {
         case "h": return s.fp >= 20 ? "\(Int(s.fp.rounded())) Hz" : String(format: "%.1f / s", s.fp)

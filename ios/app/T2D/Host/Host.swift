@@ -10,8 +10,13 @@ final class Host {
   private(set) var vol: Double
   private(set) var scl = Scl.off
   private(set) var legendOpen = false, sclOpen = false
-  private(set) var sheet: Sheet?                               // открытая плашка: забирает касания целиком
-  private(set) var lfos: [LfoSnap] = []                        // последний снимок LFO ядра (раз в кадр)
+  private(set) var sheet: Sheet? {                         // открытая плашка: забирает касания целиком
+    didSet { lfos = sheet == nil ? [] : core.lfoSnap(); pending.removeAll() }   // снимок свежий с открытия
+  }
+  private(set) var lfos: [LfoSnap] = []                        // снимок LFO ядра: только пока открыта плашка (раз в кадр)
+  private struct LfoKey: Hashable { var slot, obj, key: Int }
+  private var pending: [LfoKey: Double] = [:]                  // lfoAdd послан, снимок ещё без него: когда послан (с) — не слать снова
+  private static let pendingTTL = 0.25                         // дольше — считаем, что кольцо отбросило
 
   private var bar = TopBar(W: 0, top: 0)
   private var W: CGFloat = 0, H: CGFloat = 0, top: CGFloat = 0, safeBot: CGFloat = 0
@@ -143,10 +148,20 @@ final class Host {
     guard let l = s.spec.lfo, let c = code(s, k) else { return nil }
     return lfos.first { $0.slot == s.slot && $0.obj == l.obj && $0.key == c }
   }
+  // LFO есть в снимке или его lfoAdd ещё в пути (снимок отстаёт ≥ кадра)
+  private func hasLfo(_ s: Sheet, _ k: String) -> Bool {
+    if lfo(s, k) != nil { return true }
+    guard let l = s.spec.lfo, let c = code(s, k) else { return false }
+    let key = LfoKey(slot: s.slot, obj: l.obj, key: c)
+    guard let t = pending[key] else { return false }
+    if now - t > Host.pendingTTL { pending[key] = nil; return false }
+    return true
+  }
   // поставить LFO строки, если его нет (как slAdd); панель открывается и когда кольцо отбросило lfoAdd — пад поставит заново
   private func ensureLfo(_ s: Sheet, _ k: String) {
-    guard let l = s.spec.lfo, let c = code(s, k), lfo(s, k) == nil else { return }
+    guard let l = s.spec.lfo, let c = code(s, k), !hasLfo(s, k) else { return }
     core.lfoAdd(slot: s.slot, obj: l.obj, key: c, base: s.spec.get(k), shape: l.shape)
+    pending[LfoKey(slot: s.slot, obj: l.obj, key: c)] = now
   }
 
   private func sheetDown(_ h: SheetHit, _ f: Finger) {
@@ -154,11 +169,13 @@ final class Host {
     switch h {
     case .close: sheet = nil
     case .off:
-      if let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) { core.lfoOff(slot: s.slot, obj: l.obj, key: c) }
+      if let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) {
+        core.lfoOff(slot: s.slot, obj: l.obj, key: c); pending[LfoKey(slot: s.slot, obj: l.obj, key: c)] = nil
+      }
     case .lfo(let k):
       if s.lfoKey == k { s.lfoKey = nil } else { ensureLfo(s, k); s.lfoKey = k }
     case .strip, .pad: padApply(h, f)
-    case .row(let k): rowF = (f.id, k, lfo(s, k)?.base ?? s.spec.get(k))
+    case .row(let k): rowF = (f.id, k, lfo(s, k)?.base ?? s.spec.get(k))   // pending: снимка нет — база от get (LFO ещё не сдвинул)
     case .none: break
     }
   }
@@ -182,7 +199,7 @@ final class Host {
     case .row:
       guard let r = rowF, r.id == f.id else { return }
       let g = geo(s), v = min(1, max(0, r.v0 + Double((f.x - f.x0) / (g.tx1 - g.tx0))))
-      if let l = s.spec.lfo, lfo(s, r.key) != nil, let c = code(s, r.key) { core.lfoBase(slot: s.slot, obj: l.obj, key: c, base: v) }
+      if let l = s.spec.lfo, hasLfo(s, r.key), let c = code(s, r.key) { core.lfoBase(slot: s.slot, obj: l.obj, key: c, base: v) }
       else { s.spec.set(r.key, v) }
     default: break
     }
@@ -198,7 +215,7 @@ final class Host {
     let pd = padDepth?.id == f.id ? padDepth?.d : nil
     releaseSheet(f)
     guard let s = sheet, h == .pad, let d = pd, d < 0.03, let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) else { return }
-    core.lfoOff(slot: s.slot, obj: l.obj, key: c)     // глубина в ноль — LFO снимается (sheet.js:81)
+    core.lfoOff(slot: s.slot, obj: l.obj, key: c); pending[LfoKey(slot: s.slot, obj: l.obj, key: c)] = nil     // глубина в ноль — LFO снимается (sheet.js:81)
   }
 
   // выбор в списке — по подъёму (задержку веба на смену строки не переносим); список остаётся — можно выбрать и тонику
@@ -216,7 +233,7 @@ final class Host {
   private func undoStep() {
     let r = undo.undo(slot: world.slot, cur: scl)
     guard r.done else { return }
-    world.restored()
+    world.restored(); pending.removeAll()
     if let s = r.scl { scl = s; core.scale(s) }
     if let b = undo.last(slot: world.slot) { setScene(b.w, b.scl) }   // undo.poll базу после undo не отдаёт
   }
@@ -245,7 +262,7 @@ final class Host {
   func tick(now: Double, dt: Double) {
     self.now = now
     world.tick(now: now, dt: dt)
-    lfos = core.lfoSnap()
+    if sheet != nil { lfos = core.lfoSnap() }
     if let b = undo.poll() { setScene(b.w, b.scl) }
     if let t = dirtyAt, now - t >= Host.autosave { saveScene() }
   }
@@ -271,7 +288,7 @@ final class Host {
     if let s = scene {
       core.restore(slot: world.slot, s.w)
       if first { scl = s.scl }                               // лад из файла — только при запуске; при reinit живой новее снимка
-      world.restored()
+      world.restored(); pending.removeAll()
     }
     core.scale(scl)
     core.vol(Vol.gain(vol))

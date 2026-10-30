@@ -37,10 +37,9 @@ struct T2DApp: App {
     return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("T2D")
   }
 
-  // dice (через мир хоста), fx scintilla/drift/cometa, комета; через 1.8 с — crepitus и fulgur; к 2.5 с кадр готов
+  // undo — своя сцена; плашки — только кубик, плашка через 2.5 с; иначе dice, fx scintilla/drift/cometa, комета, через 1.8 с — crepitus и fulgur
   private func shotScene() {
     if T2DApp.shotName == "undo" { shotUndo(); return }
-    let core = AppCore(slot: FirmamentumView.slotN)
     host.world.dice()
     // плашки: сцена веба (firmsheet = firmtop) — только кубик; fx и комета остаются теми, что дал кубик
     if ["sheet", "starsheet", "lfo"].contains(T2DApp.shotName) {
@@ -52,6 +51,7 @@ struct T2DApp: App {
       }
       return
     }
+    let core = AppCore(slot: FirmamentumView.slotN)
     core.action(4, 0, [0.6], touchTime: 0); core.action(4, 1, [0.6], touchTime: 0); core.action(4, 2, [1], touchTime: 0)
     core.action(7, 0, [], touchTime: 0)
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {

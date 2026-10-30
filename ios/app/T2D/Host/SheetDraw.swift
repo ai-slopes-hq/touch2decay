@@ -78,7 +78,7 @@ enum SheetDraw {
     }
     for i in 0..<4 { icon((Double(i) + 0.5) / 4, p.x + 22 + CGFloat((Double(i) + 0.5) / 4) * (p.w - 44), 34, 16, 0.3, 1.1) }
     if let e {
-      let i = min(3, Int(floor(e.morph * 4))), cx = p.x + 22 + CGFloat((Double(i) + 0.5) / 4) * (p.w - 44)
+      let i = max(0, min(3, Int(floor(e.morph * 4)))), cx = p.x + 22 + CGFloat((Double(i) + 0.5) / 4) * (p.w - 44)
       d.hairBox(cx - 26, sh.y + 4, 52, sh.h - 8, 0.9); icon(e.morph, cx, 40, 22, 1, 1.6)
     }
     let on = held == .pad, by = pd.y + pd.h - 0.5

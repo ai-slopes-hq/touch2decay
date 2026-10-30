@@ -22,7 +22,6 @@ class WaveMorph {
   static constexpr int N = 1024;
   float tables_[9][N];                                  // 9 циклов × 1024 сэмпла
   void initClassic();
-  void initRandom();
   static double hash(int n);
 };
 

@@ -3,6 +3,10 @@
 #include <chrono>
 #include <cstring>
 #include "../bridge/t2d.h"
+#include "../sdk/lfo.hpp"
+
+static_assert(T2D_APP_LFO_MAX == sdk::LFO_MAX, "снимок LFO: ёмкость = таблица хоста");
+static_assert(T2D_APP_LFO_REC == 10, "Host::lfoState пишет 10 чисел на LFO");
 
 void Engine::init(double sr, unsigned seed, double ticksPerSec, unsigned watch) {
   sr_ = sr; ticks_ = ticksPerSec; watch_ = watch;

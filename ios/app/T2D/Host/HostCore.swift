@@ -35,8 +35,8 @@ struct LfoSnap: Equatable {
 final class AppHostCore: HostCore {
   private static let cap = 65536                                      // строка мира — до 64 КБ
   private var buf = [CChar](repeating: 0, count: AppHostCore.cap)     // буфер takeSnap — выделен раз
-  private static let lfoCap = 64                                      // LFO в снимке — до 64
-  private var lfoBuf = [Double](repeating: 0, count: AppHostCore.lfoCap * 10)   // буфер lfoSnap — выделен раз
+  private static let lfoRec = Int(T2D_APP_LFO_REC), lfoCap = Int(T2D_APP_LFO_MAX)   // записей в снимке LFO и чисел в записи (из ядра)
+  private var lfoBuf = [Double](repeating: 0, count: AppHostCore.lfoCap * AppHostCore.lfoRec)   // буфер lfoSnap — выделен раз
 
   private func act(_ kind: Int32, _ i: Int, _ a: [Double]) -> Bool {
     var v = a
@@ -60,11 +60,13 @@ final class AppHostCore: HostCore {
   func lfoDrop(slot: Int, obj: Int) -> Bool { act(Int32(T2D_H_LFO_DROP), slot, [Double(obj)]) }
 
   func lfoSnap() -> [LfoSnap] {
-    let n = Int(t2d_app_lfo(&lfoBuf, Int32(AppHostCore.lfoCap * 10)))
-    let b = lfoBuf
-    return stride(from: 0, to: n - n % 10, by: 10).map { i in
-      LfoSnap(slot: Int(b[i]), obj: Int(b[i + 1]), key: Int(b[i + 2]), base: b[i + 3], morph: b[i + 4], rate: b[i + 5],
-                     depth: b[i + 6], u: b[i + 7], shape: Int(b[i + 8]), seed: Int(b[i + 9]))
+    let r = AppHostCore.lfoRec
+    let n = Int(t2d_app_lfo(&lfoBuf, Int32(lfoBuf.count)))
+    return lfoBuf.withUnsafeBufferPointer { b in   // без копии буфера
+      stride(from: 0, to: n - n % r, by: r).map { i in
+        LfoSnap(slot: Int(b[i]), obj: Int(b[i + 1]), key: Int(b[i + 2]), base: b[i + 3], morph: b[i + 4], rate: b[i + 5],
+                depth: b[i + 6], u: b[i + 7], shape: Int(b[i + 8]), seed: Int(b[i + 9]))
+      }
     }
   }
 

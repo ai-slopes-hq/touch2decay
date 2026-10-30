@@ -10,7 +10,7 @@ final class FirmamentumView: World {
   static let ink: RGB = (232, 224, 200)
 
   let title = "Firmamentum", sub = "stellae · pulsar"
-  var fx: SheetSpec? { fxSpec }
+  private(set) lazy var fx: SheetSpec? = fxSpec            // плашка собрана раз: замыкания читают зеркало вживую
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
   // view.js:194-196
@@ -57,7 +57,7 @@ final class FirmamentumView: World {
   }
   func dice() { core.action(6, 0, [], touchTime: 0) }
   func clear() { core.action(5, 0, [], touchTime: 0) }
-  func restored() { holds.removeAll(); flash.removeAll(); prevIds = nil }   // id звёзд — по зеркалу, их не трогаем
+  func restored() { holds.removeAll(); flash.removeAll() }   // id звёзд — по зеркалу; prevIds остаётся: звёзды, снятые откатом, дадут objGone на следующем разборе
 
   func tick(now: Double, dt: Double) {
     self.now = now
