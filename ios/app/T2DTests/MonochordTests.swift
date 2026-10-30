@@ -328,6 +328,31 @@ extension MonochordTests {
     XCTAssertEqual(rec.acts.last?.kind, 2); XCTAssertEqual(rec.acts.last?.a[0] ?? 0, 0.4, accuracy: 1e-9)
   }
 
+  private func startBow() -> CGPoint {
+    setMirror()
+    let p = onString(1, u: 0.2)
+    view.tick(now: 5, dt: 0.016)
+    view.down(finger(f1, p, t0: 5, now: 5))
+    view.move(finger(f1, CGPoint(x: p.x + 12, y: p.y), t0: 5, now: 5.05, p0: p))
+    view.move(finger(f1, CGPoint(x: p.x - 4, y: p.y), t0: 5, now: 5.1, p0: p))
+    XCTAssertEqual(rec.acts.last?.kind, 2)
+    return p
+  }
+
+  func testRestoredEndsBow() {
+    _ = startBow()
+    view.restored()
+    XCTAssertEqual(rec.acts.last?.kind, 2); XCTAssertEqual(rec.acts.last?.i, 1); XCTAssertEqual(rec.acts.last?.a, [0], "undo не оставляет смычок в ядре")
+  }
+
+  func testCancelEndsBow() {
+    let p = startBow()
+    view.cancel(finger(f1, p, t0: 5, now: 5.2))
+    XCTAssertEqual(rec.acts.last?.kind, 2); XCTAssertEqual(rec.acts.last?.i, 1); XCTAssertEqual(rec.acts.last?.a, [0])
+  }
+
+  func testFxTitleIsAether() { XCTAssertEqual(view.fx?.title, "aether") }
+
   func testNonLfoRowCodesAreFree() {
     let specs = [view.earthSpec(), view.windSpec(), view.stringSpec(0), view.fx!]
     for s in specs { for r in s.rows where s.lfo?.keys.contains(r.key) != true { XCTAssertFalse((0...25).contains(r.code), "\(s.title) \(r.key)") } }

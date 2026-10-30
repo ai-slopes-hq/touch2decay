@@ -74,7 +74,10 @@ final class MonochordView: World {
     rowLfoOff?(7)
     core.action(Act.clear, 0, [], touchTime: 0)
   }
-  func restored() { holds.removeAll(); lastTap = nil }
+  func restored() {                                        // undo: смычок в снимке ядра не хранится — палец у струны снимаем, иначе она гудит вечно
+    for t in holds.values where t.kind == .string && (t.bowing || mirror.str[t.i].bow > 0) { core.action(Act.bow, t.i, [0], touchTime: 0) }
+    holds.removeAll(); lastTap = nil
+  }
   func scale(pcs: [Int]?, root: Int) { self.root = root }
   func idle() { while readHeard(&hbuf) > 0 {} }            // слить кольцо heard без вспышки: вход в мир не отыграет прошлое
 
@@ -95,6 +98,7 @@ final class MonochordView: World {
       default: break
       }
     }
+    let dt = min(dt, 0.1)                                  // как в вебе (view.js:200, 245): после паузы не прыгаем
     let w = mirror.wind
     roseA += dt * w * 1.6                                  // роза ветров крутится от ветра
     if mirror.auto[0] != 0 { rot += dt * (mirror.auto[1] / 60) * 0.6 }   // Земля вращается при автопереборе

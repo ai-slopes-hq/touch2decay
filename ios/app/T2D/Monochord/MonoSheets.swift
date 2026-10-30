@@ -22,7 +22,7 @@ extension MonochordView {
     let keys = MonochordView.fxKeys
     func idx(_ k: String) -> Int { keys.firstIndex(of: k) ?? 0 }
     return SheetSpec(
-      title: "chorda mundi", hint: "FX — tap outside to close",
+      title: "aether", hint: "FX — tap outside to close",
       rows: keys.enumerated().map { SheetRow(key: $1, label: MonochordView.fxLabels[$0], code: $0) },
       get: { [unowned self] k in mirror.fx[idx(k)] },
       set: { [unowned self] k, v in core.action(Act.fx, idx(k), [v], touchTime: 0) },
