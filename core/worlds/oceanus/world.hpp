@@ -22,6 +22,7 @@ namespace oceanus {
 //   RELEASE a = [id пальца]
 //   SPLASH  a = [a, amt]
 //   CLEAR, DICE
+//   ACT_LFO (sdk) i = -1, a = [4 + Fx, v]       — LFO строки FX; i ≥ 0 и ключ вне [4, 9) — пропуск
 //   WAKE                                         — вход в мир: кольцо оживает (как прежний worklet, который заводился при входе)
 enum Act { ADD, DROP, MOVE, SET, FX, LUNA, PUSH, RELEASE, SPLASH, CLEAR, DICE, WAKE };
 

@@ -3147,6 +3147,59 @@ static void lfoForeign() {
   }
 }
 
+// Oceanus: ACT_LFO правит только FX-строки (ключ 4 + индекс FX), объектных ключей нет
+static int oceanMirror(double* m, int cap) {
+  float L[128], R[128];
+  t2d_app_render(L, R, 128, 0);
+  return t2d_app_mirror(8, m, cap);
+}
+static void oceanLfoStart() {
+  t2d_app_init(48000, 7, 1e9, 1u << 8);
+  t2d_app_action(8, 11, -1, nullptr, 0, 0);                       // WAKE
+}
+static void oceanLfo() {
+  oceanLfoStart();
+  const double def[5] = {0.45, 0.4, 0, 0.55, 0.4};                // FX_DEF
+  const double a[2] = {4 + 3, 0.3};
+  CHECK(t2d_app_action(8, sdk::ACT_LFO, -1, a, 2, 0) == 1);
+  double m[512];
+  CHECK(oceanMirror(m, 512) > 5);
+  for (int k = 0; k < 5; k++) NEAR(m[k], k == 3 ? 0.3 : def[k], 1e-9);
+  const double b[2] = {4 + 2, 0.8};
+  t2d_app_action(8, sdk::ACT_LFO, -1, b, 2, 0);
+  oceanMirror(m, 512);
+  NEAR(m[2], 0.8, 1e-9); NEAR(m[3], 0.3, 1e-9);
+}
+static void oceanLfoIgnores() {
+  double m0[512], m1[512];
+  oceanLfoStart();
+  const int n0 = oceanMirror(m0, 512);
+  oceanLfoStart();
+  const double a0[2] = {4, 0.5}, a1[2] = {9, 0.5}, a2[2] = {3, 0.5}, a3[1] = {4};
+  t2d_app_action(8, sdk::ACT_LFO, 0, a0, 2, 0);
+  t2d_app_action(8, sdk::ACT_LFO, -1, a1, 2, 0);
+  t2d_app_action(8, sdk::ACT_LFO, -1, a2, 2, 0);
+  t2d_app_action(8, sdk::ACT_LFO, -1, a3, 1, 0);
+  const int n1 = oceanMirror(m1, 512);
+  CHECK(n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
+}
+
+// ступени лада наружу: таблица host/scale.js
+static void appScaleSteps() {
+  const int want[6][7] = {{0, 2, 4, 5, 7, 9, 11}, {0, 2, 3, 5, 7, 8, 10}, {0, 2, 3, 5, 7, 9, 10},
+                          {0, 1, 3, 5, 7, 8, 10}, {0, 2, 4, 6, 7, 9, 11}, {0, 2, 4, 5, 7, 9, 10}};
+  for (int idx = 0; idx < 6; idx++) {
+    int out[7] = {};
+    CHECK(t2d_app_scale_steps(idx, out) == 7);
+    for (int k = 0; k < 7; k++) CHECK(out[k] == want[idx][k]);
+  }
+  for (int idx : {-1, 6}) {
+    int out[7]; for (int k = 0; k < 7; k++) out[k] = 99;
+    CHECK(t2d_app_scale_steps(idx, out) == 0);
+    for (int k = 0; k < 7; k++) CHECK(out[k] == 99);
+  }
+}
+
 static void appLfo() {
   lfoStart();
   lfoAct(T2D_H_LFO_ADD, 10, {1, 4, 0.3, 1});
@@ -3311,7 +3364,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

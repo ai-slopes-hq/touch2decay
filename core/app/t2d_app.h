@@ -37,6 +37,7 @@ enum { T2D_H_VOL = 0, T2D_H_SCALE = 1, T2D_H_SNAP = 2, T2D_H_LFO_ADD = 3, T2D_H_
 void t2d_app_init(double sr, unsigned seed, double ticks_per_sec, unsigned watch); // watch — маска слотов
 void t2d_app_render(float* L, float* R, int n, uint64_t host_time);
 int  t2d_app_action(int slot, int kind, int i, const double* a, int n, uint64_t touch_time); // 0 — отброшено; touch_time 0 — без замера
+int  t2d_app_scale_steps(int idx, int* out);       // 7 ступеней лада idx (полутоны от тоники), 7; idx вне 0…5 — 0, out не тронут
 int  t2d_app_mirror(int slot, double* buf, int cap);  // последний снимок, длина
 int  t2d_app_heard(int slot, double* buf, int cap);   // забрать накопленные записи подряд, длина
 int  t2d_app_restore(int slot, const char* s, int len, uint64_t touch_time); // строка + действие в порядке кольца; 0 — отброшено

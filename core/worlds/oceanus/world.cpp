@@ -48,6 +48,12 @@ void Oceanus::action(int kind, int i, const double* a, int n) {
     case CLEAR: model_.clear(); break;
     case DICE: model_.dice(); break;
     case WAKE: awake_ = true; break;
+    case sdk::ACT_LFO: {                                // LFO плашки: только FX-строки (i == -1), ключ = NKEY + индекс FX; у городов LFO нет
+      if (n < 2 || i != -1) break;
+      const int key = static_cast<int>(a[0]);
+      if (key >= NKEY && key < NKEY + NFX) model_.setFx(key - NKEY, a[1]);
+      break;
+    }
     default: break;
   }
 }

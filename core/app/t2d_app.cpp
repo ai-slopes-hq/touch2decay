@@ -2,12 +2,19 @@
 #include "t2d_app.h"
 #include "engine.hpp"
 #include "../bridge/t2d.h"
+#include "../host/scale.hpp"
 
 static Engine engine;
 
 void t2d_app_init(double sr, unsigned seed, double ticks_per_sec, unsigned watch) { engine.init(sr, seed, ticks_per_sec, watch); }
 void t2d_app_render(float* L, float* R, int n, uint64_t host_time) { engine.render(L, R, n, host_time); }
 int t2d_app_action(int slot, int kind, int i, const double* a, int n, uint64_t touch_time) { return engine.action(slot, kind, i, a, n, touch_time) ? 1 : 0; }
+int t2d_app_scale_steps(int idx, int* out) {
+  if (idx < 0 || idx >= Scale::kScales) return 0;
+  const int* s = Scale::stepsOf(idx);
+  for (int k = 0; k < 7; k++) out[k] = s[k];
+  return 7;
+}
 int t2d_app_mirror(int slot, double* buf, int cap) { return engine.mirror(slot, buf, cap); }
 int t2d_app_heard(int slot, double* buf, int cap) { return engine.heard(slot, buf, cap); }
 int t2d_app_restore(int slot, const char* s, int len, uint64_t touch_time) { return engine.restore(slot, s, len, touch_time) ? 1 : 0; }
