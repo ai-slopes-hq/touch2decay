@@ -187,7 +187,7 @@ extension HorologiumView {
     if rate > 2.5 && !pend.spin {                         // качается быстро — веером
       let A = CGFloat(acos(1 - min(1.9, Horo.eOfU(mirror.u))))
       g.setStrokeColor(d.ink(0.1))
-      for s in [-1, -0.5, 0, 0.5, 1] as [CGFloat] {
+      for s in horoFan {
         let a = s * A; g.beginPath(); g.move(to: CGPoint(x: px, y: py)); g.addLine(to: CGPoint(x: px + sin(a) * L, y: py + cos(a) * L)); g.strokePath()
       }
     }
@@ -210,8 +210,10 @@ extension HorologiumView {
     let rt = Horo.ratio(mirror.rings, F: Fm)
     d.mapText(rt.a, G.cx, G.ty, 19, 0.95, align: .center)
     d.mapText(rt.b, G.cx, G.ty + 21, 12, 0.6, align: .center)
-    let S = G.strip, act = mirror.rings.filter { $0.on }
-    let mAvg = act.isEmpty ? 4 : act.reduce(0.0) { $0 + Horo.mOf($1, aequalis: mirror.fx[0]) } / Double(act.count)
+    let S = G.strip
+    var mSum = 0.0, mCnt = 0
+    for r in mirror.rings where r.on { mSum += Horo.mOf(r, aequalis: mirror.fx[0]); mCnt += 1 }
+    let mAvg = mCnt == 0 ? 4 : mSum / Double(mCnt)
     let lim = G.stripX(20 / mAvg)                         // limen: где удары сливаются в тон
     g.setLineWidth(1); g.setStrokeColor(d.ink(0.35)); g.setLineDash(phase: 0, lengths: [2, 3]); g.beginPath()
     g.move(to: CGPoint(x: lim, y: S.y - 14)); g.addLine(to: CGPoint(x: lim, y: S.y + 14)); g.strokePath(); g.setLineDash(phase: 0, lengths: [])
@@ -230,3 +232,5 @@ extension HorologiumView {
     d.quarterSun(G.sun.x, G.sun.y, G.sun.r, side: -1, now: now * 1000, col: theme.ink, disc: theme.bg)
   }
 }
+
+private let horoFan: [CGFloat] = [-1, -0.5, 0, 0.5, 1]   // веер маятника: доли амплитуды

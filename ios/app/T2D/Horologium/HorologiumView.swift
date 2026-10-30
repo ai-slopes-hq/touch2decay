@@ -92,16 +92,19 @@ final class HorologiumView: World {
   func tick(now: Double, dt: Double) {
     self.now = now
     let len = min(max(0, readMirror(&mbuf)), mbuf.count)
-    if let m = HoroMirror(mbuf, n: len) { mirror = m; mirrorAt = now }
-    let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
-    var o = 0                                              // heard: записи [удары, P, кольца…] подряд, без разделителя — по каждой свои вспышки и луч
-    while o + 2 < hn {
-      let c = Int(hbuf[o])
-      if c <= 0 || o + 2 + c > hn { break }
-      var hit = Set<Int>()
-      for j in 0..<c { let i = Int(hbuf[o + 2 + j]); if i >= 0 && i < Horo.nr { ringHit[i] = now; hit.insert(i) } }
-      if hit.count > 1 && mirror.fx[2] > 0.05 { concAt = now; concA = (hbuf[o + 1] - hbuf[o + 1].rounded(.down)) * 2 * .pi }
-      o += 2 + c
+    if mirror.load(mbuf, n: len) { mirrorAt = now }
+    for _ in 0..<4 {                                       // на большой скорости записей больше буфера — читаем до пустого, но не бесконечно
+      let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
+      if hn == 0 { break }
+      var o = 0                                            // heard: записи [удары, P, кольца…] подряд, без разделителя — по каждой свои вспышки и луч
+      while o + 2 < hn {
+        let c = Int(hbuf[o])
+        if c <= 0 || o + 2 + c > hn { break }
+        var mask = 0                                       // кольца записи битами: без Set в кадре
+        for j in 0..<c { let i = Int(hbuf[o + 2 + j]); if i >= 0 && i < Horo.nr { ringHit[i] = now; mask |= 1 << i } }
+        if mask.nonzeroBitCount > 1 && mirror.fx[2] > 0.05 { concAt = now; concA = (hbuf[o + 1] - hbuf[o + 1].rounded(.down)) * 2 * .pi }
+        o += 2 + c
+      }
     }
     for (k, var t) in holds where !t.sheet && !t.moved && now - t.t0 > Touch.holdMs / 1000 {
       switch t.kind {
@@ -215,7 +218,7 @@ final class HorologiumView: World {
   func cancel(_ f: Finger) {                               // система отняла палец: маятник и шкалу отпускаем, остального не делаем
     guard let t = holds.removeValue(forKey: f.id) else { return }
     if t.kind == .pend { pend.held = false; core.action(Act.held, 0, [0], touchTime: f.touchTime) }
-    if t.kind == .strip { core.action(Act.speed, 0, [mirror.u, mirror.uT, 0], touchTime: f.touchTime) }
+    if t.kind == .strip { core.action(Act.speed, 0, [t.u, t.u, 0], touchTime: f.touchTime) }   // как up: значение пальца, зеркало может отстать на кадр
   }
 
   func draw(_ d: Draw, now: Double) { frame(d, now, sun: true) }          // рисование — HoroDraw.swift

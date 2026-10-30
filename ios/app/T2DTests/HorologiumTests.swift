@@ -51,6 +51,14 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(m.rings[3].phi, 0.3); XCTAssertEqual(m.rings[7].lvl, 0.9); XCTAssertNil(HoroMirror(b, n: 46))
   }
 
+  func testMirrorLoadInPlace() {
+    var b: [Double] = [0.1, 0.2, 0.3, 0.4, 0.5] + [1, 2, 3, 120, 1, 1, 4.5, 6, 7, 1]
+    for i in 0..<8 { b += [1, 0, Double(i) / 10, 0.9] }
+    var m = HoroMirror()
+    XCTAssertTrue(m.load(b, n: 47)); XCTAssertEqual(m.fx, [0.1, 0.2, 0.3, 0.4, 0.5]); XCTAssertEqual(m.rings[3].phi, 0.3); XCTAssertEqual(m.rings[3].n, 5)
+    XCTAssertFalse(m.load(b, n: 46)); XCTAssertEqual(m.P, 4.5, "короткий буфер — прежнее состояние")
+  }
+
   func testHeardFlash() {
     setMirror(now: 3)                                       // concursus 0.4 > 0.05
     heardBuf = [2, 3.25, 2, 4]; view.tick(now: 4, dt: 0.016)
@@ -300,11 +308,13 @@ final class HorologiumTests: XCTestCase {
   func testCancelFreesPendulum() {
     setMirror(run: true, u: 1.5, uT: 0.5)
     view.down(finger(f1, bob, t0: 5, now: 5)); view.down(finger(f2, strip(0.5), t0: 5.1, now: 5.1))
+    let u0 = rec.acts.last!.a[0]; XCTAssertNotEqual(u0, 1.5)   // скорость пальца на шкале
     rec.acts = []
     view.cancel(finger(f1, bob, t0: 5, now: 5.5))
     XCTAssertEqual(kinds(), [3]); XCTAssertEqual(rec.acts[0].a, [0])
     view.cancel(finger(f2, strip(0.5), t0: 5.1, now: 5.5))
-    XCTAssertEqual(kinds(), [3, 6]); XCTAssertEqual(rec.acts[1].a, [1.5, 0.5, 0])
+    XCTAssertEqual(kinds(), [3, 6])
+    XCTAssertEqual(rec.acts[1].a, [u0, u0, 0], "значение пальца, не зеркала")
     view.up(finger(f1, bob, t0: 5, now: 6)); XCTAssertEqual(rec.acts.count, 2)
   }
 
