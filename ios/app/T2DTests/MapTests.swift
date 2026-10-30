@@ -1,7 +1,13 @@
 import XCTest
+import CoreText
 @testable import T2D
 
 final class MapTests: XCTestCase {
+  override class func setUp() {   // шрифты бандла тестов (как в DrawTests): лица рисуют названия
+    let urls = Bundle(for: MapTests.self).urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
+    for u in urls { CTFontManagerRegisterFontsForURL(u as CFURL, .process, nil) }
+  }
+
   // эталон — Node по host/deck.js field() / cellRect() при scopeY = 47, safeBot = 34, W 390, H 844
   func testFieldMatchesDeckJs() {
     let f = MapGeo.field(W: 390, H: 844, top: 47, safeBot: 34)
@@ -104,5 +110,24 @@ final class MapTests: XCTestCase {
     var s = Levels()
     s.poll(now: 0) { $0[0] = .nan; $0[1] = -1; $0[2] = .infinity }
     XCTAssertEqual(s.lv[0], 0); XCTAssertEqual(s.lv[1], 0); XCTAssertEqual(s.lv[2], 0)
+  }
+
+  func testEmblemsAllSlots() {
+    let sc = Draw.scale, w: CGFloat = 90.4, h: CGFloat = 165.5
+    for info in Worlds.all {
+      guard let img = Emblems.face(info.slot, w: w, h: h) else { return XCTFail("нет лица слота \(info.slot)") }
+      XCTAssertEqual(img.width, Int((w * sc).rounded(.up)), "слот \(info.slot)")
+      XCTAssertEqual(img.height, Int((h * sc).rounded(.up)), "слот \(info.slot)")
+    }
+    XCTAssertNil(Emblems.face(3, w: w, h: h))
+    XCTAssertNotNil(Emblems.back(w: w, h: h))
+  }
+
+  func testEmblemsCached() {
+    let a = Emblems.face(10, w: 90.4, h: 165.5), b = Emblems.face(10, w: 90.4, h: 165.5), c = Emblems.face(10, w: 80, h: 150)
+    XCTAssertNotNil(a)
+    XCTAssertTrue(a === b)
+    XCTAssertFalse(a === c)
+    XCTAssertTrue(Emblems.back(w: 90.4, h: 165.5) === Emblems.back(w: 90.4, h: 165.5))
   }
 }
