@@ -114,13 +114,15 @@
 
 # Фаза 2b-3б (iOS): concordia, микшер, панель audio — отложенное
 
-Спека — `docs/superpowers/specs/2026-10-30-ios-2b3b-concordia-design.md`. Сделано на Mac, ждёт iPhone.
+Спека — `docs/superpowers/specs/2026-10-30-ios-2b3b-concordia-design.md`. Принято автором на iPhone (30.10, «все отлично»).
 
-## Не проверено на iPhone
+## Проверено автором на iPhone (30.10)
 
-- Concordia, микшер и панель audio выглядят как в вебе (в симуляторе — по парам `concordia` / `mixer` / `audio` ↔ `startmap` / `nav` / `audiopanel`; касания идут через `Host.down/move/up`, не через `Stage`).
-- Фейдеры миров и мастер слышны без треска (сглаживание ядра 0.03 с — на слух не проверено).
-- `stable audio` (буфер 1024 вместо 256) и `restart audio` — на USB-интерфейсе не пробовали.
+- Concordia, микшер и панель audio выглядят и работают как в вебе; фейдеры миров и мастер, `stable audio` и `restart audio` — без замечаний.
+
+## Не проверено
+
+- `stable audio` и `restart audio` на USB-интерфейсе (на iPhone — встроенный выход).
 
 ## Отложено
 
