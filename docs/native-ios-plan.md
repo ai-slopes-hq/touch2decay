@@ -52,7 +52,7 @@
 
 Отложенное ревью, решения и непроверенное по 2a — `docs/ios-2a-deferred.md`.
 
-**3. Миры по одному (Mac).** Порядок от простого: Firmamentum → Oceanus (сделан 30.10, ждёт iPhone) → Monochordum (сделан 30.10, ждёт iPhone) → Horologium → Arcadia → Tria → Inferno → Natura → Portus → Cymatica; Goetia — только веб (автор, 30.10). На каждый: `view` на Swift по веб-`view.js`, касания, плашки, legenda; приёмка — скриншоты `tools/shot.py` (эталон веба) против симулятора, принципы «картинка = информация» и «не шумно» из `CLAUDE.md`.
+**3. Миры по одному (Mac).** Порядок от простого: Firmamentum → Oceanus (сделан 30.10, ждёт iPhone) → Monochordum (сделан 30.10, ждёт iPhone) → Horologium (сделан 31.10, ждёт iPhone) → Arcadia → Tria → Inferno → Natura → Portus → Cymatica; Goetia — только веб (автор, 30.10). На каждый: `view` на Swift по веб-`view.js`, касания, плашки, legenda; приёмка — скриншоты `tools/shot.py` (эталон веба) против симулятора, принципы «картинка = информация» и «не шумно» из `CLAUDE.md`.
 
 **4. Tenebrae (последней).** **Этап 1 сделан (26.10): звук в ядре, слот 1** — таблицы волн, Hilbert-сдвиг, голоса, связи, LFO, шина `1/√Σenv`, эхо, удар солнца; сверка с Web Audio в Chromium, детали — `docs/worlds/tenebrae.md`. **Этап 2 (без Mac):** модель в ядро — действия жестов, кубик, chaos, снимок. **Этап 3 (Mac):** view на Swift (~4000 строк `app.js`: поле, планеты, связи, спутники LFO, чёрная дыра, зум, кольцо планеты).
 
