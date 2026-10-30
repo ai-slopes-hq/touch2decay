@@ -9,8 +9,8 @@ final class FirmamentumView: World {
   static let gold: RGB = (236, 204, 130)
   static let ink: RGB = (232, 224, 200)
 
-  let title = "Firmamentum", sub = "stellae · pulsar", hasFx = true     // hasFx и fx — временно, плашки — задача 6
-  var fx: SheetSpec? { nil }
+  let title = "Firmamentum", sub = "stellae · pulsar"
+  var fx: SheetSpec? { fxSpec }
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
   // view.js:194-196
@@ -28,12 +28,13 @@ final class FirmamentumView: World {
   var flash: [Int: Double] = [:]                        // id звезды → когда прозвучал её последний пульсарет
   var specks: [(x: CGFloat, y: CGFloat, a: Double, t: Double)] = []   // пылинки треска, ≤ 60, 260 мс
   var bolts: [(slot: Int, t: Double)] = []              // лучи вспышек, ≤ 12, 110 мс
-  private let core: Core
+  let core: Core
   // читатель снимка: заполняет буфер (ёмкость — его count), возвращает длину
   typealias Reader = (inout [Double]) -> Int
   private let readMirror: Reader
   private let readHeard: Reader
   private var mbuf = [Double](repeating: 0, count: 1024), mprev = [Double](repeating: 0, count: 1024)   // буферы кадра — выделены раз
+  private var prevIds: Set<Int>?                   // id звёзд прошлого разбора (nil — первый кадр)
   private var mlen = 0, mprevLen = -1                    // -1: разбирать всегда (первый кадр)
   private var hbuf = [Double](repeating: 0, count: 256)
   private(set) var mirrorParses = 0                      // сколько раз разбирали зеркало (для теста пропуска)
@@ -41,7 +42,7 @@ final class FirmamentumView: World {
   private var now = 0.0
   private var rng = SystemRandomNumberGenerator()
 
-  private struct Hold { var id: Int?; var x0, y0: CGFloat; var moved = false, fresh = false, seen = false }
+  private struct Hold { var id: Int?; var x0, y0: CGFloat; var moved = false, fresh = false, seen = false, t0 = 0.0, sheet = false }
   private var holds: [ObjectIdentifier: Hold] = [:]
 
   init(core: Core, geo: Geo, readMirror: Reader? = nil, readHeard: Reader? = nil) {
@@ -56,7 +57,7 @@ final class FirmamentumView: World {
   }
   func dice() { core.action(6, 0, [], touchTime: 0) }
   func clear() { core.action(5, 0, [], touchTime: 0) }
-  func restored() { holds.removeAll(); flash.removeAll() }   // id звёзд — по зеркалу, их не трогаем
+  func restored() { holds.removeAll(); flash.removeAll(); prevIds = nil }   // id звёзд — по зеркалу, их не трогаем
 
   func tick(now: Double, dt: Double) {
     self.now = now
@@ -64,9 +65,17 @@ final class FirmamentumView: World {
     if mlen != mprevLen || !mbuf[0..<mlen].elementsEqual(mprev[0..<mlen]) {   // снимок не изменился — разбор не нужен
       mirror = FirmMirror.parse(Array(mbuf[0..<mlen])); mirrorParses += 1
       swap(&mbuf, &mprev); mprevLen = mlen
+      let ids = Set(mirror.stars.map(\.id))
+      if let p = prevIds { for id in p.subtracting(ids).sorted() { objGone?(id) } }   // звезда пропала — её LFO снять
+      prevIds = ids
     }
     let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
     if hn > 0 { for h in Heard.parse(Array(hbuf[0..<hn])) { hear(h, now: now) } }
+    for (k, var t) in holds where !t.moved && !t.sheet && !t.fresh && now - t.t0 > Touch.holdMs / 1000 {   // держишь звезду — её плашка
+      guard let id = t.id, mirror.stars.contains(where: { $0.id == id }) else { continue }
+      t.sheet = true; holds[k] = t
+      openSheet?(starSheet(id))
+    }
     specks.removeAll { now - $0.t > 0.26 }
     bolts.removeAll { now - $0.t > 0.11 }
   }
@@ -284,8 +293,8 @@ final class FirmamentumView: World {
 
   func down(_ f: Finger) {
     if inCorner(f) { return }
-    if let hit = starAt(f.x, f.y) { holds[f.id] = Hold(id: hit.id, x0: f.x, y0: f.y, seen: true); return }
-    var h = Hold(id: nil, x0: f.x, y0: f.y)
+    if let hit = starAt(f.x, f.y) { holds[f.id] = Hold(id: hit.id, x0: f.x, y0: f.y, seen: true, t0: now); return }
+    var h = Hold(id: nil, x0: f.x, y0: f.y, t0: now)
     if let q = geo.toSky(CGPoint(x: f.x, y: f.y)), mirror.stars.count < FirmamentumView.smax {
       let id = max(mirror.stars.map(\.id).max() ?? 0, issued) + 1
       if core.action(0, 0, [q.h, q.u, -1, Double(id)], touchTime: f.touchTime) {   // кольцо полно — добавление отброшено: ни id, ни держания
@@ -297,7 +306,7 @@ final class FirmamentumView: World {
   }
 
   func move(_ f: Finger) {
-    guard var t = holds[f.id], let id = t.id else { return }
+    guard var t = holds[f.id], let id = t.id, !t.sheet else { return }
     if mirror.stars.contains(where: { $0.id == id }) { t.seen = true }
     else if t.seen || !t.fresh { holds[f.id] = t; return }   // звезды уже нет — чужую не двигаем
     if hypot(f.x - t.x0, f.y - t.y0) > 8 { t.moved = true }
@@ -313,7 +322,7 @@ final class FirmamentumView: World {
 
   func up(_ f: Finger) {
     guard let t = holds.removeValue(forKey: f.id), let id = t.id else { return }
-    if !t.moved, !t.fresh, (f.touchTime - f.t0) * 1000 < 300, mirror.stars.contains(where: { $0.id == id }) {
+    if !t.moved, !t.fresh, !t.sheet, (f.touchTime - f.t0) * 1000 < 300, mirror.stars.contains(where: { $0.id == id }) {
       core.action(1, id, [], touchTime: f.touchTime)    // тап по звезде — закрыть дыру
     }
   }

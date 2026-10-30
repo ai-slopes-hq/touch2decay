@@ -209,4 +209,79 @@ final class FirmamentumTests: XCTestCase {
     view.down(finger(skyPt, now: 0.1)); view.restored(); view.up(finger(skyPt, now: 0.1))
     XCTAssertTrue(rec.acts.isEmpty)
   }
+
+  // ---------- плашки ----------
+  func testFxSpec() throws {
+    let sp = try XCTUnwrap(view.fx)
+    XCTAssertEqual(sp.rows.map(\.key), ["scintilla", "drift", "cometa", "crepitus", "fulgur", "spread", "hall"])
+    XCTAssertEqual(sp.rows.map(\.code), Array(6...12))
+    view.mirror.fx[6] = 0.7
+    XCTAssertEqual(sp.get("hall"), 0.7); XCTAssertEqual(sp.arc?(), 0.7)
+    sp.set("drift", 0.3)
+    XCTAssertEqual(rec.acts.last?.kind, 4); XCTAssertEqual(rec.acts.last?.i, 1); XCTAssertEqual(rec.acts.last?.a, [0.3])
+    XCTAssertEqual(sp.text("cometa"), "off")
+    view.mirror.fx[2] = 0.42
+    XCTAssertEqual(sp.text("cometa"), "42%")
+    XCTAssertEqual(sp.lfo?.obj, -1); XCTAssertEqual(sp.lfo?.keys, Set(sp.rows.map(\.key))); XCTAssertEqual(sp.lfo?.shape, 1)
+    XCTAssertTrue(view.hasFx)
+  }
+
+  func testStarSheet() {
+    setStars([(3, 0.5, 0.2)])
+    view.mirror.stars[0].cyc = 4; view.mirror.stars[0].u = -0.2; view.mirror.stars[0].win = 0.5
+    let sp = view.starSheet(3)
+    XCTAssertEqual([sp.title, sp.hint], ["stella", "star — tap outside to close"])
+    XCTAssertEqual(sp.rows.map(\.label), ["pulse", "formant", "cycles", "window", "mask", "level"])
+    XCTAssertEqual(sp.rows.map(\.code), [4, 5, 0, 1, 2, 3])
+    XCTAssertEqual(sp.get("cyc"), 3.0 / 7, accuracy: 1e-9); XCTAssertEqual(sp.get("u"), 0.4, accuracy: 1e-9)
+    sp.set("cyc", 1); XCTAssertEqual(rec.acts.last?.kind, 3); XCTAssertEqual(rec.acts.last?.i, 3); XCTAssertEqual(rec.acts.last?.a, [0, 8])
+    sp.set("u", 0.25); XCTAssertEqual(rec.acts.last?.a, [5, -0.5])
+    sp.set("h", 1); XCTAssertEqual(rec.acts.last?.a, [4, 0.97])
+    XCTAssertEqual(sp.lfo?.obj, 3); XCTAssertEqual(sp.lfo?.keys, ["h", "u", "win", "mask", "lvl"]); XCTAssertNil(sp.reset)
+    XCTAssertEqual(sp.text("win"), "strike")
+  }
+
+  func testHoldOpensStarSheet() {
+    var opened: [SheetSpec] = []
+    view.openSheet = { opened.append($0) }
+    setStars([(3, 0.5, 0.2)])
+    let p = skyPt
+    view.down(finger(p))
+    view.tick(now: 1.2, dt: 0.016); XCTAssertTrue(opened.isEmpty)
+    view.tick(now: 1.43, dt: 0.016); XCTAssertEqual(opened.count, 1); XCTAssertEqual(opened[0].lfo?.obj, 3)
+    view.tick(now: 1.6, dt: 0.016); XCTAssertEqual(opened.count, 1)
+    view.move(finger(CGPoint(x: p.x + 30, y: p.y), p0: p))
+    XCTAssertTrue(rec.acts.isEmpty)                      // плашка открыта — звезду не двигаем
+    view.up(finger(p, now: 0.1)); XCTAssertTrue(rec.acts.isEmpty)
+  }
+
+  func testHoldNoSheetFreshOrMoved() {
+    var opened = 0
+    view.openSheet = { _ in opened += 1 }
+    setStars([])
+    view.down(finger(skyPt))                             // свежая звезда
+    setStars([(1, 0.5, 0.2)])
+    view.tick(now: 1.6, dt: 0.016); XCTAssertEqual(opened, 0)
+    view.up(finger(skyPt)); setStars([(3, 0.5, 0.2)])
+    let p = skyPt
+    view.down(finger(p)); view.move(finger(CGPoint(x: p.x + 20, y: p.y), p0: p))
+    view.tick(now: 1.6, dt: 0.016); XCTAssertEqual(opened, 0)
+  }
+
+  func testHoldOnVanishedStarNoSheet() {
+    var opened = 0
+    view.openSheet = { _ in opened += 1 }
+    setStars([(3, 0.5, 0.2)])
+    view.down(finger(skyPt))
+    setStars([])
+    view.tick(now: 1.6, dt: 0.016); XCTAssertEqual(opened, 0)
+  }
+
+  func testObjGoneOnVanish() {
+    var gone: [Int] = []
+    view.objGone = { gone.append($0) }
+    setStars([(1, 0.5, 0.2), (2, 0.4, 0.1)]); XCTAssertTrue(gone.isEmpty)
+    setStars([(2, 0.4, 0.1)]); XCTAssertEqual(gone, [1])
+    setStars([(2, 0.4, 0.1)]); XCTAssertEqual(gone, [1])
+  }
 }
