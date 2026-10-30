@@ -344,10 +344,11 @@ final class HostTests: XCTestCase {
   func testWorldFingerSurvivesGoMap() {
     host.reapply(); answer("w0", now: 1)
     let a = finger(0, 100, 400), p = bar.pos(.back), b = finger(1, p.x, p.y)
+    let n = core.snaps.count
     host.down(a)
     host.down(b); host.up(b)
     XCTAssertEqual(host.nav.view, .map)
-    let n = core.snaps.count
+    XCTAssertEqual(core.snaps.count, n, "палец мира ещё лежит: commit рано")
     var m = a; m.x = 120; host.move(m)
     XCTAssertEqual(world.moves, 1, "палец мира ведётся в мир и на карте")
     host.up(a)
@@ -357,10 +358,21 @@ final class HostTests: XCTestCase {
   }
 
   func testReapplyOnMapKeepsMap() {
-    store.saveScene(slot: 10, SceneFile(w: "wf", scl: Scl.off))
+    store.saveScene(slot: 10, SceneFile(w: "wf", scl: Scl(on: true, idx: 1, root: 2)))
     host = makeHost()
     host.reapply()
     XCTAssertEqual(core.restores.map(\.slot), [10]); XCTAssertEqual(host.nav.view, .map)
+    XCTAssertEqual(core.scales.last, Scl(on: true, idx: 1, root: 2), "лад из файла — при запуске")
+    XCTAssertEqual(core.vols.last!, Vol.gain(host.vol), accuracy: 1e-12)
+    // смена частоты: лад хоста новее файла — уходит в ядро заново, из файла не перечитывается
+    let live = Scl(on: true, idx: 3, root: 5)
+    host.shotState(scl: live)
+    let v = host.vol
+    core.scales.removeAll(); core.vols.removeAll()
+    host.reapply()
+    XCTAssertEqual(core.scales, [live]); XCTAssertEqual(host.scl, live)
+    XCTAssertEqual(core.vols.count, 1); XCTAssertEqual(core.vols[0], Vol.gain(v), accuracy: 1e-12)
+    XCTAssertEqual(host.nav.view, .map)
   }
 
   func testSceneSavedPerSlot() {
