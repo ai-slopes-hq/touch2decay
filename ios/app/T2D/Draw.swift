@@ -188,4 +188,50 @@ final class Draw {
     stroke(col, 0.45); g.setLineWidth(0.8)
     g.strokeEllipse(in: CGRect(x: ox - 10.5, y: oy - 10.5, width: 21, height: 21))
   }
+
+  // draw.js:121-160 — угловое солнце: четверть (side = 1 — вниз и вправо) с лицом и кромкой; top < oy — верхняя половина.
+  // now — мс, как в вебе; col и disc — по умолчанию чернила и фон темы
+  func quarterSun(_ ox: CGFloat, _ oy: CGFloat, _ r: CGFloat, side: CGFloat = 1, now: Double = 0, col: RGB? = nil, disc: UIColor? = nil, top: CGFloat? = nil) {
+    let top = top ?? oy, col = col ?? theme.ink, disc = disc ?? theme.bg
+    let N = 28, tau = Double.pi * 2, rot = now * 0.00003, half = top < oy - 1
+    g.saveGState()
+    g.clip(to: CGRect(x: side > 0 ? ox : 0, y: top, width: side > 0 ? W : ox, height: H))
+    g.translateBy(x: ox, y: oy); g.scaleBy(x: side, y: 1)
+    func c(_ a: CGFloat) -> CGColor { Draw.color(col, a) }
+    for k in 0..<N {
+      let a = Double(k) / Double(N) * tau + rot, aa = (fmod(a, tau) + tau).truncatingRemainder(dividingBy: tau)
+      if aa > Double.pi / 2 + 0.1 && !(half && aa > Double.pi * 1.5 - 0.1) { continue }
+      let cs = CGFloat(cos(a)), sn = CGFloat(sin(a)), px = -sn, py = cs
+      g.beginPath()
+      if k % 2 == 1 {
+        let l = r * 2.05, w: CGFloat = 5
+        g.move(to: CGPoint(x: cs * r + px * w, y: sn * r + py * w)); g.addLine(to: CGPoint(x: cs * l, y: sn * l))
+        g.addLine(to: CGPoint(x: cs * r - px * w, y: sn * r - py * w))
+        g.setFillColor(disc.cgColor); g.setStrokeColor(c(0.75)); g.setLineWidth(1.1); g.drawPath(using: .fillStroke)
+      } else {
+        let l = r * 1.65
+        for i in 0...18 {
+          let t = CGFloat(i) / 18, rr = r + t * (l - r), wv = sin(t * .pi * 3) * 3.5 * (1 - t * 0.5)
+          let p = CGPoint(x: cs * rr + px * wv, y: sn * rr + py * wv)
+          i > 0 ? g.addLine(to: p) : g.move(to: p)
+        }
+        g.setStrokeColor(c(0.55)); g.setLineWidth(1); g.strokePath()
+      }
+    }
+    g.setFillColor(disc.cgColor); g.fillEllipse(in: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r))
+    g.setStrokeColor(c(0.9)); g.setLineWidth(1.6); g.strokeEllipse(in: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r))
+    g.setStrokeColor(c(0.45)); g.setLineWidth(0.9); g.strokeEllipse(in: CGRect(x: -r + 5, y: -r + 5, width: 2 * r - 10, height: 2 * r - 10))
+    let f0 = r * 0.46, k = r / 46                                                          // лицо — в видимой четверти
+    func P(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: y) }
+    g.setLineWidth(1.1); g.setStrokeColor(c(0.85)); g.beginPath()
+    g.move(to: P(f0 - 11 * k, f0 - 2 * k)); g.addQuadCurve(to: P(f0 - 5 * k, f0 - 2 * k), control: P(f0 - 8 * k, f0 + 1 * k))
+    g.move(to: P(f0 + 5 * k, f0 - 2 * k)); g.addQuadCurve(to: P(f0 + 11 * k, f0 - 2 * k), control: P(f0 + 8 * k, f0 + 1 * k))
+    g.move(to: P(f0 - 12 * k, f0 - 7 * k)); g.addQuadCurve(to: P(f0 - 4 * k, f0 - 7 * k), control: P(f0 - 8 * k, f0 - 10 * k))
+    g.move(to: P(f0 + 4 * k, f0 - 7 * k)); g.addQuadCurve(to: P(f0 + 12 * k, f0 - 7 * k), control: P(f0 + 8 * k, f0 - 10 * k))
+    g.move(to: P(f0, f0 - 4 * k)); g.addLine(to: P(f0 - 2 * k * side, f0 + 5 * k)); g.addLine(to: P(f0 + 1.5 * k * side, f0 + 5.5 * k))
+    g.move(to: P(f0 - 7 * k, f0 + 11 * k)); g.addQuadCurve(to: P(f0 + 7 * k, f0 + 11 * k), control: P(f0, f0 + 15 * k))
+    g.strokePath()
+    if !half { g.setStrokeColor(c(0.8)); g.setLineWidth(1.2); g.beginPath(); g.move(to: P(0, 0.5)); g.addLine(to: P(r * 2.1, 0.5)); g.strokePath() }   // кромка
+    g.restoreGState()
+  }
 }
