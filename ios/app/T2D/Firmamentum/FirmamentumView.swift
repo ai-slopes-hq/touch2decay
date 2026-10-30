@@ -9,7 +9,10 @@ final class FirmamentumView: World {
   static let gold: RGB = (236, 204, 130)
   static let ink: RGB = (232, 224, 200)
 
-  let title = "Firmamentum", sub = "stellae · pulsar", hasFx = true
+  let title = "Firmamentum", sub = "stellae · pulsar", hasFx = true     // hasFx и fx — временно, плашки — задача 6
+  var fx: SheetSpec? { nil }
+  var openSheet: ((SheetSpec) -> Void)?
+  var objGone: ((Int) -> Void)?
   // view.js:194-196
   let legend: [LegendRow] = [
     LegendRow(glyph: .tap, gesture: "tap the sky", does: "pierce the firmament — a star pulses"),

@@ -19,3 +19,7 @@ enum Scales {
   static let labels = ["major", "minor", "dorian", "phrygian", "lydian", "mixolydian"]
   static let notes = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
 }
+
+// панель LFO строки — как host/sl.js, host/sheet.js: границы скорости (Гц) и поле внутри пада
+let LFO_RATE_MIN = 0.03, LFO_RATE_MAX = 20.0
+let PAD_IN: CGFloat = 12

@@ -13,6 +13,14 @@ private final class HCore: HostCore {
   func snap(slot: Int, id: Int) -> Bool { snaps.append((slot, id)); return true }
   func restore(slot: Int, _ w: String) -> Bool { restores.append((slot, w)); calls.append("restore:\(w)"); return true }
   func takeSnap() -> (id: Int, slot: Int, w: String)? { queue.isEmpty ? nil : queue.removeFirst() }
+  var lfoSnaps: [LfoSnap] = []
+  func lfoAdd(slot: Int, obj: Int, key: Int, base: Double, shape: Int) -> Bool { calls.append("lfoAdd:\(obj):\(key):\(base)"); return true }
+  func lfoSpec(slot: Int, obj: Int, key: Int, morph: Double, rate: Double, depth: Double) -> Bool { calls.append("lfoSpec:\(obj):\(key)"); return true }
+  func lfoBase(slot: Int, obj: Int, key: Int, base: Double) -> Bool { calls.append("lfoBase:\(obj):\(key):\(base)"); return true }
+  func lfoOff(slot: Int, obj: Int, key: Int) -> Bool { calls.append("lfoOff:\(obj):\(key)"); return true }
+  func lfoDrop(slot: Int, obj: Int) -> Bool { calls.append("lfoDrop:\(obj)"); return true }
+  func lfoSnap() -> [LfoSnap] { lfoSnaps }
+  func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { sin(2 * .pi * u) }
 }
 
 // поддельный мир: считает касания и действия; "угол с картой" — прямоугольник x ≥ 300, y ≥ 700
@@ -22,7 +30,9 @@ private final class HWorld: World {
   var title: String { "Fake" }
   var sub: String { "" }
   var legend: [LegendRow] { [] }
-  var hasFx: Bool { false }
+  var fx: SheetSpec? { nil }
+  var openSheet: ((SheetSpec) -> Void)?
+  var objGone: ((Int) -> Void)?
   var downs = 0, moves = 0, ups = 0, cancels = 0, dices = 0, clears = 0, restoredN = 0
   func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat) {}
   func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool { x >= 300 && y >= 700 }

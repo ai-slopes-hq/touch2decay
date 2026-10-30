@@ -20,7 +20,9 @@ protocol World: AnyObject {
   var title: String { get }
   var sub: String { get }
   var legend: [LegendRow] { get }
-  var hasFx: Bool { get }                                // false — кнопка FX приглушена
+  var fx: SheetSpec? { get }                             // веер мира; nil — кнопка FX приглушена
+  var openSheet: ((SheetSpec) -> Void)? { get set }      // ставит хост: мир просит открыть плашку
+  var objGone: ((Int) -> Void)? { get set }              // ставит хост: объект мира пропал (его LFO гасит хост)
   func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat)
   func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool     // предмет, ведущий на карту
   func dice()
@@ -33,3 +35,5 @@ protocol World: AnyObject {
   func up(_ f: Finger)
   func cancel(_ f: Finger)                               // система отняла касание: бросить палец без действий тапа и удержания
 }
+
+extension World { var hasFx: Bool { fx != nil } }

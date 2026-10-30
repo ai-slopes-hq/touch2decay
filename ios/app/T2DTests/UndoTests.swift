@@ -14,6 +14,13 @@ final class FakeCore: HostCore {
   func restore(slot: Int, _ w: String) -> Bool { if full { return false }; restores.append((slot, w)); return true }
   func takeSnap() -> (id: Int, slot: Int, w: String)? { queue.isEmpty ? nil : queue.removeFirst() }
   var lastId: Int { snaps.last!.id }
+  func lfoAdd(slot: Int, obj: Int, key: Int, base: Double, shape: Int) -> Bool { true }
+  func lfoSpec(slot: Int, obj: Int, key: Int, morph: Double, rate: Double, depth: Double) -> Bool { true }
+  func lfoBase(slot: Int, obj: Int, key: Int, base: Double) -> Bool { true }
+  func lfoOff(slot: Int, obj: Int, key: Int) -> Bool { true }
+  func lfoDrop(slot: Int, obj: Int) -> Bool { true }
+  func lfoSnap() -> [LfoSnap] { [] }
+  func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { 0 }
 }
 
 final class UndoTests: XCTestCase {
