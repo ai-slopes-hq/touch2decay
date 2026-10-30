@@ -211,7 +211,7 @@ struct T2DApp: App {
   }
 
   // Horologium: horologium — кольцо II включено, ход RUN [1, 0], кадр через 1.5 с; -ring-sheet — плашка кольца IV, -hub-sheet — плашка ступицы,
-  // -fan — веер FX с LFO на materia (полоса random), -spin — бросок через верх RUN [1, 7.5]; сид init 7
+  // -fan — веер FX с LFO на materia (полоса random), -spin — бросок через верх RUN [1, 7.5] за 1.2 с до кадра; сид init 7
   private func shotHoro(_ name: String) {
     host.go(HorologiumView.slotN)
     let core = AppCore(slot: HorologiumView.slotN), q = DispatchQueue.main
@@ -220,7 +220,8 @@ struct T2DApp: App {
     case "horologium-hub-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(horo.hubSpec()) }
     case "horologium-fan":
       q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(horo.fx!, lfoKey: "materia"); host.shotLfo(rate: 1, depth: 0.5) }
-    case "horologium-spin": core.action(HorologiumView.Act.run, 0, [1, 7.5], touchTime: 0)
+    case "horologium-spin":   // ядро успокаивает u к uT (τ 6 с): снимок через 5 с поймал бы уже 3.2 — пускаем за 1.2 с до кадра, как веб-сцена
+      q.asyncAfter(deadline: .now() + 3.8) { core.action(HorologiumView.Act.run, 0, [1, 7.5], touchTime: 0) }
     default:
       core.action(HorologiumView.Act.ring, 0, [0, 1], touchTime: 0); core.action(HorologiumView.Act.run, 0, [1, 0], touchTime: 0)
     }
