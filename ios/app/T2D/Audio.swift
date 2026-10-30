@@ -34,6 +34,14 @@ final class Audio {
   var onInit: (() -> Void)?                // сразу после t2d_app_init, до старта движка: вернуть сцену, лад, громкость (запуск и смена частоты)
   init(log: Log, seed: UInt32 = 1) { self.log = log; self.seed = seed }
 
+  // только -shot: сумма квадратов левого канала и число кадров с последнего takeRms (гонка с render безвредна — замер для консоли)
+  var probe = false
+  private let acc = UnsafeMutablePointer<Double>.allocate(capacity: 2)
+  func takeRms() -> Double {
+    let s = acc[0], n = acc[1]; acc[0] = 0; acc[1] = 0
+    return n > 0 ? (s / n).squareRoot() : 0
+  }
+
   var sampleRate: Double { session.sampleRate }
   var outputLatency: Double { session.outputLatency }
   var frames: Int { Int((session.ioBufferDuration * session.sampleRate).rounded()) }
@@ -68,10 +76,17 @@ final class Audio {
     }
     let e = AVAudioEngine()
     let fmt = AVAudioFormat(standardFormatWithSampleRate: sr, channels: 2)!   // планарный float
+    let acc = acc, probe = probe
     let node = AVAudioSourceNode(format: fmt) { _, ts, frameCount, abl in
       let b = UnsafeMutableAudioBufferListPointer(abl)
       guard b.count >= 2, let l = b[0].mData, let r = b[1].mData else { return noErr }
       t2d_app_render(l.assumingMemoryBound(to: Float.self), r.assumingMemoryBound(to: Float.self), Int32(frameCount), ts.pointee.mHostTime)
+      if probe {
+        let p = l.assumingMemoryBound(to: Float.self)
+        var s = 0.0
+        for i in 0..<Int(frameCount) { s += Double(p[i] * p[i]) }
+        acc[0] += s; acc[1] += Double(frameCount)
+      }
       return noErr
     }
     e.attach(node)

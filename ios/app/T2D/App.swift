@@ -4,7 +4,7 @@ import SwiftUI
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
   private static let shot = CommandLine.arguments.contains("-shot")
-  // имя сцены после -shot: firmamentum (по умолчанию) | topbar | scales | legend
+  // имя сцены после -shot: firmamentum (по умолчанию) | topbar | scales | legend | sheet | starsheet | lfo
   private static let shotName: String = {
     let a = CommandLine.arguments
     guard let i = a.firstIndex(of: "-shot"), i + 1 < a.count else { return "firmamentum" }
@@ -16,6 +16,7 @@ struct T2DApp: App {
 
   init() {
     let a = Audio(log: .shared, seed: T2DApp.shot ? 7 : 1)
+    a.probe = T2DApp.shot && T2DApp.shotName == "lfo"
     let w = FirmamentumView(core: AppCore(slot: FirmamentumView.slotN), geo: Geo(W: 390, H: 844, topY: 59, safeBot: 34))
     let h = Host(world: w, core: AppHostCore(), store: Store(dir: T2DApp.storeDir(), log: { Log.shared.add("store", $0) }))
     a.onInit = { h.reapply() }
@@ -52,7 +53,26 @@ struct T2DApp: App {
     case "topbar": host.shotState(scl: on)
     case "scales": host.shotState(scl: on, sclOpen: true)
     case "legend": host.shotState(scl: Scl.off, legendOpen: true)
+    case "sheet": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { host.shotSheet(world.fxSpec) }
+    case "starsheet": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { openStarSheet(lfo: false) }
+    case "lfo": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { openStarSheet(lfo: true) }
     default: break
+    }
+  }
+
+  // плашка первой звезды; lfo — панель на formant (u), 1 Гц, глубина 0.5, и RMS выхода за 2 с по 0.25 с в консоль (числа должны гулять)
+  private func openStarSheet(lfo: Bool) {
+    guard let id = world.mirror.stars.first?.id else { print("shot: no star"); fflush(stdout); return }
+    host.shotSheet(world.starSheet(id), lfoKey: lfo ? "u" : nil)
+    guard lfo else { return }
+    host.shotLfo(rate: 1, depth: 0.5)
+    _ = audio.takeRms()
+    var out = [String]()
+    for i in 1...8 {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.25 * Double(i)) {
+        out.append(String(format: "%.4f", audio.takeRms()))
+        if i == 8 { print("shot-lfo rms/0.25s: " + out.joined(separator: " ")); fflush(stdout) }
+      }
     }
   }
 

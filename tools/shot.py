@@ -1030,6 +1030,37 @@ async def sc_firmtop(p):                           # Firmamentum с верхне
     await p.shot('firmtop-legend')
 
 
+async def sc_firmsheet(p):                         # Firmamentum: плашка FX, плашка звезды (удержание), LFO на formant (тап по «~», пад к 1 Hz · 50%) — пары к ios/app/shot.sh sheet | starsheet | lfo
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(10)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 10], 'the card right of Tenebrae opens Firmamentum'
+    for _ in range(30):
+        if await p.js('()=>t2d.firm.ready'): break
+        await p.pg.wait_for_timeout(100)
+    d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
+    r = await p.js("()=>t2d.btnPos('rev')"); await p.tap(r['x'], r['y']); await p.pg.wait_for_timeout(300)
+    assert await p.js('()=>t2d.fxSheet'), 'the FX button — the sheet'
+    await p.shot('firmsheet-fx')
+    await p.tap(r['x'], r['y']); await p.pg.wait_for_timeout(200)
+    assert not await p.js('()=>t2d.fxSheet'), 'the FX button again — closed'
+    a = await p.js('()=>{const s = t2d.firm.stars[0]; return t2d.firm.at(s.h, s.u)}')
+    await p.hold(a['x'], a['y'], ms=500); await p.pg.wait_for_timeout(150)
+    assert await p.js('()=>t2d.fxSheet'), 'hold a star 500 ms — its sheet'
+    await p.up(); await p.pg.wait_for_timeout(200)
+    await p.shot('firmsheet-star')
+    g = await p.js('()=>t2d.fxGeo()'); row = next(q for q in g['rows'] if q['k'] == 'u')
+    await p.tap(g['lfoX'], row['y'] + row['h'] / 2); await p.pg.wait_for_timeout(200)
+    assert await p.js('()=>t2d.slOpen()') == 'u', 'tap ~ on formant — its LFO panel'
+    g = await p.js('()=>t2d.fxGeo()'); PI = 12
+    py0 = g['lfoTop'] + 78; pad_h = g['bottom'] - py0; px_w = g['w']
+    x1 = g['x'] + PI + math.log(1 / 0.03) / math.log(20 / 0.03) * (px_w - 2 * PI)      # 1 Hz
+    y1 = py0 + PI + 0.5 * (pad_h - 2 * PI)                                              # 50%
+    pid = await p.hold(g['x'] + g['w'] * 0.4, g['bottom'] - 30, ms=60); await p.drag(pid, g['x'] + g['w'] * 0.4, g['bottom'] - 30, x1, y1, steps=8); await p.pg.wait_for_timeout(300)
+    L = await p.js('()=>t2d.sl()'); print('  star LFO', L)
+    assert any(e['key'] == 'u' and abs(e['rate'] - 1) < 0.15 and abs(e['depth'] - 0.5) < 0.08 for e in L), f'drag the pad to 1 Hz, 50%: {L}'
+    await p.shot('firmsheet-lfo'); await p.up()
+
+
 async def sc_inferno(p):                           # Inferno: удар, тление, высота вдоль круга, грешник, арфа, плашка круга, FX, кубик, корзина, отмена, тьма — карта
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     await p.shot('map-rows')
@@ -1863,7 +1894,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'firmtop': sc_firmtop, 'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'tenscale': sc_tenscale, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'firmsheet': sc_firmsheet, 'firmtop': sc_firmtop, 'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'tenscale': sc_tenscale, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

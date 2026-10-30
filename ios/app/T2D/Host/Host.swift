@@ -229,6 +229,18 @@ final class Host {
     self.sclOpen = sclOpen; self.legendOpen = legendOpen
   }
 
+  // только -shot: плашка открыта без касаний (FX мира или звезда id), при lfoKey — с панелью LFO этой строки
+  func shotSheet(_ spec: SheetSpec, lfoKey: String? = nil) {
+    let s = Sheet(spec: spec, slot: world.slot)
+    if let k = lfoKey { ensureLfo(s, k); s.lfoKey = k }
+    sheet = s
+  }
+  // только -shot: LFO строки 1 Гц, глубина 0.5 (как пад в веб-сценарии firmsheet); nil — строки нет
+  func shotLfo(rate: Double, depth: Double) {
+    guard let s = sheet, let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) else { return }
+    core.lfoSpec(slot: s.slot, obj: l.obj, key: c, morph: .nan, rate: rate, depth: depth)
+  }
+
   // ---------- кадр и сохранение ----------
   func tick(now: Double, dt: Double) {
     self.now = now
