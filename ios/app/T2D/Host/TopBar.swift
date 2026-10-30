@@ -26,6 +26,8 @@ struct TopBar {
     var canUndo: Bool
     var fxArc: Double?              // дуга на кнопке FX; nil — у мира нет веера
     var fxHeld: Bool
+    var backHeld = false            // палец лёг на стрелку / кубик: кольцо и знак ярче (ui-top.js:107-111, 128)
+    var diceHeld = false
     var diceAt: Double              // мс, момент броска; кость крутится 400 мс
   }
 
@@ -153,11 +155,11 @@ struct TopBar {
       g.setStrokeColor(d.ink(0.18)); g.setLineWidth(1)
       g.beginPath(); g.move(to: CGPoint(x: TopBar.titleX, y: top + 33.5)); g.addLine(to: CGPoint(x: TopBar.titleX + tw, y: top + 33.5)); g.strokePath()
     }
-    // стрелка назад — приглушена, пока карты нет
-    let B = pos(.back)
+    // стрелка назад — на карту; нажатая — ярче; при открытом списке ладов — в тени, как заголовок
+    let B = pos(.back), bk: CGFloat = dimT ? 0.3 : 1
     g.setFillColor(d.paper(0.88)); g.fillEllipse(in: CGRect(x: B.x - B.r - 1, y: B.y - B.r - 1, width: 2 * B.r + 2, height: 2 * B.r + 2))
-    d.ring(B.x, B.y, B.r, 0.45 * 0.3, 1.1)
-    g.setStrokeColor(d.ink(0.8 * 0.3)); g.setLineWidth(1.4); g.setLineCap(.round)
+    d.ring(B.x, B.y, B.r, (s.backHeld ? 1 : 0.45) * bk, 1.1)
+    g.setStrokeColor(d.ink((s.backHeld ? 1 : 0.8) * bk)); g.setLineWidth(1.4); g.setLineCap(.round)
     g.beginPath(); g.move(to: CGPoint(x: B.x + 2.5, y: B.y - 5.5)); g.addLine(to: CGPoint(x: B.x - 3, y: B.y)); g.addLine(to: CGPoint(x: B.x + 2.5, y: B.y + 5.5)); g.strokePath()
     g.setLineCap(.butt)
 
@@ -178,7 +180,7 @@ struct TopBar {
 
     // кубик: кружок с костью; после броска кость крутится
     let dq = pos(.dice), since = now - s.diceAt
-    d.ring(dq.x, dq.y, TopBar.clrR, 0.45, 1.2)
+    d.ring(dq.x, dq.y, TopBar.clrR, s.diceHeld ? 1 : 0.45, 1.2)
     g.saveGState(); g.translateBy(x: dq.x, y: dq.y); g.rotate(by: 0.18 + (since < 400 ? CGFloat(since / 60) : 0))
     g.setStrokeColor(d.ink(0.8)); g.setLineWidth(1.2)
     g.addPath(CGPath(roundedRect: CGRect(x: -7, y: -7, width: 14, height: 14), cornerWidth: 2.5, cornerHeight: 2.5, transform: nil)); g.strokePath()

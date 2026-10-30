@@ -251,7 +251,12 @@ final class FirmamentumView: World {
   }
 
   // порядок кадра — view.js:176-184: фон → комета → искры и молнии → звёзды → солнце
-  func draw(_ d: Draw, now: Double) {
+  func draw(_ d: Draw, now: Double) { frame(d, now, sun: true) }
+  // снимок для карты: тот же кадр без солнца в углу — оно ведёт на карту и в карточке не нужно
+  func drawShot(_ d: Draw, now: Double) { frame(d, now, sun: false) }
+  var objs: Int { mirror.stars.count }
+
+  private func frame(_ d: Draw, _ now: Double, sun: Bool) {
     let g = d.g, G = geo
     if let w = wall(d) {
       g.saveGState(); g.translateBy(x: 0, y: G.H); g.scaleBy(x: 1, y: -1)    // контекст — началом сверху, картинка — снизу
@@ -261,6 +266,7 @@ final class FirmamentumView: World {
     drawComet(d)
     drawDust(d, now)
     for s in mirror.stars { drawStar(d, s, now, held: held.contains(s.id)) }
+    guard sun else { return }
     g.saveGState(); g.clip(to: CGRect(x: 0, y: 0, width: G.W, height: G.sun.y))
     d.sunGlyph(G.sun.x, G.sun.y, -.pi / 2, 0, scale: 1.2, now: now * 1000, col: FirmamentumView.ink, disc: theme.bg)
     g.restoreGState()

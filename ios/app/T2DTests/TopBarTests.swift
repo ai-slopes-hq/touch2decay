@@ -111,4 +111,31 @@ final class TopBarTests: XCTestCase {
     XCTAssertGreaterThan(px(0.5), 200)
     XCTAssertLessThan(px(nil), 20)
   }
+
+  // красная яркость пикселя (x, y) кадра верхней строки: фон — чёрный, знаки — светлые
+  private func pixel(_ x: CGFloat, _ y: CGFloat, back: Bool = false, dice: Bool = false, sclOpen: Bool = false) -> Int {
+    let c = CGContext(data: nil, width: 390, height: 300, bitsPerComponent: 8, bytesPerRow: 0,
+                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    c.translateBy(x: 0, y: 300); c.scaleBy(x: 1, y: -1)
+    let d = Draw(g: c, W: 390, H: 300)
+    let s = TopBar.State(title: "x", vol: 0.5, volHeld: false, scl: Scl(on: false, idx: 0, root: 0), sclOpen: sclOpen,
+                         canUndo: false, fxArc: nil, fxHeld: false, backHeld: back, diceHeld: dice, diceAt: -1e9)
+    bar.draw(d, s, now: 0)
+    return Int(c.data!.assumingMemoryBound(to: UInt8.self)[Int(y) * c.bytesPerRow + Int(x) * 4])
+  }
+
+  // стрелка назад — не приглушена (было ×0.3, пока карты не было): вершина знака светится ≈ ink(0.8)
+  func testBackNotMuted() {
+    let B = bar.pos(.back)
+    XCTAssertGreaterThan(pixel(B.x - 3, B.y), 150)
+    XCTAssertLessThan(pixel(B.x - 3, B.y, sclOpen: true), 100, "при открытом списке ладов — в тени, как заголовок")
+  }
+
+  // нажатая стрелка и кубик — ярче (ui-top.js:107-111, 128): кольцо 1 вместо 0.45
+  func testBackHeldHighlight() {
+    let B = bar.pos(.back), D = bar.pos(.dice)
+    XCTAssertGreaterThan(pixel(B.x - 3, B.y, back: true), pixel(B.x - 3, B.y))
+    XCTAssertGreaterThan(pixel(B.x + B.r, B.y, back: true), pixel(B.x + B.r, B.y) + 40, "кольцо стрелки")
+    XCTAssertGreaterThan(pixel(D.x + TopBar.clrR, D.y, dice: true), pixel(D.x + TopBar.clrR, D.y) + 40, "кольцо кубика")
+  }
 }

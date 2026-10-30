@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Снимок в симуляторе: shot.sh [сцена] (firmamentum | topbar | scales | legend | sheet | starsheet | lfo; по умолчанию firmamentum):
+# Снимок в симуляторе: shot.sh [сцена] (firmamentum | topbar | scales | legend | sheet | starsheet | lfo | undo | map | nav | peek; по умолчанию firmamentum):
 # xcodegen → сборка → запуск с -shot <сцена> → через 5 с скриншот в .shots/ios-<сцена>.png.
 set -euo pipefail
 SCENE="${1:-firmamentum}"

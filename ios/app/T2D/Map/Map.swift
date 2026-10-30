@@ -75,6 +75,7 @@ struct Nav {
 
   // закрывает кончившиеся переход и peek; слот — если вход в мир завершён
   mutating func step(_ now: Double) -> Int? {
+    if freeze != nil { return nil }   // -shot: кадр заморожен — переход и peek не кончаются
     if let p = peek, now - p.t0 >= Nav.peekDur { peek = nil }
     guard let a = anim, now - a.t0 >= Nav.dur else { return nil }
     anim = nil

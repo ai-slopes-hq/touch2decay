@@ -30,10 +30,16 @@ protocol World: AnyObject {
   func restored()                                        // после restore: бросить временное (пальцы, удержания, вспышки); id звёзд — по зеркалу
   func tick(now: Double, dt: Double)
   func draw(_ d: Draw, now: Double)
+  func drawShot(_ d: Draw, now: Double)                  // кадр для снимка при уходе на карту: без предмета-угла (host/map.js mapShot)
+  var objs: Int { get }                                  // число объектов мира для строки замеров (звёзды); на карте — 0
   func down(_ f: Finger)
   func move(_ f: Finger)
   func up(_ f: Finger)
   func cancel(_ f: Finger)                               // система отняла касание: бросить палец без действий тапа и удержания
 }
 
-extension World { var hasFx: Bool { fx != nil } }
+extension World {
+  var hasFx: Bool { fx != nil }
+  func drawShot(_ d: Draw, now: Double) { draw(d, now: now) }
+  var objs: Int { 0 }
+}

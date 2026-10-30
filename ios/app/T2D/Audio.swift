@@ -32,7 +32,8 @@ final class Audio {
 
   private let seed: UInt32
   var onInit: (() -> Void)?                // сразу после t2d_app_init, до старта движка: вернуть сцену, лад, громкость (запуск и смена частоты)
-  init(log: Log, seed: UInt32 = 1) { self.log = log; self.seed = seed }
+  private let watch: UInt32                // маска слотов, чьи зеркала ядро публикует (слоты с нативным видом)
+  init(log: Log, seed: UInt32 = 1, watch: UInt32 = 0) { self.log = log; self.seed = seed; self.watch = watch }
 
   // только -shot: сумма квадратов левого канала и число кадров с последнего takeRms (гонка с render безвредна — замер для консоли)
   var probe = false
@@ -71,7 +72,7 @@ final class Audio {
     engine = nil
     let sr = session.sampleRate
     if reinit || sr != coreRate {
-      t2d_app_init(sr, seed, Clock.ticksPerSec, 1 << 10)
+      t2d_app_init(sr, seed, Clock.ticksPerSec, watch)
       coreRate = sr
       onInit?()
     }

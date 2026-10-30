@@ -24,13 +24,15 @@ private final class HCore: HostCore {
   func lfoOff(slot: Int, obj: Int, key: Int) -> Bool { calls.append("lfoOff:\(obj):\(key)"); return true }
   func lfoDrop(slot: Int, obj: Int) -> Bool { calls.append("lfoDrop:\(slot):\(obj)"); return true }
   func lfoSnap() -> [LfoSnap] { lfoSnaps }
-  func levels(_ out: inout [Float]) { for i in out.indices { out[i] = 0 } }
+  var levelReads = 0
+  func levels(_ out: inout [Float]) { levelReads += 1; for i in out.indices { out[i] = 0 } }
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { sin(2 * .pi * u) }
 }
 
 // поддельный мир: считает касания и действия; "угол с картой" — прямоугольник x ≥ 300, y ≥ 700
 private final class HWorld: World {
-  let slot = 10
+  let slot: Int
+  init(_ slot: Int = 10) { self.slot = slot }
   let theme = Theme.base
   var title: String { "Fake" }
   var sub: String { "" }
@@ -69,13 +71,14 @@ final class HostTests: XCTestCase {
   override func setUp() {
     dir = FileManager.default.temporaryDirectory.appendingPathComponent("host-\(UUID().uuidString)")
     store = Store(dir: dir, log: { _ in })
-    host = makeHost()
+    host = makeHost(inWorld: true)
   }
   override func tearDown() { try? FileManager.default.removeItem(at: dir) }
 
-  private func makeHost() -> Host {
-    let h = Host(world: world, core: core, store: store)
+  private func makeHost(inWorld: Bool = false, views: [World]? = nil) -> Host {
+    let h = Host(views: views ?? [world], core: core, store: store)
     h.layout(W: 390, H: 844, top: 47, safeBot: 34)
+    if inWorld { h.go(10) }
     return h
   }
   private func finger(_ n: Int, _ x: CGFloat, _ y: CGFloat, now: Double = 0) -> Finger {
@@ -104,10 +107,8 @@ final class HostTests: XCTestCase {
   }
 
   func testDimmedEatsTouch() {
-    for p in [bar.pos(.back), bar.pos(.rev)] {
-      let f = finger(0, p.x, p.y); host.down(f); host.move(f); host.up(f)
-    }
-    let f = finger(0, 350, 750); host.down(f); host.move(f); host.up(f)   // «солнце под землёй»
+    let p = bar.pos(.rev)
+    let f = finger(0, p.x, p.y); host.down(f); host.move(f); host.up(f)   // у мира нет веера: кнопка тусклая, тап съеден
     XCTAssertFalse(world.acted)
     let e = finger(0, 5, 300); host.down(e); host.move(e); host.up(e)    // левая полоса x < 14 под верхней строкой
     XCTAssertFalse(world.acted, "левый край съедается, как headHit в вебе")
@@ -221,6 +222,175 @@ final class HostTests: XCTestCase {
     host.reapply(); answer("w0", now: 10)
     host.tick(now: 12.9, dt: 0.016); XCTAssertNil(store.loadScene(slot: 10))
     host.tick(now: 13.1, dt: 0.016); XCTAssertEqual(store.loadScene(slot: 10)?.w, "w0")
+  }
+
+  // ---------- карта и выходы ----------
+  private let field = MapGeo.field(W: 390, H: 844, top: 47, safeBot: 34)
+  private func center(_ c: Int, _ r: Int) -> CGPoint { let p = field.rect(col: c, row: r); return CGPoint(x: p.midX, y: p.midY) }
+  private func tapCell(_ c: Int, _ r: Int, n: Int = 0) { let p = center(c, r); tap(p.x, p.y, n: n) }
+  private func tick(_ t: Double) { host.tick(now: t, dt: 0.016) }
+
+  func testStartsOnMap() {
+    host = makeHost()
+    XCTAssertEqual(host.nav.view, .map); XCTAssertNil(host.world)
+    tap(195, 20)
+    XCTAssertEqual(world.downs, 0)
+    XCTAssertEqual(host.theme.bg, Theme.base.bg)
+  }
+
+  func testTapCardEntersAfterTransition() {
+    host = makeHost(); tick(1)
+    tapCell(3, 1)
+    XCTAssertTrue(host.nav.busy(1))
+    tick(1.3); XCTAssertEqual(host.nav.view, .map)
+    tick(1.53); XCTAssertEqual(host.nav.view, .world(10)); XCTAssertNil(host.nav.anim)
+    XCTAssertNotNil(host.world)
+  }
+
+  func testTapOtherCardPeeks() {
+    host = makeHost(); tick(1)
+    tapCell(1, 1)
+    XCTAssertNotNil(host.nav.peek); XCTAssertEqual(host.nav.view, .map); XCTAssertNil(host.nav.anim)
+    tick(2)
+    XCTAssertNil(host.nav.peek, "peek 420 мс")
+    tapCell(0, 0)
+    XCTAssertNotNil(host.nav.peek); XCTAssertEqual(host.nav.view, .map)
+  }
+
+  func testTouchDuringTransitionEaten() {
+    host = makeHost(); tick(1)
+    tapCell(3, 1)
+    tick(1.2)
+    tapCell(3, 1, n: 1); tap(195, 422, n: 2)
+    tick(1.53)
+    XCTAssertEqual(world.downs, 0)
+    XCTAssertNil(host.nav.anim); XCTAssertEqual(host.nav.view, .world(10), "вход один")
+    tick(1.6); tapCell(3, 1)    // уже в мире: тап по этому месту — мир
+    XCTAssertEqual(world.downs, 1)
+  }
+
+  func testBackOnRelease() {
+    let p = bar.pos(.back)
+    let f = finger(0, p.x, p.y)
+    host.down(f); XCTAssertEqual(host.nav.view, .world(10), "на касании ещё нет")
+    host.up(f)
+    XCTAssertEqual(host.nav.view, .map); XCTAssertNotNil(host.nav.anim); XCTAssertNil(host.world)
+    host = makeHost(inWorld: true)
+    let g = finger(0, p.x, p.y); host.down(g)
+    var m = g; m.x = 80; m.y = 400; host.move(m); host.up(m)
+    XCTAssertEqual(host.nav.view, .world(10))
+  }
+
+  func testCornerOnRelease() {
+    let f = finger(0, 350, 750)
+    host.down(f); XCTAssertEqual(host.nav.view, .world(10))
+    host.up(f)
+    XCTAssertEqual(host.nav.view, .map); XCTAssertEqual(world.downs, 0)
+    host = makeHost(inWorld: true)
+    let g = finger(0, 350, 750); host.down(g)
+    var m = g; m.x = 100; m.y = 300; host.move(m); host.up(m)
+    XCTAssertEqual(host.nav.view, .world(10), "ушёл с угла — остаёмся")
+  }
+
+  func testEdgeSwipe() {
+    let f = finger(0, 5, 400)
+    host.down(f)
+    var m = f; m.x = 75; m.y = 410
+    host.move(m)
+    XCTAssertEqual(host.nav.view, .map, "на движении, не дожидаясь подъёма")
+    host.up(m)
+    host = makeHost(inWorld: true)
+    host.down(f); m.y = 480; host.move(m)
+    XCTAssertEqual(host.nav.view, .world(10), "крутой — нет")
+    host.up(m)
+    host = makeHost(inWorld: true)
+    let g = finger(0, 20, 400); host.down(g)
+    var n = g; n.x = 90; n.y = 405; host.move(n)
+    XCTAssertEqual(host.nav.view, .world(10), "старт x 20 — не край")
+    XCTAssertEqual(world.moves, 1)
+    host.up(n)
+  }
+
+  func testEdgeSwipeWithSheetOpenStays() {
+    openFx()
+    let f = finger(0, 5, 400)
+    host.down(f)
+    var m = f; m.x = 75; m.y = 410
+    host.move(m); host.up(m)
+    XCTAssertEqual(host.nav.view, .world(10), "мир остался")
+    XCTAssertNil(host.sheet, "касание вне панели — плашка закрылась: оно её")
+    XCTAssertEqual(world.downs, 0, "плашка забрала касание целиком")
+  }
+
+  func testGoMapClosesOverlays() {
+    openFx()
+    host.shotState(scl: Scl(on: true, idx: 1, root: 0), sclOpen: true, legendOpen: true)
+    XCTAssertNotNil(host.sheet); XCTAssertTrue(host.legendOpen); XCTAssertTrue(host.sclOpen)
+    host.goMap()
+    XCTAssertNil(host.sheet); XCTAssertFalse(host.legendOpen); XCTAssertFalse(host.sclOpen)
+    XCTAssertNotNil(host.snaps[10])
+    XCTAssertEqual(host.snaps[10]?.width, Int((390 * Draw.scale).rounded()))
+  }
+
+  func testOverlayFingerEatenAfterGoMap() {
+    openFx()
+    let f = finger(0, 100, 300); host.down(f)          // палец плашки
+    host.goMap()
+    host.move(f); host.up(f)
+    XCTAssertEqual(world.downs + world.moves + world.ups, 0)
+    XCTAssertNil(host.sheet)
+  }
+
+  func testWorldFingerSurvivesGoMap() {
+    host.reapply(); answer("w0", now: 1)
+    let a = finger(0, 100, 400), p = bar.pos(.back), b = finger(1, p.x, p.y)
+    host.down(a)
+    host.down(b); host.up(b)
+    XCTAssertEqual(host.nav.view, .map)
+    let n = core.snaps.count
+    var m = a; m.x = 120; host.move(m)
+    XCTAssertEqual(world.moves, 1, "палец мира ведётся в мир и на карте")
+    host.up(a)
+    XCTAssertEqual(world.ups, 1)
+    XCTAssertEqual(core.snaps.count, n + 1, "undo.commit — только когда легли оба")
+    XCTAssertEqual(core.snaps.last?.slot, 10)
+  }
+
+  func testReapplyOnMapKeepsMap() {
+    store.saveScene(slot: 10, SceneFile(w: "wf", scl: Scl.off))
+    host = makeHost()
+    host.reapply()
+    XCTAssertEqual(core.restores.map(\.slot), [10]); XCTAssertEqual(host.nav.view, .map)
+  }
+
+  func testSceneSavedPerSlot() {
+    let w11 = HWorld(11)
+    store.saveScene(slot: 10, SceneFile(w: "a", scl: Scl.off)); store.saveScene(slot: 11, SceneFile(w: "b", scl: Scl.off))
+    host = makeHost(views: [world, w11])
+    host.reapply()
+    XCTAssertEqual(core.restores.map(\.slot), [10, 11])
+    XCTAssertEqual(world.restoredN, 1); XCTAssertEqual(w11.restoredN, 1)
+    for r in core.snaps { core.queue.append((r.id, r.slot, "n\(r.slot)")) }
+    host.tick(now: 1, dt: 0.016)
+    host.background()
+    XCTAssertEqual(store.loadScene(slot: 10)?.w, "n10"); XCTAssertEqual(store.loadScene(slot: 11)?.w, "n11")
+  }
+
+  func testShotFreezeKeepsTransition() {
+    let p = bar.pos(.back); tick(1)
+    tap(p.x, p.y); host.shotFreeze(0.5)
+    tick(5)
+    XCTAssertNotNil(host.nav.anim); XCTAssertEqual(host.nav.k(5), 0.5)
+  }
+
+  func testLevelsPolledOnMapOnly() {
+    host = makeHost(); tick(1); tick(2)
+    XCTAssertEqual(core.levelReads, 2, "на карте — раз в 60 мс и реже")
+    tapCell(3, 1); tick(2.1); tick(2.7)          // вход закончился в 2.52
+    let n = core.levelReads
+    tick(3); tick(4)
+    XCTAssertEqual(host.nav.view, .world(10))
+    XCTAssertEqual(core.levelReads, n, "в мире уровни не опрашиваем")
   }
 
   // ---------- плашка и LFO строк ----------

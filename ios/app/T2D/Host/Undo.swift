@@ -44,8 +44,11 @@ final class Undo {
   }
 
   // из кадра: разобрать все ответы; вернуть последнюю новую базу, если она сменилась (для автосохранения)
-  func poll() -> (slot: Int, w: String, scl: Scl)? {
-    var out: (slot: Int, w: String, scl: Scl)?
+  func poll() -> (slot: Int, w: String, scl: Scl)? { pollAll().last }
+
+  // то же, но по новой базе на каждый слот — ответы нескольких миров в одном кадре (reapply) не теряются
+  func pollAll() -> [(slot: Int, w: String, scl: Scl)] {
+    var out: [Int: (slot: Int, w: String, scl: Scl)] = [:]
     while let r = core.takeSnap() {
       guard let req = pending.removeValue(forKey: r.id), req.slot == r.slot,
             var s = slots[r.slot], r.id == s.lastId, r.id > s.floor else { continue }
@@ -55,17 +58,17 @@ final class Undo {
           s.hist.append(UndoStep(w: old.w, scl: old.scl, after: req.scl))
           if s.hist.count > Undo.max { s.hist.removeFirst() }
           s.base = new
-          out = (r.slot, new.w, new.scl)
+          out[r.slot] = (r.slot, new.w, new.scl)
         }
       } else {
         let changed = s.base.map { $0.w != new.w || $0.scl != new.scl } ?? true
         s.base = new
         s.skipStep = false
-        if changed { out = (r.slot, new.w, new.scl) }
+        if changed { out[r.slot] = (r.slot, new.w, new.scl) }
       }
       slots[r.slot] = s
     }
-    return out
+    return out.values.sorted { $0.slot < $1.slot }
   }
 
   // scl — лад, который надо вернуть (менялся в шаге и с тех пор не трогали); done false — шагов нет или кольцо полно

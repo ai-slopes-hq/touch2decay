@@ -3,10 +3,9 @@ import SwiftUI
 import T2DCore
 
 // сцена: один UIView на весь экран. CADisplayLink → кадр (host.tick → мир, отмена, автосохранение → setNeedsDisplay);
-// draw(_:) → тема + host.draw (мир, верхняя строка, легенда; + панель замеров); касания → host (он решает, чьи). Правый нижний угол 44×44 — не мира:
-// долгое нажатие (HOLD_MS) показывает / прячет панель замеров. Карта миров — позже.
+// draw(_:) → тема хоста + host.draw (карта или мир, верхняя строка, легенда; + панель замеров); касания → host (он решает, чьи). Правый нижний угол 44×44 — не мира:
+// долгое нажатие (HOLD_MS) показывает / прячет панель замеров.
 final class Stage: UIView {
-  let world: FirmamentumView
   let host: Host
   private var link: CADisplayLink?
   private var last = 0.0
@@ -20,12 +19,12 @@ final class Stage: UIView {
   private var fingers: [ObjectIdentifier: Finger] = [:]
   private var geoSize = CGSize.zero, geoTop = CGFloat(-1), geoBot = CGFloat(-1)
 
-  init(world: FirmamentumView, host: Host, audio: Audio?) {
-    self.world = world; self.host = host; self.audio = audio
+  init(host: Host, audio: Audio?) {
+    self.host = host; self.audio = audio
     super.init(frame: .zero)
     contentScaleFactor = Draw.scale                        // плотность рисования не больше 2×
     isOpaque = true; isMultipleTouchEnabled = true
-    backgroundColor = world.theme.bg
+    backgroundColor = host.theme.bg
   }
   required init?(coder: NSCoder) { fatalError() }
 
@@ -63,12 +62,12 @@ final class Stage: UIView {
     var st = t2d_app_stats_t()
     t2d_app_stats(&st)
     panelLine = meter.line(stats: st, outLat: audio?.outputLatency ?? 0, frames: audio?.frames ?? Int(st.frames),
-                           sr: audio?.sampleRate ?? 0, stars: world.mirror.stars.count)
+                           sr: audio?.sampleRate ?? 0, stars: host.world?.objs ?? 0)
     Log.shared.add("meter", panelLine)
   }
 
   // ---------- угол: долгое нажатие переключает панель ----------
-  private func inCorner(_ f: Finger) -> Bool { f.x0 > world.geo.W - Touch.cornerPt && f.y0 > world.geo.H - Touch.cornerPt }
+  private func inCorner(_ f: Finger) -> Bool { f.x0 > bounds.width - Touch.cornerPt && f.y0 > bounds.height - Touch.cornerPt }
   private func fire(_ id: ObjectIdentifier) {
     guard var c = corner[id], !c.fired else { return }
     c.fired = true; corner[id] = c; meter.visible.toggle(); setNeedsDisplay()
@@ -83,7 +82,8 @@ final class Stage: UIView {
     let d: Draw
     if let x = drawer { d = x; d.g = g; d.W = bounds.width; d.H = bounds.height }
     else { d = Draw(g: g, W: bounds.width, H: bounds.height); drawer = d }   // один Draw — кеш шрифтов живёт между кадрами
-    d.setTheme(world.theme)
+    d.setTheme(host.theme)                                 // карта — базовая, мир — своя; фон подложки следует за ней
+    if backgroundColor != host.theme.bg { backgroundColor = host.theme.bg }
     host.draw(d, now: CACurrentMediaTime())
     if meter.visible && !panelLine.isEmpty {
       d.reading {
@@ -143,7 +143,7 @@ final class Stage: UIView {
 }
 
 struct StageView: UIViewRepresentable {
-  let world: FirmamentumView, host: Host, audio: Audio
-  func makeUIView(context: Context) -> Stage { Stage(world: world, host: host, audio: audio) }
+  let host: Host, audio: Audio
+  func makeUIView(context: Context) -> Stage { Stage(host: host, audio: audio) }
   func updateUIView(_ v: Stage, context: Context) {}
 }

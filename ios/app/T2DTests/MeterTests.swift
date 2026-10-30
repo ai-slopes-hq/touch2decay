@@ -78,7 +78,11 @@ final class MeterTests: XCTestCase {
   }
   private func stage(_ w: FirmamentumView) -> Stage {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("meter-\(UUID().uuidString)")
-    return Stage(world: w, host: Host(world: w, core: NullHostCore(), store: Store(dir: dir, log: { _ in })), audio: nil)
+    let h = Host(views: [w], core: NullHostCore(), store: Store(dir: dir, log: { _ in }))
+    h.go(10)
+    let st = Stage(host: h, audio: nil)
+    st.frame = CGRect(x: 0, y: 0, width: 390, height: 844)   // угол считается по bounds сцены
+    return st
   }
   private func finger(_ x: CGFloat, _ y: CGFloat, t0: Double, now: Double, id: AnyObject) -> Finger {
     Finger(id: ObjectIdentifier(id), x: x, y: y, x0: x, y0: y, t0: t0, moved: false, touchTime: now)
