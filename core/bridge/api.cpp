@@ -136,17 +136,21 @@ T2D_API void t2d_master_run(float* L, float* R, int n) { host.masterRun(L, R, n)
 T2D_API void t2d_mix(float* L, float* R, int n) { host.sum(L, R, n); host.masterRun(L, R, n); }
 T2D_API double t2d_master_makeup(void) { return host.masterMakeup(); }
 
-// LFO: world — слот, key — ключ параметра, base — базовое значение, shape — форма (0=classic, 1=random)
-// spec: morph/rate/depth — по два числа (начало, конец), value — текущее значение
-T2D_API int t2d_add_lfo(int world, const char* key, double base, int shape) { 
-  return host.addLfo(world, key, base, shape); 
+// LFO строк: таблица хоста (64); apply миру и снимок для UI — в core/app (задача 3 плана 2b-2)
+T2D_API int t2d_lfo_add(int slot, int obj, int key, double base, int shape) {
+  return host.lfoAdd(slot, obj, key, base, shape);
 }
-T2D_API void t2d_remove_lfo(int idx) { host.removeLfo(idx); }
-T2D_API void t2d_lfo_spec(int idx, double m0, double m1, double r0, double r1, double d0, double d1) { 
-  host.lfoSpec(idx, m0, m1, r0, r1, d0, d1); 
+T2D_API void t2d_lfo_spec(int idx, double morph, double rate, double depth) { host.lfoSpec(idx, morph, rate, depth); }
+T2D_API void t2d_lfo_off(int idx) { host.lfoOff(idx); }
+T2D_API int t2d_lfo_state(int idx, double* out) {
+  sdk::RowLfo l;
+  if (!out || !host.lfoState(idx, l)) return 0;
+  out[0] = l.slot; out[1] = l.obj; out[2] = l.key; out[3] = l.base;
+  out[4] = l.morph; out[5] = l.rate; out[6] = l.depth; out[7] = l.u;
+  out[8] = l.shape; out[9] = l.seed;
+  return 10;
 }
-T2D_API double t2d_lfo_value(int idx) { return host.lfoValue(idx); }
-T2D_API void t2d_lfo_tick(double dt) { host.lfoTick(dt); }
+T2D_API unsigned t2d_lfo_lost(void) { return host.lfoLost(); }
 
 // model tick — обновление модели вне аудио-потока
 T2D_API void t2d_model_tick(double dt) { host.modelTick(dt); }

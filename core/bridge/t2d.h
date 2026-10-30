@@ -34,11 +34,11 @@ void t2d_sum(float* L, float* R, int n);          // Σ dry·фейдер·trim 
 void t2d_master_run(float* L, float* R, int n);   // мастер по цепочке веба, на месте
 void t2d_mix(float* L, float* R, int n);          // sum + master_run
 double t2d_master_makeup(void);                   // авто-подъём компрессора (для тестов)
-int t2d_add_lfo(int world, const char* key, double base, int shape);
-void t2d_remove_lfo(int idx);
-void t2d_lfo_spec(int idx, double m0, double m1, double r0, double r1, double d0, double d1);
-double t2d_lfo_value(int idx);
-void t2d_lfo_tick(double dt);
+int t2d_lfo_add(int slot, int obj, int key, double base, int shape);
+void t2d_lfo_spec(int idx, double morph, double rate, double depth);
+void t2d_lfo_off(int idx);
+int t2d_lfo_state(int idx, double* out);                 // 10 чисел: slot, obj, key, base, morph, rate, depth, u, shape, seed; 0 — нет
+unsigned t2d_lfo_lost(void);
 void t2d_model_tick(double dt);
 
 #ifdef __cplusplus

@@ -48,42 +48,34 @@ void WaveMorph::initRandom() {
 
 double WaveMorph::sample(double morph, double phase, int seed) const {
   morph = std::max(0.0, std::min(1.0, morph));
-  phase = std::fmod(phase, 1.0); if (phase < 0) phase += 1.0;
-
   if (shape_ == RANDOM) {
-    // random: 4 формы (morph → индекс), но steps и smooth берут seed
+    // random: 4 формы, фаза — u без обрезки (host/sl.js RND_SHAPES); зерно — для steps/smooth
+    auto fr = [](double u) { double f = std::fmod(u, 1.0); return f < 0 ? f + 1.0 : f; };
     const int idx = std::min(3, static_cast<int>(std::floor(morph * 4.0)));
-    if (idx <= 1) {   // ramp up / down — не зависят от seed
-      const int i = static_cast<int>(phase * N) % N;
-      return tables_[idx][i];
-    }
-    // steps / smooth: зерно seed + номер периода
-    const int per = static_cast<int>(std::floor(phase * N / double(N)));   // для steps всегда 0 (один сэмпл на период)
-    if (idx == 2) return hash(seed + per);   // steps
+    if (idx == 0) return 2.0 * fr(phase) - 1.0;
+    if (idx == 1) return 1.0 - 2.0 * fr(phase);
+    const int per = static_cast<int>(std::floor(phase));
+    if (idx == 2) return hash(seed + per);
     const double a = hash(seed + per), b = hash(seed + per + 1);
-    const double fr = std::fmod(phase, 1.0);
-    return a + (b - a) * (0.5 - 0.5 * std::cos(M_PI * fr));
+    return a + (b - a) * (0.5 - 0.5 * std::cos(M_PI * fr(phase)));
   }
 
-  // classic: треугольная интерполяция между 9 формами
-  const double x = morph * 8.0;   // 9 форм → 0…8
-  const int i0 = std::max(0, std::min(8, static_cast<int>(std::floor(x))));
-  const int i1 = std::min(8, i0 + 1);
-  const double fr = x - std::floor(x);
+  // classic: треугольные веса таблиц (host/waves.js weight), морфинг — взвешенная сумма
+  phase = std::fmod(phase, 1.0); if (phase < 0) phase += 1.0;
+  double y = 0.0;
   const int si = static_cast<int>(phase * N) % N;
-  if (i0 == i1) return tables_[i0][si];
-  return tables_[i0][si] * (1.0 - fr) + tables_[i1][si] * fr;
+  for (int i = 0; i < 9; i++) {
+    const double k = std::max(0.0, 1.0 - std::fabs(morph * 8.0 - i));
+    if (k > 0) y += k * tables_[i][si];
+  }
+  return y;
 }
 
 double RowLfo::value(const WaveMorph& w) const {
-  const double ph = u - std::floor(u);
-  const double offset = depth * 0.5 * w.sample(morph, ph, seed);
+  const double offset = depth * 0.5 * w.sample(morph, u, seed);   // веб: u без обрезки (sl.js)
   return std::max(0.0, std::min(1.0, base + offset));
 }
 
-void RowLfo::tick(double dt, const WaveMorph& /*morph*/) {
-  u += dt * rate;
-  phase = u - std::floor(u);
-}
+void RowLfo::tick(double dt) { u += dt * rate; }
 
 }  // namespace sdk

@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 SDK="${WASI_SDK:-/opt/wasi-sdk}"
 EXPORTS=""
-for f in t2d_init t2d_args t2d_action t2d_process t2d_dry t2d_ret t2d_ext t2d_mbuf t2d_mirror t2d_heard t2d_str_buf t2d_str_cap t2d_snapshot t2d_restore t2d_fader t2d_scale t2d_time t2d_midi_byte t2d_midi_msg t2d_hmirror t2d_hevents t2d_arc_land t2d_master_lpf t2d_master_comp t2d_master_ceil t2d_sum t2d_master_run t2d_mix t2d_add_lfo t2d_remove_lfo t2d_lfo_spec t2d_lfo_value t2d_lfo_tick t2d_model_tick; do EXPORTS="$EXPORTS -Wl,--export=$f"; done
+for f in t2d_init t2d_args t2d_action t2d_process t2d_dry t2d_ret t2d_ext t2d_mbuf t2d_mirror t2d_heard t2d_str_buf t2d_str_cap t2d_snapshot t2d_restore t2d_fader t2d_scale t2d_time t2d_midi_byte t2d_midi_msg t2d_hmirror t2d_hevents t2d_arc_land t2d_master_lpf t2d_master_comp t2d_master_ceil t2d_sum t2d_master_run t2d_mix t2d_lfo_add t2d_lfo_off t2d_lfo_spec t2d_lfo_state t2d_lfo_lost t2d_model_tick; do EXPORTS="$EXPORTS -Wl,--export=$f"; done
 "$SDK/bin/clang++" --target=wasm32-wasip1 -mexec-model=reactor -O3 -std=c++17 -ffp-contract=off -fno-exceptions -Wall $EXPORTS \
   -Wl,--no-entry -Wl,--initial-memory=16777216 -Wl,--max-memory=16777216 -Wl,-z,stack-size=65536 \
   -o t2d.wasm core/bridge/wasm.cpp core/bridge/api.cpp core/bridge/wasi.cpp core/sdk/reverb.cpp core/sdk/lfo.cpp core/host/host.cpp core/host/scale.cpp \

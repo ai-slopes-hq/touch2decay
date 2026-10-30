@@ -14,6 +14,7 @@
 #include "../sdk/knee.hpp"
 #include "../sdk/shaper.hpp"
 #include "scale.hpp"
+#include "../sdk/rng.hpp"
 
 class Host {
  public:
@@ -53,12 +54,15 @@ class Host {
   void masterCeil(double db);                           // усиление после knee, дБ (−12…0; по умолчанию 0)
   double masterMakeup() const { return comp_.makeup; }  // авто-подъём компрессора (1/fullRangeGain)^0.6: Chromium даёт его и ниже порога
 
-  // LFO строк: add/remove/tick, get возвращает текущее значение строки.
-  int addLfo(int world, const char* key, double base, int shape);   // shape 0 — classic, 1 — random; возвращает индекс
-  void removeLfo(int idx);
-  void lfoSpec(int idx, double m0, double m1, double r0, double r1, double d0, double d1);   // параметры LFO: morph, rate, depth — по два числа (начало, конец)
-  double lfoValue(int idx) const;
-  void lfoTick(double dt);                              // сдвиг фаз всех LFO
+  // LFO строк: таблица фиксированная, 64 записи; on=false — пустая. add/−1 при переполнении (потерянные считаются).
+  int lfoAdd(int slot, int obj, int key, double base, int shape);
+  void lfoSpec(int idx, double morph, double rate, double depth);
+  void lfoOff(int idx);                                 // строке уходит base (применение — в задаче 2)
+  bool lfoState(int idx, sdk::RowLfo& out) const;       // копия живой записи (для UI и тестов)
+  void lfoClear(int slot);
+  void lfoClear(int slot, int obj);
+  void lfoTick(double dt);                              // фаза каждой живой записи (значение миру — задача 2)
+  unsigned lfoLost() const { return lost_; }
 
   // Тик моделей: вызывается раз в блок, dt — время блока в секундах. Миры с tick() получают dt.
   void modelTick(double dt);
@@ -105,8 +109,10 @@ class Host {
   sdk::Shaper2<4096> knee_;                             // потолок: кривая knee() веба (4096 точек), oversample 4×
   double ceilGain_ = 1.0;                               // 10^(ceil/20)
 
-  // LFO строк
-  std::vector<sdk::RowLfo> lfos_;
+  // LFO строк: фиксированная таблица (без vector / string — ни аллокаций, ни переезда указателей)
+  sdk::RowLfo lfos_[sdk::LFO_MAX];
+  sdk::Rng rng_{0x51F0u};                                // зерно случайности записей (0…999), prepare пересевает
+  unsigned lost_ = 0;
   sdk::WaveMorph morphClassic_{sdk::WaveMorph::CLASSIC};
   sdk::WaveMorph morphRandom_{sdk::WaveMorph::RANDOM};
 };

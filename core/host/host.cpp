@@ -32,7 +32,9 @@ void Host::prepare(double sr, uint32_t seed) {
   volCoef_ = 1.0 - std::exp(-1.0 / (0.03 * clk_.sr));
 
   // LFO
-  lfos_.clear();
+  for (auto& l : lfos_) l.on = false;
+  lost_ = 0;
+  rng_ = sdk::Rng(0x51F0u);
   morphClassic_ = sdk::WaveMorph(sdk::WaveMorph::CLASSIC);
   morphRandom_ = sdk::WaveMorph(sdk::WaveMorph::RANDOM);
 }
@@ -221,49 +223,50 @@ void Host::Comp::run(double& l, double& r) {
   pos = (pos + 1) % DLY;
 }
 
-int Host::addLfo(int world, const char* key, double base, int shape) {
-  sdk::RowLfo lfo;
-  lfo.world = world;
-  lfo.key = key ? key : "";
-  lfo.base = base;
-  lfo.shape = shape == 1 ? sdk::WaveMorph::RANDOM : sdk::WaveMorph::CLASSIC;
-  lfo.morph = lfo.shape == sdk::WaveMorph::CLASSIC ? 0 : 0.6;
-  lfo.rate = lfo.shape == sdk::WaveMorph::CLASSIC ? 0.8 : 0.4;
-  lfo.depth = 0.3;
-  lfo.phase = 0;
-  lfo.u = 0;
-  lfo.seed = static_cast<int>(lfos_.size() * 1234567 + world * 7919);   // псевдослучайное зерно
-  lfos_.push_back(lfo);
-  return static_cast<int>(lfos_.size()) - 1;
-}
-
-void Host::removeLfo(int idx) {
-  if (idx >= 0 && idx < static_cast<int>(lfos_.size())) lfos_.erase(lfos_.begin() + idx);
-}
-
-void Host::lfoSpec(int idx, double m0, double m1, double r0, double r1, double d0, double d1) {
-  if (idx >= 0 && idx < static_cast<int>(lfos_.size())) {
-    auto& lfo = lfos_[static_cast<size_t>(idx)];
-    lfo.morph = m0;                                     // начало диапазона morph (конец — m1, но пока не используется)
-    lfo.rate = r0;                                      // начало диапазона rate
-    lfo.depth = d0;                                     // начало диапазона depth
-    // m1, r1, d1 — для будущего (анимация параметров LFO)
-    (void)m1; (void)r1; (void)d1;
+int Host::lfoAdd(int slot, int obj, int key, double base, int shape) {
+  for (int i = 0; i < sdk::LFO_MAX; i++) {
+    if (lfos_[i].on) continue;
+    sdk::RowLfo& l = lfos_[i];
+    l.on = true;
+    l.slot = slot; l.obj = obj; l.key = key; l.base = base;
+    l.shape = shape == 1 ? sdk::WaveMorph::RANDOM : sdk::WaveMorph::CLASSIC;
+    l.morph = l.shape == sdk::WaveMorph::RANDOM ? 0.6 : 0.0;
+    l.rate = l.shape == sdk::WaveMorph::RANDOM ? 0.4 : 0.8;
+    l.depth = 0.3; l.u = 0;
+    l.seed = static_cast<int>(rng_.next() * 1000.0);
+    return i;
   }
+  lost_++;
+  return -1;
 }
 
-double Host::lfoValue(int idx) const {
-  if (idx < 0 || idx >= static_cast<int>(lfos_.size())) return 0.5;
-  const auto& lfo = lfos_[static_cast<size_t>(idx)];
-  const auto& morph = lfo.shape == sdk::WaveMorph::CLASSIC ? morphClassic_ : morphRandom_;
-  return lfo.value(morph);
+void Host::lfoSpec(int idx, double morph, double rate, double depth) {
+  if (idx < 0 || idx >= sdk::LFO_MAX || !lfos_[idx].on) return;
+  auto& l = lfos_[idx];
+  l.morph = morph; l.rate = rate; l.depth = depth;
+}
+
+void Host::lfoOff(int idx) {
+  if (idx < 0 || idx >= sdk::LFO_MAX || !lfos_[idx].on) return;
+  lfos_[idx].on = false;
+}
+
+bool Host::lfoState(int idx, sdk::RowLfo& out) const {
+  if (idx < 0 || idx >= sdk::LFO_MAX || !lfos_[idx].on) return false;
+  out = lfos_[idx];
+  return true;
+}
+
+void Host::lfoClear(int slot) {
+  for (int i = 0; i < sdk::LFO_MAX; i++) if (lfos_[i].on && lfos_[i].slot == slot) lfos_[i].on = false;
+}
+
+void Host::lfoClear(int slot, int obj) {
+  for (int i = 0; i < sdk::LFO_MAX; i++) if (lfos_[i].on && lfos_[i].slot == slot && lfos_[i].obj == obj) lfos_[i].on = false;
 }
 
 void Host::lfoTick(double dt) {
-  for (auto& lfo : lfos_) {
-    const auto& morph = lfo.shape == sdk::WaveMorph::CLASSIC ? morphClassic_ : morphRandom_;
-    lfo.tick(dt, morph);
-  }
+  for (auto& l : lfos_) if (l.on) l.tick(dt);
 }
 
 void Host::modelTick(double dt) {

@@ -2935,6 +2935,84 @@ static void appHostVolScale() {
 
 static void appStrCap() { CHECK(t2d_str_cap() == Engine::STR); }
 
+// LFO: числа сверены с host/waves.js (classic, треугольные веса) и host/sl.js (random, номер периода от u) в Node
+static void lfoForms() {
+  sdk::WaveMorph cl(sdk::WaveMorph::CLASSIC), rn(sdk::WaveMorph::RANDOM);
+  NEAR(cl.sample(0, 0.1, 0), 0.357168044369, 1e-6);
+  NEAR(cl.sample(0.5, 0.2, 0), 0.144467083112, 1e-6);
+  NEAR(cl.sample(1, 0.3, 0), -0.675098147014, 1e-6);
+  NEAR(cl.sample(0.25, 0.7, 0), 0.352753503187, 1e-6);
+  NEAR(rn.sample(0.1, 0.3, 7), -0.4, 1e-9);
+  NEAR(rn.sample(0.4, 0.7, 7), -0.4, 1e-9);
+  NEAR(rn.sample(0.6, 1.7, 7), -0.341778066893, 1e-9);
+  NEAR(rn.sample(0.9, 2.2, 7), 0.161732331765, 1e-9);
+  CHECK(rn.sample(0.6, 0.2, 7) != rn.sample(0.6, 1.2, 7));
+  CHECK(rn.sample(0.6, 1.2, 7) != rn.sample(0.6, 2.2, 7));
+}
+
+// Host: таблица на 64, переполнение без роста памяти, clear по слоту и по объекту
+static void hostLfoTable() {
+  Host h;
+  h.prepare(48000, 7);
+  for (int i = 0; i < sdk::LFO_MAX; i++) CHECK(h.lfoAdd(10, -1, i, 0.5, 1) == i);
+  CHECK(h.lfoAdd(10, -1, 0, 0.5, 1) == -1);
+  CHECK(h.lfoLost() == 1);
+  sdk::RowLfo s;
+  CHECK(h.lfoState(0, s));
+  CHECK(s.slot == 10 && s.obj == -1 && s.key == 0 && s.shape == 1);
+  NEAR(s.base, 0.5, 1e-12); NEAR(s.morph, 0.6, 1e-12); NEAR(s.rate, 0.4, 1e-12); NEAR(s.depth, 0.3, 1e-12);
+  CHECK(s.u == 0 && s.seed >= 0 && s.seed <= 999);
+  h.lfoSpec(0, 0.7, 2.5, 0.8);
+  h.lfoTick(0.1);
+  CHECK(h.lfoState(0, s));
+  NEAR(s.u, 0.25, 1e-12); NEAR(s.morph, 0.7, 1e-12); NEAR(s.depth, 0.8, 1e-12);
+  sdk::WaveMorph morphR(sdk::WaveMorph::RANDOM);
+  const double v0 = s.value(morphR);
+  CHECK(v0 >= 0 && v0 <= 1);
+  h.lfoClear(10, -1);                                    // только obj −1
+  CHECK(!h.lfoState(0, s));
+  CHECK(h.lfoState(5, s) == false);                      // все obj −1
+  CHECK(h.lfoAdd(12, 3, 0, 0.4, 0) == 0);
+  h.lfoClear(12);
+  CHECK(!h.lfoState(0, s));
+  h.lfoOff(0);                                           // повторный off — не падает
+  CHECK(!h.lfoState(0, s));
+  h.lfoSpec(0, 1, 1, 1);                                 // мёртвая ячейка — игнор
+  CHECK(!h.lfoState(0, s));
+}
+
+// смена Host (prepare) чистит таблицу и пересевает зерно
+static void hostLfoReinit() {
+  Host h;
+  h.prepare(48000, 7);
+  const int a = h.lfoAdd(10, 1, 2, 0.5, 1);
+  sdk::RowLfo s;
+  CHECK(h.lfoState(a, s));
+  const int seed = s.seed;
+  h.prepare(44100, 7);
+  CHECK(!h.lfoState(a, s));
+  const int b = h.lfoAdd(10, 1, 2, 0.5, 1);
+  CHECK(h.lfoState(b, s));
+  CHECK(s.seed == seed);                                 // пересев — повторяемость
+}
+
+// C API: те же поля, значение в пределах базы
+static void lfoBridge() {
+  t2d_init(48000, 7);
+  const int idx = t2d_lfo_add(10, -1, 6, 0.45, 1);
+  CHECK(idx >= 0);
+  double out[10];
+  CHECK(t2d_lfo_state(idx, out) == 10);
+  CHECK(out[0] == 10 && out[1] == -1 && out[2] == 6 && out[8] == 1);
+  NEAR(out[3], 0.45, 1e-12);
+  t2d_lfo_spec(idx, 0.6, 0.4, 0.3);
+  CHECK(t2d_lfo_state(idx, out) == 10);
+  NEAR(out[4], 0.6, 1e-12);
+  t2d_lfo_off(idx);
+  CHECK(t2d_lfo_state(idx, out) == 0);
+  CHECK(t2d_lfo_lost() == 0);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
@@ -2944,6 +3022,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
+  lfoForms(); hostLfoTable(); hostLfoReinit(); lfoBridge();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
