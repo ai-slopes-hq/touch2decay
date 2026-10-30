@@ -38,7 +38,6 @@ enum Emblems {
   }
 
   private static let T2 = CGFloat.pi * 2
-  private static let roman = [1: "I", 2: "II", 4: "IV", 5: "V", 7: "VII", 8: "VIII", 9: "IX", 10: "X", 11: "XI", 12: "XII", 13: "XIII", 15: "XV"]   // worlds/*/index.js: n
 
   // map.js:250 fit — кегль уменьшается по 0.5, пока строка не влезет (мин. 7)
   private static func fit(_ s: String, _ size: CGFloat, _ maxW: CGFloat) -> CGFloat {
@@ -250,7 +249,7 @@ enum Emblems {
       let a = CGFloat.pi / 4 + CGFloat(k) / 4 * T2, px = cx + cos(a) * (M - 2.5), py = my + sin(a) * (M - 2.5)
       g.beginPath(); line([pt(px, py - 2.4), pt(px + 1.6, py), pt(px, py + 2.4), pt(px - 1.6, py)]); g.closePath(); g.fillPath()
     }
-    let n = roman[w] ?? "", title = info.title
+    let n = info.roman, title = info.title
     d.mapText(n, cx, 15, fit(n, big ? 15 : 12, pw - 12), 0.75, align: .center)
     d.mapText(title, cx, ph - (big ? 34 : 14), fit(title, big ? 16 : 12, pw - 10), 0.95, align: .center)
   }

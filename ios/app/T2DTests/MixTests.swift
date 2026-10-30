@@ -52,4 +52,12 @@ final class MixTests: XCTestCase {
     m[.thr] = 0.3
     XCTAssertEqual(m.thr, 0.3)
   }
+
+  func testMixerGeo() {
+    let g = Mixer.geo(W: 390, H: 844, top: 47, safeBot: 34)
+    XCTAssertEqual(g.rows.map(\.slot), [1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 15])
+    XCTAssertGreaterThanOrEqual(g.rh, 24); XCTAssertLessThanOrEqual(g.rh, 36)
+    XCTAssertEqual(g.tx0, g.x + 136); XCTAssertEqual(g.tx1, g.x + g.w - 58); XCTAssertEqual(g.mx, g.x + g.w - 26)
+    XCTAssertEqual(g.w, 370); XCTAssertEqual(g.mr.map(\.m), MixM.allCases)
+  }
 }

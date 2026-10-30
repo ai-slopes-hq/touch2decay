@@ -717,4 +717,125 @@ final class HostTests: XCTestCase {
     let h = makeHost()
     XCTAssertEqual(h.link, Link(clock: true, scale: false)); XCTAssertEqual(h.audioPref, AudioPref(stable: true))
   }
+
+  // ---------- микшер: открыт строкой mixer в concordia ----------
+  private func mgeo() -> Mixer.Geo { Mixer.geo(W: 390, H: 844, top: 47, safeBot: 34) }
+  private func openMixer() { tap(195, mapField().sy); tapRow(.mixer) }
+  private func rowY(_ slot: Int) -> CGFloat { mgeo().rows.first { $0.slot == slot }!.y }
+  private func masterY(_ m: MixM) -> CGFloat { mgeo().mr.first { $0.m == m }!.y }
+  // палец: касание в (x, y), сдвиг на dx; возвращает палец до подъёма
+  private func hold(_ n: Int, _ x: CGFloat, _ y: CGFloat, dx: CGFloat = 0) -> Finger {
+    var f = finger(n, x, y); host.down(f); f.x += dx; f.moved = true; host.move(f); return f
+  }
+
+  func testMixerOpensAndBack() {
+    host = makeHost(); tick(1); openMixer()
+    XCTAssertEqual(host.settings, .mixer)
+    let g = mgeo()
+    tap(g.x + 40, g.top + 20)                                // ‹ concordia
+    XCTAssertEqual(host.settings, .concordia)
+    tapRow(.mixer); XCTAssertEqual(host.settings, .mixer)
+    tap(5, 5)                                                // мимо коробки
+    XCTAssertEqual(host.settings, .concordia)
+  }
+
+  func testMixerFaderDragRelative() {
+    host = makeHost(); tick(1); openMixer()
+    let g = mgeo(), L = g.tx1 - g.tx0
+    let f = hold(0, g.tx0 + 10, rowY(10))
+    XCTAssertEqual(host.mix.fader(10), Mix.faderDef, accuracy: 1e-12, "ручка не прыгает к пальцу")
+    var m = f; m.x += 0.1 * L; host.move(m)
+    XCTAssertEqual(host.mix.fader(10), Mix.faderDef + 0.1, accuracy: 1e-9)
+    XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, host.mix.gain(10), accuracy: 1e-12)
+    host.up(m)
+  }
+
+  func testMixerDoubleTapDefault() {
+    host = makeHost(); tick(1); openMixer()
+    let g = mgeo()
+    let f = hold(0, g.tx0 + 10, rowY(10), dx: 30); host.up(f)
+    XCTAssertNotNil(host.mix.g[10])
+    tick(2); tap(g.tx0 + 10, rowY(10)); tick(2.1); tap(g.tx0 + 10, rowY(10))
+    XCTAssertNil(host.mix.g[10])
+    let m = hold(0, g.tx0 + 50, masterY(.thr), dx: -30); host.up(m)
+    XCTAssertNotEqual(host.mix[.thr], 0.75)
+    tick(3); tap(g.tx0 + 10, masterY(.thr)); tick(3.1); tap(g.tx0 + 10, masterY(.thr))
+    XCTAssertEqual(host.mix[.thr], 0.75)
+  }
+
+  func testMixerDoubleTapTooSlow() {
+    host = makeHost(); tick(1); openMixer()
+    let g = mgeo()
+    let f = hold(0, g.tx0 + 10, rowY(10), dx: 30); host.up(f)
+    tick(2); tap(g.tx0 + 10, rowY(10)); tick(2.5); tap(g.tx0 + 10, rowY(10))
+    XCTAssertNotNil(host.mix.g[10])
+  }
+
+  func testMixerMute() {
+    host = makeHost(); tick(1); openMixer()
+    let g = mgeo()
+    tap(g.tx1 + 40, rowY(10))
+    XCTAssertEqual(host.mix.mute[10], true); XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, 0)
+    tap(g.tx1 + 40, rowY(10))
+    XCTAssertEqual(host.mix.mute[10], false); XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, 1, accuracy: 1e-12)
+  }
+
+  func testMixerMasterSends() {
+    host = makeHost(); tick(1); openMixer()
+    let g = mgeo(), L = g.tx1 - g.tx0
+    let f = hold(0, g.tx0 + L / 2, masterY(.ceil), dx: -L); host.up(f)
+    let m = core.masters.last!
+    XCTAssertEqual(m[0], 22000); XCTAssertEqual(m[1], -10, accuracy: 1e-9)
+    XCTAssertEqual(m[2], 2.496, accuracy: 1e-9); XCTAssertEqual(m[3], -12, accuracy: 1e-9)
+  }
+
+  func testMixerDragOutsideKeepsMixer() {
+    host = makeHost(); tick(1); openMixer()
+    let g = mgeo(), L = g.tx1 - g.tx0
+    var f = hold(0, g.tx0 + 10, rowY(10)); f.x = 1000; f.y = 2000; host.move(f); host.up(f)
+    XCTAssertEqual(host.settings, .mixer)
+    XCTAssertEqual(host.mix.fader(10), 1, accuracy: 1e-12, "зажато в 0…1")
+    _ = L
+  }
+
+  func testMixerSecondFingerDoesNotMoveFirst() {
+    host = makeHost(); tick(1); openMixer()
+    let g = mgeo(), L = g.tx1 - g.tx0
+    let a = hold(0, g.tx0 + 10, rowY(10), dx: 0.1 * L)
+    let v = host.mix.fader(10)
+    var b = hold(1, g.tx0 + 10, masterY(.lpf)); b.x -= 0.3 * L; host.move(b)
+    XCTAssertEqual(host.mix.fader(10), v, accuracy: 1e-12)
+    XCTAssertEqual(host.mix[.lpf], 0.7, accuracy: 1e-9)
+    host.up(b); host.up(a)
+    XCTAssertEqual(host.settings, .mixer)
+  }
+
+  func testReapplySendsMix() {
+    store.savePrefs(PrefsFile(vol: 0.5, mix: Mix(g: [4: 0.5], mute: [10: true]), link: Link(), audio: AudioPref()))
+    host = makeHost(); core.faders = []; core.masters = []
+    host.reapply()
+    XCTAssertTrue(core.faders.contains { $0.0 == 4 && abs($0.1 - pow(10, (-36 + 21) / 20)) < 1e-9 })
+    XCTAssertTrue(core.faders.contains { $0.0 == 10 && $0.1 == 0 })
+    XCTAssertEqual(core.faders.count, 12); XCTAssertEqual(core.masters.count, 1)
+  }
+
+  func testMixSavedAfterDrag() {
+    host = makeHost(); tick(1); openMixer()
+    let g = mgeo()
+    let f = hold(0, g.tx0 + 10, rowY(10), dx: 20); host.up(f)
+    tick(4.2)
+    XCTAssertEqual(store.loadPrefs()?.mix?.g[10], host.mix.g[10])
+    XCTAssertNotNil(host.mix.g[10])
+  }
+
+  func testMixLoadedOnInit() {
+    store.savePrefs(PrefsFile(vol: 0.5, mix: Mix(g: [4: 0.5], mute: [10: true], thr: 0.3), link: Link(), audio: AudioPref()))
+    let h = makeHost()
+    XCTAssertEqual(h.mix.g[4], 0.5); XCTAssertEqual(h.mix.mute[10], true); XCTAssertEqual(h.mix[.thr], 0.3)
+  }
+
+  func testMixerDrawsOpen() {
+    host = makeHost(); tick(1); openMixer(); tick(2)
+    host.draw(drawCtx(), now: 2)
+  }
 }

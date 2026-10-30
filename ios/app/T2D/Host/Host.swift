@@ -17,6 +17,9 @@ final class Host {
 
   private(set) var vol: Double
   private(set) var settings = Settings.off                 // открытые общие настройки на карте (concordia / микшер)
+  private(set) var mix = Mix()                             // микшер: фейдеры миров, mute, мастер
+  private var mixGeo = Mixer.geo(W: 0, H: 0, top: 0, safeBot: 0)   // раз на layout
+  private var mixTap: (key: Mixer.Key, t: Double)?             // последний тап по строке: двойной — значение по умолчанию
   private(set) var link = Link()                           // общие темп и лад миров
   private(set) var audioPref = AudioPref()
   private(set) var restartAt = -Double.infinity            // когда последний раз перезапускали звук (с): вспышка «audio restarted» 0.9 с
@@ -43,7 +46,7 @@ final class Host {
   private var diceAt = -1e9                                    // мс: кость крутится 400 мс после броска
 
   // у пальца, начатого на хосте, своя цель до подъёма — миру он не уходит
-  private enum Route { case world(Int), btn(Btn), title, list, sheet(SheetHit), edge, corner, eat }
+  private enum Route { case world(Int), btn(Btn), title, list, sheet(SheetHit), edge, corner, eat, mix(Mixer.Key, Double) }   // mix: строка и её база на касании
   private var routes: [ObjectIdentifier: Route] = [:]
   private var volF: (id: ObjectIdentifier, v0: Double, y0: CGFloat)?
   private var rowF: (id: ObjectIdentifier, key: String, v0: Double)?    // строка плашки в руках: база на момент касания
@@ -70,6 +73,7 @@ final class Host {
     vol = v.isFinite ? min(max(v, 0), 1) : Vol.def
     if let l = store.loadPrefs()?.link { link = l }
     if let a = store.loadPrefs()?.audio { audioPref = a }
+    if let m = store.loadPrefs()?.mix { mix = m }
     for v in views {
       let slot = v.slot
       v.openSheet = { [weak self] spec in self?.sheet = Sheet(spec: spec, slot: slot) }
@@ -86,6 +90,7 @@ final class Host {
     self.W = W; self.H = H; self.top = top; self.safeBot = safeBot
     bar = TopBar(W: W, top: top)
     field = MapGeo.field(W: W, H: H, top: top, safeBot: safeBot)
+    mixGeo = Mixer.geo(W: W, H: H, top: top, safeBot: safeBot)
     cBox = Concordia.box(W: W, H: H, safeBot: safeBot, sunY: field.sy)
     for v in views.values { v.layout(W: W, H: H, topY: top + 44, safeBot: safeBot) }
   }
@@ -101,7 +106,7 @@ final class Host {
   private var onMap: Bool { nav.view == .map || nav.busy(now) }
 
   func down(_ f: Finger) {
-    if onMap { mapDown(f); routes[f.id] = .eat; return }
+    if onMap { routes[f.id] = mapDown(f) ?? .eat; return }
     let r = route(f)
     routes[f.id] = r
     switch r {
@@ -112,15 +117,42 @@ final class Host {
     }
   }
 
-  private func mapDown(_ f: Finger) {
-    guard !nav.busy(now) else { return }                   // во время перехода касания съедены
-    if settings != .off { settingsDown(f); return }        // открытые настройки забирают касание целиком
+  private func mapDown(_ f: Finger) -> Route? {
+    guard !nav.busy(now) else { return nil }               // во время перехода касания съедены
+    if settings == .mixer { return mixerDown(f) }
+    if settings != .off { settingsDown(f); return nil }    // открытые настройки забирают касание целиком
     switch MapGeo.hit(field, W: W, x: f.x, y: f.y) {
     case .world(let s): goWorld(s)
     case .peek(let c, let r): nav.peek = (now, c, r)
     case .sun: settings = .concordia
     case .eat: break
     }
+    return nil
+  }
+
+  // mixDown: назад в concordia / mute / фейдер (с двойным тапом); фейдер ведётся до подъёма, где бы палец ни был
+  private func mixerDown(_ f: Finger) -> Route? {
+    switch Mixer.hit(mixGeo, x: f.x, y: f.y) {
+    case .back: settings = .concordia
+    case .none: break
+    case .mute(let s): mix.mute[s] = mix.mute[s] != true; applyMix(); markPrefs()
+    case .fader(let k):
+      if let t = mixTap, t.key == k, now - t.t < Touch.dtapMs / 1000 {   // двойной тап — по умолчанию
+        switch k { case .world(let s): mix.g[s] = nil; case .master(let m): mix[m] = m.def }
+        applyMix(); markPrefs(); mixTap = nil
+        break
+      }
+      mixTap = (k, now)
+      switch k { case .world(let s): return .mix(k, mix.fader(s)); case .master(let m): return .mix(k, mix[m]) }
+    }
+    return nil
+  }
+
+  // микшер в ядро: фейдеры 12 миров и мастер (после каждой правки и при reinit)
+  func applyMix() {
+    for w in Worlds.all { core.fader(slot: w.slot, g: mix.gain(w.slot)) }
+    let m = mix.master()
+    core.master(lpf: m.lpf, thr: m.thr, ratio: m.ratio, ceil: m.ceil)
   }
 
   // строка — переключить или выполнить, мимо коробки — закрыть (concordia.js settingsDown)
@@ -133,7 +165,7 @@ final class Host {
       audioPref.stable.toggle(); markPrefs(); savePrefs()   // сразу: настройка нужна и после падения звука
       onStable?(audioPref.stable)
     case .restart?: restartAt = now; onRestart?()
-    case .mixer?: break                                    // микшер подключает задача 4
+    case .mixer?: settings = .mixer
     case nil: break
     }
   }
@@ -142,7 +174,7 @@ final class Host {
   func markPrefs() { if prefsDirtyAt == nil { prefsDirtyAt = now } }
   private func savePrefs() {
     prefsDirtyAt = nil
-    store.savePrefs(PrefsFile(vol: vol, mix: nil, link: link, audio: audioPref))
+    store.savePrefs(PrefsFile(vol: vol, mix: mix, link: link, audio: audioPref))
   }
 
   // легенда → плашка → список ладов → верхняя строка → левый край (свайп на карту) → предмет-угол (на карту) → мир
@@ -169,6 +201,10 @@ final class Host {
       guard let d = volF, d.id == f.id else { return }
       vol = min(max(d.v0 - Double((f.y - d.y0) / Vol.travel), 0), 1)
       core.vol(Vol.gain(vol))
+    case .mix(let k, let v0):
+      let v = Mixer.value(mixGeo, v0: v0, dx: f.x - f.x0)
+      switch k { case .world(let s): mix.g[s] = v; case .master(let m): mix[m] = v }
+      applyMix()
     case .edge:
       let dx = f.x - f.x0, dy = f.y - f.y0
       if dx > Host.edgeDx && abs(dy) < Host.edgeSlope * dx { routes[f.id] = .eat; goMap() }
@@ -189,6 +225,7 @@ final class Host {
       if b == .vol { volF = nil; savePrefs() }
       else if bar.hit(f.x, f.y, titleW: titleW) == .btn(b) { press(b) }
     case .corner: if world?.cornerHit(f.x, f.y) == true { goMap() }   // на подъёме с повторным попаданием, как кнопки
+    case .mix: applyMix(); markPrefs()
     case .edge, .eat: break
     }
     endGesture()
@@ -200,6 +237,7 @@ final class Host {
     if case .world(let s) = r { views[s]?.cancel(f) }
     if case .btn(.vol) = r { volF = nil; savePrefs() }
     if case .sheet = r { releaseSheet(f) }
+    if case .mix = r { applyMix(); markPrefs() }
     endGesture()
   }
 
@@ -438,6 +476,7 @@ final class Host {
     pending.removeAll()                                      // reinit ядра стирает LFO и без сцены
     core.scale(scl)
     core.vol(Vol.gain(vol))
+    applyMix()
     // первый снимок после восстановления — база отмены (текст после restore может отличаться от сохранённого)
     for slot in slots { undo.base(slot: slot, w: nil, scl: scl); undo.commit(slot: slot, scl: scl) }
   }
@@ -458,6 +497,7 @@ final class Host {
       if settings == .concordia && !nav.busy(now) {
         Concordia.draw(d, cBox, link: link, stable: audioPref.stable, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
       }
+      if settings == .mixer && !nav.busy(now) { Mixer.draw(d, mixGeo, mix: mix, lv: levels.lv) }
       return
     }
     guard let w = world else { return }
