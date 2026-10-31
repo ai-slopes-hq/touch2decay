@@ -1227,6 +1227,52 @@ static void naturaModel() {
   CHECK(!w.sounding());
 }
 
+static void naturaDice() {                              // DICE: Евклид-ритм, блуждающие ноты, замки и fx — порядок вызовов rng как в model.js
+  using namespace natura;
+  static Scale sc;
+  static World a(sc), b(sc);
+  a.prepare(48000, 7); b.prepare(48000, 7);
+  const auto roll = [](World& w) { w.action(DICE, 0, nullptr, 0); };
+  double m[MIRROR_N], m2[MIRROR_N];
+  const auto P = [&](int i, int k) { return m[MIRROR_HEAD + i * MIRROR_PAD + k]; };   // k: 0 занято, 1 note, 2 wave, 3 glide, 4 chance, 5–8 cutoff res att rel
+  CHECK(a.mirror(m, MIRROR_N) == MIRROR_N);
+  const double keep[5] = {m[7 + REVERB], m[7 + DELAY], m[7 + TIME], m[7 + CHORUS], m[4]};   // reverb, delay, time, chorus, bpm
+  bool ok = true, differ = false;
+  int prevLen = -1; double prevSum = -1;
+  for (int r = 0; r < 20; r++) {
+    roll(a);
+    CHECK(a.mirror(m, MIRROR_N) == MIRROR_N);
+    const int n = static_cast<int>(m[5]);
+    if (n < 8 || n > 16 || m[1] != 0) ok = false;        // длина 8…16, мир стоял — стоит
+    int on = 0; double sum = 0;
+    for (int i = 0; i < 16; i++) {
+      if (P(i, 0) == 0) continue;
+      on++; sum += P(i, 1) + 17 * i;
+      bool euclid = false;                               // место в ритме Евклида для какого-то k = 3…n−2
+      for (int k = 3; k <= n - 2; k++) if ((i * k) % n < k) euclid = true;
+      const double ch = P(i, 4);
+      if (i >= n || !euclid || P(i, 1) < 0 || P(i, 1) > 14 || P(i, 2) < 0 || P(i, 2) > 4 || P(i, 3) != 0) ok = false;
+      if (ch != -1 && (ch < 0.5 || ch > 0.9 + 1e-9)) ok = false;
+      for (int l = 0; l < 4; l++) { const double v = P(i, 5 + l); if (v != -1 && (v < 0 || v > 1)) ok = false; }
+      if (P(i, 6) > 0.85 || P(i, 7) > 0.6) ok = false;   // res ≤ 0.85, att ≤ 0.6
+    }
+    for (int i = n; i < 16; i++) if (P(i, 0) != 0) ok = false;
+    if (on == 0) ok = false;
+    if (m[7 + CHANCE] != 1 || m[7 + CUTOFF] < 0.35 || m[7 + CUTOFF] > 0.85 || m[7 + RES] < 0 || m[7 + RES] > 0.6
+        || m[7 + ATT] < 0 || m[7 + ATT] > 0.5 || m[7 + REL] < 0.2 || m[7 + REL] > 0.8) ok = false;
+    if (m[7 + REVERB] != keep[0] || m[7 + DELAY] != keep[1] || m[7 + TIME] != keep[2] || m[7 + CHORUS] != keep[3] || m[4] != keep[4]) ok = false;
+    if (prevLen >= 0 && (n != prevLen || sum != prevSum)) differ = true;
+    prevLen = n; prevSum = sum;
+  }
+  CHECK(ok);
+  CHECK(differ);
+  roll(b);                                               // второй мир с тем же зерном — та же петля после первого DICE
+  World c(sc); c.prepare(48000, 7); roll(c);
+  CHECK(b.mirror(m, MIRROR_N) == MIRROR_N && c.mirror(m2, MIRROR_N) == MIRROR_N);
+  bool same = true; for (int i = 1; i < MIRROR_N; i++) if (m[i] != m2[i]) same = false;
+  CHECK(same);
+}
+
 // ---------- Inferno и его блоки SDK ----------
 static double goertzel(const std::vector<float>& x, double hz, double sr) {   // амплитуда синусоиды на частоте hz
   const double w = 2 * M_PI * hz / sr, c = 2 * std::cos(w);
@@ -3784,7 +3830,7 @@ static void appHostMaster() {
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel();
+  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel(); naturaDice();
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
   tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();

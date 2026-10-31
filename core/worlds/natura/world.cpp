@@ -166,6 +166,7 @@ void World::action(int kind, int i, const double* a, int n) {
     case SETFX: model_.setFx(i, arg(0, 0)); applyFx(); return;
     case SETBPM: model_.setBpm(arg(0, 96)); applyFx(); return;       // время задержки — доля темпа
     case CLEAR: model_.clear(); return;
+    case DICE: model_.dice(rng_); applyFx(); return;                 // fx сменились — время задержки и фильтры пересчитать
     default: return;
   }
 }

@@ -49,6 +49,7 @@ class Model {
   void setFx(int k, double v);
   void setBpm(double b);
   void clear();
+  void dice(sdk::Rng& r);                                                      // кубик: кувшинки по Евклиду, ноты блуждают, замки и fx — порядок вызовов rng как в model.js
   std::string snapshot() const;                                                // {fx, len, at, bpm} — как JSON.stringify модели
   void restore(const std::string& js);
 

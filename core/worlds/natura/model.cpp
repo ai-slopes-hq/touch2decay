@@ -57,6 +57,34 @@ void Model::setFx(int k, double v) { if (k >= 0 && k < NFX) fx_[k] = v; }
 void Model::setBpm(double b) { bpm_ = clampd(b, 20, 400); }
 void Model::clear() { for (auto& p : pad_) p = Pad(); }
 
+void Model::dice(sdk::Rng& r) {                                                // порядок r.next() — как в dice() фасада; Math.round = floor(x + 0.5)
+  const int n = 8 + static_cast<int>(r.next() * 9);
+  const int k = 3 + static_cast<int>(r.next() * (n - 4));
+  int note = static_cast<int>(r.next() * 8);
+  len_ = n;
+  static const int step[4] = {-2, -1, 1, 2};
+  for (int i = 0; i < NPAD; i++) {
+    Pad& p = pad_[i];
+    p = Pad();
+    if (i >= n || (i * k) % n >= k) continue;
+    note = static_cast<int>(clampd(note + step[static_cast<int>(r.next() * 4)], 0, 14));
+    p.on = true; p.note = note; p.wave = static_cast<int>(r.next() * 5);
+    if (r.next() < 0.35) {                                                     // своё значение у трети кувшинок — одно-два из четырёх
+      bool any = false;
+      for (int l = 0; l < NLOCK; l++) {
+        if (r.next() < 0.4) { p.lock[l] = l == L_RES ? r.next() * 0.85 : l == L_ATT ? r.next() * 0.6 : r.next(); any = true; }
+      }
+      if (!any) p.lock[L_CUTOFF] = r.next();
+    }
+    if (r.next() < 0.2) p.chance = 0.5 + std::floor(r.next() * 8 + 0.5) / 20;
+  }
+  fx_[CHANCE] = 1;                                                             // туча, горы и утки тоже
+  fx_[CUTOFF] = 0.35 + r.next() * 0.5;
+  fx_[RES] = r.next() * 0.6;
+  { const double a = r.next(); fx_[ATT] = a * r.next() * 0.5; }
+  fx_[REL] = 0.2 + r.next() * 0.6;
+}
+
 // ---------- снимок ----------
 static const char* const FX_K[NFX] = {"reverb", "delay", "time", "chorus", "cutoff", "res", "att", "rel", "chance"};
 static const char* const LOCK_K[NLOCK] = {"cutoff", "res", "att", "rel"};

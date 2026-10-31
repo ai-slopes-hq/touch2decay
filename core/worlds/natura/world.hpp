@@ -31,7 +31,8 @@
 namespace natura {
 
 enum Act { STATE, PLAY, HEAR, SHAKE, SKIFF, SKIFF_OFF, WAVE, CROAK, LASER, SCARE,
-           PLANT, REMOVE, MOVE, NOTE, LEN, PGLIDE, PWAVE, PCHANCE, PLOCK, PUNLOCK, SETFX, SETBPM, SHAKEBY, CLEAR };
+           PLANT, REMOVE, MOVE, NOTE, LEN, PGLIDE, PWAVE, PCHANCE, PLOCK, PUNLOCK, SETFX, SETBPM, SHAKEBY, CLEAR,
+           DICE };                                                          // DICE — бросок кубика: сцена целиком на rng_ мира (порт dice() фасада)
 constexpr int NNOTE = 32, NSKIFF = 4, NCROAK = 4, NLASER = 3;                  // голосов: ноты (самый старый уступает), кораблики, лягушки, лазеры
 constexpr int ECHO_MAX = 200000;                                               // линия ленты: 4.1 с при 48 кГц (DelayNode(4)); на 96 кГц время упрётся в потолок
 constexpr int MIRROR_HEAD = 16, MIRROR_PAD = 9, MIRROR_N = MIRROR_HEAD + NPAD * MIRROR_PAD;   // шапка: бегунок, играет, голосов, кораблик, bpm, len, дерево, fx×9; затем 16 × (занято, note, wave, glide, chance, cutoff, res, att, rel)
