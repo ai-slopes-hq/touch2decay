@@ -48,6 +48,14 @@ int  t2d_app_levels(float* out, int n);               // UI: RMS (моно, ок
 int  t2d_app_lfo(double* buf, int cap);               // UI: последний снимок LFO (как зеркало): по 10 чисел (slot, obj, key, base, morph, rate, depth, u, shape, seed); длина
 double t2d_app_lfo_sample(int shape, double morph, double u, int seed);   // форма LFO для картинки: −1…1, по тем же таблицам, что звук
 
+// Arcadia — картина страны для нативной картинки (чистые функции, своё состояние на куче, с аудио ничего общего; звук не трогают).
+//   t2d_app_arc_pic: страна зерна → z, lake (по 12800 float, GX × GY, как у ядра) и meta (double): np, nl, nr; np × (u, v, h, имя);
+//   nl × (u, v, w, level, pond 0/1, имя); на реку (n, имя, n × (u, v)). Имя — индекс в таблице t2d_app_arc_name, -1 — без имени.
+//   Возврат — длина meta; cap мал — 0 (ничего не записано).
+int  t2d_app_arc_pic(unsigned seed, float* z, float* lake, double* meta, int cap);
+const char* t2d_app_arc_name(int kind, int idx);      // kind 0 горы, 1 озёра, 2 реки; вне диапазона и idx -1 — NULL
+int  t2d_app_arc_route(const float* z, const float* lake, double u, double v, int mode, double* out, int cap);   // путь mode 3 / 4, пары u, v; число чисел; cap < 182 или mode < 3 — 0
+
 #ifdef __cplusplus
 }
 #endif

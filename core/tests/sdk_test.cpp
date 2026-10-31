@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -40,6 +41,7 @@
 #include "../worlds/cymatica/world.hpp"
 #include "../worlds/firmamentum/world.hpp"
 #include "../worlds/portus/world.hpp"
+#include "../worlds/arcadia/model.hpp"
 #include "../worlds/natura/world.hpp"
 #include "../worlds/inferno/world.hpp"
 #include "../worlds/tenebrae/tone.hpp"
@@ -3327,6 +3329,104 @@ static void arcLfoIgnores() {
   const int n1 = arcMirror(m1, 80);
   CHECK(n0 == 65 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
 }
+// ---- Arcadia: картина страны из ядра (Pic, routeOf, t2d_app_arc_*) ----
+struct ArcPicData { std::vector<float> z, lake; std::vector<double> meta; int len = 0; };
+static ArcPicData arcPic(unsigned seed) {
+  ArcPicData d; d.z.resize(arcadia::NG); d.lake.resize(arcadia::NG); d.meta.resize(2000);
+  d.len = t2d_app_arc_pic(seed, d.z.data(), d.lake.data(), d.meta.data(), 2000);
+  return d;
+}
+static void arcPicSame() {
+  for (unsigned seed : {arcadia::SEED0, 1u, 4242u}) {
+    const ArcPicData d = arcPic(seed);
+    CHECK(d.len > 0);
+    auto land = std::make_unique<arcadia::Land>(); auto gen = std::make_unique<arcadia::LandGen>();
+    gen->start(seed, land.get()); gen->run();
+    CHECK(std::memcmp(d.z.data(), land->z, sizeof land->z) == 0 && std::memcmp(d.lake.data(), land->lake, sizeof land->lake) == 0);
+  }
+  std::vector<float> z(arcadia::NG), lk(arcadia::NG); double m[10];
+  CHECK(t2d_app_arc_pic(arcadia::SEED0, z.data(), lk.data(), m, 10) == 0);
+}
+static void arcPicMeta() {
+  for (unsigned seed : {arcadia::SEED0, 1u, 4242u, 777u}) {
+    const ArcPicData d = arcPic(seed);
+    const double* m = d.meta.data();
+    const int np = static_cast<int>(m[0]), nl = static_cast<int>(m[1]), nr = static_cast<int>(m[2]);
+    CHECK(np >= 1 && np <= 8 && nl >= 2 && nl <= 6 && nr >= 1 && nr <= 3);
+    if (seed == arcadia::SEED0) CHECK(np >= 1 && nl >= 2 && nr >= 2);
+    const double* p = m + 3;
+    for (int k = 0; k < np; k++) {
+      const double* a = p + 4 * k;
+      CHECK(std::fabs(a[0]) <= 1 && std::fabs(a[1]) <= 1 && a[2] >= 0.4);
+      if (k) CHECK(a[2] <= p[4 * (k - 1) + 2]);
+      for (int j = 0; j < k; j++) CHECK(arcadia::dist(a[0], a[1], p[4 * j], p[4 * j + 1]) > 0.25);
+      CHECK(k < 3 ? static_cast<int>(a[3]) == static_cast<int>((seed + 5ull * k) % 8) : a[3] == -1);
+    }
+    const double* l = p + 4 * np;
+    bool sawPond = false;
+    for (int k = 0; k < nl; k++) {
+      const double* a = l + 6 * k;
+      CHECK(std::fabs(a[0]) <= 1 && std::fabs(a[1]) <= 1 && a[2] > 0 && std::isfinite(a[3]));
+      if (a[4] == 1) { sawPond = true; CHECK(a[5] == -1); }
+      else { CHECK(!sawPond); CHECK(static_cast<int>(a[5]) == static_cast<int>((seed + k) % 4)); }
+    }
+    const double* r = l + 6 * nl;
+    for (int k = 0; k < nr; k++) {
+      const int n = static_cast<int>(r[0]);
+      CHECK(n > 12 && n <= arcadia::PMAX && r[1] >= 0 && r[1] < 6);
+      for (int q = 0; q < n; q++) CHECK(std::fabs(r[2 + 2 * q]) <= 1.01 && std::fabs(r[3 + 2 * q]) <= 1.01);
+      r += 2 + 2 * n;
+    }
+    CHECK(r - m == d.len);
+  }
+}
+static void arcPicRiverName() {                         // имя реки — от номера цикла k, отброшенные реки k не сдвигают
+  const struct { unsigned seed; const char* name; } C[] = {{82, "Alpheus"}, {98, "Erymanthus"}};
+  for (const auto& c : C) {
+    const ArcPicData d = arcPic(c.seed);
+    const int np = static_cast<int>(d.meta[0]), nl = static_cast<int>(d.meta[1]), nr = static_cast<int>(d.meta[2]);
+    const double* r = d.meta.data() + 3 + 4 * np + 6 * nl;
+    bool found = false;
+    for (int k = 0; k < nr; k++) {
+      const char* nm = t2d_app_arc_name(2, static_cast<int>(r[1]));
+      if (nm && std::string(nm) == c.name) found = true;
+      bool fromK = false;
+      for (int kk = 0; kk < 3; kk++) if (static_cast<int>(r[1]) == static_cast<int>((c.seed + 3ull * kk) % 6)) fromK = true;
+      CHECK(fromK);
+      r += 2 + 2 * static_cast<int>(r[0]);
+    }
+    CHECK(found);
+  }
+}
+static void arcName() {
+  CHECK(std::string(t2d_app_arc_name(0, 0)) == "Cyllene");
+  CHECK(std::string(t2d_app_arc_name(1, 3)) == "Lacus Clitorius");
+  CHECK(std::string(t2d_app_arc_name(2, 5)) == "Erymanthus");
+  CHECK(t2d_app_arc_name(0, 8) == nullptr && t2d_app_arc_name(3, 0) == nullptr && t2d_app_arc_name(1, -1) == nullptr);
+  CHECK(t2d_app_arc_name(1, 4) == nullptr && t2d_app_arc_name(2, 6) == nullptr);
+}
+static void arcRouteSame() {
+  Scale sc;
+  auto m = std::make_unique<arcadia::Model>(sc);
+  m->reset();
+  const ArcPicData d = arcPic(arcadia::SEED0);
+  CHECK(std::memcmp(d.z.data(), m->cur().z, sizeof(float) * arcadia::NG) == 0);
+  int longest = 0;
+  for (double u : {-0.8, 0.0, 0.8}) for (double v : {-0.5, 0.3}) for (int mode : {3, 4}) {
+    m->drop(0);
+    const double k[8] = {u, v, 0, 0.16, 0, double(mode), 0.22, 0.8};
+    CHECK(m->add(0, k));
+    m->route(0);
+    double out[arcadia::RMAX_PTS];
+    const int n = t2d_app_arc_route(d.z.data(), d.lake.data(), u, v, mode, out, arcadia::RMAX_PTS);
+    CHECK(n == m->t(0).n && n >= 2);
+    CHECK(std::memcmp(out, m->t(0).route, sizeof(double) * n) == 0);
+    if (n > longest) longest = n;
+    for (int low : {0, 1, 2}) CHECK(t2d_app_arc_route(d.z.data(), d.lake.data(), u, v, low, out, arcadia::RMAX_PTS) == 0);
+    CHECK(t2d_app_arc_route(d.z.data(), d.lake.data(), u, v, mode, out, 100) == 0);
+  }
+  CHECK(longest > 6);
+}
 static void horoDice() {
   static const int MAGIC[12][5] = {{2, 3}, {3, 4}, {4, 5, 6}, {3, 4, 5}, {2, 3, 5}, {4, 5, 6, 7}, {5, 7, 9}, {6, 7, 8, 9}, {8, 9}, {2, 3, 4, 5, 6}, {5, 6}, {4, 5}};
   static const int MAGIC_N[12] = {2, 2, 3, 3, 3, 4, 3, 4, 2, 5, 2, 2};
@@ -3553,7 +3653,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

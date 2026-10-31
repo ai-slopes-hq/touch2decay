@@ -1,6 +1,9 @@
 // Arcadia — страна из зерна, см. land.hpp. Порядок вызовов R() и арифметика — как в genLand (tools/ref/arcadia-model.js).
 #include "land.hpp"
 
+#include <algorithm>
+#include <vector>
+
 namespace arcadia {
 
 double bil(const float* arr, double u, double v) {
@@ -18,7 +21,30 @@ void gradOf(const float* arr, double u, double v, double& gx, double& gy, double
 static inline double cellU(int i) { return (static_cast<double>(i) / (GX - 1)) * 2 - 1; }
 static inline double cellV(int j) { return (static_cast<double>(j) / (GY - 1)) * 2 - 1; }
 
-void LandGen::start(uint32_t seed, Land* out) {
+const char* const MONTES[8] = {"Cyllene", "Maenalus", "Lycaeus", "Erymanthus", "Parthenius", "Aroania", "Artemisius", "Ostracina"};
+const char* const LACUS[4] = {"Lacus Stymphalis", "Lacus Pheneus", "Lacus Orchomenius", "Lacus Clitorius"};
+const char* const FLUMINA[6] = {"Ladon", "Alpheus", "Styx", "Helisson", "Tragus", "Erymanthus"};
+
+int routeOf(const float* z, const float* lake, double u, double v, double mode, double* out) {
+  if (!(mode >= 3)) return 0;
+  const double dir = mode == 3 ? -1 : 1;
+  int n = 0;
+  out[n++] = u; out[n++] = v;
+  for (int k = 0; k < 90; k++) {
+    double gx, gy;
+    gradOf(z, u, v, gx, gy);
+    const double gl = jsHypot(gx, gy);
+    if (gl < 0.04) break;
+    u += (dir * 0.024 * gx) / gl; v += (dir * 0.024 * gy) / gl / ASP;
+    if (std::fabs(u) > 0.96 || std::fabs(v) > 0.96) break;
+    out[n++] = u; out[n++] = v;
+    if (dir < 0 && bil(lake, u, v) > 0.5) break;
+  }
+  return n;
+}
+
+void LandGen::start(uint32_t seed, Land* out, Pic* pic) {
+  pic_ = pic;
   out_ = out; out_->seed = seed;
   R_ = sdk::Rng(seed);
   phase_ = SETUP; row_ = 0; item_ = 0; ng_ = 0; nl_ = 0; nr_ = 0;
@@ -130,7 +156,7 @@ void LandGen::trace() {
       n = cut + 1;
       lakes_[nl_++] = L{eu, ev, 0.07, 0, true};
     }
-    if (n > 12) { np_[nr_] = n; nr_++; }
+    if (n > 12) { np_[nr_] = n; rk_[nr_] = k; nr_++; }
   }
 }
 
@@ -177,6 +203,43 @@ void LandGen::norm() {                                   // нормировка
   mean /= NG;
   for (int q = 0; q < NG; q++) { z[q] = static_cast<float>(z[q] - mean); const double a = std::fabs(static_cast<double>(z[q])); if (a > mx) mx = a; }
   for (int q = 0; q < NG; q++) z[q] = static_cast<float>(z[q] / mx);
+  if (pic_) fillPic();
+}
+
+void LandGen::fillPic() {                                // картина: вершины со скана готовой z, озёра и реки из генератора, имена от зерна
+  Pic& p = *pic_;
+  const uint64_t seed = out_->seed;
+  const float* z = out_->z;
+  p.nl = nl_; p.nr = nr_;
+  for (int k = 0; k < nl_; k++) {                        // пруды идут после основных озёр, имени нет
+    const L& l = lakes_[k];
+    p.lakes[k] = Pic::Lake{l.u, l.v, l.w, l.level, l.pond, l.pond ? -1 : static_cast<int>((seed + k) % 4)};
+  }
+  for (int r = 0; r < nr_; r++) {
+    Pic::River& rv = p.rivers[r];
+    rv.name = static_cast<int>((seed + static_cast<uint64_t>(rk_[r]) * 3) % 6); rv.n = np_[r];
+    for (int q = 0; q < rv.n; q++) { rv.pts[q][0] = pts_[r][q][0]; rv.pts[q][1] = pts_[r][q][1]; }
+  }
+  struct C { double u, v, h; };
+  std::vector<C> cand;                                   // локальные максимумы повыше 0.4 (>, не ≥), порядок скана как в JS
+  for (int j = 1; j < GY - 1; j++) for (int i = 1; i < GX - 1; i++) {
+    const int q = j * GX + i;
+    const double h = z[q];
+    if (h < 0.4) continue;
+    bool top = true;
+    for (int dj = -1; dj <= 1 && top; dj++) for (int di = -1; di <= 1; di++) if ((di || dj) && static_cast<double>(z[q + dj * GX + di]) > h) { top = false; break; }
+    if (top) cand.push_back(C{cellU(i), cellV(j), h});
+  }
+  std::stable_sort(cand.begin(), cand.end(), [](const C& a, const C& b) { return a.h > b.h; });
+  p.np = 0;
+  for (const C& c : cand) {                              // не теснее 0.25 к уже оставленным, не больше 8
+    bool ok = true;
+    for (int k = 0; k < p.np && ok; k++) if (!(dist(p.peaks[k].u, p.peaks[k].v, c.u, c.v) > 0.25)) ok = false;
+    if (!ok) continue;
+    if (p.np >= 8) break;
+    const int k = p.np++;
+    p.peaks[k] = Pic::Peak{c.u, c.v, c.h, k < 3 ? static_cast<int>((seed + static_cast<uint64_t>(k) * 5) % 8) : -1};
+  }
 }
 
 bool LandGen::step() {

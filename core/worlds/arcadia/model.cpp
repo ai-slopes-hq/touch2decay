@@ -51,22 +51,7 @@ void Model::set(int slot, int key, double v) { if (slot >= 0 && slot < VMAX && t
 
 void Model::route(int slot) {                           // путь вниз (к воде) или вверх (к вершине) по склону от дома
   Trav& t = t_[slot];
-  t.n = 0;
-  if (!(t.k[MODE] >= 3)) return;
-  const float* z = cur_->z;
-  const double dir = t.k[MODE] == 3 ? -1 : 1;
-  double u = t.k[U], v = t.k[V];
-  t.route[t.n++] = u; t.route[t.n++] = v;
-  for (int k = 0; k < 90; k++) {
-    double gx, gy;
-    gradOf(z, u, v, gx, gy);
-    const double gl = jsHypot(gx, gy);
-    if (gl < 0.04) break;
-    u += (dir * 0.024 * gx) / gl; v += (dir * 0.024 * gy) / gl / ASP;
-    if (std::fabs(u) > 0.96 || std::fabs(v) > 0.96) break;
-    t.route[t.n++] = u; t.route[t.n++] = v;
-    if (dir < 0 && bil(cur_->lake, u, v) > 0.5) break;
-  }
+  t.n = routeOf(cur_->z, cur_->lake, t.k[U], t.k[V], t.k[MODE], t.route);
 }
 
 void Model::newLand(uint32_t seed) {

@@ -14,7 +14,6 @@ constexpr int VMAX = 4, SEMIS = 24;
 constexpr double K = 2.4;                               // сила перспективы: нота ровно по высоте экрана (depthOf)
 constexpr uint32_t SEED0 = 20261021;
 constexpr int LAND_BLOCKS = LandGen::MAX_STEPS;         // новая страна звучит через столько блоков после LAND (≈ 0.16 с при 48 кГц)
-constexpr int RMAX_PTS = 2 + 2 * 90;                    // путь routeOf: дом + до 90 шагов
 enum Fx { RELIEF, PACE, WIND, CHORUS, PHASER, SPREAD, HALL, NFX };   // порядок — FX_DEF в model.js
 enum Key { U, V, OCT, R, FIG, MODE, SP, LVL, NKEY };   // порядок — T_KEYS (снимок странника)
 extern const char* const FX_NAMES[NFX];
