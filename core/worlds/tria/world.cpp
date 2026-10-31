@@ -146,6 +146,9 @@ void World::action(int kind, int i, const double* a, int n) {
     case PLUMB: model_.plumb(); break;
     case DICE: if (n >= 6 * NB) model_.dice(a); break;
     case CLEAR: model_.clear(); break;
+    case sdk::ACT_LFO:                                   // LFO плашек: только веер (i == -1), ключ — Fx 0…5
+      if (n >= 2 && i == -1 && static_cast<int>(a[0]) >= 0 && static_cast<int>(a[0]) < NFX) model_.setFx(static_cast<int>(a[0]), a[1]);
+      break;
     default: break;
   }
   events();

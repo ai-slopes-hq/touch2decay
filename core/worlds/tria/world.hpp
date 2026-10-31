@@ -23,7 +23,8 @@ namespace tria {
 
 // action(kind, i, a, n):
 //   GRAB i;  DROP i (плашка — тело отпущено без броска);  DRAG i, a = [x, y];  RELEASE i, a = [vx, vy] (бросок) или [] (тап);  ANCHOR i;
-//   SET i, a = [key (0 m, 1 semi, 2 fixed, 3 level), v (0…1)];  FX i = key (Fx), a = [v];  LUX;  PLUMB;  DICE a = 3 × [x, y, vx, vy, m, semi];  CLEAR
+//   SET i, a = [key (0 m, 1 semi, 2 fixed, 3 level), v (0…1)];  FX i = key (Fx), a = [v];  LUX;  PLUMB;  DICE a = 3 × [x, y, vx, vy, m, semi];  CLEAR;
+//   sdk::ACT_LFO i = -1, a = [key (Fx 0…5), v] — веер FX (прочее игнорируется)
 enum Act { GRAB, DROP, DRAG, RELEASE, ANCHOR, SET, FX, LUX, PLUMB, DICE, CLEAR };
 
 // зеркало: fx [NFX], still, lux, cadit, strikes, encounters, затем на тело BODY_M: x, y, vx, vy, m, fixed, semi, level, amp, hz, pairK, trem
