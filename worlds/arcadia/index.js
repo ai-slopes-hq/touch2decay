@@ -26,5 +26,5 @@ T.registerWorld(12, {
 const { travellers, fx } = model.state;
 window.t2d.arc = {
   travellers, fx, geo: () => geo(T), setFx: (k, v) => view.fx.set(k, v), get land() { return model.state.land; }, get ready() { return engine.ready; }, get core() { return engine.core; }, get centers() { return engine.centers; }, get gains() { return engine.gains; }, hz: model.hzOf,
-  at: (u, v) => at(geo(T), model.zAt, u, v), ground: (u, v) => proj(geo(T), u, v), loop: (i) => loopPts(geo(T), model.zAt, travellers[i], engine.centers[travellers[i].slot], 48), z: model.zAt, newLand: model.newLand, routeOf: model.routeOf, model,
+  at: (u, v) => at(geo(T), model.zAt, u, v), ground: (u, v) => proj(geo(T), u, v), loop: (i) => loopPts(geo(T), model.zAt, travellers[i], engine.centers[travellers[i].slot], 48), z: model.zAt, newLand: model.newLand, addT: model.addT, routeOf: model.routeOf, model,
 };

@@ -43,6 +43,19 @@ final class ArcadiaView: World {
   private var now = 0.0
   private var haveMirror = false
 
+  // кадр (ArcDraw.swift): стена-кеш, пути по слотам с ключом, предвыделенные буферы
+  let wall = ArcWall()
+  var wallQueue: DispatchQueue? = DispatchQueue.global(qos: .userInitiated)   // nil — синхронно (тесты)
+  struct RouteKey: Equatable { var seed: UInt32, u: Double, v: Double, mode: Int }
+  var routeKeys = [RouteKey?](repeating: nil, count: Arc.vmax)
+  var routes = [[Double]](repeating: [], count: Arc.vmax)
+  private(set) var routeCalls = 0
+  var loopBuf = [CGPoint](repeating: .zero, count: 121)      // петля 120 точек, поднятая холмами
+  var shadowBuf = [CGPoint](repeating: .zero, count: 61)     // тень на земле
+  var pathBuf = [CGPoint](repeating: .zero, count: 49)       // эллипс mode 1
+  var drawn: [Int] = { var a = [Int](); a.reserveCapacity(Arc.vmax); return a }()   // порядок рисования слотов (дальние первыми)
+  func countRoute() { routeCalls += 1 }
+
   // страна: счётчики поколений отбрасывают устаревший результат
   private var loadGen = 0, diceGen = 0
   private var requested: UInt32?                             // зерно, по которому уже просили страну (без повторов)
@@ -180,7 +193,7 @@ final class ArcadiaView: World {
   private func inCorner(_ f: Finger) -> Bool { f.x0 > CGFloat(geo.W) - Touch.cornerPt && f.y0 > CGFloat(geo.H) - Touch.cornerPt }
   private func flag(_ s: Int) -> CGPoint { geo.at(zAt, value(s, key: 0), value(s, key: 1)) }
   // центр и радиус петли: из зеркала (ядро), пока нет — дом
-  private func loop(_ s: Int) -> (u: Double, v: Double, r: Double) {
+  func loop(_ s: Int) -> (u: Double, v: Double, r: Double) {
     let m = mirror.slots[s]
     return m.on && m.rs > 0 ? (m.cx, m.cy, m.rs) : (value(s, key: 0), value(s, key: 1), value(s, key: 3))
   }

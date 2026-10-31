@@ -1562,6 +1562,21 @@ async def sc_arcadia(p):                           # Arcadia: странник �
     await p.shot('arcadia-map')
 
 
+async def sc_arcadia_fixed(p):                     # Arcadia: страна 4242 и четыре странника на заданных местах — пара нативной сцены `arcadia` (в `node --test` не входит)
+    await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
+    q = await p.js('()=>t2d.mapPanel(12)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
+    assert await p.js('()=>[t2d.view, t2d.world]') == ['play', 12], 'the card opens Arcadia'
+    for _ in range(30):
+        if await p.js('()=>t2d.arc.ready'): break
+        await p.pg.wait_for_timeout(100)
+    await p.js("""()=>{const A=t2d.arc; A.newLand(4242);
+      A.addT(-0.5, -0.55, {mode: 0}); A.addT(0.45, -0.2, {mode: 1, fig: 1, r: 0.22});
+      A.addT(0.1, 0.45, {mode: 3, fig: 2, r: 0.16}); A.addT(-0.4, 0.25, {mode: 4, oct: -1, sp: 0.4});}""")
+    await p.pg.wait_for_timeout(5000)
+    assert await p.js('()=>t2d.arc.travellers.length') == 4, 'four wanderers'
+    await p.shot('arcadia-fixed')
+
+
 async def sc_webmidi(p):                          # компьютер / Android: часы по Web MIDI — строка «midi clock» в панели audio; вход подделан, тики с отметками времени
     await p.tap(195, 420); await p.pg.wait_for_timeout(300)           # тап — звук
     await p.js("""()=>{
@@ -1894,7 +1909,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'firmsheet': sc_firmsheet, 'firmtop': sc_firmtop, 'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'tenscale': sc_tenscale, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'firmsheet': sc_firmsheet, 'firmtop': sc_firmtop, 'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'arcadia-fixed': sc_arcadia_fixed, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'tenscale': sc_tenscale, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
 async def main(names):

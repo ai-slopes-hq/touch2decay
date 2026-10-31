@@ -20,12 +20,13 @@ final class ArcadiaTests: XCTestCase {
   private lazy var view = ArcadiaView(core: rec, readMirror: { [unowned self] b in
     let n = min(self.mirrorBuf.count, b.count); b.replaceSubrange(0..<n, with: self.mirrorBuf[0..<n]); return n
   }, rng: { [unowned self] in let r = self.rngs[self.rngAt]; self.rngAt += 1; return r },
-     loader: ArcPicLoader(build: { [unowned self] s in self.build(s) }, queue: nil))
+     loader: ArcPicLoader(build: { [unowned self] s in self.build(s) }, queue: nil), router: { _, _, _, _ in [0, 0, 0.1, 0.1, 0.2, 0.0] })
   private var G: ArcGeo { view.geo }
 
   override func setUp() {
     view.openSheet = { [unowned self] s in self.opened.append(s) }
     view.objGone = { [unowned self] s in self.gone.append(s) }
+    view.wallQueue = nil
   }
 
   private func slot(_ u: Double, _ v: Double, mode: Double = 2, r: Double = 0.16, rs: Double = 0.16, cx: Double? = nil, cy: Double? = nil) -> ArcSlot {
@@ -389,5 +390,65 @@ final class ArcadiaTests: XCTestCase {
     sp.set("chorus", 0.35); XCTAssertEqual(sp.text("chorus"), "35%")
     sp.set("relief", 0.3); XCTAssertEqual(sp.text("relief"), "30%")
     sp.set("hall", 0.4); XCTAssertEqual(sp.text("hall"), "40%")
+  }
+
+  // ---------- рисование ----------
+  private func render(shot: Bool = false, now: Double = 1) {
+    let W = Int(G.W), H = Int(G.H)
+    let g = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: W * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    g.translateBy(x: 0, y: CGFloat(H)); g.scaleBy(x: 1, y: -1)
+    let d = Draw(g: g, W: CGFloat(W), H: CGFloat(H)); d.setTheme(view.theme)
+    if shot { view.drawShot(d, now: now) } else { view.draw(d, now: now) }
+    lastPx = g.data!.assumingMemoryBound(to: UInt8.self); lastW = W; lastH = H
+  }
+  private var lastPx: UnsafeMutablePointer<UInt8>?, lastW = 0, lastH = 0
+  private func px(_ x: Double, _ y: Double) -> [UInt8] { let o = (Int(y) * lastW + Int(x)) * 4; return [lastPx![o], lastPx![o + 1], lastPx![o + 2]] }
+
+  func testDrawNoCrashEmpty() {                            // зеркала нет, pic == nil — бумага
+    mirrorBuf = []; view.tick(now: 1, dt: 0.016)
+    render()
+    XCTAssertEqual(px(10, 400), [224, 221, 198]); XCTAssertEqual(view.wall.builds, 0)
+  }
+
+  func testDrawFourWanderers() {
+    build = { [unowned self] s in self.flat(s) }
+    var m = [Int: ArcSlot]()
+    for (s, mode) in [(0, 0.0), (1, 1), (2, 2), (3, 4)] { m[s] = slot(-0.6 + 0.4 * Double(s), -0.5 + 0.3 * Double(s), mode: mode) }
+    setMirror(m)
+    XCTAssertNotNil(view.pic)
+    view.holdShot(1, rim: false); render()
+    XCTAssertEqual(view.wall.builds, 1); XCTAssertNotNil(view.wall.image)
+    view.holdShot(2, rim: true); render(now: 2)
+    XCTAssertEqual(view.wall.builds, 1)
+  }
+
+  func testRoutesCached() {
+    build = { [unowned self] s in self.flat(s) }
+    setMirror([0: slot(0, 0, mode: 3)])
+    render(now: 1); render(now: 1.1)
+    XCTAssertEqual(view.routeCalls, 1)
+    // MOVE через касание: флажок перетащен — свои значения сменились
+    let f = finger(f1, flag(0)); view.down(f)
+    let to = G.at(view.zAt, 0.3, 0.2)
+    view.move(finger(f1, to, p0: flag(0))); render(now: 1.2)
+    XCTAssertEqual(view.routeCalls, 2)
+    view.sheetSet(0, key: 5, 4, route: true); render(now: 1.3)
+    XCTAssertEqual(view.routeCalls, 3)
+    setMirror([0: slot(0.3, 0.2, mode: 4)], seed: 8); render(now: 1.4)
+    XCTAssertEqual(view.routeCalls, 4, "новая страна")
+  }
+
+  func testDrawShotNoSun() {
+    setMirror()
+    render(); let withSun = px(G.sun.x - 6, G.sun.y + 8)
+    render(shot: true); let without = px(G.sun.x - 6, G.sun.y + 8)
+    XCTAssertEqual(without, [224, 221, 198]); XCTAssertNotEqual(withSun, without)
+  }
+
+  func testDrawFarFirst() {
+    setMirror([0: slot(0, -0.6), 1: slot(0.3, 0.7), 2: slot(-0.3, 0.1)])
+    render()
+    XCTAssertEqual(view.drawn, [1, 2, 0], "дальние (большой v) раньше")
   }
 }

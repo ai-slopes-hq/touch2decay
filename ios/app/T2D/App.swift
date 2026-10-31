@@ -9,6 +9,7 @@ import SwiftUI
 //   audio — go(10), через 1 с тап по кнопке громкости: панель audio;
 //   monochord | monochord-sheet | monochord-earth-sheet | monochord-wind | monochord-fan — go(7), см. shotMono;
 //   horologium | horologium-ring-sheet | horologium-hub-sheet | horologium-fan | horologium-spin — go(9), см. shotHoro.
+//   arcadia | arcadia-land | arcadia-held | arcadia-held-rim | arcadia-sheet | arcadia-fan — go(12), см. shotArc.
 @main
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
@@ -24,6 +25,7 @@ struct T2DApp: App {
   @State private var ocean: OceanusView              // нужен только -shot oceanus*; Host держит миры сам
   @State private var mono: MonochordView             // нужен только -shot monochord*; Host держит миры сам
   @State private var horo: HorologiumView            // нужен только -shot horologium*; Host держит миры сам
+  @State private var arc: ArcadiaView                // нужен только -shot arcadia*; Host держит миры сам
   @State private var host: Host
 
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
@@ -35,6 +37,7 @@ struct T2DApp: App {
                          readMirror: OceanusView.appMirror)
     case MonochordView.slotN: return MonochordView(core: AppCore(slot: slot))
     case HorologiumView.slotN: return HorologiumView(core: AppCore(slot: slot))
+    case ArcadiaView.slotN: return ArcadiaView(core: AppCore(slot: slot))
     default: return nil
     }
   }
@@ -48,7 +51,7 @@ struct T2DApp: App {
     a.onInit = { h.reapply() }
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -76,6 +79,7 @@ struct T2DApp: App {
     case "oceanus", "oceanus-sheet", "oceanus-luna", "oceanus-fan": shotOcean(T2DApp.shotName); return
     case "monochord", "monochord-sheet", "monochord-earth-sheet", "monochord-wind", "monochord-fan": shotMono(T2DApp.shotName); return
     case "horologium", "horologium-ring-sheet", "horologium-hub-sheet", "horologium-fan", "horologium-spin": shotHoro(T2DApp.shotName); return
+    case "arcadia", "arcadia-land", "arcadia-held", "arcadia-held-rim", "arcadia-sheet", "arcadia-fan": shotArc(T2DApp.shotName); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -224,6 +228,32 @@ struct T2DApp: App {
       q.asyncAfter(deadline: .now() + 3.8) { core.action(HorologiumView.Act.run, 0, [1, 7.5], touchTime: 0) }
     default:
       core.action(HorologiumView.Act.ring, 0, [0, 1], touchTime: 0); core.action(HorologiumView.Act.run, 0, [1, 0], touchTime: 0)
+    }
+  }
+
+  // Arcadia (сид init 7, кадр через 5 с — страна в ядре растёт по кускам): arcadia — LAND 4242 и четыре странника (still / circuit / river / summit;
+  // пара — веб arcadia-fixed), -land — пустая SEED0, -held — один странник (mode 1), подпись ноты и orbit; -held-rim — то же, подпись края,
+  // -sheet — плашка viator, -fan — веер FX с LFO на wind (полоса random)
+  private func shotArc(_ name: String) {
+    host.go(ArcadiaView.slotN)
+    let core = AppCore(slot: ArcadiaView.slotN), q = DispatchQueue.main, A = ArcadiaView.Act.self
+    func add(_ s: Int, _ u: Double, _ v: Double, oct: Double = 0, r: Double = 0.16, fig: Double = 0, mode: Double = 2, sp: Double = 0.22) {
+      core.action(A.add, s, [u, v, oct, r, fig, mode, sp, 0.8], touchTime: 0)
+    }
+    switch name {
+    case "arcadia-land": break
+    case "arcadia-held", "arcadia-held-rim":
+      core.action(A.land, 0, [4242], touchTime: 0); add(0, 0.1, -0.2, mode: 1)
+      q.asyncAfter(deadline: .now() + 5) { arc.holdShot(0, rim: name == "arcadia-held-rim") }
+    case "arcadia-sheet", "arcadia-fan":
+      core.action(A.land, 0, [4242], touchTime: 0); add(0, 0.1, -0.2, mode: 1)
+      q.asyncAfter(deadline: .now() + 1.5) {
+        if name == "arcadia-sheet" { host.shotSheet(arc.viatorSpec(0)) }
+        else { host.shotSheet(arc.fx!, lfoKey: "wind"); host.shotLfo(rate: 1, depth: 0.5) }
+      }
+    default:
+      core.action(A.land, 0, [4242], touchTime: 0)
+      add(0, -0.5, -0.55, mode: 0); add(1, 0.45, -0.2, r: 0.22, fig: 1, mode: 1); add(2, 0.1, 0.45, fig: 2, mode: 3); add(3, -0.4, 0.25, oct: -1, mode: 4, sp: 0.4)
     }
   }
 
