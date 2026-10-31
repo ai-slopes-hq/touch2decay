@@ -68,6 +68,10 @@
 - **`LandGen` + `Pic`** трогает горячий код звука (по `nullptr`); тест бит в бит и `sdk-test` обязательны перед выкладкой.
 - Снимки — симулятор; звук, жесты на ощупь и производительность проверяет автор на iPhone.
 
+## Решено без автора
+
+См. `docs/worlds/arcadia.md`, раздел «Натив»: пять пунктов (фикстура-хеш, снимок без блуждающего, плоский рельеф до страны, `addT` в вебе, сид тестов LFO).
+
 ## Доки
 
 `docs/native-ios-plan.md` (фаза 3: Arcadia сделан, ждёт iPhone), `docs/worlds/arcadia.md` (раздел «Натив»), `core/README.md` (`ACT_LFO` Arcadia; `t2d_app_arc_pic / _route / _name`; `LandGen::start(…, Pic*)`; `routeOf`), `docs/testing.md` (сцены `arcadia*`, фикстура `arcadia-pic.json`, `tools/arcadia-pic-ref.mjs`, `tools/test-arcadia-pic.mjs`), строка в `docs/tokens.md`, `CACHE` = `?v=` (изменился `t2d.wasm`).
