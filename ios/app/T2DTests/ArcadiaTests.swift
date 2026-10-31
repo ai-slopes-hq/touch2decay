@@ -309,4 +309,85 @@ final class ArcadiaTests: XCTestCase {
     setMirror([2: slot(0, 0), 1: slot(0, 0.2)])
     XCTAssertEqual(view.state.order, [1, 2], "странники из зеркала — по возрастанию слота")
   }
+
+  // ---------- плашки ----------
+  private func sheetSlot() -> SheetSpec {
+    var q = slot(0, 0); q.oct = -1; q.r = 0.315; q.fig = 2; q.mode = 4; q.sp = 0.3
+    setMirror([1: q]); return view.viatorSpec(1)
+  }
+  private func setActs() -> [(kind: Int, i: Int, a: [Double], t: Double)] { rec.acts.filter { $0.kind == 3 } }
+
+  func testViatorRows() {
+    let sp = sheetSlot()
+    XCTAssertEqual(sp.rows.map(\.code), [-1, 3, -1, -1, 6, 7])
+    XCTAssertEqual(sp.rows.map(\.label), ["octave", "orbit", "figure", "path", "range", "level"])
+    XCTAssertEqual(sp.lfo?.obj, 1); XCTAssertEqual(sp.lfo?.keys, ["r", "sp", "lvl"]); XCTAssertEqual(sp.lfo?.shape, 1)
+    XCTAssertEqual(sp.obj, 1)
+  }
+
+  func testViatorGetSet() {
+    let sp = sheetSlot()
+    XCTAssertEqual(sp.get("oct"), 0, accuracy: 1e-9); XCTAssertEqual(sp.get("r"), 0.5, accuracy: 1e-9)
+    XCTAssertEqual(sp.get("fig"), 1, accuracy: 1e-9); XCTAssertEqual(sp.get("mode"), 1, accuracy: 1e-9)
+    XCTAssertEqual(sp.get("sp"), 0.5, accuracy: 1e-9); XCTAssertEqual(sp.get("lvl"), 0.8, accuracy: 1e-9)
+    let cases: [(String, Double, [Double], Bool)] = [
+      ("oct", 0.5, [2, 0], false), ("oct", 0, [2, -1], false), ("r", 0.5, [3, 0.315], false), ("fig", 0.5, [4, 1], false),
+      ("mode", 0.75, [5, 3], true), ("sp", 0.5, [6, 0.3], false), ("lvl", 0.4, [7, 0.4], false)]
+    for (k, v, a, route) in cases {
+      rec.acts.removeAll(); sp.set(k, v)
+      let x = setActs().last!
+      XCTAssertEqual(x.i, 1); XCTAssertEqual(x.a.count, 3, k)
+      XCTAssertEqual(x.a[0], a[0], k); XCTAssertEqual(x.a[1], a[1], accuracy: 1e-9, k); XCTAssertEqual(x.a[2], route ? 1 : 0, k)
+    }
+  }
+
+  func testViatorText() {
+    var q = slot(0, 0); q.oct = -1; q.r = 0.315; q.sp = 0.3
+    setMirror([1: q]); let sp = view.viatorSpec(1)
+    XCTAssertEqual(sp.text("oct"), "octave −1"); XCTAssertEqual(sp.text("r"), "32%")
+    XCTAssertEqual(sp.text("sp"), "50%"); XCTAssertEqual(sp.text("lvl"), "80%")
+    for (i, n) in ["circle", "eight", "knot"].enumerated() { q.fig = Double(i); setMirror([1: q]); XCTAssertEqual(view.viatorSpec(1).text("fig"), n) }
+    for (i, n) in ["still", "circuit", "wander", "river", "summit"].enumerated() { q.mode = Double(i); setMirror([1: q]); XCTAssertEqual(view.viatorSpec(1).text("mode"), n) }
+    q.oct = 0; setMirror([1: q]); XCTAssertEqual(view.viatorSpec(1).text("oct"), "octave 0")
+    q.oct = 1; setMirror([1: q]); XCTAssertEqual(view.viatorSpec(1).text("oct"), "octave +1")
+  }
+
+  func testViatorOwnValues() {
+    let sp = sheetSlot()
+    sp.set("r", 0.5)
+    XCTAssertEqual(sp.get("r"), 0.5, accuracy: 1e-9, "своё значение сразу")
+    var q = slot(0, 0); q.r = 0.315
+    setMirror([1: q])   // зеркало ещё старое — своё держится
+    XCTAssertEqual(view.value(1, key: 3), 0.315, accuracy: 1e-9, "зеркало сошлось с 0.315 == своё, берёт верх")
+  }
+
+  func testViatorDeadSlot() {
+    setMirror([0: slot(0, 0)])
+    let sp = view.viatorSpec(2)
+    rec.acts.removeAll(); sp.set("lvl", 0.3)
+    XCTAssertTrue(setActs().isEmpty, "мёртвый слот — без действий")
+    let sp0 = view.viatorSpec(0); gone.removeAll()
+    setMirror([:])
+    XCTAssertEqual(gone, [0]); _ = sp0
+  }
+
+  func testFanSheet() {
+    setMirror()
+    let sp = view.fxSpec
+    XCTAssertEqual(sp.title, "aether"); XCTAssertEqual(sp.rows.map(\.code), [0, 1, 2, 3, 4, 6])
+    XCTAssertEqual(sp.lfo?.obj, -1); XCTAssertEqual(sp.lfo?.shape, 1)
+    XCTAssertEqual(sp.arc?() ?? -1, 0.4, accuracy: 1e-9)
+    XCTAssertFalse(sp.rows.contains { $0.key == "spread" }); XCTAssertEqual(view.fxValue(5), 0.6, accuracy: 1e-9)
+    rec.acts.removeAll(); sp.set("hall", 0.7); sp.set("pace", 0.2)
+    XCTAssertEqual(rec.acts.map(\.kind), [4, 4]); XCTAssertEqual(rec.acts.map(\.i), [6, 1])
+    XCTAssertEqual(rec.acts[0].a, [0.7]); XCTAssertEqual(rec.acts[1].a, [0.2])
+    sp.set("pace", 0.35); XCTAssertEqual(sp.text("pace"), "27 s")
+    sp.set("wind", 0); XCTAssertEqual(sp.text("wind"), "calm")
+    sp.set("wind", 0.4); XCTAssertEqual(sp.text("wind"), "40%")
+    sp.set("chorus", 0); XCTAssertEqual(sp.text("chorus"), "off")
+    sp.set("phaser", 0.005); XCTAssertEqual(sp.text("phaser"), "off")
+    sp.set("chorus", 0.35); XCTAssertEqual(sp.text("chorus"), "35%")
+    sp.set("relief", 0.3); XCTAssertEqual(sp.text("relief"), "30%")
+    sp.set("hall", 0.4); XCTAssertEqual(sp.text("hall"), "40%")
+  }
 }

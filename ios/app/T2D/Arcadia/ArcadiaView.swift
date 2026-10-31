@@ -80,6 +80,16 @@ final class ArcadiaView: World {
   // значения для картинки и плашек: свои, пока зеркало не догнало (спека, решение 7)
   func value(_ slot: Int, key: Int) -> Double { state.value(slot, key: key, mirror: mirror) }
   func fxValue(_ i: Int) -> Double { state.fx(i, mirror: mirror) }
+  // запись плашек: свои значения (без отставания на кадр) + действие ядра; мёртвый слот — ничего
+  func sheetSet(_ slot: Int, key: Int, _ v: Double, route: Bool) {
+    guard state.isAlive(slot) else { return }
+    core.action(Act.set, slot, [Double(key), v, route ? 1 : 0], touchTime: 0)
+    state.setOwn(slot, key: key, v, now: now)
+  }
+  func sheetSetFx(_ i: Int, _ v: Double) {
+    core.action(Act.fx, i, [v], touchTime: 0)
+    state.setOwnFx(i, v, now: now)
+  }
 
   // странник под пальцем: nil — не держат; true — тянут край, false — флажок. Последний палец побеждает (как held веба)
   func heldRim(_ slot: Int) -> Bool? {
