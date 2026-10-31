@@ -70,6 +70,21 @@ void World::action(int kind, int i, const double* a, int n) {
       }
       break;
     case CLEAR: clear(); break;
+    case sdk::ACT_LFO: {                                // LFO плашек: i == -1 — веер (Fx 0…6), i = слот — странник (r 3, sp 6, lvl 7)
+      if (n < 2) break;
+      const int key = static_cast<int>(a[0]);
+      const double v = a[1];
+      if (i == -1) { if (key >= 0 && key < NFX) { model_.setFx(key, v); applyFx(); } break; }
+      if (!live) break;
+      double x;
+      if (key == R) x = 0.03 + 0.57 * v;               // как get / set плашки viator (view.js:89-90)
+      else if (key == SP) x = 0.6 * v;
+      else if (key == LVL) x = v;
+      else break;
+      model_.set(i, key, x);
+      sendT(i, true, false);
+      break;
+    }
     default: break;
   }
 }

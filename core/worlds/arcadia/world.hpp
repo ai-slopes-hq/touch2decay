@@ -19,6 +19,7 @@ namespace arcadia {
 // action(kind, i, a, n):
 //   ADD i — слот, a = [u, v, oct, r, fig, mode, sp, lvl] (не хватает — по умолчанию);  DROP i;  MOVE i, a = [u, v];
 //   SET i, a = [key (Key), v, route (0/1 — путь пересчитать)];  FX i = key (Fx), a = [v];  LAND a = [seed];  CLEAR
+//   ACT_LFO i = -1 — a = [Fx 0…6, v 0…1];  i = слот — a = [Key r 3 / sp 6 / lvl 7, v 0…1]; прочее — пропуск
 enum Act { ADD, DROP, MOVE, SET, FX, LAND, CLEAR };
 
 // зеркало: fx [NFX], зерно, страна считается (0/1), затем на слот SLOT_M: есть, u, v, oct, r, fig, mode, sp, lvl, f, cx, cy, rs, уровень

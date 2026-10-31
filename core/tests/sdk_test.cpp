@@ -3133,7 +3133,7 @@ static void lfoSpecNan() {
 
 // чужие миры ACT_LFO не знают: не падают и не звучат иначе
 static void lfoForeign() {
-  for (int slot : {1, 2}) {
+  for (int slot : {1, 2, 12}) {
     auto run = [&](bool send) {
       t2d_app_init(48000, 7, 1e9, 0);
       const double a[2] = {0, 0.5};
@@ -3289,6 +3289,43 @@ static void horoLfoIgnores() {
   t2d_app_action(9, sdk::ACT_LFO, -1, a3, 1, 0);
   const int n1 = horoMirror(m1, 64);
   CHECK(n0 == 47 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
+}
+static int arcMirror(double* m, int cap) {
+  float L[128], R[128];
+  t2d_app_render(L, R, 128, 0);
+  return t2d_app_mirror(12, m, cap);
+}
+static void arcStart() {
+  t2d_app_init(48000, 7, 1e9, 1u << 12);
+  const double k[2] = {0.1, 0.2};
+  t2d_app_action(12, 0, 0, k, 2, 0);                              // ADD слот 0
+}
+static void arcLfo() {
+  arcStart();
+  const double a[4][2] = {{0, 0.7}, {3, 0.25}, {5, 0.9}, {6, 0.2}};
+  for (const auto& v : a) t2d_app_action(12, sdk::ACT_LFO, -1, v, 2, 0);
+  const double r[2] = {3, 0.5}, sp[2] = {6, 0.5}, lv[2] = {7, 0.5};
+  t2d_app_action(12, sdk::ACT_LFO, 0, r, 2, 0);
+  t2d_app_action(12, sdk::ACT_LFO, 0, sp, 2, 0);
+  t2d_app_action(12, sdk::ACT_LFO, 0, lv, 2, 0);
+  double m[80];
+  CHECK(arcMirror(m, 80) == 65);
+  NEAR(m[0], 0.7, 1e-9); NEAR(m[3], 0.25, 1e-9); NEAR(m[5], 0.9, 1e-9); NEAR(m[6], 0.2, 1e-9);
+  NEAR(m[9 + 4], 0.315, 1e-9); NEAR(m[9 + 7], 0.3, 1e-9); NEAR(m[9 + 8], 0.5, 1e-9);
+}
+static void arcLfoIgnores() {
+  double m0[80], m1[80];
+  arcStart();
+  const int n0 = arcMirror(m0, 80);
+  arcStart();
+  for (int key : {0, 1, 2, 4, 5}) { const double a[2] = {double(key), 0.5}; t2d_app_action(12, sdk::ACT_LFO, 0, a, 2, 0); }
+  const double b[2] = {3, 0.5}, c[1] = {3};
+  t2d_app_action(12, sdk::ACT_LFO, 1, b, 2, 0);
+  t2d_app_action(12, sdk::ACT_LFO, 4, b, 2, 0);
+  t2d_app_action(12, sdk::ACT_LFO, -2, b, 2, 0);
+  t2d_app_action(12, sdk::ACT_LFO, 0, c, 1, 0);
+  const int n1 = arcMirror(m1, 80);
+  CHECK(n0 == 65 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
 }
 static void horoDice() {
   static const int MAGIC[12][5] = {{2, 3}, {3, 4}, {4, 5, 6}, {3, 4, 5}, {2, 3, 5}, {4, 5, 6, 7}, {5, 7, 9}, {6, 7, 8, 9}, {8, 9}, {2, 3, 4, 5, 6}, {5, 6}, {4, 5}};
@@ -3516,7 +3553,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
