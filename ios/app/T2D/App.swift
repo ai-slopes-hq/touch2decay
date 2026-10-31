@@ -244,7 +244,7 @@ struct T2DApp: App {
     case "arcadia-land": break
     case "arcadia-held", "arcadia-held-rim":
       core.action(A.land, 0, [4242], touchTime: 0); add(0, 0.1, -0.2, mode: 1)
-      q.asyncAfter(deadline: .now() + 5) { arc.holdShot(0, rim: name == "arcadia-held-rim") }
+      q.asyncAfter(deadline: .now() + 3) { arc.holdShot(0, rim: name == "arcadia-held-rim") }
     case "arcadia-sheet", "arcadia-fan":
       core.action(A.land, 0, [4242], touchTime: 0); add(0, 0.1, -0.2, mode: 1)
       q.asyncAfter(deadline: .now() + 1.5) {

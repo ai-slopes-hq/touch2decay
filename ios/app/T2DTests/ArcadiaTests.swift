@@ -252,6 +252,17 @@ final class ArcadiaTests: XCTestCase {
     XCTAssertEqual(a0[5], 3); XCTAssertEqual(a0[6], 0.12 + 0.5 * 0.3, accuracy: 1e-9); XCTAssertEqual(a0[7], 0.8)
   }
 
+  func testDiceCommitsUndoAfterActions() {                 // кубик правит сцену позже подъёма пальца: шаг отмены — по окончании applyDice
+    build = { [unowned self] s in self.flat(s) }
+    setMirror([0: slot(0, 0)])
+    rngs = [0.3, 0.0] + [Double](repeating: 0.5, count: 40)
+    var commits = 0, actsAtCommit = 0
+    view.commitUndo = { [unowned self] in commits += 1; actsAtCommit = self.rec.acts.count }
+    view.dice()
+    XCTAssertEqual(commits, 1); XCTAssertEqual(actsAtCommit, rec.acts.count, "после CLEAR / LAND / ADD, не раньше")
+    XCTAssertEqual(kinds().first, 6)
+  }
+
   func testDiceAfterClear() {
     build = { [unowned self] s in self.flat(s) }
     setMirror([0: slot(-0.5, 0), 1: slot(0.5, 0)])

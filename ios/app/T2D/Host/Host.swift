@@ -89,6 +89,10 @@ final class Host {
         self.core.lfoDrop(slot: slot, obj: id)
         if self.sheet?.slot == slot && (self.sheet?.spec.lfo?.obj == id || self.sheet?.spec.obj == id) { self.sheet = nil }
       }
+      (v as? UndoCommitting)?.commitUndo = { [weak self] in
+        guard let self else { return }
+        self.undo.commit(slot: slot, scl: self.scl)
+      }
       v.rowLfoOff = { [weak self] code in
         guard let self else { return }
         self.core.lfoOff(slot: slot, obj: -1, key: code)

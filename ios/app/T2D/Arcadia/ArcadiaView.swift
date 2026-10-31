@@ -2,7 +2,7 @@ import UIKit
 import T2DCore
 
 // Arcadia — касания и состояние: гравированная страна, странники с петлями (порт worlds/arcadia/view.js; звук и страна — в ядре)
-final class ArcadiaView: World {
+final class ArcadiaView: World, UndoCommitting {
   static let slotN = 12
   // действия ядра (core/worlds/arcadia/world.hpp:22)
   enum Act { static let add = 0, drop = 1, move = 2, set = 3, fx = 4, land = 5, clear = 6 }
@@ -72,6 +72,7 @@ final class ArcadiaView: World {
   }
   private(set) var holds: [ObjectIdentifier: Hold] = [:]
   private var holdSeq = 0
+  var commitUndo: (() -> Void)?                            // кубик правит сцену позже подъёма пальца — шаг отмены снимаем по его окончании
   private let shotKey = NSObject()                           // «палец» для тестового хука holdShot
 
   init(core: Core, readMirror: Reader? = nil, rng: (() -> Double)? = nil, loader: ArcPicLoader? = nil, router: ArcPic.Router? = nil) {
@@ -112,7 +113,7 @@ final class ArcadiaView: World {
   }
   func holdShot(_ slot: Int, rim: Bool) {                  // тестовый хук: подпись ноты / края без пальца (как host.shotSheet)
     holdSeq += 1
-    holds[ObjectIdentifier(shotKey)] = Hold(kind: rim ? .rim : .home, slot: slot, seq: holdSeq)
+    holds[ObjectIdentifier(shotKey)] = Hold(kind: rim ? .rim : .home, slot: slot, fresh: true, seq: holdSeq)   // fresh: плашка по удержанию не открывается
   }
 
   // ---------- кубик, корзина, отмена (спека, решения 10, 11) ----------
@@ -147,6 +148,7 @@ final class ArcadiaView: World {
       state.setOwn(s, key: 2, oct, now: now); state.setOwn(s, key: 3, r, now: now); state.setOwn(s, key: 4, fig, now: now)
       state.setOwn(s, key: 5, mode, now: now); state.setOwn(s, key: 6, sp, now: now); state.setOwn(s, key: 7, 0.8, now: now)
     }
+    commitUndo?()                                          // «кубик, отмена» — один шаг: прежняя страна и странники
   }
 
   func clear() {

@@ -2,6 +2,8 @@ import UIKit
 
 // рисование Arcadia (view.js:234-268, drawT / draw): стена-образ, потом странники от дальних к ближним, солнце-угол последним
 extension ArcadiaView {
+  private static let dashPath: [CGFloat] = [1.5, 3.5], dashLead: [CGFloat] = [2, 4]   // путь блуждания / привязь
+  private static let waterRoute = Draw.color(ArcWall.water, 0.7)
   private func clamp01(_ x: Double) -> Double { min(1, max(0, x)) }
 
   // путь странника для mode ≥ 3 — из кеша; пересчёт через router только при смене ключа (seed, u, v, mode)
@@ -42,14 +44,14 @@ extension ArcadiaView {
     let sl = mirror.slots[s], c = loop(s)
     let home = G.at(z, u, v), cen = G.at(z, c.u, c.v), gn = clamp01(sl.gain * 1.3)
     // путь: куда бродит петля
-    g.setLineWidth(0.9); g.setLineDash(phase: 0, lengths: [1.5, 3.5]); g.setStrokeColor(d.ink(0.4))
+    g.setLineWidth(0.9); g.setLineDash(phase: 0, lengths: Self.dashPath); g.setStrokeColor(d.ink(0.4))
     if mode == 1 {
       for k in 0...48 { let a = Double(k) / 48 * 2 * .pi; pathBuf[k] = G.at(z, u + sp * cos(a), v + sp * sin(a) / Arc.asp) }
       g.beginPath(); g.move(to: pathBuf[0]); for k in 1...48 { g.addLine(to: pathBuf[k]) }; g.strokePath()
     } else if mode >= 3 {
       let rt = routeFor(s, u: u, v: v, mode: mode)
       if rt.count >= 4 {
-        g.setStrokeColor(mode == 3 ? Draw.color(ArcWall.water, 0.7) : d.ink(0.5))
+        g.setStrokeColor(mode == 3 ? Self.waterRoute : d.ink(0.5))
         g.beginPath()
         for k in 0..<(rt.count / 2) { let p = G.at(z, rt[2 * k], rt[2 * k + 1]); if k == 0 { g.move(to: p) } else { g.addLine(to: p) } }
         g.strokePath()
@@ -59,7 +61,7 @@ extension ArcadiaView {
       for k in 0..<state.trailCount(s) { let q = state.trailPoint(s, k), p = G.at(z, q.u, q.v); if k == 0 { g.move(to: p) } else { g.addLine(to: p) } }
       g.strokePath()
     }
-    g.setLineDash(phase: 0, lengths: [2, 4]); g.setStrokeColor(d.ink(0.3))        // привязь: флажок — центр петли
+    g.setLineDash(phase: 0, lengths: Self.dashLead); g.setStrokeColor(d.ink(0.3))        // привязь: флажок — центр петли
     g.beginPath(); g.move(to: home); g.addLine(to: cen); g.strokePath(); g.setLineDash(phase: 0, lengths: [])
     // петля, поднятая холмами: её горбы — то, что слышно
     let n = G.loopPts(z, fig: fig, u: c.u, v: c.v, r: c.r, n: 120, into: &loopBuf)

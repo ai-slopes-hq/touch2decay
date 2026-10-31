@@ -14,6 +14,11 @@ enum Glyph: String { case tap, double, hold, drag, up, draw, `throw`, shake, two
 struct LegendRow { let glyph: Glyph; let gesture: String; let does: String }
 
 // мир: слот ядра, тема, шаг, рисование и касания (как интерфейс мира в host/)
+// мир с асинхронной правкой сцены (кубик Arcadia): после неё просит хост снять ещё один шаг отмены
+protocol UndoCommitting: AnyObject {
+  var commitUndo: (() -> Void)? { get set }              // ставит хост: снять undo-снимок мира сейчас
+}
+
 protocol World: AnyObject {
   var slot: Int { get }
   var theme: Theme { get }
