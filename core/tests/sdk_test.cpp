@@ -2062,6 +2062,12 @@ static void infernoSound() {
   w.action(ACT_HOLD, 4, (const double[]){-1}, 1);
   run(6.0, nullptr); pk = 0; run(0.5, nullptr, nullptr, &pk);
   CHECK(pk < 1e-4 && !w.sounding());
+  w.action(ACT_HOLD, 4, (const double[]){-1}, 1);       // непарный −1 на нуле держит счётчик в нуле
+  CHECK(!w.sounding());
+  w.action(ACT_HOLD, 4, (const double[]){1}, 1);
+  CHECK(w.sounding());                                  // следующее удержание снова жжёт круг
+  w.action(ACT_HOLD, 4, (const double[]){-1}, 1);
+  CHECK(!w.sounding());
   // smoke = 0 — посыл пуст; fire выше — сухого громче не становится бесконечно (перегруз сжимает)
   w.action(ACT_FX, SMOKE, (const double[]){0}, 1);
   w.action(ACT_STRIKE, 5, (const double[]){1}, 1);

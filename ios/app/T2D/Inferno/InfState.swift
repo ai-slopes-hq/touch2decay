@@ -99,8 +99,9 @@ struct InfState {
     sinV[k] = on; sinAt[k] = now
   }
 
+  // кубик и корзина: свои значения грешников сброшены — сразу зеркало ядра
   mutating func clearSinners(now: Double) {
-    for k in 0..<Inf.nc { sinV[k] = false; sinAt[k] = now }
+    for k in 0..<Inf.nc { sinV[k] = false; sinAt[k] = nil }
   }
 
   // MARK: веер

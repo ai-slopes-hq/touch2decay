@@ -48,7 +48,13 @@ final class InfMathTests: XCTestCase {
 
   func testSheet() {
     let c = InfCirc(pos: 0.5, sinner: false, held: 0, color: 2, width: 0.4, drive: 0.15, level: 0.7, lvl: 0)
-    XCTAssertEqual(InfSheet.get("color", c), 0.5); XCTAssertEqual(InfSheet.get("width", c), 0.4)
+    XCTAssertEqual(InfSheet.get("color", c), 0.5)
+    for k in 0...4 {                                       // как view.js:112 — середина ведра
+      var q = c; q.color = k
+      XCTAssertEqual(InfSheet.get("color", q), (Double(k) + 0.5) / 5, accuracy: 1e-12)
+      XCTAssertEqual(InfSheet.set("color", InfSheet.get("color", q)).1, Double(k), accuracy: 1e-12)
+    }
+    XCTAssertEqual(InfSheet.get("width", c), 0.4); XCTAssertEqual(InfSheet.get("width", c), 0.4)
     XCTAssertTrue(InfSheet.set("color", 0.99) == (4, 4)); XCTAssertTrue(InfSheet.set("color", 0.5) == (4, 2))
     XCTAssertTrue(InfSheet.set("pos", 0.3) == (0, 0.3)); XCTAssertTrue(InfSheet.set("level", 0.6) == (3, 0.6))
     XCTAssertEqual(InfSheet.text("color", c, k: 0, pcs: nil), "brown")
@@ -112,5 +118,6 @@ final class InfMathTests: XCTestCase {
     XCTAssertEqual(heard([1, .nan]).0, 0)
     XCTAssertEqual(heard([.nan, 1]).0, 0)
     XCTAssertEqual(heard([1e9, 1]).0, 0)
+    XCTAssertEqual(heard([-1e300, 1]).0, 0)
   }
 }

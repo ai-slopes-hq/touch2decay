@@ -188,6 +188,17 @@ final class InfernoTests: XCTestCase {
     XCTAssertTrue(opened.isEmpty)
   }
 
+  func testUpAfterSheetOneRelease() {
+    mirrorBuf = mirror(sinners: [6]); view.tick(now: 1.0, dt: 0.016)
+    let p = at(6, 0.5)
+    view.down(finger(f1, p, t: 1)); view.tick(now: 1.2, dt: 0.016)   // тлеет
+    view.tick(now: 1.43, dt: 0.016)                                   // плашка открыта
+    XCTAssertEqual(opened.count, 1)
+    view.up(finger(f1, p, t: 1.7))
+    XCTAssertEqual(rec.acts.filter { $0.kind == Inf.Act.hold && $0.a == [-1] }.count, 1)
+    XCTAssertEqual(rec.acts.filter { $0.kind == Inf.Act.hold && $0.a == [1] }.count, 1)
+  }
+
   func testCancel() {
     let p = at(2, 0.5)
     view.down(finger(f1, p, t: 1)); view.tick(now: 1.2, dt: 0.016)
@@ -255,11 +266,10 @@ final class InfernoTests: XCTestCase {
     mirrorBuf = mirror(sinners: [6]); view.tick(now: 1.0, dt: 0.016)
     view.dice()
     XCTAssertEqual(kinds(), [Inf.Act.dice])
-    XCTAssertFalse(circ(6, now: 1.1).sinner)
+    XCTAssertTrue(circ(6, now: 1.1).sinner)                // переизбранный кубиком — сразу зеркало
     view.clear()
     XCTAssertEqual(kinds(), [Inf.Act.dice, Inf.Act.clear])
-    XCTAssertFalse(circ(6, now: 1.2).sinner)
-    XCTAssertTrue(circ(6, now: 1.3).sinner)                // 0.25 с прошло — снова зеркало
+    XCTAssertTrue(circ(6, now: 1.2).sinner)
   }
 
   func testCorner() {

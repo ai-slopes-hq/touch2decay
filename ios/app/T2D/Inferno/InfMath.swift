@@ -110,7 +110,7 @@ enum InfSheet {
   static func get(_ key: String, _ c: InfCirc) -> Double {
     switch key {
     case "pos": return c.pos
-    case "color": return Double(c.color) / 4
+    case "color": return (Double(c.color) + 0.5) / 5
     case "width": return c.width
     case "drive": return c.drive
     default: return c.level

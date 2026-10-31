@@ -31,7 +31,7 @@ func infHeard(_ b: [Double], n: Int, into out: inout [Int]) -> Int {
   let n = min(n, b.count)
   var o = 0, added = 0
   while o < n {
-    guard b[o].isFinite, b[o] < 1e6 else { break }
+    guard b[o].isFinite, abs(b[o]) < 1e6 else { break }
     let c = Int(b[o])
     if c <= 0 || o + 1 + c > n { break }
     for j in 0..<c {

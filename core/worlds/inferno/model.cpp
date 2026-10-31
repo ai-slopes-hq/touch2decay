@@ -1,5 +1,6 @@
 // Inferno — модель, см. model.hpp. Порт worlds/inferno/model.js (эталон — tools/ref/inferno-model.js).
 #include "model.hpp"
+#include <algorithm>
 #include <cmath>
 #include "../../sdk/json.hpp"
 
@@ -44,7 +45,7 @@ bool Model::sounding() const { for (const Circ& c : c_) if (c.sinner || c.held >
 
 void Model::strike(int k, double vel) { c_[k].lvl = 1; emit(Ev::STRIKE, k, vel); }
 void Model::setPos(int k, double pos) { c_[k].pos = pos; emit(Ev::TUNE, k); }
-void Model::hold(int k, int d) { c_[k].held += d; emit(Ev::BURN, k); }
+void Model::hold(int k, int d) { c_[k].held = std::max(0, c_[k].held + d); emit(Ev::BURN, k); }
 bool Model::pin(int k, double pos) {
   Circ& c = c_[k];
   if (c.sinner) c.sinner = false;

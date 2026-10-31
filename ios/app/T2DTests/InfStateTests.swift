@@ -52,9 +52,10 @@ final class InfStateTests: XCTestCase {
     var s = InfState(); var m = InfMirror()
     m.circ[3].sinner = true
     s.clearSinners(now: 1)
-    XCTAssertFalse(s.circ(3, mirror: m, now: 1.1).sinner)
-    XCTAssertFalse(s.circ(3, mirror: m, now: 1.24).sinner)
-    XCTAssertTrue(s.circ(3, mirror: m, now: 1.25).sinner)
+    XCTAssertTrue(s.circ(3, mirror: m, now: 1.0).sinner)    // свои значения сброшены — сразу зеркало
+    s.ownSinner(3, false, now: 1.5)
+    s.clearSinners(now: 1.6)
+    XCTAssertTrue(s.circ(3, mirror: m, now: 1.6).sinner)
   }
 
   func testLvlAfterStrike() {
