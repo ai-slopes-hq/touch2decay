@@ -3427,6 +3427,64 @@ static void arcRouteSame() {
   }
   CHECK(longest > 6);
 }
+// Сверка страны ядра с JS-эталоном: tools/arcadia-pic-ref.mjs → core/tests/data/arcadia-pic.json (z / lake — хеш FNV-1a по байтам float32)
+static uint32_t arcFnv(const float* f, int n) {
+  uint32_t h = 2166136261u; const unsigned char* b = reinterpret_cast<const unsigned char*>(f);
+  for (size_t i = 0; i < sizeof(float) * n; i++) { h ^= b[i]; h *= 16777619u; }
+  return h;
+}
+static bool arcNear(double a, double b) { return std::fabs(a - b) <= 1e-12; }
+static void arcPicFixture() {
+  std::string src;
+  if (FILE* f = std::fopen("core/tests/data/arcadia-pic.json", "rb")) { char buf[65536]; size_t n; while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) src.append(buf, n); std::fclose(f); }
+  bool ok = false; const sdk::Json J = sdk::Json::parse(src, &ok);
+  CHECK(ok);
+  const sdk::Json* seeds = J.get("seeds");
+  CHECK(seeds && seeds->type == sdk::Json::Arr && !seeds->a.empty());
+  if (!ok || !seeds) return;
+  auto num = [](const sdk::Json& o, const char* k) { const sdk::Json* v = o.get(k); return v ? v->n : 0.0; };
+  auto name = [](int kind, double idx) { const char* s = idx < 0 ? nullptr : t2d_app_arc_name(kind, static_cast<int>(idx)); return std::string(s ? s : ""); };
+  for (const sdk::Json& S : seeds->a) {
+    const unsigned seed = static_cast<unsigned>(num(S, "seed"));
+    const ArcPicData d = arcPic(seed);
+    CHECK(d.len > 0);
+    CHECK(arcFnv(d.z.data(), arcadia::NG) == static_cast<uint32_t>(num(S, "zHash")));
+    CHECK(arcFnv(d.lake.data(), arcadia::NG) == static_cast<uint32_t>(num(S, "lakeHash")));
+    const sdk::Json &pk = *S.get("peaks"), &lk = *S.get("lakes"), &rv = *S.get("rivers"), &rt = *S.get("routes");
+    const double* m = d.meta.data();
+    const int np = static_cast<int>(m[0]), nl = static_cast<int>(m[1]), nr = static_cast<int>(m[2]);
+    CHECK(np == static_cast<int>(pk.a.size()) && nl == static_cast<int>(lk.a.size()) && nr == static_cast<int>(rv.a.size()));
+    if (np != static_cast<int>(pk.a.size()) || nl != static_cast<int>(lk.a.size()) || nr != static_cast<int>(rv.a.size())) continue;
+    const double* p = m + 3;
+    for (int k = 0; k < np; k++, p += 4) {
+      const sdk::Json& e = pk.a[k];
+      CHECK(arcNear(p[0], num(e, "u")) && arcNear(p[1], num(e, "v")) && arcNear(p[2], num(e, "h")));
+      CHECK(name(0, p[3]) == e.get("name")->s);
+    }
+    for (int k = 0; k < nl; k++, p += 6) {
+      const sdk::Json& e = lk.a[k];
+      CHECK(arcNear(p[0], num(e, "u")) && arcNear(p[1], num(e, "v")) && arcNear(p[2], num(e, "w")) && arcNear(p[3], num(e, "level")));
+      CHECK((p[4] == 1) == e.get("pond")->b);
+      CHECK(name(1, p[5]) == e.get("name")->s);
+    }
+    for (int k = 0; k < nr; k++) {
+      const sdk::Json& e = rv.a[k], &pts = *e.get("pts");
+      const int n = static_cast<int>(p[0]);
+      CHECK(n == static_cast<int>(pts.a.size()));
+      CHECK(name(2, p[1]) == e.get("name")->s);
+      if (n == static_cast<int>(pts.a.size())) for (int q = 0; q < n; q++) CHECK(arcNear(p[2 + 2 * q], pts.a[q].a[0].n) && arcNear(p[3 + 2 * q], pts.a[q].a[1].n));
+      p += 2 + 2 * n;
+    }
+    CHECK(p - m == d.len);
+    for (const sdk::Json& e : rt.a) {
+      const sdk::Json& pts = *e.get("pts");
+      double out[arcadia::RMAX_PTS];
+      const int n = t2d_app_arc_route(d.z.data(), d.lake.data(), num(e, "u"), num(e, "v"), static_cast<int>(num(e, "mode")), out, arcadia::RMAX_PTS);
+      CHECK(n == static_cast<int>(pts.a.size()));
+      if (n == static_cast<int>(pts.a.size())) for (int q = 0; q < n; q++) CHECK(arcNear(out[q], pts.a[q].n));
+    }
+  }
+}
 static void horoDice() {
   static const int MAGIC[12][5] = {{2, 3}, {3, 4}, {4, 5, 6}, {3, 4, 5}, {2, 3, 5}, {4, 5, 6, 7}, {5, 7, 9}, {6, 7, 8, 9}, {8, 9}, {2, 3, 4, 5, 6}, {5, 6}, {4, 5}};
   static const int MAGIC_N[12] = {2, 2, 3, 3, 3, 4, 3, 4, 2, 5, 2, 2};
@@ -3653,7 +3711,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
