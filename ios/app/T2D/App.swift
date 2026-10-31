@@ -10,7 +10,8 @@ import SwiftUI
 //   monochord | monochord-sheet | monochord-earth-sheet | monochord-wind | monochord-fan — go(7), см. shotMono;
 //   horologium | horologium-ring-sheet | horologium-hub-sheet | horologium-fan | horologium-spin — go(9), см. shotHoro.
 //   arcadia | arcadia-land | arcadia-held | arcadia-held-rim | arcadia-sheet | arcadia-fan — go(12), см. shotArc;
-//   tria | tria-lux | tria-fall | tria-held | tria-sheet | tria-fan — go(11), см. shotTria.
+//   tria | tria-lux | tria-fall | tria-held | tria-sheet | tria-fan — go(11), см. shotTria;
+//   inferno | inferno-held | inferno-sheet | inferno-fx | inferno-storm | inferno-fan — go(5), см. shotInferno.
 @main
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
@@ -28,6 +29,7 @@ struct T2DApp: App {
   @State private var horo: HorologiumView            // нужен только -shot horologium*; Host держит миры сам
   @State private var arc: ArcadiaView                // нужен только -shot arcadia*; Host держит миры сам
   @State private var tria: TriaView                  // нужен только -shot tria*; Host держит миры сам
+  @State private var inf: InfernoView                // нужен только -shot inferno*; Host держит миры сам
   @State private var host: Host
 
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
@@ -41,6 +43,7 @@ struct T2DApp: App {
     case HorologiumView.slotN: return HorologiumView(core: AppCore(slot: slot))
     case ArcadiaView.slotN: return ArcadiaView(core: AppCore(slot: slot))
     case TriaView.slotN: return TriaView(core: AppCore(slot: slot))
+    case InfernoView.slotN: return InfernoView(core: AppCore(slot: slot))
     default: return nil
     }
   }
@@ -54,7 +57,7 @@ struct T2DApp: App {
     a.onInit = { h.reapply() }
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -84,6 +87,7 @@ struct T2DApp: App {
     case "horologium", "horologium-ring-sheet", "horologium-hub-sheet", "horologium-fan", "horologium-spin": shotHoro(T2DApp.shotName); return
     case "arcadia", "arcadia-land", "arcadia-held", "arcadia-held-rim", "arcadia-sheet", "arcadia-fan": shotArc(T2DApp.shotName); return
     case "tria", "tria-lux", "tria-fall", "tria-held", "tria-sheet", "tria-fan": shotTria(T2DApp.shotName); return
+    case "inferno", "inferno-held", "inferno-sheet", "inferno-fx", "inferno-storm", "inferno-fan": shotInferno(T2DApp.shotName); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -274,6 +278,26 @@ struct T2DApp: App {
     case "tria-fan":
       q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(tria.fx!, lfoKey: "gravitas"); host.shotLfo(rate: 1, depth: 0.5) }
     default: break
+    }
+  }
+
+  // Inferno: inferno — круг VI закреплён грешником; -held — круг III тлеет (подпись) через 3 с; -sheet — плашка круга VI; -fx — веер выкручен (дым, лёд, буря, огонь)
+  // сразу; -storm — грешник на круге II (порывы бури); -fan — веер с LFO на fire; действие — раньше кадра shot.sh (+5 с)
+  private func shotInferno(_ name: String) {
+    host.go(InfernoView.slotN)
+    let q = DispatchQueue.main
+    func act(_ kind: Int, _ i: Int, _ v: Double) { inf.core.action(kind, i, [v], touchTime: 0) }
+    switch name {
+    case "inferno-held": q.asyncAfter(deadline: .now() + 3) { inf.holdShot(2, pos: 0.8) }
+    case "inferno-sheet":
+      act(Inf.Act.pin, 6, 0.4)
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(inf.circleSpec(6)) }
+    case "inferno-fx":
+      act(Inf.Act.pin, 6, 0.4); act(Inf.Act.pin, 2, 0.3); act(Inf.Act.fx, 3, 0.7); act(Inf.Act.fx, 2, 0.7)
+    case "inferno-storm": act(Inf.Act.pin, 1, 0.5)
+    case "inferno-fan":
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(inf.fx!, lfoKey: "fire"); host.shotLfo(rate: 1, depth: 0.5) }
+    default: act(Inf.Act.pin, 6, 0.4)
     }
   }
 

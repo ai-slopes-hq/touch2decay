@@ -275,4 +275,42 @@ final class InfernoTests: XCTestCase {
     XCTAssertTrue(view.isHeld(3)); XCTAssertFalse(view.isHeld(4))
     XCTAssertEqual(view.state.held(3), 1)
   }
+
+  // ---------- рисование ----------
+  func testWallKey() {
+    let w = InfWall(), g1 = InfGeo(W: 390, H: 844, topY: 59, safeBot: 34), g2 = InfGeo(W: 390, H: 800, topY: 59, safeBot: 34)
+    _ = w.image(g1, dpr: 1) { _ in }; _ = w.image(g1, dpr: 1) { _ in }
+    XCTAssertEqual(w.builds, 1)
+    _ = w.image(g2, dpr: 1) { _ in }
+    XCTAssertEqual(w.builds, 2)
+    _ = w.image(g2, dpr: 2) { _ in }
+    XCTAssertEqual(w.builds, 3)
+  }
+
+  func testDrawSmoke() {
+    var b = mirror(sinners: [1, 6])
+    for k in 1...3 { b[Inf.head + k * Inf.circN + 7] = 0.8 }
+    b[1] = 0.6; b[2] = 0.4                                // iceE, stormSemi
+    mirrorBuf = b; view.tick(now: 2.0, dt: 0.016)
+    heardQ = [[4, 0, 1, 2, 3], [4, 4, 5, 6, 7]]; view.tick(now: 2.1, dt: 0.016)   // угольки: по 10 на удар
+    for n in 1...3 { heardQ = [[4, 0, 1, 2, 3]]; view.tick(now: 2.1 + Double(n) * 0.016, dt: 0.016) }
+    XCTAssertGreaterThan(view.state.sparkCount, 30)
+    view.holdShot(2, pos: 0.8)
+    let W = 390, H = 844
+    let g = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: W * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    g.translateBy(x: 0, y: CGFloat(H)); g.scaleBy(x: 1, y: -1)
+    let d = Draw(g: g, W: CGFloat(W), H: CGFloat(H)); d.setTheme(view.theme)
+    view.draw(d, now: 2.2)
+    let px = Array(UnsafeBufferPointer(start: g.data!.assumingMemoryBound(to: UInt8.self), count: W * H * 4))
+    func lit(_ cy: Double, _ ry: Double) -> Int {          // пиксели заметно ярче фона 5,4,3 в полосе вокруг круга
+      var n = 0
+      for y in Int(cy - ry - 4)...Int(cy + ry + 4) { for x in 0..<W { let o = (y * W + x) * 4; if Int(px[o]) + Int(px[o + 1]) + Int(px[o + 2]) > 60 { n += 1 } } }
+      return n
+    }
+    XCTAssertGreaterThan(lit(G.rings[3].cy, G.rings[3].ry), 50, "круг IV нарисован")
+    XCTAssertGreaterThan(lit(G.coc.cy, G.coc.ry), 50, "Коцит нарисован")
+    view.drawShot(d, now: 2.2)
+    XCTAssertEqual(view.wall.builds, 1)
+  }
 }

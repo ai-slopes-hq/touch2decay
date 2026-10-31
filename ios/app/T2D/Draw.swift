@@ -70,12 +70,12 @@ final class Draw {
   }
 
   // textBaseline 'middle' канваса: середина em-квадрата — базовая линия сдвинута на (ascent − descent) / 2
-  private func drawString(_ s: String, _ x: CGFloat, _ y: CGFloat, _ f: CTFont, _ a: CGFloat, _ align: Align) {
+  private func drawString(_ s: String, _ x: CGFloat, _ y: CGFloat, _ f: CTFont, _ a: CGFloat, _ align: Align, _ col: RGB? = nil) {
     let attrs: [CFString: Any] = [kCTFontAttributeName: f, kCTForegroundColorFromContextAttributeName: true]
     let line = CTLineCreateWithAttributedString(CFAttributedStringCreate(nil, s as CFString, attrs as CFDictionary))
     let w = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
     let ox: CGFloat = align == .left ? x : align == .center ? x - w / 2 : x - w
-    fill(theme.ink, a)
+    fill(col ?? theme.ink, a)
     g.saveGState()
     g.translateBy(x: ox, y: y + (CTFontGetAscent(f) - CTFontGetDescent(f)) / 2)
     g.scaleBy(x: 1, y: -1)                   // глифы CoreText — в системе с осью вверх
@@ -91,12 +91,12 @@ final class Draw {
   }
 
   // draw.js:47-50
-  func mapText(_ s: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ a: CGFloat, align: Align = .left, italic: Bool = true, angle: CGFloat = 0) {
-    if angle == 0 { drawString(s, x, y, font(italic, size), a, align); return }
+  func mapText(_ s: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ a: CGFloat, align: Align = .left, italic: Bool = true, angle: CGFloat = 0, col: RGB? = nil) {
+    if angle == 0 { drawString(s, x, y, font(italic, size), a, align, col); return }
     // поворот вокруг (x, y), радианы, по часовой (как ctx.rotate в вебе; ось y вниз)
     g.saveGState()
     g.translateBy(x: x, y: y); g.rotate(by: angle)
-    drawString(s, 0, 0, font(italic, size), a, align)
+    drawString(s, 0, 0, font(italic, size), a, align, col)
     g.restoreGState()
   }
   // draw.js:79-83 — в интерфейсе прямой, кегль +2 (у Fell мельче очко); жирного нет — акцент яркостью

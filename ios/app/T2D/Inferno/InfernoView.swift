@@ -1,7 +1,7 @@
 import UIKit
 import T2DCore
 
-// Inferno (мир V) — касания, тление, плашки, веер, кубик (порт worlds/inferno/view.js; модель и звук — в ядре, картинка — InfernoDraw.swift)
+// Inferno (мир V) — касания, тление, плашки, веер, кубик (порт worlds/inferno/view.js; модель и звук — в ядре, картинка — InfDraw.swift)
 final class InfernoView: World {
   static let slotN = 5
 
@@ -35,6 +35,7 @@ final class InfernoView: World {
   private var hbuf = [Double](repeating: 0, count: 256)
   private var hks: [Int] = []
   private(set) var now = 0.0
+  let wall = InfWall()                                     // кеш стены (InfDraw.swift)
   private(set) var shot: (k: Int, pos: Double)?              // тестовый хук holdShot: круг тлеет без пальца
 
   // палец: ничего (none) или круг k; smoulder — тление идёт (HOLD +1 отправлен), harp — арфа, sheet — плашка открыта
@@ -110,7 +111,7 @@ final class InfernoView: World {
       reset: nil, arc: nil)
   }
   private typealias Act = Inf.Act
-  private var pcs: [Int]?
+  private(set) var pcs: [Int]?
 
   func scale(pcs: [Int]?, root: Int) { self.pcs = pcs }
 
@@ -220,6 +221,6 @@ final class InfernoView: World {
 
   func cancel(_ f: Finger) { up(f) }                       // система отняла палец: тление снимаем
 
-  func draw(_ d: Draw, now: Double) {}                     // рисование — InfernoDraw.swift (задача 5)
-  func drawShot(_ d: Draw, now: Double) {}
+  func draw(_ d: Draw, now: Double) { drawFrame(d, now: now) }   // рисование — InfDraw.swift
+  func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now) }
 }
