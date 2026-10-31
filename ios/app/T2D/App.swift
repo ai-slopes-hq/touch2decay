@@ -9,7 +9,8 @@ import SwiftUI
 //   audio — go(10), через 1 с тап по кнопке громкости: панель audio;
 //   monochord | monochord-sheet | monochord-earth-sheet | monochord-wind | monochord-fan — go(7), см. shotMono;
 //   horologium | horologium-ring-sheet | horologium-hub-sheet | horologium-fan | horologium-spin — go(9), см. shotHoro.
-//   arcadia | arcadia-land | arcadia-held | arcadia-held-rim | arcadia-sheet | arcadia-fan — go(12), см. shotArc.
+//   arcadia | arcadia-land | arcadia-held | arcadia-held-rim | arcadia-sheet | arcadia-fan — go(12), см. shotArc;
+//   tria | tria-lux | tria-fall | tria-held | tria-sheet | tria-fan — go(11), см. shotTria.
 @main
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
@@ -26,6 +27,7 @@ struct T2DApp: App {
   @State private var mono: MonochordView             // нужен только -shot monochord*; Host держит миры сам
   @State private var horo: HorologiumView            // нужен только -shot horologium*; Host держит миры сам
   @State private var arc: ArcadiaView                // нужен только -shot arcadia*; Host держит миры сам
+  @State private var tria: TriaView                  // нужен только -shot tria*; Host держит миры сам
   @State private var host: Host
 
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
@@ -38,6 +40,7 @@ struct T2DApp: App {
     case MonochordView.slotN: return MonochordView(core: AppCore(slot: slot))
     case HorologiumView.slotN: return HorologiumView(core: AppCore(slot: slot))
     case ArcadiaView.slotN: return ArcadiaView(core: AppCore(slot: slot))
+    case TriaView.slotN: return TriaView(core: AppCore(slot: slot))
     default: return nil
     }
   }
@@ -51,7 +54,7 @@ struct T2DApp: App {
     a.onInit = { h.reapply() }
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -80,6 +83,7 @@ struct T2DApp: App {
     case "monochord", "monochord-sheet", "monochord-earth-sheet", "monochord-wind", "monochord-fan": shotMono(T2DApp.shotName); return
     case "horologium", "horologium-ring-sheet", "horologium-hub-sheet", "horologium-fan", "horologium-spin": shotHoro(T2DApp.shotName); return
     case "arcadia", "arcadia-land", "arcadia-held", "arcadia-held-rim", "arcadia-sheet", "arcadia-fan": shotArc(T2DApp.shotName); return
+    case "tria", "tria-lux", "tria-fall", "tria-held", "tria-sheet", "tria-fan": shotTria(T2DApp.shotName); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -254,6 +258,22 @@ struct T2DApp: App {
     default:
       core.action(A.land, 0, [4242], touchTime: 0)
       add(0, -0.5, -0.55, mode: 0); add(1, 0.45, -0.2, r: 0.22, fig: 1, mode: 1); add(2, 0.1, 0.45, fig: 2, mode: 3); add(3, -0.4, 0.25, oct: -1, mode: 4, sp: 0.4)
+    }
+  }
+
+  // Tria (покой — три тела на окружности): tria — как есть, -lux — Fiat lux сразу, -fall — отвес сразу (всё падает), -held — подпись тела 0 через 3 с,
+  // -sheet — плашка тела 1, -fan — веер FX с LFO на gravitas (полоса random); действие — раньше кадра shot.sh (+5 с)
+  private func shotTria(_ name: String) {
+    host.go(TriaView.slotN)
+    let q = DispatchQueue.main
+    switch name {
+    case "tria-lux": tria.lux()
+    case "tria-fall": tria.plumb()
+    case "tria-held": q.asyncAfter(deadline: .now() + 3) { tria.holdShot(1) }
+    case "tria-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(tria.bodySpec(1)) }
+    case "tria-fan":
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(tria.fx!, lfoKey: "gravitas"); host.shotLfo(rate: 1, depth: 0.5) }
+    default: break
     }
   }
 

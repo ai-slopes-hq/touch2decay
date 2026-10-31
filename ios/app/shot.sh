@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Снимок в симуляторе: shot.sh [сцена] (firmamentum | topbar | scales | legend | sheet | starsheet | lfo | undo | map | nav | peek | concordia | mixer | audio | oceanus | oceanus-sheet | oceanus-luna | oceanus-fan | monochord | monochord-sheet | monochord-earth-sheet | monochord-wind | monochord-fan | horologium | horologium-ring-sheet | horologium-hub-sheet | horologium-fan | horologium-spin | arcadia | arcadia-land | arcadia-held | arcadia-held-rim | arcadia-sheet | arcadia-fan; по умолчанию firmamentum):
+# Снимок в симуляторе: shot.sh [сцена] (firmamentum | topbar | scales | legend | sheet | starsheet | lfo | undo | map | nav | peek | concordia | mixer | audio | oceanus | oceanus-sheet | oceanus-luna | oceanus-fan | monochord | monochord-sheet | monochord-earth-sheet | monochord-wind | monochord-fan | horologium | horologium-ring-sheet | horologium-hub-sheet | horologium-fan | horologium-spin | arcadia | arcadia-land | arcadia-held | arcadia-held-rim | arcadia-sheet | arcadia-fan | tria | tria-lux | tria-fall | tria-held | tria-sheet | tria-fan; по умолчанию firmamentum):
 # xcodegen → сборка → запуск с -shot <сцена> → через 5 с скриншот в .shots/ios-<сцена>.png.
 set -euo pipefail
 SCENE="${1:-firmamentum}"

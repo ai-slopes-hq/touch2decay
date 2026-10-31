@@ -1,7 +1,7 @@
 import UIKit
 import T2DCore
 
-// Tria corpora — касания, плашки, веер, кубик (порт worlds/tria/view.js; физика и звук — в ядре, картинка — задача 5)
+// Tria corpora — касания, плашки, веер, кубик (порт worlds/tria/view.js; физика и звук — в ядре, картинка — TriaDraw.swift)
 final class TriaView: World {
   static let slotN = 11
 
@@ -36,6 +36,7 @@ final class TriaView: World {
   private var hbuf = [Double](repeating: 0, count: 256)
   private var recs: [TriaFlashRec] = []
   private(set) var now = 0.0
+  let wall = TriaWall()                                    // кеш блюда (TriaDraw.swift)
 
   // палец: тело под ним (i ≥ 0) или ничего (i = −1); история ≤ 6 точек (время, x, y) для броска
   struct Hold {
@@ -238,6 +239,6 @@ final class TriaView: World {
     state.letGo(t.i)
   }
 
-  func draw(_ d: Draw, now: Double) {}                     // задача 5
-  func drawShot(_ d: Draw, now: Double) {}
+  func draw(_ d: Draw, now: Double) { drawFrame(d, now: now, sun: true) }   // рисование — TriaDraw.swift
+  func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now, sun: false) }
 }

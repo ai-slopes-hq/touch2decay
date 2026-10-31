@@ -42,7 +42,7 @@ final class MapTests: XCTestCase {
     XCTAssertEqual(cells.count, 16)
     for (c, r) in cells {
       let p = f.rect(col: c, row: r)
-      let want: MapHit = (c == 3 && r == 1) ? .world(10) : (c == 3 && r == 2) ? .world(8) : (c == 0 && r == 2) ? .world(9) : (c == 1 && r == 3) ? .world(7) : (c == 0 && r == 3) ? .world(12) : .peek(col: c, row: r)
+      let want: MapHit = (c == 3 && r == 1) ? .world(10) : (c == 3 && r == 2) ? .world(8) : (c == 0 && r == 2) ? .world(9) : (c == 1 && r == 3) ? .world(7) : (c == 0 && r == 3) ? .world(12) : (c == 3 && r == 0) ? .world(11) : .peek(col: c, row: r)
       XCTAssertEqual(MapGeo.hit(f, W: W, x: p.midX, y: p.midY), want, "cell \(c),\(r)")
       XCTAssertEqual(MapGeo.hit(f, W: W, x: p.maxX + f.gap / 2, y: p.midY), want, "gap right \(c),\(r)")
       if r != 1 { XCTAssertEqual(MapGeo.hit(f, W: W, x: p.midX, y: p.maxY + f.gap / 2), want, "gap below \(c),\(r)") }   // под рядом 1 — солнце и concordia съедают
@@ -59,7 +59,7 @@ final class MapTests: XCTestCase {
     let cells = Worlds.all.map { "\($0.col),\($0.row)" }
     XCTAssertEqual(Set(cells).count, 12)
     for b in Worlds.backs { XCTAssertFalse(cells.contains("\(b.col),\(b.row)")) }
-    XCTAssertEqual(Worlds.all.filter { $0.view }.map { $0.slot }, [7, 8, 9, 10, 12])
+    XCTAssertEqual(Worlds.all.filter { $0.view }.map { $0.slot }, [7, 8, 9, 10, 11, 12])
     XCTAssertEqual(Worlds.info(10)?.title, "Firmamentum")
     XCTAssertEqual(Worlds.at(col: 3, row: 1)?.slot, 10)
     let fi = Worlds.info(10)!.theme, na = Worlds.info(4)!.theme

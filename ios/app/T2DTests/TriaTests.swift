@@ -231,4 +231,40 @@ final class TriaTests: XCTestCase {
     XCTAssertEqual(view.legend.map(\.glyph), [.throw, .double, .hold, .tap, .tap, .tap])
     XCTAssertEqual(view.objs, 3)
   }
+
+  // ---------- рисование ----------
+  func testWallKey() {
+    let w = TriaWall(), g1 = TriaGeo(W: 390, H: 844, topY: 59, safeBot: 34), g2 = TriaGeo(W: 390, H: 800, topY: 59, safeBot: 34)
+    _ = w.image(g1, dpr: 1) { _ in }; _ = w.image(g1, dpr: 1) { _ in }
+    XCTAssertEqual(w.builds, 1)
+    _ = w.image(g2, dpr: 1) { _ in }
+    XCTAssertEqual(w.builds, 2)
+    _ = w.image(g2, dpr: 2) { _ in }
+    XCTAssertEqual(w.builds, 3)
+  }
+
+  func testDrawSmoke() {
+    var b = mirror(still: 0); b[7] = 1; b[Tria.head + 5] = 1; b[Tria.head + 8] = 0.6   // lux, тело 0 на якоре
+    b[2] = 0.5                                          // nexus
+    mirrorBuf = b; view.tick(now: 2.0, dt: 0.016)
+    var rec: [Double] = [12]
+    for i in 0..<Tria.nb { for kind in 0...3 { rec += [Double(i), Double(kind), 0.3, -0.2, 0.5] } }
+    for k in 1...50 { view.tick(now: 2.0 + Double(k) * 0.02, dt: 0.02) }
+    heardQ = [rec]; view.tick(now: 3.05, dt: 0.016)
+    XCTAssertGreaterThan(view.state.trailCount(0), 10); XCTAssertEqual(view.state.flashCount, 12)
+    view.holdShot(0)
+    let W = 390, H = 844
+    let g = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: W * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    g.translateBy(x: 0, y: CGFloat(H)); g.scaleBy(x: 1, y: -1)
+    let d = Draw(g: g, W: CGFloat(W), H: CGFloat(H)); d.setTheme(view.theme)
+    view.draw(d, now: 3.1)
+    let px = Array(UnsafeBufferPointer(start: g.data!.assumingMemoryBound(to: UInt8.self), count: W * H * 4))
+    var n = 0
+    let cx = Int(G.cx), cy = Int(G.cy)
+    for y in (cy - 40)..<(cy + 40) { for x in (cx - 40)..<(cx + 40) { let o = (y * W + x) * 4; n += Int(px[o]) + Int(px[o + 1]) + Int(px[o + 2]) } }
+    XCTAssertGreaterThan(n, 80 * 80 * (19 + 15 + 10) + 500, "в центре блюда есть чернила поверх фона")
+    view.drawShot(d, now: 3.1)
+    XCTAssertEqual(view.wall.builds, 1)
+  }
 }
