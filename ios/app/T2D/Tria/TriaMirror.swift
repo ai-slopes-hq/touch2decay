@@ -39,10 +39,12 @@ func triaHeard(_ b: [Double], n: Int, into out: inout [TriaFlashRec]) -> Int {
   let n = min(n, b.count)
   var o = 0, added = 0
   while o < n {
+    guard b[o].isFinite, b[o] < 1e6 else { break }
     let c = Int(b[o])
     if c <= 0 || o + 1 + c * 5 > n { break }
     for k in 0..<c {
       let p = o + 1 + k * 5
+      guard b[p].isFinite, b[p + 1].isFinite, abs(b[p]) < 1e6, abs(b[p + 1]) < 1e6 else { continue }
       let i = Int(b[p]), kind = Int(b[p + 1])
       if i < 0 || i >= Tria.nb || kind < 0 || kind > 3 { continue }
       out.append(TriaFlashRec(i: i, kind: kind, x: b[p + 2], y: b[p + 3], q: b[p + 4])); added += 1

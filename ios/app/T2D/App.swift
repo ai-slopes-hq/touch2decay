@@ -261,7 +261,7 @@ struct T2DApp: App {
     }
   }
 
-  // Tria (покой — три тела на окружности): tria — как есть, -lux — Fiat lux сразу, -fall — отвес сразу (всё падает), -held — подпись тела 0 через 3 с,
+  // Tria (покой — три тела на окружности): tria — как есть, -lux — Fiat lux сразу, -fall — отвес сразу (всё падает), -held — подпись тела 1 через 3 с,
   // -sheet — плашка тела 1, -fan — веер FX с LFO на gravitas (полоса random); действие — раньше кадра shot.sh (+5 с)
   private func shotTria(_ name: String) {
     host.go(TriaView.slotN)

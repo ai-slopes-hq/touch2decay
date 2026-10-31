@@ -106,5 +106,14 @@ final class TriaMathTests: XCTestCase {
     XCTAssertEqual(out.count, 1)
     XCTAssertEqual(triaHeard([0, 1, 1, 0, 0, 0, 0], n: 7, into: &out), 0)       // c == 0 — стоп
     XCTAssertEqual(out.count, 1)
+    out = []
+    XCTAssertEqual(triaHeard([1, 0, 4, 0, 0, 0], n: 6, into: &out), 0)         // kind вне 0…3 — пропуск
+    let t: [Double] = [1, 0, 0, 0.1, 0.2, 0.3,  2, 1, 1, 0, 0, 0]
+    XCTAssertEqual(triaHeard(t, n: t.count, into: &out), 1)                    // целая запись учтена, обрезанная — стоп
+    XCTAssertEqual(out.count, 1)
+    out = []
+    let nan: [Double] = [1, .nan, 0, 0, 0, 0,  1, 0, .nan, 0, 0, 0,  .nan, 0, 0, 0, 0, 0,  1, 1, 1, 0, 0, 0]
+    XCTAssertEqual(triaHeard(nan, n: nan.count, into: &out), 0)                // NaN в i / kind — пропуск, NaN в c — стоп, не падает
+    XCTAssertEqual(triaNote(.nan), ""); XCTAssertEqual(triaNote(.infinity), ""); XCTAssertEqual(triaNote(0), "")
   }
 }

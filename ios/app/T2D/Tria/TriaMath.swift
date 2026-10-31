@@ -48,6 +48,7 @@ struct TriaGeo {
 // имя ноты по частоте от A1 = 55 Гц (view.js:10)
 func triaNote(_ f: Double) -> String {
   let names = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
+  guard f.isFinite, f > 0 else { return "" }
   let m = Int((12 * log2(f / 55)).rounded())
   return "\(names[((m % 12) + 12) % 12])\(Int(floor(Double(m + 9) / 12)) + 1)"
 }

@@ -95,8 +95,8 @@ final class TriaView: World {
     }
     return SheetSpec(
       title: Tria.names[i], hint: "body — tap outside to close",
-      rows: [SheetRow(key: "m", label: "mass", code: 0), SheetRow(key: "semi", label: "note", code: 1),
-             SheetRow(key: "level", label: "level", code: 3), SheetRow(key: "fixed", label: "anchor", code: -1)],
+      rows: [SheetRow(key: "m", label: "mass", code: -1), SheetRow(key: "semi", label: "note", code: -1),
+             SheetRow(key: "level", label: "level", code: -1), SheetRow(key: "fixed", label: "anchor", code: -1)],
       get: { k in let b = vals(); return TriaSheet.get(k, m: b.m, semi: b.semi, level: b.level, fixed: b.fixed) },
       set: { [unowned self] k, v in
         let s = TriaSheet.set(k, v)
@@ -140,11 +140,12 @@ final class TriaView: World {
   }
 
   func restored() {                                        // undo: пальцы, следы, вспышки, свои значения сброшены; плашка тела остаётся
+    for t in holds.values where t.i >= 0 && !t.sheet { core.action(Act.release, t.i, [], touchTime: 0) }   // ядро не хранит «в руке» — снимаем явно (после restore тело иначе замёрзло бы)
     holds.removeAll(); lastTap = nil; shotBody = nil
     state.reset()
   }
 
-  func idle() { for _ in 0..<64 where readHeard(&hbuf) > 0 {} }   // слить heard без вспышек: вход в мир не отыграет прошлое
+  func idle() { for _ in 0..<64 { if readHeard(&hbuf) <= 0 { break } } }   // слить heard без вспышек: вход в мир не отыграет прошлое
 
   // ---------- тик ----------
   func tick(now: Double, dt: Double) {
@@ -237,6 +238,7 @@ final class TriaView: World {
     guard let t = holds.removeValue(forKey: f.id), t.i >= 0 else { return }
     core.action(Act.release, t.i, [], touchTime: f.touchTime)
     state.letGo(t.i)
+    if lastTap?.i == t.i { lastTap = nil }                 // тап сразу после отмены — не двойной
   }
 
   func draw(_ d: Draw, now: Double) { drawFrame(d, now: now, sun: true) }   // рисование — TriaDraw.swift

@@ -166,6 +166,7 @@ final class TriaTests: XCTestCase {
     view.tick(now: 1.2, dt: 0.1)
     XCTAssertEqual(view.state.flashCount, 1)
     view.restored()
+    XCTAssertEqual(rec.acts.last?.kind, Tria.Act.release); XCTAssertEqual(rec.acts.last?.i, 0); XCTAssertEqual(rec.acts.last?.a, [])
     let n = rec.acts.count
     view.move(finger(f1, off(p0, 80), p0: p0, t: 1.3)); view.up(finger(f1, off(p0, 80), p0: p0, t: 1.4))
     XCTAssertEqual(rec.acts.count, n)
@@ -173,6 +174,24 @@ final class TriaTests: XCTestCase {
     XCTAssertEqual(view.state.flashCount, 0)
     for i in 0..<Tria.nb { XCTAssertEqual(view.state.trailCount(i), 0) }
     XCTAssertEqual(view.state.pos(0, mirror: view.mirror).x, Tria.rest(0).x, accuracy: 1e-9)
+    view.tick(now: 1.5, dt: 0.1)                           // still-зеркало: следов и вспышек не прибавилось
+    XCTAssertEqual(rec.acts.count, n)
+    XCTAssertEqual(view.state.flashCount, 0)
+  }
+
+  func testCancelThenTapNoAnchor() {
+    let p = bp(1)
+    view.down(finger(f1, p, t: 5.0)); view.cancel(finger(f1, p, t: 5.05))
+    view.down(finger(f1, p, t: 5.2))
+    XCTAssertFalse(kinds().contains(Tria.Act.anchor))
+    XCTAssertEqual(kinds().filter { $0 == Tria.Act.grab }.count, 2)
+  }
+
+  func testIdleStopsOnEmpty() {
+    var n = 0
+    let v = TriaView(core: rec, readMirror: { _ in 0 }, readHeard: { _ in n += 1; return 0 }, rng: { 0.5 })
+    v.idle()
+    XCTAssertEqual(n, 1)
   }
 
   func testSheetOwnValues() {
@@ -183,7 +202,7 @@ final class TriaTests: XCTestCase {
     view.tick(now: 1.26, dt: 0.26)
     XCTAssertEqual(s.get("m"), (1 - 0.3) / 2.7, accuracy: 1e-9)
     XCTAssertEqual(s.rows.map(\.key), ["m", "semi", "level", "fixed"]); XCTAssertNil(s.lfo)
-    XCTAssertEqual(s.rows.last?.code, -1)
+    XCTAssertEqual(s.rows.map(\.code), [-1, -1, -1, -1])
   }
 
   func testFanLfoCodes() {
