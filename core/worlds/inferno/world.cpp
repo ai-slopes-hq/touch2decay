@@ -47,6 +47,13 @@ void Inferno::action(int kind, int i, const double* a, int n) {
     case ACT_FX: if (n >= 1) model_.setFx(i, a[0]); break;
     case ACT_CLEAR: model_.clear(); break;
     case ACT_DICE: model_.dice(); break;
+    case sdk::ACT_LFO:                                   // LFO плашек: веер (i == -1, ключ 0…4) и строки круга (ключ 0…3, цвет не трогаем)
+      if (n >= 2) {
+        const int key = static_cast<int>(a[0]);
+        if (i == -1 && key >= 0 && key < NFX) model_.setFx(key, a[1]);
+        else if (ok && key >= 0 && key < COLOR) model_.setCirc(i, key, a[1]);
+      }
+      break;
     default: break;
   }
 }

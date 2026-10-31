@@ -14,6 +14,7 @@ namespace inferno {
 //   CIRC   i = круг, a = [key (Key: pos, width, drive, level, color), v]
 //   FX     i = ключ (Fx: structure, fire, smoke, ice, storm), a = [v]
 //   CLEAR, DICE
+//   sdk::ACT_LFO  i = -1: a = [Fx 0…4, v]; i = круг: a = [Key 0…3, v] (цвет пропускается)
 enum Act { ACT_STRIKE, ACT_POS, ACT_HOLD, ACT_PIN, ACT_CIRC, ACT_FX, ACT_CLEAR, ACT_DICE };
 
 // зеркало: time, iceE, stormSemi, stormPh, fx [NFX], затем на круг CIRC_N чисел: pos, sinner, held, color, width, drive, level, lvl

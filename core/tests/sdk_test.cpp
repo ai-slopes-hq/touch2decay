@@ -3135,7 +3135,7 @@ static void lfoSpecNan() {
 
 // чужие миры ACT_LFO не знают: не падают и не звучат иначе
 static void lfoForeign() {
-  for (int slot : {1, 2, 11, 12}) {
+  for (int slot : {1, 2, 5, 11, 12}) {
     auto run = [&](bool send) {
       t2d_app_init(48000, 7, 1e9, 0);
       const double a[2] = {0, 0.5};
@@ -3362,6 +3362,46 @@ static void triaLfoIgnores() {
   t2d_app_render(L, R, 128, 0);
   const int n1 = triaMirror(m1, 64);
   CHECK(n0 == 47 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
+}
+// Inferno: ACT_LFO — веер FX 0…4 (obj -1) и строки круга 0…3 (obj 0…8); цвет и чужие ключи пропускаются
+static int infMirror(double* m, int cap) { return t2d_app_mirror(5, m, cap); }
+static void infStart() {
+  t2d_app_init(48000, 7, 1e9, 1u << 5);
+  float L[128], R[128];
+  t2d_app_render(L, R, 128, 0);
+}
+static void infLfo() {
+  infStart();
+  const double f0[2] = {0, 0.7}, f4[2] = {4, 0.25}, c3[2] = {0, 0.3}, c8[2] = {3, 0.2}, c0[2] = {1, 0.9};
+  t2d_app_action(5, sdk::ACT_LFO, -1, f0, 2, 0);
+  t2d_app_action(5, sdk::ACT_LFO, -1, f4, 2, 0);
+  t2d_app_action(5, sdk::ACT_LFO, 3, c3, 2, 0);
+  t2d_app_action(5, sdk::ACT_LFO, 8, c8, 2, 0);
+  t2d_app_action(5, sdk::ACT_LFO, 0, c0, 2, 0);
+  float L[128], R[128];
+  t2d_app_render(L, R, 128, 0);
+  double m[96];
+  CHECK(infMirror(m, 96) == 81);
+  NEAR(m[4], 0.7, 1e-12); NEAR(m[8], 0.25, 1e-12); NEAR(m[9 + 24], 0.3, 1e-12);
+  NEAR(m[9 + 64 + 6], 0.2, 1e-12); NEAR(m[9 + 4], 0.9, 1e-12);
+}
+static void infLfoIgnores() {
+  double m0[96], m1[96];
+  float L[128], R[128];
+  infStart();
+  t2d_app_render(L, R, 128, 0);
+  const int n0 = infMirror(m0, 96);
+  infStart();
+  const double a[2] = {5, 0.9}, b[2] = {4, 3}, c[2] = {5, 0.9}, d[2] = {0, 0.9}, e[1] = {0};
+  t2d_app_action(5, sdk::ACT_LFO, -1, a, 2, 0);
+  t2d_app_action(5, sdk::ACT_LFO, 0, b, 2, 0);
+  t2d_app_action(5, sdk::ACT_LFO, 0, c, 2, 0);
+  t2d_app_action(5, sdk::ACT_LFO, 9, d, 2, 0);
+  t2d_app_action(5, sdk::ACT_LFO, -2, d, 2, 0);
+  t2d_app_action(5, sdk::ACT_LFO, -1, e, 1, 0);
+  t2d_app_render(L, R, 128, 0);
+  const int n1 = infMirror(m1, 96);
+  CHECK(n0 == 81 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
 }
 // ---- Arcadia: картина страны из ядра (Pic, routeOf, t2d_app_arc_*) ----
 struct ArcPicData { std::vector<float> z, lake; std::vector<double> meta; int len = 0; };
@@ -3745,7 +3785,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
