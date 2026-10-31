@@ -44,12 +44,21 @@ final class NaturaView: World {
   private(set) var mAt = 0.0                                 // когда пришёл кадр зеркала (для фазы)
   var frogAt: (x: Double, y: Double, s: Double, air: Bool, i: Int)?   // результат state.frog — считает touchTick раз за тик
 
+  // касания (NatTouch.swift): пальцы по Finger.id, челнок, меню цветков, след glide и всплеск — их читает и картинка
+  var fingers: [ObjectIdentifier: NatFinger] = [:]
+  var skiff = NatSkiff()
+  var menu: NatMenu?
+  var wake: (path: [(Double, Double)], at: Double)?
+  var splash: (x: Double, y: Double, t0: Double)?
+  var birdBuf: [(x: Double, y: Double, s: Double, i: Int, fast: Double)] = []   // птицы для попадания, без выделений в кадре
+  var padBuf = [NatPad](repeating: NatPad(), count: Nat.npad)                     // места для state.frog
+
   init(core: Core, readMirror: Reader? = nil, readHeard: Reader? = nil, rng: (() -> Double)? = nil) {
     self.core = core; geo = NatGeo(W: 390, H: 844, topY: 59, safeBot: 34)
     self.readMirror = readMirror ?? { b in Int(t2d_app_mirror(Int32(NaturaView.slotN), &b, Int32(b.count))) }
     self.readHeard = readHeard ?? { b in Int(t2d_app_heard(Int32(NaturaView.slotN), &b, Int32(b.count))) }
     self.rng = rng ?? { var g = SystemRandomNumberGenerator(); return Double.random(in: 0..<1, using: &g) }
-    hks.reserveCapacity(64)
+    hks.reserveCapacity(64); birdBuf.reserveCapacity(16)
   }
 
   func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat) { geo = NatGeo(W: Double(W), H: Double(H), topY: Double(topY), safeBot: Double(safeBot)) }
@@ -171,14 +180,6 @@ final class NaturaView: World {
   }
 
   private typealias Act = Nat.Act
-
-  // ---------- заглушки: Task 5 переносит их в NatTouch.swift (extension NaturaView) ----------
-  func touchTick(now: Double) {}
-  func touchReset() {}
-  func down(_ f: Finger) {}
-  func move(_ f: Finger) {}
-  func up(_ f: Finger) {}
-  func cancel(_ f: Finger) {}
 
   func draw(_ d: Draw, now: Double) {}                       // картинка — план (б)
   func drawShot(_ d: Draw, now: Double) {}
