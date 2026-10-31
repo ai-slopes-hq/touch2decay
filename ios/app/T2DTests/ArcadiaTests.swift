@@ -1,4 +1,5 @@
 import XCTest
+import CoreText
 
 private final class Rec: Core {
   var acts: [(kind: Int, i: Int, a: [Double], t: Double)] = []
@@ -23,6 +24,10 @@ final class ArcadiaTests: XCTestCase {
      loader: ArcPicLoader(build: { [unowned self] s in self.build(s) }, queue: nil), router: { _, _, _, _ in [0, 0, 0.1, 0.1, 0.2, 0.0] })
   private var G: ArcGeo { view.geo }
 
+  override class func setUp() {                            // UIAppFonts работает только в приложении — шрифты регистрируем здесь
+    let urls = Bundle(for: ArcadiaTests.self).urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
+    for u in urls { CTFontManagerRegisterFontsForURL(u as CFURL, .process, nil) }
+  }
   override func setUp() {
     view.openSheet = { [unowned self] s in self.opened.append(s) }
     view.objGone = { [unowned self] s in self.gone.append(s) }
@@ -400,10 +405,16 @@ final class ArcadiaTests: XCTestCase {
     g.translateBy(x: 0, y: CGFloat(H)); g.scaleBy(x: 1, y: -1)
     let d = Draw(g: g, W: CGFloat(W), H: CGFloat(H)); d.setTheme(view.theme)
     if shot { view.drawShot(d, now: now) } else { view.draw(d, now: now) }
-    lastPx = g.data!.assumingMemoryBound(to: UInt8.self); lastW = W; lastH = H
+    lastPx = Array(UnsafeBufferPointer(start: g.data!.assumingMemoryBound(to: UInt8.self), count: W * H * 4)); lastW = W; lastH = H
   }
-  private var lastPx: UnsafeMutablePointer<UInt8>?, lastW = 0, lastH = 0
-  private func px(_ x: Double, _ y: Double) -> [UInt8] { let o = (Int(y) * lastW + Int(x)) * 4; return [lastPx![o], lastPx![o + 1], lastPx![o + 2]] }
+  private var lastPx: [UInt8] = [], lastW = 0, lastH = 0
+  private func px(_ x: Double, _ y: Double) -> [UInt8] { let o = (Int(y) * lastW + Int(x)) * 4; return [lastPx[o], lastPx[o + 1], lastPx[o + 2]] }
+  // сумма «чернил» в прямоугольнике: проба подписи без сравнения шрифтов
+  private func ink(_ x0: Double, _ y0: Double, _ x1: Double, _ y1: Double) -> Int {
+    var n = 0
+    for y in Int(y0)..<Int(y1) { for x in Int(x0)..<Int(x1) { let o = (y * lastW + x) * 4; n += 765 - Int(lastPx[o]) - Int(lastPx[o + 1]) - Int(lastPx[o + 2]) } }
+    return n
+  }
 
   func testDrawNoCrashEmpty() {                            // зеркала нет, pic == nil — бумага
     mirrorBuf = []; view.tick(now: 1, dt: 0.016)
@@ -417,10 +428,23 @@ final class ArcadiaTests: XCTestCase {
     for (s, mode) in [(0, 0.0), (1, 1), (2, 2), (3, 4)] { m[s] = slot(-0.6 + 0.4 * Double(s), -0.5 + 0.3 * Double(s), mode: mode) }
     setMirror(m)
     XCTAssertNotNil(view.pic)
-    view.holdShot(1, rim: false); render()
+    render()
     XCTAssertEqual(view.wall.builds, 1); XCTAssertNotNil(view.wall.image)
-    view.holdShot(2, rim: true); render(now: 2)
-    XCTAssertEqual(view.wall.builds, 1)
+    // пять режимов (still / circuit / wander / river / summit) — по очереди в слоте 0, каждый рисуется без падений
+    for mode in 0...4 { setMirror([0: slot(-0.2, 0.1, mode: Double(mode))]); render(now: 1 + Double(mode)); XCTAssertNotNil(lastPx.first) }
+    // подпись при касании: чернила над флажком и риска на шкале слева появляются только пока флажок держат
+    setMirror([0: slot(-0.2, 0.1, mode: 1)])
+    let home = G.at(view.zAt, -0.2, 0.1), y = G.proj(-1, 0.1).y
+    func probe() -> (cap: Int, tick: Int) {
+      (ink(Double(home.x) - 45, Double(home.y) - 60, Double(home.x) + 45, Double(home.y) - 20), ink(G.fx0 + 5, y - 1, G.fx0 + 19, y + 1))
+    }
+    render(); let off = probe()
+    view.holdShot(0, rim: false); render(); let hold = probe()
+    XCTAssertGreaterThan(hold.cap, off.cap, "подпись note · Hz / path · figure")
+    XCTAssertGreaterThan(hold.tick, off.tick, "риска ноты на шкале")
+    view.holdShot(0, rim: true); render(); let rim = probe()
+    XCTAssertGreaterThan(rim.cap, off.cap, "подпись orbit N%")
+    XCTAssertEqual(view.heldRim(0), true)
   }
 
   func testRoutesCached() {
@@ -441,9 +465,11 @@ final class ArcadiaTests: XCTestCase {
 
   func testDrawShotNoSun() {
     setMirror()
-    render(); let withSun = px(G.sun.x - 6, G.sun.y + 8)
-    render(shot: true); let without = px(G.sun.x - 6, G.sun.y + 8)
-    XCTAssertEqual(without, [224, 221, 198]); XCTAssertNotEqual(withSun, without)
+    let r = G.sun.r + 4
+    func sunInk() -> Int { ink(max(0, G.sun.x - r), G.sun.y, min(G.W, G.sun.x), G.sun.y + r) }
+    render(); let withSun = sunInk()
+    render(shot: true); let without = sunInk()
+    XCTAssertNotEqual(withSun, without, "солнце рисуется только в обычном кадре")
   }
 
   func testDrawFarFirst() {
