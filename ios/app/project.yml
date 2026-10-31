@@ -57,7 +57,7 @@ targets:
   T2DTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [T2DTests, Fonts, T2D/Draw.swift, T2D/Theme.swift, T2D/World.swift, T2D/Touch.swift, T2D/Firmamentum, T2D/Oceanus, T2D/Monochord, T2D/Horologium, T2D/Stage.swift, T2D/Meter.swift, T2D/Audio.swift, T2D/Log.swift, T2D/Clock.swift, T2D/Host, T2D/Map, T2D/Worlds.swift]
+    sources: [T2DTests, Fonts, T2D/Draw.swift, T2D/Theme.swift, T2D/World.swift, T2D/Touch.swift, T2D/Firmamentum, T2D/Oceanus, T2D/Monochord, T2D/Horologium, T2D/Arcadia, T2D/Stage.swift, T2D/Meter.swift, T2D/Audio.swift, T2D/Log.swift, T2D/Clock.swift, T2D/Host, T2D/Map, T2D/Worlds.swift]
     dependencies:
       - target: T2DCore
     settings:
