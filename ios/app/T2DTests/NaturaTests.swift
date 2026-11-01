@@ -154,6 +154,17 @@ final class NaturaTests: XCTestCase {
     XCTAssertEqual(view.objs, 0)
   }
 
+  func testDiceDropsOwn() {
+    view.send(A.setfx, 1, [0.9]); view.send(A.len, 0, [5]) 
+    XCTAssertEqual(view.fxv(1), 0.9, accuracy: 1e-9); XCTAssertEqual(view.len, 5)
+    view.send(A.clear, 0)
+    XCTAssertFalse(view.pad(0).on)
+    view.dice()
+    XCTAssertEqual(view.fxv(1), Nat.fxDef[1], accuracy: 1e-9)   // своё снято: сразу зеркало
+    XCTAssertEqual(view.len, 12)
+    XCTAssertTrue(view.pad(Nat.demo[0].i).on)
+  }
+
   func testCorner() {
     let g = view.geo.sun
     XCTAssertEqual(g.x, 13); XCTAssertEqual(g.y, 52); XCTAssertEqual(g.r, 70)

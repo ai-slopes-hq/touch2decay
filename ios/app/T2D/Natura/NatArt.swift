@@ -3,6 +3,7 @@ import UIKit
 private let tau = Double.pi * 2
 private let dashLily: [CGFloat] = [4, 2.5]
 private let noDash: [CGFloat] = []
+private let lilyVeins: [Double] = [1.2, 2.1, 3.0, 3.9, 4.8]   // жилки листа: углы
 // scene.js:196-197 — клубы облака: (dx, dy, r) в долях ширины
 private let lobes: [(dx: Double, dy: Double, r: Double)] = [
   (-0.3, -0.02, 0.19), (-0.1, -0.2, 0.25), (0.15, -0.16, 0.23), (0.34, -0.02, 0.17),
@@ -129,7 +130,7 @@ enum NatArt {
     if chance < 1 { a *= 0.45 + 0.55 * chance; p.strokeInk(a); p.dash(dashLily) }   // шанс < 100 % — бледнее, лист пунктиром
     p.begin(); p.ellipse(x, y, rx, ry, rot: 0, 0.35, tau - 0.05); p.to(x, y); p.close(); fillStroke(p); p.dash(noDash)
     p.line(a * 0.5, 0.6); p.begin()
-    for q in [1.2, 2.1, 3.0, 3.9, 4.8] { p.move(x, y); p.to(x + cos(q) * rx * 0.8, y + sin(q) * ry * 0.8) }
+    for q in lilyVeins { p.move(x, y); p.to(x + cos(q) * rx * 0.8, y + sin(q) * ry * 0.8) }
     p.stroke()
     flower(p, x - rx * 0.15, y - ry * 0.4, wave: wave, (5 + 5.5 * s) * (0.75 + 0.45 * open), a)
   }

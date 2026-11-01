@@ -236,4 +236,22 @@ final class NaturaDrawTests: XCTestCase {
     view.menuShot()
     XCTAssertEqual(view.menu?.held, false)
   }
+
+  func testShotHasNoSun() {
+    let g = view.geo, r = g.sun.r
+    let rect = CGRect(x: g.ox + g.sun.x, y: g.sun.y, width: r * 0.9, height: r * 0.9)
+    let full = inkPixels(frame(view), in: rect)
+    let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = true
+    let shotImg = UIGraphicsImageRenderer(size: size, format: f).image { rr in
+      let d = Draw(g: rr.cgContext, W: 390, H: 844); d.setTheme(view.theme)
+      view.drawShot(d, now: 1.0)
+    }
+    XCTAssertGreaterThan(abs(full - inkPixels(shotImg, in: rect)), 50)   // солнце есть в кадре и нет в снимке
+  }
+
+  func testOddMirrorDoesNotCrash() {
+    mirrorBuf = mirror(len: -3, fx: fxs([1: 2.0])); view.tick(now: 1.1, dt: 0.1)
+    view.artTick(now: 1.2, dt: 0.1)
+    _ = frame(view, now: 1.2)
+  }
 }

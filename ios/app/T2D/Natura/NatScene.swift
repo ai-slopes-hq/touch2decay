@@ -3,6 +3,7 @@ import UIKit
 private let tau = Double.pi * 2
 private let riverDash: [CGFloat] = [2, 5]
 private let noDash: [CGFloat] = []
+private let tuftD: [Double] = [-2, -1, 0, 1, 2]   // травинки пучка: смещение
 
 // кеши картинки: бумага (под небом) и земля с рамкой (поверх неба) — scene.js:51-67
 final class NatLayers {
@@ -54,7 +55,7 @@ enum NatScene {
   // scene.js:70-74 — пучок травы
   static func tuft(_ p: NatPen, _ X: Double, _ Y: Double, _ s: Double = 1) {
     p.begin()
-    for d in [-2.0, -1, 0, 1, 2] {
+    for d in tuftD {
       p.move(X + d * 0.7, Y)
       p.quad(X + d * 1.2 * s, Y - 4 * s, X + d * 3.4 * s, Y - (7 - abs(d) * 1.4) * s)
     }

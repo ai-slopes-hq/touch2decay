@@ -32,6 +32,7 @@ final class NaturaView: World {
   let core: Core
   private(set) var geo: NatGeo
   private(set) var mirror = NatMirror()
+  var fogDash: [CGFloat] = [10, 6]                           // длина штриха живёт с reverb: правим на месте, массив в кадре не создаём
   var state = NatState()                                     // единственный экземпляр; касания (NatTouch) зовут его мутирующие методы
   var scl = NatScale(pcs: nil, root: 0)
   let readMirror: Reader, readHeard: Reader
@@ -90,6 +91,7 @@ final class NaturaView: World {
   }
 
   func dice() {
+    state.dropOwn()                                          // после DICE видно зеркало сразу
     send(Act.dice, 0)
     if !playing { send(Act.play, 0, [1]) }
   }
@@ -190,5 +192,5 @@ final class NaturaView: World {
   private typealias Act = Nat.Act
 
   func draw(_ d: Draw, now: Double) { drawFrame(d, now: now) }   // картинка — NatFrame.swift
-  func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now) }
+  func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now, sun: false) }   // карта рисует своё солнце в углу
 }

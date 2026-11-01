@@ -2,7 +2,6 @@ import UIKit
 
 private let tau = Double.pi * 2
 private let noDash: [CGFloat] = []
-private var fogDash: [CGFloat] = [10, 6]                       // длина штриха живёт с reverb: правим на месте, массив в кадре не создаём
 
 // scene.js:324-333 — волны воды и камыши заводи (u, v, длина) и (u, высота)
 private let pondWaves: [(u: Double, v: Double, l: Double)] = [(-0.6, -0.35, 0.3), (0.15, -0.45, 0.35), (-0.2, 0.5, 0.4), (0.45, 0.35, 0.25)]
@@ -161,7 +160,7 @@ extension NaturaView {
   func drawCloud(_ p: NatPen, nowMs: Double) {
     let G = geo, cutoff = fxv(4), delay = fxv(1), c = G.cloud(cutoff: cutoff)
     let n = delay < 0.15 ? 0 : Int(ceil((delay - 0.15) / 0.85 * Double(extraClouds.count)))
-    for i in 0..<n {
+    for i in 0..<min(n, extraClouds.count) {
       let e = extraClouds[i], bob = sin(nowMs * 0.0006 + Double(i) * 1.7) * 2
       NatArt.cloud(p, c.cx + e.dx * G.W, c.cy + e.dy * 40 + bob, c.s * e.k, 0.55 + 0.1 * Double(i % 2))
     }

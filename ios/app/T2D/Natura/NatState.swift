@@ -107,6 +107,9 @@ struct NatState {
     }
   }
 
+  // DICE: ядро перебирает всё — свои значения снять (шкалу и т.п. не трогает)
+  mutating func dropOwn() { st.clear() }
+
   // свои значения пусты; goneAt, lastWave, noteAt / playedAt и лягушка остаются
   mutating func reset() { st.clear(); shakeT = Self.none }
 

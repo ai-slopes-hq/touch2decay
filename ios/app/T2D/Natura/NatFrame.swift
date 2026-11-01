@@ -1,5 +1,7 @@
 import UIKit
 
+private let frogEyes: [Double] = [-0.38, 0.38]
+
 private let tau = Double.pi * 2
 private let noDash: [CGFloat] = []
 private let trailDash: [CGFloat] = [4, 4]
@@ -54,7 +56,7 @@ extension NaturaView {
 
   // m-я (по кругу) из звучащих кувшинок шага по давности: сыгранные позже — раньше; при равенстве — меньший номер (view.js:425-426)
   private func playedRank(_ m: Int) -> Int {
-    let L = min(len, Nat.npad)
+    let L = max(0, min(len, Nat.npad))
     var cnt = 0
     for i in 0..<L where pad(i).on { cnt += 1 }
     guard cnt > 0 else { return -1 }
@@ -105,7 +107,7 @@ extension NaturaView {
   private func drawGlides(_ p: NatPen, nowMs: Double) {
     var prev: (x: Double, y: Double)?
     p.line(0.55, 1.1)
-    for i in 0..<min(len, Nat.npad) {
+    for i in 0..<max(0, min(len, Nat.npad)) {
       let pd = pad(i)
       guard pd.on else { continue }
       let q = geo.padXY(i, pd.note)
@@ -166,7 +168,7 @@ extension NaturaView {
     else { p.move(-s * 0.8, s * 0.4); p.to(-s * 1.2, -s * 0.05); p.to(-s * 0.7, s * 0.55); p.move(s * 0.8, s * 0.4); p.to(s * 1.2, -s * 0.05); p.to(s * 0.7, s * 0.55) }
     p.stroke()
     p.begin(); p.ellipse(0, 0, s * 0.85, s * 0.6, rot: 0, 0, tau); fillStroke(p)
-    for ex in [-0.38, 0.38] as [Double] {
+    for ex in frogEyes {
       p.begin(); p.arc(ex * s, -s * 0.5, s * 0.24, 0, tau); fillStroke(p)
       p.begin(); p.arc(ex * s, -s * 0.52, s * 0.08, 0, tau); p.fillInk(0.9); p.fill(); p.fillPap(1)
     }
@@ -258,7 +260,7 @@ extension NaturaView {
   }
 
   // ---------- кадр (view.js:504-532) ----------
-  func drawFrame(_ d: Draw, now: Double) {
+  func drawFrame(_ d: Draw, now: Double, sun: Bool = true) {
     let g = d.g, G = geo, nowMs = now * 1000, th = theme
     let p = NatPen(g: g, inkC: th.ink, papC: th.paper)
     layers.update(G, size: CGSize(width: d.W, height: d.H), dpr: Draw.scale, res: fxv(5), ink: th.ink, pap: th.paper)
@@ -266,7 +268,7 @@ extension NaturaView {
     g.saveGState(); g.translateBy(x: CGFloat(G.ox), y: 0)
     drawLayer(layers.sky, d)
     g.saveGState(); p.begin(); p.rect(13, 13, G.W - 26, G.bot + 14); g.clip()   // рамка: T.H − safeBot − 26
-    drawSun(d, nowMs: nowMs)
+    if sun { drawSun(d, nowMs: nowMs) }
     drawBirds(p, nowMs: nowMs)
     g.restoreGState()
     drawLayer(layers.land, d)
