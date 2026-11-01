@@ -49,7 +49,7 @@ enum NatScene {
   }
 
   // scene.js:70-74 — пучок травы
-  private static func tuft(_ p: NatPen, _ X: Double, _ Y: Double, _ s: Double = 1) {
+  static func tuft(_ p: NatPen, _ X: Double, _ Y: Double, _ s: Double = 1) {
     p.begin()
     for d in [-2.0, -1, 0, 1, 2] {
       p.move(X + d * 0.7, Y)
@@ -59,7 +59,7 @@ enum NatScene {
   }
 
   // scene.js:75-85 — штриховка под клипом; сцена задаёт ширину и высоту холста T.W × T.H
-  private static func hatchIn(_ p: NatPen, _ G: NatGeo, _ clip: () -> Void, _ ang: Double, _ step: Double, _ a: Double, _ w: Double = 0.7) {
+  static func hatchIn(_ p: NatPen, _ G: NatGeo, _ clip: () -> Void, _ ang: Double, _ step: Double, _ a: Double, _ w: Double = 0.7) {
     p.g.saveGState(); p.begin(); clip(); p.g.clip()
     p.line(a, w); p.begin()
     let L = hypot(G.W, G.H), c = cos(ang), s = sin(ang)

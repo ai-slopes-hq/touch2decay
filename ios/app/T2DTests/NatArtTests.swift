@@ -41,8 +41,8 @@ final class NatArtTests: XCTestCase {
     ink("flyer") { NatArt.flyer($0, 90, 100, 20, 1, 0.5) }
     let G = NatGeo(W: 200, H: 200, topY: 0, safeBot: 0)
     let pd = G.pond()
-    let D = (a: NatDuck(x: 0, y: 0, s: 12, dir: 1), r: NatDuck(x: 0, y: 0, s: 26, dir: -1))
-    let img = natCanvas { NatArt.ducklings($0, G, 1000, D) }
+    XCTAssertEqual(NatArt.ducklingCount(rel: 0), 0); XCTAssertEqual(NatArt.ducklingCount(rel: 1), 4)
+    let img = natCanvas { NatArt.ducklings($0, G, 1000, rel: 1) }
     XCTAssertGreaterThan(inkPixels(img, in: CGRect(x: pd.x - pd.rx, y: pd.y - pd.ry, width: pd.rx * 2, height: pd.ry * 2 + 10)), 0, "ducklings")
   }
 

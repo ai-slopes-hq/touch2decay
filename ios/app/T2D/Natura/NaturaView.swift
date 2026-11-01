@@ -115,13 +115,14 @@ final class NaturaView: World {
       if prevOn[i] && !on { objGone?(i) }
       prevOn[i] = on
     }
+    geo.birds(chorus: fxv(3), now: now, birdsAt: state.birdsAt, into: &birdBuf)   // для drawBirds и попаданий: в кадре состояние не меняем
     touchTick(now: now)
   }
 
   // ---------- плашки ----------
   private static let lockBase = 4                             // fxKeys: cutoff, res, att, rel — с индекса 4, как замки LOCKS
   private func lockIdx(_ k: String) -> Int? { Nat.locks.firstIndex(of: k) }
-  private func val(_ p: NatPad, _ k: String) -> Double {
+  func val(_ p: NatPad, _ k: String) -> Double {
     guard let l = lockIdx(k) else { return 0 }
     return p.lock[l] >= 0 ? p.lock[l] : fxv(Self.lockBase + l)
   }

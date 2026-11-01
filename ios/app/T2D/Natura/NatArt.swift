@@ -199,15 +199,15 @@ enum NatArt {
     p.g.restoreGState()
   }
 
-  // scene.js:361-371 — утята за правой уткой: больше release — больше утят (до 4). release берём из размера правой утки (S = 12 + 14·rel)
-  static func ducklingCount(_ D: (a: NatDuck, r: NatDuck)) -> Int { Int(Horo.jsRound((D.r.s - 12) / 14 * 4)) }
+  // scene.js:361-371 — утята за правой уткой: больше release (fx.rel) — больше утят (до 4)
+  static func ducklingCount(rel: Double) -> Int { Int(Horo.jsRound(rel * 4)) }
   static func duckling(_ k: Int, _ G: NatGeo, _ nowMs: Double) -> NatDuck {
     let P = G.pond(), kk = Double(k)
     let a = 0.45 + kk * 0.5 + sin(nowMs * 0.0007 + kk) * 0.05   // вереницей по ближнему краю заводи, за мамой
     return NatDuck(x: P.x + P.rx * 0.8 * cos(a), y: P.y + 3 + P.ry * 0.62 * sin(a) + sin(nowMs * 0.002 + kk * 1.3) * 0.8, s: 7, dir: -1)
   }
   // отрисовка как в view.js:84 — `duck(c, d, 0)` для каждого
-  static func ducklings(_ p: NatPen, _ G: NatGeo, _ nowMs: Double, _ D: (a: NatDuck, r: NatDuck)) {
-    for k in 0..<max(0, ducklingCount(D)) { duck(p, duckling(k, G, nowMs), nod: 0) }
+  static func ducklings(_ p: NatPen, _ G: NatGeo, _ nowMs: Double, rel: Double) {
+    for k in 0..<max(0, ducklingCount(rel: rel)) { duck(p, duckling(k, G, nowMs), nod: 0) }
   }
 }
