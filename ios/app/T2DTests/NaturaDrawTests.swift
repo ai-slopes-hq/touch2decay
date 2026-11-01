@@ -2,7 +2,8 @@ import XCTest
 @testable import T2D
 
 private final class RecD: Core {
-  func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) -> Bool { true }
+  var acts: [(kind: Int, i: Int, a: [Double])] = []
+  func action(_ kind: Int, _ i: Int, _ a: [Double], touchTime: Double) -> Bool { acts.append((kind, i, a)); return true }
 }
 
 // пейзаж в кадре: солнце, птицы, туман, пирс, запруда, камыши, древо, туча, заводь, утки, надгробие (scene.js, view.js)
@@ -29,9 +30,9 @@ final class NaturaDrawTests: XCTestCase {
     view.tick(now: 1.0, dt: 0.016)
   }
 
-  private func mirror(bpm: Double = 96, len: Int = 12, fx: [Double] = Nat.fxDef, shake: Double = 0) -> [Double] {
+  private func mirror(bpm: Double = 96, len: Int = 12, fx: [Double] = Nat.fxDef, shake: Double = 0, playing: Bool = false, phase: Double = 0) -> [Double] {
     var b = [Double](repeating: 0, count: Nat.mirrorN)
-    b[0] = -1; b[4] = bpm; b[5] = Double(len); b[6] = shake
+    b[0] = playing ? phase : -1; b[1] = playing ? 1 : 0; b[4] = bpm; b[5] = Double(len); b[6] = shake
     for k in 0..<Nat.fxDef.count { b[7 + k] = fx[k] }
     for i in 0..<Nat.npad {
       let o = Nat.head + i * Nat.padN
@@ -139,5 +140,100 @@ final class NaturaDrawTests: XCTestCase {
       })
     }
     XCTAssertEqual(frame(), frame())
+  }
+
+  // ---------- кадр целиком: рыба и стрекозы (тик), чистота кадра, широкий экран, дым, хуки сцен ----------
+  private func fxs(_ set: [Int: Double]) -> [Double] { var f = Nat.fxDef; for (k, v) in set { f[k] = v }; return f }
+
+  private func frame(_ v: NaturaView, _ w: CGFloat = 390, _ h: CGFloat = 844, now: Double = 1.0) -> UIImage {
+    let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = true
+    return UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: f).image { r in
+      let d = Draw(g: r.cgContext, W: w, H: h); d.setTheme(v.theme)
+      v.drawFrame(d, now: now)
+    }
+  }
+
+  private func rgb(_ img: UIImage, _ x: Int, _ y: Int) -> [Int] {
+    let cg = img.cgImage!, b = CFDataGetBytePtr(cg.dataProvider!.data!)!, o = y * cg.bytesPerRow + x * (cg.bitsPerPixel / 8)
+    if cg.bitmapInfo.contains(.byteOrder32Little) { return [Int(b[o + 2]), Int(b[o + 1]), Int(b[o])] }
+    return [Int(b[o + 1]), Int(b[o + 2]), Int(b[o + 3])]
+  }
+
+  func testFishSpawnsOnLoop() throws {
+    mirrorBuf = mirror(len: 12, playing: true, phase: 11.9); view.tick(now: 2.0, dt: 0.1)
+    XCTAssertNil(view.fish)
+    mirrorBuf = mirror(len: 12, playing: true, phase: 12.1); view.tick(now: 2.1, dt: 0.1)
+    let f = try XCTUnwrap(view.fish)
+    let p = view.geo.river(0.5).across(0)
+    XCTAssertEqual(f.x, p.x, accuracy: 1e-9); XCTAssertEqual(f.y, p.y, accuracy: 1e-9)
+    XCTAssertEqual(f.s, 1.0, accuracy: 1e-9)
+    view.tick(now: 3.8, dt: 1.7)
+    XCTAssertNil(view.fish)
+  }
+
+  func testFliesRetargetGone() {
+    // setUp уже дал стрекозе цель на 6–12 с — ждём, пока срок выйдет
+    mirrorBuf = mirror(fx: fxs([3: 1])); heardQ = [[1, 3]]
+    view.tick(now: 20.0, dt: 0.1)
+    XCTAssertEqual(view.flies[0].i, 3)
+    XCTAssertTrue(view.flies.allSatisfy(\.ok))
+    view.send(Nat.Act.remove, 3)
+    view.tick(now: 20.1, dt: 0.1)
+    XCTAssertNotEqual(view.flies[0].i, 3)
+    mirrorBuf = mirror(fx: fxs([3: 0.1])); view.tick(now: 20.2, dt: 0.1)
+    XCTAssertTrue(view.flies.allSatisfy { !$0.ok })
+  }
+
+  func testDrawPure() {
+    let fresh = NaturaView(core: rec, readMirror: { _ in 0 }, readHeard: { _ in 0 }, rng: { 0.5 })
+    fresh.layout(W: 390, H: 844, topY: 50, safeBot: 34)
+    _ = frame(fresh)
+    mirrorBuf = mirror(fx: fxs([3: 1]), playing: true, phase: 12.1); heardQ = [[1, 3]]
+    view.skiffShot(9, note: 12)
+    view.tick(now: 2.0, dt: 0.1)
+    XCTAssertNotNil(view.fish)
+    let fish = view.fish, flies = view.flies, sx = view.skiff.x, sy = view.skiff.y, tr = view.skiff.trail.count
+    _ = frame(view, now: 2.05); _ = frame(view, now: 2.1)
+    XCTAssertEqual(view.fish, fish); XCTAssertEqual(view.flies, flies)
+    XCTAssertEqual(view.skiff.x, sx); XCTAssertEqual(view.skiff.y, sy); XCTAssertEqual(view.skiff.trail.count, tr)
+  }
+
+  func testDrawWide() {
+    view.layout(W: 1024, H: 1366, topY: 59, safeBot: 34)
+    view.tick(now: 1.1, dt: 0.1)
+    let ox = Int(view.geo.ox)
+    XCTAssertGreaterThan(ox, 20)
+    let img = frame(view, 1024, 1366)
+    for (x, y) in [(0, 10), (ox / 2, 683), (ox - 1, 1300), (3, 700)] {
+      let c = rgb(img, x, y)
+      XCTAssertEqual(c[0], Int(natPap.r), accuracy: 3); XCTAssertEqual(c[1], Int(natPap.g), accuracy: 3); XCTAssertEqual(c[2], Int(natPap.b), accuracy: 3)
+    }
+    XCTAssertGreaterThan(inkPixels(img, in: CGRect(x: ox + 10, y: 650, width: 8, height: 60)), 0)
+  }
+
+  func testDrawSmoke() {
+    mirrorBuf = mirror(fx: fxs([3: 1, 4: 1, 5: 0.95]), playing: true, phase: 3.5)
+    view.tick(now: 2.0, dt: 0.1)
+    let o = NSObject(), g = view.geo, p3 = g.padXY(3, view.pad(3).note)
+    let x = CGFloat(p3.x + g.ox), y = CGFloat(p3.y)
+    view.down(Finger(id: ObjectIdentifier(o), x: x, y: y, x0: x, y0: y, t0: 0, moved: false, touchTime: 0))
+    view.menuShot()
+    let img = frame(view, now: 2.1)
+    func ink(_ x: Double, _ y: Double, _ r: Double = 18) -> Int { inkPixels(img, in: CGRect(x: x - r + g.ox, y: y - r, width: 2 * r, height: 2 * r)) }
+    XCTAssertGreaterThan(ink(p3.x, p3.y), 20)
+    let pier = g.pier(); XCTAssertGreaterThan(ink(pier.x, pier.y), 20)
+    XCTAssertGreaterThan(ink(view.skiff.x, view.skiff.y), 20)
+    let m = view.menuOpts()[0]; XCTAssertGreaterThan(ink(m.x, m.y, 24), 20)
+  }
+
+  func testShotHooks() throws {
+    view.skiffShot(9, note: 12)
+    let a = try XCTUnwrap(rec.acts.last)
+    let pt = view.geo.padXY(9, 12), o = view.geo.onRiver(pt.x, pt.y)
+    XCTAssertEqual(a.kind, Nat.Act.skiff)
+    XCTAssertEqual(a.a[0], o.q, accuracy: 1e-9); XCTAssertEqual(a.a[1], o.t, accuracy: 1e-9)
+    XCTAssertTrue(view.skiff.held); XCTAssertFalse(view.skiff.home)
+    view.menuShot()
+    XCTAssertEqual(view.menu?.held, false)
   }
 }

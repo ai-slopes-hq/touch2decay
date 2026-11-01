@@ -308,6 +308,16 @@ extension NaturaView {
     frogAt = state.frog(geo: geo, pads: padBuf, len: len, now: now, R: rng)
   }
 
+  // ---------- хуки сцен -shot natura* ----------
+  // челнок «в руке» на воде в точке кувшинки (i, note): звучит, как после перетаскивания
+  func skiffShot(_ i: Int, note: Int) {
+    let g = geo.padXY(i, note)
+    skiff.x = g.x; skiff.y = g.y; skiff.held = true; skiff.home = false; skiff.fly = nil; skiff.back = nil
+    skiffTo(geo.onRiver(g.x, g.y))
+  }
+  // меню цветков над челноком, как после отпускания мимо цветка
+  func menuShot() { menu = NatMenu(x: skiff.x, y: skiff.y, held: false, owner: nil) }
+
   // undo: пальцы, меню, полёт и след забыты; челнок на воде — SKIFF_OFF один раз, и он дома
   func touchReset() {
     if skiff.onRiver { skiffTo(nil) }

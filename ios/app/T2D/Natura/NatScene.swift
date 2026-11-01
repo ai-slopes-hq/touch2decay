@@ -8,21 +8,24 @@ private let noDash: [CGFloat] = []
 final class NatLayers {
   private(set) var skyBuilds = 0, landBuilds = 0
   private(set) var sky: CGImage?, land: CGImage?
-  private var skyKey: [Double]?, landKey: [Double]?
+  // ключ веба `W×H×DPR|top|bot|round(res·24)` — обычные поля: в кадре сравнение без выделений
+  private var built = false
+  private var kW = 0.0, kH = 0.0, kD = 0.0, kTop = 0.0, kBot = 0.0, kRes = 0.0
 
-  // key веба: `W×H×DPR|top|bot|round(res·24)`. W, H бумаги — по size всего вида, как canvas() веба
+  // W, H бумаги — по size всего вида, как canvas() веба
   func update(_ G: NatGeo, size: CGSize, dpr: CGFloat, res: Double, ink: RGB, pap: RGB) {
-    let sk = [Double(size.width), Double(size.height), Double(dpr)]
-    let lk = sk + [G.top, G.bot, Horo.jsRound(res * 24)]
-    if sk == skyKey && lk == landKey { return }
+    let w = Double(size.width), h = Double(size.height), d = Double(dpr), rq = Horo.jsRound(res * 24)
+    let skySame = built && w == kW && h == kH && d == kD
+    if skySame && G.top == kTop && G.bot == kBot && rq == kRes { return }
     var rnd = NatLCG()
-    if sk != skyKey {
-      skyKey = sk; skyBuilds += 1
+    if !skySame {
+      skyBuilds += 1
       sky = NatLayers.canvas(size, dpr) { NatScene.paintSky(NatPen(g: $0, inkC: ink, papC: pap), w: G.W, h: G.H, rnd: &rnd) }
     } else {
       for _ in 0..<(260 * 3) { _ = rnd.next() }   // счёт крапа — без рисования, земля продолжает с того же места
     }
-    landKey = lk; landBuilds += 1
+    built = true; kW = w; kH = h; kD = d; kTop = G.top; kBot = G.bot; kRes = rq
+    landBuilds += 1
     land = NatLayers.canvas(size, dpr) { NatScene.paintLand(NatPen(g: $0, inkC: ink, papC: pap), G, res: res, rnd: &rnd) }
   }
 

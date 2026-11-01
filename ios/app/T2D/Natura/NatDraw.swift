@@ -189,7 +189,7 @@ extension NaturaView {
   }
 
   // сила огибающей к моменту ms после ноты: атака линейно, дальше спад (view.js:46)
-  private func envAt(_ ms: Double, _ pd: NatPad) -> Double {
+  func envAt(_ ms: Double, _ pd: NatPad) -> Double {
     let a = attSec(pd) * 1000
     return ms < a ? ms / a : exp(-(ms - a) / (relSec(pd) * 1000 / 2.5))
   }

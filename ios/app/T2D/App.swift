@@ -11,7 +11,8 @@ import SwiftUI
 //   horologium | horologium-ring-sheet | horologium-hub-sheet | horologium-fan | horologium-spin — go(9), см. shotHoro.
 //   arcadia | arcadia-land | arcadia-held | arcadia-held-rim | arcadia-sheet | arcadia-fan — go(12), см. shotArc;
 //   tria | tria-lux | tria-fall | tria-held | tria-sheet | tria-fan — go(11), см. shotTria;
-//   inferno | inferno-held | inferno-sheet | inferno-fx | inferno-storm | inferno-fan — go(5), см. shotInferno.
+//   inferno | inferno-held | inferno-sheet | inferno-fx | inferno-storm | inferno-fan — go(5), см. shotInferno;
+//   natura | natura-play | natura-fx | natura-res | natura-skiff | natura-ducks-away | natura-sheet | natura-menu — go(4), см. shotNatura.
 @main
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
@@ -30,6 +31,7 @@ struct T2DApp: App {
   @State private var arc: ArcadiaView                // нужен только -shot arcadia*; Host держит миры сам
   @State private var tria: TriaView                  // нужен только -shot tria*; Host держит миры сам
   @State private var inf: InfernoView                // нужен только -shot inferno*; Host держит миры сам
+  @State private var nat: NaturaView                 // нужен только -shot natura*; Host держит миры сам
   @State private var host: Host
 
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
@@ -44,6 +46,7 @@ struct T2DApp: App {
     case ArcadiaView.slotN: return ArcadiaView(core: AppCore(slot: slot))
     case TriaView.slotN: return TriaView(core: AppCore(slot: slot))
     case InfernoView.slotN: return InfernoView(core: AppCore(slot: slot))
+    case NaturaView.slotN: return NaturaView(core: AppCore(slot: slot))
     default: return nil
     }
   }
@@ -57,7 +60,7 @@ struct T2DApp: App {
     a.onInit = { h.reapply() }
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _nat = State(initialValue: views.compactMap { $0 as? NaturaView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -88,6 +91,7 @@ struct T2DApp: App {
     case "arcadia", "arcadia-land", "arcadia-held", "arcadia-held-rim", "arcadia-sheet", "arcadia-fan": shotArc(T2DApp.shotName); return
     case "tria", "tria-lux", "tria-fall", "tria-held", "tria-sheet", "tria-fan": shotTria(T2DApp.shotName); return
     case "inferno", "inferno-held", "inferno-sheet", "inferno-fx", "inferno-storm", "inferno-fan": shotInferno(T2DApp.shotName); return
+    case "natura", "natura-play", "natura-fx", "natura-res", "natura-skiff", "natura-ducks-away", "natura-sheet", "natura-menu": shotNatura(T2DApp.shotName); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -298,6 +302,27 @@ struct T2DApp: App {
     case "inferno-fan":
       q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(inf.fx!, lfoKey: "fire"); host.shotLfo(rate: 1, depth: 0.5) }
     default: act(Inf.Act.pin, 6, 0.4)
+    }
+  }
+
+  // Natura: natura — демо; -play — играет; -fx — веер выкручен (туман, облака, дождь, птицы, туча); -res — резонанс 0.95 (горы выше);
+  // -skiff — играет, через 1.5 с челнок на воде у кувшинки 10; -ducks-away — через 3.9 с испуг (утки в воздухе); -sheet — плашка кувшинки 4;
+  // -menu — через 1.5 с меню цветков над челноком; действие — раньше кадра shot.sh (+5 с)
+  private func shotNatura(_ name: String) {
+    host.go(NaturaView.slotN)
+    let q = DispatchQueue.main
+    typealias A = Nat.Act
+    switch name {
+    case "natura-play": nat.send(A.play, 0, [1])
+    case "natura-fx": for k in 0...4 { nat.send(A.setfx, k, [1]) }
+    case "natura-res": nat.send(A.setfx, 5, [0.95])
+    case "natura-skiff":
+      nat.send(A.play, 0, [1])
+      q.asyncAfter(deadline: .now() + 1.5) { nat.skiffShot(9, note: 12) }
+    case "natura-ducks-away": q.asyncAfter(deadline: .now() + 3.9) { nat.send(A.scare, 0) }
+    case "natura-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(nat.lilySpec(3)) }
+    case "natura-menu": q.asyncAfter(deadline: .now() + 1.5) { nat.menuShot() }
+    default: break
     }
   }
 

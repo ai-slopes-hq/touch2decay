@@ -2,7 +2,7 @@ import UIKit
 import T2DCore
 
 // Natura (мир IV) — связка ядра и Swift: единственный путь действий send, тик, плашка кувшинки, веер, легенда
-// (порт worlds/natura/view.js; модель и звук — в ядре, картинка — план (б), касания — NatTouch.swift)
+// (порт worlds/natura/view.js; модель и звук — в ядре, картинка — NatScene / NatArt / NatDraw / NatFrame, касания — NatTouch.swift)
 final class NaturaView: World {
   static let slotN = 4
 
@@ -52,6 +52,12 @@ final class NaturaView: World {
   var splash: (x: Double, y: Double, t0: Double)?
   var birdBuf: [(x: Double, y: Double, s: Double, i: Int, fast: Double)] = []   // птицы для попадания, без выделений в кадре
   var padBuf = [NatPad](repeating: NatPad(), count: Nat.npad)                     // места для state.frog
+
+  // живое на реке: рыба и стрекозы двигает тик (artTick, NatFrame.swift), кадр только читает; кеши неба и земли — layers
+  let layers = NatLayers()
+  var fish: NatFish?
+  var fishStep = -1
+  var flies = [NatFly](repeating: NatFly(), count: 3)
 
   init(core: Core, readMirror: Reader? = nil, readHeard: Reader? = nil, rng: (() -> Double)? = nil) {
     self.core = core; geo = NatGeo(W: 390, H: 844, topY: 59, safeBot: 34)
@@ -117,6 +123,7 @@ final class NaturaView: World {
     }
     geo.birds(chorus: fxv(3), now: now, birdsAt: state.birdsAt, into: &birdBuf)   // для drawBirds и попаданий: в кадре состояние не меняем
     touchTick(now: now)
+    artTick(now: now, dt: dt)
   }
 
   // ---------- плашки ----------
@@ -182,6 +189,6 @@ final class NaturaView: World {
 
   private typealias Act = Nat.Act
 
-  func draw(_ d: Draw, now: Double) {}                       // картинка — план (б)
-  func drawShot(_ d: Draw, now: Double) {}
+  func draw(_ d: Draw, now: Double) { drawFrame(d, now: now) }   // картинка — NatFrame.swift
+  func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now) }
 }
