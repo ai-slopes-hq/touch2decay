@@ -144,13 +144,6 @@ enum NatScene {
     drawCard(p, G, safeBot)
   }
 
-  // scene.js:165 — листок
-  private static func leafPath(_ p: NatPen, _ X: Double, _ Y: Double, _ ang: Double, _ s: Double) {
-    p.g.saveGState(); p.g.translateBy(x: CGFloat(X), y: CGFloat(Y)); p.g.rotate(by: CGFloat(ang))
-    p.begin(); p.move(0, 0); p.quad(4 * s, -6 * s, 0, -12 * s); p.quad(-4 * s, -6 * s, 0, 0); p.stroke()
-    p.g.restoreGState()
-  }
-
   // scene.js:140-164 — рамка карты Таро: двойная, сверху номер, снизу плашка с именем
   private static func drawCard(_ p: NatPen, _ G: NatGeo, _ safeBot: Double) {
     let W = G.W, H = G.H, b = H - safeBot
@@ -165,7 +158,7 @@ enum NatScene {
       p.line(0.7, 1); p.begin()
       p.move(X, Y); p.bez(X + sx * 16, Y - 2, X + sx * 20, Y - 16, X + sx * 8, Y - 18)
       p.quad(X + sx * 2, Y - 14, X + sx * 8, Y - 10); p.stroke()
-      leafPath(p, X + sx * 4, Y - 1, sx * 1.1, 0.7)
+      NatArt.leafPath(p, X + sx * 4, Y - 1, sx * 1.1, 0.7)
     }
     fleur(16, b - 36, 1); fleur(W - 16, b - 36, -1)
     let ny = G.top - 12
