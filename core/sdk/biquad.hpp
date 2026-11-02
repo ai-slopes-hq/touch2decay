@@ -49,6 +49,16 @@ struct Biquad {
     previousOutput = outputBeforePrevious = 0.0;
   }
 
+  // Обнулить в памяти всё, что тише below (например, 1e-12 ≈ −240 дБ). Зачем: затухающий хвост
+  // иначе уходит в денормалы — числа около 1e-308, на которых процессор считает в разы медленнее, —
+  // и никогда не становится ровным нулём, так что silent() его не заметит. Зови раз в блок.
+  void flushTiny(double below) {
+    if (std::fabs(previousInput) < below) previousInput = 0.0;
+    if (std::fabs(inputBeforePrevious) < below) inputBeforePrevious = 0.0;
+    if (std::fabs(previousOutput) < below) previousOutput = 0.0;
+    if (std::fabs(outputBeforePrevious) < below) outputBeforePrevious = 0.0;
+  }
+
   // Память ровно в нуле — фильтр ничего не «дозвучивает». Так блоки (эхо) понимают,
   // что можно не считать тишину сэмпл за сэмплом. Сравнение точное: гасить крохотные
   // хвосты в 0 — забота того, кто проверяет.
