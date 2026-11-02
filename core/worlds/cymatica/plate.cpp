@@ -283,7 +283,7 @@ void Plate::process(float* L, float* R, int N) {
       for (int bn = 0; bn < nBows_; bn++) {
         const Bow& b = bows_[bn];
         double vp = 0;                                    // скорость пластины в точке смычка
-        for (int k = 0; k < NM; k++) vp += b.g[k] * (v.res[k].y1 - v.res[k].y2);
+        for (int k = 0; k < NM; k++) vp += b.g[k] * (v.res[k].velocity());
         const double vb = 0.25, fric = bowTable(vb - vp) / bowTable(vb);
         const double bow = (rng_.next() * 2 - 1) * fric, breath = lp_ * 3;
         const double e = ((1 - b.exciter) * bow + b.exciter * breath) * b.amp * (0.5 + b.pressure) * BOW_GAIN;

@@ -14,8 +14,8 @@ void Sound::prepare(double fs, uint32_t seed) {
   for (int i = 0; i < NS; i++) {
     S& s = s_[i];
     s.k.clear(); s.h.clear();
-    s.k.len = 400; s.k.b = 0.5; s.k.g = 0.996;
-    s.h.len = 100; s.h.g = 0.99;
+    s.k.length = 400; s.k.brightness = 0.5; s.k.loss = 0.996;
+    s.h.length = 100; s.h.loss = 0.99;
     s.exn = s.exi = s.hexn = s.hexi = 0;
     s.level = 0.8; s.pan = (i - 1.5) / 2.2; s.bow = s.bowS = s.sus = s.en = s.nz = 0; s.f = 110; s.t60 = 5; s.y = 0; s.e2 = 0;
     s.hen = s.he2 = 0; s.hn = 2;
@@ -27,11 +27,11 @@ void Sound::tune(int i, double f0, double bright, double decay, double level) {
   if (!ok(i)) return;
   S& s = s_[i];
   const double f = std::fmax(20, std::fmin(2000, f0));
-  s.k.b = 0.15 + 0.83 * clamp01(bright);
+  s.k.brightness = 0.15 + 0.83 * clamp01(bright);
   const double dc = clamp01(decay);
   const double t60 = 0.3 + 14 * (dc * dc);
-  s.k.g = sdk::KsLoop<BUF>::lossOf(t60, f);
-  s.k.len = sdk::KsLoop<BUF>::lenOf(fs_, f, s.k.b);
+  s.k.loss = sdk::KsLoop<BUF>::lossOf(t60, f);
+  s.k.length = sdk::KsLoop<BUF>::lenOf(fs_, f, s.k.brightness);
   s.f = f; s.t60 = t60;
   if (level >= 0) s.level = level;
 }
@@ -40,8 +40,8 @@ void Sound::harm(int i, int n, double vel) {           // флажолет: па
   if (!ok(i)) return;
   S& s = s_[i];
   const double f = std::fmin(4000, s.f * n);
-  s.hn = n; s.h.len = sdk::KsLoop<HBUF>::lenOf(fs_, f, s.k.b); s.h.g = std::pow(10.0, -3 / (s.t60 * 0.8 * f)); s.h.lp = 0;
-  int L = jsRound(s.h.len);
+  s.hn = n; s.h.length = sdk::KsLoop<HBUF>::lenOf(fs_, f, s.k.brightness); s.h.loss = std::pow(10.0, -3 / (s.t60 * 0.8 * f)); s.h.clearDamp();
+  int L = jsRound(s.h.length);
   if (L > HBUF) L = HBUF;
   double y = 0;
   for (int k = 0; k < L; k++) { y += 0.5 * (rnd() * 2 - 1 - y); s.hex[k] = static_cast<float>(y * vel * 0.8); }
@@ -51,7 +51,7 @@ void Sound::harm(int i, int n, double vel) {           // флажолет: па
 void Sound::pluck(int i, double pos, double vel) {     // шум с мягким срезом по силе, гребёнка по месту щипка
   if (!ok(i)) return;
   S& s = s_[i];
-  int L = jsRound(s.k.len);
+  int L = jsRound(s.k.length);
   if (L > BUF) L = BUF;
   int d = jsRound(L * std::fmax(0.04, std::fmin(0.5, pos)));
   if (d < 1) d = 1;
@@ -98,8 +98,7 @@ bool Sound::process(float* L, float* R, int n, double now) {
     for (S& s : s_) {
       s.bowS += (s.bow - s.bowS) * 0.002;
       const double y = s.k.read();
-      s.k.lp += s.k.b * (y - s.k.lp);
-      double v = s.k.lp * s.k.g * own + c * (bridge - s.y);
+      double v = s.k.damp(y, s.k.brightness) * s.k.loss * own + c * (bridge - s.y);
       if (s.exn) { v += s.ex[s.exi++]; if (s.exi >= s.exn) s.exn = 0; }
       const double drive = s.bowS * 0.06 + s.sus * 0.012 + wind_ * 0.01;
       if (drive > 1e-5) { s.nz += 0.3 * (rnd() * 2 - 1 - s.nz); v += s.nz * drive; }
@@ -108,8 +107,7 @@ bool Sound::process(float* L, float* R, int n, double now) {
       double out = y;
       if (s.hexn || s.hen > 1e-9) {                     // флажолет
         const double yh = s.h.read();
-        s.h.lp += s.k.b * (yh - s.h.lp);
-        double vh = s.h.lp * s.h.g;
+        double vh = s.h.damp(yh, s.k.brightness) * s.h.loss;
         if (s.hexn) { vh += s.hex[s.hexi++]; if (s.hexi >= s.hexn) s.hexn = 0; }
         s.h.write(vh);
         out += yh; s.he2 += yh * yh;

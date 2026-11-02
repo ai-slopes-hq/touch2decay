@@ -1,6 +1,21 @@
-// Двухполюсный резонатор: y = b1·y1 + b2·y2 + g·x, полюса R·e^{±iω}. Коэффициенты — отдельно от состояния: у мира их много (моды × голоса),
-// пересчитываются при смене высоты, а не каждый сэмпл. Затухание — по T60 (Cymatica: 10^(−3/(T60·fs))) или по tau (Horologium: e^(−1/(τ·fs))).
-// Усиление g — у вызывающего (Cymatica: sin ω, чтобы импульс давал амплитуду ~1).
+// Resonator — двухполюсный резонатор: звенит на одной частоте и затухает. Ударил импульсом —
+// получил затухающую синусоиду. Из таких мод собраны пластина Cymatica и звон Horologium.
+//
+//   y = b1·y_прошлый + b2·y_позапрошлый + g·x,   полюса R·e^(±iω), ω = 2π·hz/fs
+//
+// Коэффициенты (ResCoef) хранятся отдельно от состояния (Resonator): мод у мира много
+// (моды × голоса), а коэффициенты меняются только со сменой высоты, не каждый сэмпл.
+// Затухание — одним из способов:
+//   ResCoef::t60(hz, T60, fs)  — за T60 секунд звон стихает на 60 дБ: R = 10^(−3/(T60·fs)) (Cymatica);
+//   ResCoef::tau(hz, τ, fs)    — огибающая e^(−t/τ): R = e^(−1/(τ·fs)) (Horologium);
+//   ResCoef::fromR(hz, R, fs)  — R задан прямо.
+//
+// ЛОВУШКИ:
+//   - Усиление g — у вызывающего, блок громкость не нормирует. Cymatica берёт g = sin ω: тогда
+//     единичный импульс даёт амплитуду ~1. Без этого громкость сильно зависит от частоты.
+//   - R ≥ 1 — звон не затихает или растёт. hz выше fs/2 звучит зеркально ниже.
+//   - Резонатор копит: долгое возбуждение на его частоте при R близком к 1 даёт большую амплитуду.
+// Цена — три умножения на сэмпл; cos и pow/exp — только в ResCoef.
 #pragma once
 #include <cmath>
 
@@ -17,13 +32,16 @@ struct ResCoef {
 };
 
 struct Resonator {
-  double y1 = 0, y2 = 0;
+  double previousOutput = 0, outputBeforePrevious = 0;
+
   double step(const ResCoef& c, double g, double x) {
-    const double y = c.b1 * y1 + c.b2 * y2 + g * x;
-    y2 = y1; y1 = y;
+    const double y = c.b1 * previousOutput + c.b2 * outputBeforePrevious + g * x;
+    outputBeforePrevious = previousOutput; previousOutput = y;
     return y;
   }
-  void reset() { y1 = y2 = 0; }
+  void reset() { previousOutput = outputBeforePrevious = 0; }   // замолчать сразу (щёлкнет, если звенел)
+  // скорость колебания: разность двух последних выходов (смычок Cymatica трёт с этой скоростью)
+  double velocity() const { return previousOutput - outputBeforePrevious; }
 };
 
 }  // namespace sdk

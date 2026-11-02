@@ -10,8 +10,6 @@ constexpr double DLY_REPEATS = 0.46;                    // обратная св
 // тише этого (без живых голосов и ударов) 0.5 с — блок не считается; −120 дБ: у asym в нуле постоянка ~1e-8, через эхо — ~1e-7
 constexpr double QUIET = 1e-6;
 
-// setTargetAtTime, прошедший n сэмплов без расчёта (мир молчит): y — туда, где он был бы
-void skip(sdk::Glide& g, int n) { g.y = g.to + (g.y - g.to) * std::pow(1 - g.c, n); }
 }  // namespace
 
 void World::prepare(double sr, uint32_t seed) {
@@ -203,11 +201,11 @@ void World::process(const sdk::Out& out, int n) {
   for (const Voice& v : v_) if (v.isLive()) { live = true; envSum += v.env(); }
   for (const Strike& s : st_) strk = strk || s.on;
   for (int r = 0; r < VOICES; r++) for (int k = 0; k < nl_[r]; k++) L_[r][k].g.fill(L_[r][k].b, n, now_);   // время связей идёт всегда
-  bus_.to = 1 / std::sqrt(std::max(1.0, envSum));      // чем больше кружков, тем тише каждый (огибающие ядра, раз в блок)
+  bus_.target = 1 / std::sqrt(std::max(1.0, envSum));      // чем больше кружков, тем тише каждый (огибающие ядра, раз в блок)
 
   if (!live && !strk && quiet_ >= std::lround(0.5 * sr_)) {   // тишина: не считать, только время
     for (int k = 0; k < n; k++) out.L[k] = out.R[k] = out.sL[k] = out.sR[k] = 0;
-    for (sdk::Glide* g : {&bus_, &pre_, &post_, &dly_, &rev_}) skip(*g, n);
+    for (sdk::Glide* g : {&bus_, &pre_, &post_, &dly_, &rev_}) g->skip(n);
     wowL_.adv(0.13 * n / sr_); wowR_.adv(0.087 * n / sr_);
     now_ += n;
     return;

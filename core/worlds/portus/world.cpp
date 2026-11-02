@@ -63,9 +63,9 @@ void World::applyState() {
     echo_.setFb(clampd(st_[S_FB], 0, 0.985));
   }
   if (first) {
-    echo_.prepare(sr_, gTime_.to, gLpL_.to, 0.7, clampd(st_[S_FB], 0, 0.985));
-    echo_.setHp(240, 0.7); echo_.setSat(&sat_); echo_.setLp(gLpL_.to, gLpR_.to, 0.7);
-    for (Glide* g : {&gPost_, &gSend_, &gWet_, &gTime_, &gWow_, &gRSend_, &gMare_, &gLpL_, &gLpR_}) g->jump(g->to);
+    echo_.prepare(sr_, gTime_.target, gLpL_.target, 0.7, clampd(st_[S_FB], 0, 0.985));
+    echo_.setHp(240, 0.7); echo_.setSat(&sat_); echo_.setLp(gLpL_.target, gLpR_.target, 0.7);
+    for (Glide* g : {&gPost_, &gSend_, &gWet_, &gTime_, &gWow_, &gRSend_, &gMare_, &gLpL_, &gLpR_}) g->jump(g->target);
     rev_ = wantRev_;
     gRev_.jump(REVK);
     got_ = true;

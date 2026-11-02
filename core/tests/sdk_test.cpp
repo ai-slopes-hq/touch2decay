@@ -316,7 +316,7 @@ static void glideBlock() {
   sdk::Glide g; g.jump(2); g.set(5, 0.05, 48000);
   for (int i = 0; i < 2400; i++) g.step();                 // 50 мс = τ
   NEAR(g.y, 5 + (2 - 5) * std::exp(-1.0), 1e-3);
-  g.jump(7); CHECK(g.y == 7 && g.to == 7);
+  g.jump(7); CHECK(g.y == 7 && g.target == 7);
 }
 
 // Natura.Wave: пять волн — band-limited; sharp — таблицы без постоянной, пик 1
@@ -988,7 +988,7 @@ static void resonator() {
   sdk::Resonator r;
   for (int i = 0; i < 6; i++) NEAR(r.step(a, g, i == 0 ? 1 : 0), want[i], 1e-15);
   r.reset();
-  NEAR(r.y1, 0, 0); NEAR(r.y2, 0, 0);
+  NEAR(r.previousOutput, 0, 0); NEAR(r.outputBeforePrevious, 0, 0);
   double y = 0;                                         // T60: через 1.5 с огибающая −60 дБ
   sdk::Resonator q;
   double peak1 = 0, peak2 = 0;
@@ -1969,7 +1969,7 @@ static void bpbank() {
   const std::vector<float> t2(o2.end() - 4800, o2.end());
   CHECK(goertzel(t2, 880, sr) < 0.15);                  // мимо полосы — сильно тише
   c.target(0, 1000, 20, 1);                             // glide тянет частоту к цели, snap — сразу
-  c.glide(0.5, 0.5, 0.5); NEAR(c.b[0].hz, 720, 1e-9);
+  c.glide(0.5, 0.5, 0.5); NEAR(c.bands[0].hz, 720, 1e-9);
 }
 
 static void noise() {
