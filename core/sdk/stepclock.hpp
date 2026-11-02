@@ -1,9 +1,25 @@
-// Часы секвенсера на сэмплах: шаг — шестнадцатая. Считает, на каком сэмпле блока наступает следующий шаг, от темпа (bpm) или от сетки
-// MIDI-часов { t0, p } (время ядра в секундах: t0 — узел сетки, p — длительность доли), и держит счёт сэмплов.
-// Что играет шаг — у мира: часы только говорят «пора». Порядок на каждый сэмпл блока:
-//   clock.begin();  for k: { if (clock.due()) { …шаг мира…; clock.rearm(k); }  clock.advance(); }
-// Тихий блок (мир не считается) — clock.skip(n). Время ядра — t/fs от prepare: сообщения мира приходят между блоками, на границе.
-// Выверено со старым plate-worklet.js (stepSamples, setSeq, setLock, nextTickFrame); округление — как Math.round (половина вверх).
+// StepClock — часы секвенсера в сэмплах: шаг = шестнадцатая. Говорят, на каком сэмпле блока наступает следующий шаг;
+// что играет шаг — решает мир, часы только говорят «пора». Сейчас ими пользуется Cymatica (core/worlds/cymatica/plate.hpp);
+// миры, которым нужны шаги по времени в секундах и swing, берут Steps из transport.hpp.
+//
+// Два режима:
+//   по темпу   — шаг = round(fs·60 / bpm / 4) сэмплов, сменили темп на ходу — следующий шаг сдвигается, счёт не сбивается;
+//   по сетке   — сетка MIDI-часов { t0, p } (секунды ядра: t0 — узел доли, p — длительность доли), шаги на t0 + j·p/4.
+//
+// Порядок вызовов на каждый блок:
+//   clock.begin();
+//   for k in 0…n−1: { if (clock.due()) { …шаг мира…; clock.rearm(k); }  clock.advance(); }
+// Тихий блок (мир его не считает) — clock.skip(n): время идёт, шагов нет. Время ядра — t/fs от prepare; set и lock приходят
+// между блоками, то есть на границе блока.
+//
+// Выверено со старым plate-worklet.js (stepSamples, setSeq, setLock, nextTickFrame), тест — core/tests/sdk_test.cpp.
+//
+// ЛОВУШКИ:
+//   - Округление — как Math.round (половина вверх, jsRound), не std::round: иначе шаги разъедутся с вебом на сэмпл.
+//   - set() возвращает true ровно в момент пуска — мир сам обнуляет свой счёт шагов (первый тик — шаг 0).
+//   - Прыжок сетки сдвигает только момент следующего шага, номер шага часы не знают и не трогают.
+//   - bpm ≤ 0 и p ≤ 0 не проверяются в stepSamples: lock(·, ·, p ≤ 0) сам выключает сетку, bpm — забота мира.
+// Цена — декремент и сравнение на сэмпл; на шаг по сетке — floor и round.
 #pragma once
 #include <algorithm>
 #include <cmath>
@@ -13,11 +29,12 @@
 
 namespace sdk {
 
-// отсчётов на шаг (шестнадцатую) при bpm
+// сэмплов на шаг (шестнадцатую) при темпе bpm
 inline int64_t stepSamples(double bpm, double fs) { return static_cast<int64_t>(jsRound((fs * 60) / bpm / 4)); }
 
-// отсчётов от момента t (с) до ближайшей шестнадцатой сетки t0 + j·p/4 строго после t; не меньше 1.
-// «Строго после» — с запасом в отсчёт: t — округлённый до отсчёта узел прошлого тика, он бывает раньше настоящего узла на полотсчёта
+// сэмплов от момента t (с) до ближайшего узла шестнадцатых t0 + j·p/4 строго после t; не меньше 1.
+// «Строго после» — с запасом 0.6 сэмпла: t — это узел прошлого шага, округлённый до сэмпла, и он бывает на полсэмпла раньше
+// настоящего узла — без запаса тот же узел нашёлся бы второй раз
 inline int64_t nextTickFrame(double t, double t0, double p, double fs) {
   const double q = p / 4, j = std::floor((t + 0.6 / fs - t0) / q) + 1;
   return std::max<int64_t>(1, static_cast<int64_t>(jsRound((t0 + j * q - t) * fs)));
@@ -25,59 +42,66 @@ inline int64_t nextTickFrame(double t, double t0, double p, double fs) {
 
 class StepClock {
  public:
-  void prepare(double fs) { *this = StepClock(); fs_ = fs; stepN_ = stepSamples(bpm_, fs); }
+  // сбросить всё и встать на частоту fs; темп — по умолчанию 96, стоим
+  void prepare(double fs) { *this = StepClock(); sr_ = fs; stepLen_ = stepSamples(bpm_, fs); }
 
-  // темп и ход, как setSeq у пластины. true — часы только что пошли (мир сбрасывает счёт шагов: первый тик — шаг 0)
+  // ход и темп (как setSeq у пластины). true — часы только что пошли: мир обнуляет счёт шагов
   bool set(bool playing, double bpm) {
-    const bool was = playing_;
+    const bool wasPlaying = playing_;
     playing_ = playing; bpm_ = bpm;
-    const int64_t stepN = lock_ ? stepSamples(60 / lockP_, fs_) : stepSamples(bpm, fs_);
+    const int64_t len = locked_ ? stepSamples(60 / gridBeat_, sr_) : stepSamples(bpm, sr_);
     bool started = false;
-    if (playing_ && !was) {
-      started = true; ticked_ = false; toNext_ = 0;
-      if (lock_) {                                       // пуск при сетке: шаг 0 — на узле; опоздал меньше 30 мс — сразу, иначе на следующем
-        const double now = static_cast<double>(t_) / fs_, q = lockP_ / 4, d = now - lockT0_, ph = d - std::floor(d / q) * q;
-        if (ph >= 0.03) toNext_ = nextTickFrame(now, lockT0_, lockP_, fs_);
+    if (playing_ && !wasPlaying) {
+      started = true; stepped_ = false; untilStep_ = 0;  // шаг 0 — на этом же сэмпле
+      if (locked_) {                                     // пуск при сетке: шаг 0 — на узле; опоздали меньше 30 мс — сразу, иначе ждём следующий
+        const double now = static_cast<double>(now_) / sr_, q = gridBeat_ / 4, d = now - gridT0_, late = d - std::floor(d / q) * q;
+        if (late >= 0.03) untilStep_ = nextTickFrame(now, gridT0_, gridBeat_, sr_);
       }
-    } else if (playing_ && !lock_ && stepN != stepN_) {
-      toNext_ = std::max<int64_t>(0, stepN - (t_ - lastTick_));
+    } else if (playing_ && !locked_ && len != stepLen_) {   // сменили темп на ходу: отсчёт от прошлого шага новой длиной
+      untilStep_ = std::max<int64_t>(0, len - (now_ - lastStep_));
     }
-    stepN_ = stepN;
+    stepLen_ = len;
     return started;
   }
 
-  // сетка MIDI-часов (как setLock): off или p ≤ 0 — тики по темпу. Прыжок сетки сдвигает только момент тика, счёт шагов не трогаем;
-  // не раньше полушага после прошлого тика — иначе сдвиг сетки на ε дал бы двойной тик
+  // сетка MIDI-часов (как setLock): off или p ≤ 0 — шаги по своему темпу. Прыжок сетки двигает только момент следующего шага,
+  // и не раньше полушага после прошлого: иначе сдвиг сетки на ε дал бы двойной шаг
   void lock(bool off, double t0, double p) {
-    const bool was = lock_;
-    lock_ = !off && p > 0; lockT0_ = t0; lockP_ = p;
-    stepN_ = stepSamples(lock_ ? 60 / lockP_ : bpm_, fs_);
-    if (!playing_ || !ticked_) return;
-    if (!lock_) { if (was) toNext_ = std::max<int64_t>(0, stepN_ - (t_ - lastTick_)); return; }
-    const double now = static_cast<double>(t_) / fs_, last = now - static_cast<double>(t_ - lastTick_) / fs_, from = std::max(now, last + lockP_ / 8);
-    toNext_ = nextTickFrame(from, lockT0_, lockP_, fs_) + static_cast<int64_t>(jsRound((from - now) * fs_));
+    const bool wasLocked = locked_;
+    locked_ = !off && p > 0; gridT0_ = t0; gridBeat_ = p;
+    stepLen_ = stepSamples(locked_ ? 60 / gridBeat_ : bpm_, sr_);
+    if (!playing_ || !stepped_) return;                  // до первого шага пересчитывать нечего
+    if (!locked_) { if (wasLocked) untilStep_ = std::max<int64_t>(0, stepLen_ - (now_ - lastStep_)); return; }
+    const double now = static_cast<double>(now_) / sr_, last = now - static_cast<double>(now_ - lastStep_) / sr_, from = std::max(now, last + gridBeat_ / 8);
+    untilStep_ = nextTickFrame(from, gridT0_, gridBeat_, sr_) + static_cast<int64_t>(jsRound((from - now) * sr_));
   }
 
-  void begin() { block0_ = t_; }                         // начало блока: время для сетки внутри него — от этого сэмпла
-  bool due() { return playing_ && --toNext_ < 0; }       // этот сэмпл — шаг
+  void begin() { blockStart_ = now_; }                   // начало блока: узлы сетки внутри него считаем от этого сэмпла
+  bool due() { return playing_ && --untilStep_ < 0; }    // на этом сэмпле — шаг
   void rearm(int k) {                                    // после шага на сэмпле k блока: когда следующий
-    lastTick_ = t_; ticked_ = true;
-    if (lock_) toNext_ = nextTickFrame(static_cast<double>(block0_) / fs_ + k / fs_, lockT0_, lockP_, fs_) - 1;
-    else toNext_ += stepN_;
+    lastStep_ = now_; stepped_ = true;
+    if (locked_) untilStep_ = nextTickFrame(static_cast<double>(blockStart_) / sr_ + k / sr_, gridT0_, gridBeat_, sr_) - 1;
+    else untilStep_ += stepLen_;
   }
-  void advance() { ++t_; }
-  void skip(int n) { t_ += n; }
+  void advance() { ++now_; }                             // конец сэмпла
+  void skip(int n) { now_ += n; }                        // тихий блок целиком
 
   bool playing() const { return playing_; }
-  bool locked() const { return lock_; }
-  int64_t t() const { return t_; }
-  int64_t stepN() const { return stepN_; }
-  int64_t sinceTick() const { return t_ - lastTick_; }
+  bool locked() const { return locked_; }                // идём по сетке MIDI
+  int64_t t() const { return now_; }                     // сэмплов с prepare
+  int64_t stepN() const { return stepLen_; }             // сэмплов на шаг сейчас
+  int64_t sinceTick() const { return now_ - lastStep_; } // сэмплов с прошлого шага
 
  private:
-  double fs_ = 48000, bpm_ = 96, lockT0_ = 0, lockP_ = 0;
-  bool playing_ = false, lock_ = false, ticked_ = false;
-  int64_t t_ = 0, block0_ = 0, stepN_ = 0, toNext_ = 0, lastTick_ = 0;
+  double sr_ = 48000, bpm_ = 96;
+  double gridT0_ = 0, gridBeat_ = 0;                     // сетка MIDI: узел доли (с) и длина доли (с)
+  bool playing_ = false, locked_ = false;
+  bool stepped_ = false;                                 // после пуска уже был шаг
+  int64_t now_ = 0;                                      // сэмплов с prepare
+  int64_t blockStart_ = 0;                               // now_ на начале блока
+  int64_t stepLen_ = 0;                                  // сэмплов на шаг
+  int64_t untilStep_ = 0;                                // сэмплов до шага; due() срабатывает, когда уходит ниже нуля
+  int64_t lastStep_ = 0;                                 // now_ прошлого шага
 };
 
 }  // namespace sdk
