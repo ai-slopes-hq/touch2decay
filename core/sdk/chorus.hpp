@@ -1,11 +1,24 @@
-// Хор: NL плавающих стерео-задержек, у каждой своя база d0, синус-LFO на времени (частота rate, глубина depth, с) и панорама —
-// как цепочка Web Audio у Monochordum (DelayNode ← OscillatorNode × GainNode на delayTime → StereoPannerNode → wet).
-//   выход = wet · Σ panStereo(линия i, задержка d0_i + depth·k_i·sin(2π·rate_i·t))   (k — доля глубины линии, по умолчанию 1)
-// wet и depth сглаживаются как setTargetAtTime(·, 0.05); feed = false — на вход линиям идёт тишина (хор отцеплен от mix),
-// хвост задержек дозвучивает. Совсем пусто (вход молчит дольше всей задержки и сглаживания) — блок не считается, выход — 0.
-// Чтение задержки — линейное между соседними (как DelayNode в Chromium). Память — внутри объекта; в process аллокаций нет.
-// mono = true (Natura): линии берут только inL, без панорамы, outL = outR = wet · Σ линий — как DelayNode → общий GainNode без StereoPannerNode;
-// правый буфер не пишется и не читается.
+// Chorus — хор: NL плавающих задержек. У каждой линии своя база d0 (с), синус-LFO на времени (частота rate,
+// доля глубины k) и панорама — как цепочка Web Audio у Monochordum
+// (DelayNode ← OscillatorNode × GainNode на delayTime → StereoPannerNode → wet):
+//
+//   выход = wet · Σ panStereo(линия i с задержкой d0_i + depth·k_i·sin(2π·rate_i·t))
+//
+//   chorus.prepare(sr, lines, depth0);             // lines — NL штук {d0, rate, pan, k}
+//   chorus.set(wet, depth);                        // когда угодно; оба плывут как setTargetAtTime(·, 0.05)
+//   chorus.process(inL, inR, feed, outL, outR, n); // блок
+//
+// mono = true (Natura): линии берут только inL, без панорамы, outL = outR = wet · Σ линий — как DelayNode → общий
+// GainNode без StereoPannerNode; правый буфер не пишется и не читается.
+//
+// ЛОВУШКИ:
+//   - d0 и depth — в секундах. Задержка зажимается в 1 … SIZE − 2 сэмплов: d0 + depth не должна вылезать за SIZE/sr.
+//   - Отдаёт только мокрое; сухое складывает мир.
+//   - feed = false — на вход идёт тишина (хор отцеплен от микса), хвост дозвучивает. Вход молчит дольше
+//     всей задержки и сглаживание дошло — блок не считается, выход 0; время LFO идёт и тогда.
+//   - Чтение — линейное между соседними, как DelayNode в Chromium: на быстром LFO верха чуть гаснут.
+// Цена — NL синусов и 2·NL чтений с интерполяцией на сэмпл. Память — 2·NL·SIZE float внутри объекта,
+// в process аллокаций нет.
 #pragma once
 #include <cmath>
 #include "pan.hpp"
@@ -15,66 +28,68 @@ namespace sdk {
 template <int NL, int SIZE>
 class Chorus {
  public:
-  struct Line { double d0, rate, pan, k = 1; };
+  struct Line { double d0, rate, pan, k = 1; };        // база (с), частота LFO (Гц), панорама −1…1, доля глубины
   void prepare(double sr, const Line* lines, double depth0, bool mono = false) {
-    sr_ = sr; c_ = 1 - std::exp(-1 / (0.05 * sr)); mono_ = mono;
+    sampleRate_ = sr; smoothCoef_ = 1 - std::exp(-1 / (0.05 * sr)); mono_ = mono;
     for (int i = 0; i < NL; i++) {
-      ln_[i] = lines[i]; ph_[i] = 0; ps_[i].set(lines[i].pan);
-      for (int k = 0; k < SIZE; k++) bL_[i][k] = bR_[i][k] = 0;
+      lines_[i] = lines[i]; lfoPhase_[i] = 0; pans_[i].set(lines[i].pan);
+      for (int k = 0; k < SIZE; k++) bufL_[i][k] = bufR_[i][k] = 0;
     }
-    w_ = 0; wet_ = 0; depth_ = depth0; wetTo_ = 0; depthTo_ = depth0; quiet_ = SIZE;
+    writePos_ = 0; wet_ = 0; depth_ = depth0; wetTarget_ = 0; depthTarget_ = depth0; quietSamples_ = SIZE;
   }
-  void set(double wet, double depth) { wetTo_ = wet; depthTo_ = depth; }
+  void set(double wet, double depth) { wetTarget_ = wet; depthTarget_ = depth; }
   void process(const float* inL, const float* inR, bool feed, float* outL, float* outR, int n) {
-    if (!feed && quiet_ >= SIZE && std::fabs(wet_ - wetTo_) < 1e-9) {   // хвост дозвучал — не считаем, но время LFO идёт
+    if (!feed && quietSamples_ >= SIZE && std::fabs(wet_ - wetTarget_) < 1e-9) {   // хвост дозвучал — не считаем, но время LFO идёт
       for (int k = 0; k < n; k++) outL[k] = outR[k] = 0;
       for (int i = 0; i < NL; i++) advance(i, n);
-      depth_ = depthTo_;
+      depth_ = depthTarget_;
       return;
     }
     for (int k = 0; k < n; k++) {
-      wet_ += (wetTo_ - wet_) * c_; depth_ += (depthTo_ - depth_) * c_;
+      wet_ += (wetTarget_ - wet_) * smoothCoef_; depth_ += (depthTarget_ - depth_) * smoothCoef_;
       const double xl = feed ? inL[k] : 0, xr = feed ? inR[k] : 0;
-      double sl = 0, sr = 0;
+      double sumL = 0, sumR = 0;
       for (int i = 0; i < NL; i++) {
-        double d = (ln_[i].d0 + depth_ * ln_[i].k * std::sin(2 * M_PI * ph_[i])) * sr_;
+        double d = (lines_[i].d0 + depth_ * lines_[i].k * std::sin(2 * M_PI * lfoPhase_[i])) * sampleRate_;
         if (d < 1) d = 1;
         if (d > SIZE - 2) d = SIZE - 2;
         if (mono_) {
-          sl += read(bL_[i], d);
-          bL_[i][w_] = static_cast<float>(xl);
+          sumL += read(bufL_[i], d);
+          bufL_[i][writePos_] = static_cast<float>(xl);
         } else {
           double l, r;
-          ps_[i].step(read(bL_[i], d), read(bR_[i], d), l, r);
-          sl += l; sr += r;
-          bL_[i][w_] = static_cast<float>(xl); bR_[i][w_] = static_cast<float>(xr);
+          pans_[i].step(read(bufL_[i], d), read(bufR_[i], d), l, r);
+          sumL += l; sumR += r;
+          bufL_[i][writePos_] = static_cast<float>(xl); bufR_[i][writePos_] = static_cast<float>(xr);
         }
         advance(i, 1);
       }
-      w_ = (w_ + 1) % SIZE;
-      if (mono_) sr = sl;
-      outL[k] = static_cast<float>(sl * wet_); outR[k] = static_cast<float>(sr * wet_);
+      writePos_ = (writePos_ + 1) % SIZE;
+      if (mono_) sumR = sumL;
+      outL[k] = static_cast<float>(sumL * wet_); outR[k] = static_cast<float>(sumR * wet_);
     }
-    if (feed) quiet_ = 0; else if (quiet_ < SIZE) quiet_ += n;
+    if (feed) quietSamples_ = 0; else if (quietSamples_ < SIZE) quietSamples_ += n;
   }
 
  private:
-  double read(const float* b, double d) const {        // d отсчётов назад от следующей записи: d = 1 — последняя записанная
+  // d отсчётов назад от следующей записи: d = 1 — последняя записанная; читается до записи этого сэмпла
+  double read(const float* b, double d) const {
     const int i = static_cast<int>(d);
     const double f = d - i;
-    int k0 = w_ - i, k1 = w_ - i - 1;
+    int k0 = writePos_ - i, k1 = writePos_ - i - 1;
     if (k0 < 0) k0 += SIZE;
     if (k1 < 0) k1 += SIZE;
     return b[k0] + (b[k1] - b[k0]) * f;
   }
-  void advance(int i, int n) { ph_[i] += ln_[i].rate * n / sr_; ph_[i] -= std::floor(ph_[i]); }
-  Line ln_[NL] = {};
-  PanStereo ps_[NL];
-  double ph_[NL] = {};
-  float bL_[NL][SIZE] = {}, bR_[NL][SIZE] = {};
-  int w_ = 0, quiet_ = SIZE;
+  void advance(int i, int n) { lfoPhase_[i] += lines_[i].rate * n / sampleRate_; lfoPhase_[i] -= std::floor(lfoPhase_[i]); }
+  Line lines_[NL] = {};
+  PanStereo pans_[NL];
+  double lfoPhase_[NL] = {};
+  float bufL_[NL][SIZE] = {}, bufR_[NL][SIZE] = {};
+  int writePos_ = 0;
+  int quietSamples_ = SIZE;                             // сколько сэмплов подряд вход молчит
   bool mono_ = false;
-  double sr_ = 48000, c_ = 0, wet_ = 0, depth_ = 0, wetTo_ = 0, depthTo_ = 0;
+  double sampleRate_ = 48000, smoothCoef_ = 0, wet_ = 0, depth_ = 0, wetTarget_ = 0, depthTarget_ = 0;
 };
 
 }  // namespace sdk
