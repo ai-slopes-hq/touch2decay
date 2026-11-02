@@ -1,32 +1,36 @@
-// C-ABI ядра SDK: хост и миры по слотам, один экземпляр. Реализация — api.cpp (общая для wasm и iOS), экспорт wasm — build.sh.
+// C-ABI ядра: хост и миры по слотам, один экземпляр на процесс. Реализация — api.cpp (общая для wasm и iOS), экспорт wasm —
+// build.sh. Подробно, что делает каждая функция, — у соответствующего метода Host (core/host/host.hpp).
+//
+// Обмен числами — через общие буферы: args (вход action, до 256 чисел), mbuf (выход mirror / heard / hmirror / hevents /
+// lfo_state, до 1024 чисел), str_buf (JSON снимка в обе стороны, ёмкость — str_cap). Функции возвращают, сколько записано.
 #pragma once
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void t2d_init(double sr, unsigned seed);
+void t2d_init(double sr, unsigned seed);          // Host::prepare + prepare всех миров
 double* t2d_args();
 void t2d_action(int slot, int kind, int i, const double* a, int n);
-void t2d_process(int n);
+void t2d_process(int n);                          // блок, n ≤ 128
 const float* t2d_dry(int slot, int ch);
 const float* t2d_ret(int ch);
-float* t2d_ext(int rev, int ch);
+float* t2d_ext(int rev, int ch);                  // писать перед каждым process
 double* t2d_mbuf();
-int t2d_mirror(int slot);
-int t2d_heard(int slot);
+int t2d_mirror(int slot);                         // в mbuf
+int t2d_heard(int slot);                          // в mbuf
 char* t2d_str_buf();
 int t2d_str_cap();
-int t2d_snapshot(int slot);
-void t2d_restore(int slot, int len);
+int t2d_snapshot(int slot);                       // в str_buf; длина, не влезло — 0
+void t2d_restore(int slot, int len);              // из str_buf; LFO объектов слота снимаются (FX остаются)
 void t2d_fader(int slot, double g);
 void t2d_scale(int on, int idx, int root);
 void t2d_vol(double g);
-void t2d_time(double t);
+void t2d_time(double t);                          // время начала следующего блока, с
 void t2d_midi_byte(int src, int status, double at);
 void t2d_midi_msg(int kind, double n, double bpm, double at);
-int t2d_hmirror();
-int t2d_hevents();
-const float* t2d_arc_land(int which);
+int t2d_hmirror();                                // в mbuf: сетка есть, t0, p, время блока
+int t2d_hevents();                                // в mbuf: события часов по 2 числа — код, bpm
+const float* t2d_arc_land(int which);             // карта Arcadia: 0 — высоты, 1 — озёра
 void t2d_master_lpf(double hz);
 void t2d_master_comp(double thr, double ratio);
 void t2d_master_ceil(double db);
@@ -41,7 +45,7 @@ void t2d_lfo_base(int slot, int obj, int key, double base);
 void t2d_lfo_off(int slot, int obj, int key);
 void t2d_lfo_drop(int slot, int obj);             // obj −2 — все объекты слота
 void t2d_lfo_tick(double dt);
-int t2d_lfo_state(void);                              // в mbuf, по 10 чисел на LFO: slot, obj, key, base, morph, rate, depth, u, shape, seed; длина
+int t2d_lfo_state(void);                          // в mbuf, по 10 чисел на LFO: slot, obj, key, base, morph, rate, depth, u, shape, seed; длина
 unsigned t2d_lfo_lost(void);
 double t2d_lfo_sample(int shape, double morph, double u, int seed);
 void t2d_model_tick(double dt);

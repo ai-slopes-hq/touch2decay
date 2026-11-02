@@ -21,12 +21,12 @@ bool Scale::inScale(int n) const {
 
 double Scale::snapSemi(double s) const {
   if (!on) return s;
-  double best = s, bd = 99;
+  double best = s, bestDist = 99;
   const int lo = static_cast<int>(std::floor(s)) - 7, hi = static_cast<int>(std::ceil(s)) + 7;
   for (int n = lo; n <= hi; n++) {
     if (n < 0 || !inScale(n)) continue;
     const double d = std::fabs(n - s);
-    if (d < bd) { bd = d; best = n; }                   // строго меньше: при равенстве — нижняя нота, как в JS
+    if (d < bestDist) { bestDist = d; best = n; }       // строго меньше: при равенстве — нижняя нота, как в JS
   }
   return best;
 }
