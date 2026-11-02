@@ -206,7 +206,7 @@ void World::process(const sdk::Out& out, int n) {
   if (!live && !strk && quiet_ >= std::lround(0.5 * sr_)) {   // тишина: не считать, только время
     for (int k = 0; k < n; k++) out.L[k] = out.R[k] = out.sL[k] = out.sR[k] = 0;
     for (sdk::Glide* g : {&bus_, &pre_, &post_, &dly_, &rev_}) g->skip(n);
-    wowL_.adv(0.13 * n / sr_); wowR_.adv(0.087 * n / sr_);
+    wowL_.advance(0.13 * n / sr_); wowR_.advance(0.087 * n / sr_);
     now_ += n;
     return;
   }

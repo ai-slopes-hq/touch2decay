@@ -1,42 +1,57 @@
-// Линия задержки на внешнем буфере (без аллокаций в process) и allpass на ней. Чтение — линейная интерполяция.
+// Delay — линия задержки на чужом буфере: память выделяет владелец (в prepare), в process аллокаций нет.
+// Allpass — allpass Шрёдера на такой линии: все частоты проходят одинаково громко, но фаза размазана
+// по времени — кирпичик диффузии ревербера (щелчок расплывается в облачко).
+//
+//   sdk::Delay line(buf, len);   // буфер обнуляется
+//   line.write(x);               // каждый сэмпл
+//   y = line.read(d);            // d записей назад: 1 — последняя записанная, максимум len;
+//                                // дробное d — линейно между соседними
+//
+//   Allpass: d = задержанное на всю длину буфера, в линию пишется w = x + g·d, выход — d − g·w.
+//
+// ЛОВУШКИ:
+//   - d — в сэмплах, от 1 до len. Меньше 1 или больше len — смешивает с самым старым сэмплом, то есть мусор.
+//   - Буфер — float (как Float32Array в вебе), чтение отдаёт double.
+//   - Delay() без буфера — заготовка до prepare: read и write на ней падают (длина 0).
+//   - У Allpass |g| < 1, иначе он неустойчив.
+// Цена: write — одна запись; read — два чтения и интерполяция; Allpass::step — read + write.
 #pragma once
 
 namespace sdk {
 
 class Delay {
  public:
-  Delay() = default;                                    // пустая — до prepare владельца
-  Delay(float* buf, int len) : b_(buf), n_(len) { for (int i = 0; i < n_; i++) b_[i] = 0; }
-  void write(double x) { b_[w_] = static_cast<float>(x); if (++w_ >= n_) w_ = 0; }
-  // d — сколько записей назад: 1 — последняя записанная, до len включительно; дробное — линейно между соседними.
+  Delay() = default;
+  Delay(float* buf, int len) : buffer_(buf), length_(len) { for (int i = 0; i < length_; i++) buffer_[i] = 0; }
+
+  void write(double x) { buffer_[writePos_] = static_cast<float>(x); if (++writePos_ >= length_) writePos_ = 0; }
   double read(double d) const {
     int i = static_cast<int>(d);
     double f = d - i;
     double a = at(i), c = at(i + 1);
     return a + (c - a) * f;
   }
-  int len() const { return n_; }
+  int len() const { return length_; }
 
  private:
-  double at(int d) const { int k = w_ - d; while (k < 0) k += n_; return b_[k % n_]; }
-  float* b_ = nullptr;
-  int n_ = 0, w_ = 0;
+  double at(int d) const { int k = writePos_ - d; while (k < 0) k += length_; return buffer_[k % length_]; }   // d целых записей назад
+  float* buffer_ = nullptr;
+  int length_ = 0, writePos_ = 0;
 };
 
-// Schroeder-allpass: d = задержанное, w = x + g·d, y = d − g·w. Задержка — вся длина буфера.
 class Allpass {
  public:
-  Allpass(float* buf, int len, double g) : g_(g), d_(buf, len) {}
+  Allpass(float* buf, int len, double g) : g(g), line_(buf, len) {}
   double step(double x) {
-    double d = d_.read(d_.len());
-    double w = x + g_ * d;
-    d_.write(w);
-    return d - g_ * w;
+    double d = line_.read(line_.len());
+    double w = x + g * d;
+    line_.write(w);
+    return d - g * w;
   }
-  double g_;
+  double g;                                             // коэффициент, |g| < 1; можно менять на ходу
 
  private:
-  Delay d_;
+  Delay line_;
 };
 
 }  // namespace sdk
