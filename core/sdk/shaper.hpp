@@ -1,296 +1,386 @@
-// Shaper<N> — WaveShaperNode: кривая из N точек (float, как Float32Array), v = (N − 1)·(x + 1)/2, линейная интерполяция между соседними;
-// v < 0 — первая точка, v ≥ N − 1 — последняя. step() — кривая без oversample (const, без задержки); run() — с oversample по `os`.
-// TanhShaper — нормированный tanh: y = tanh(k·x) / tanh(k) на [−1, 1], вне — край (±1), как WaveShaperNode с такой кривой (в вебе — 1024 точки).
-// os — oversample, как у WaveShaperNode: 1 — нет; 2 — '2x': апсэмпл полуполосным FIR, кривая на удвоенной частоте, даунсэмпл тем же FIR
-// (47 отводов, задержка ≈ 23 сэмпла основной частоты, приблизительно как у браузера); 4 — '4x': каскад двух ступеней, как Chromium
-// (WaveShaperDSPKernel::ProcessCurve4x: апсэмпл 2× → 2× → кривая → даунсэмпл 2× → 2×), ступени — ядра Chromium (UpSampler 128 отводов,
-// DownSampler 256), сверено с ним по сэмплам (tools/shaper-os4-ref.py); задержка 192 сэмпла. Без аллокаций; k и os — параметры блока
-// (Inferno: круг k = 1 + 6·drive без os, шина fire k = 1 + 8·fire, os = 2; Tenebrae: drive asym, os = 4).
-// Shaper2<N>, TanhShaper2 — то же для пары каналов (L, R) с одной кривой: ступени oversample считают оба канала одной SIMD-операцией
-// (V2 — два double), каждая дорожка — те же умножения и сложения в том же порядке, что у моно, — выход до бита как у двух моно.
+// Перегруз по кривой — то же, что WaveShaperNode в Web Audio: каждый сэмпл x из [−1, 1]
+// заменяется значением кривой в этой точке. Здесь живут:
+//
+//   Shaper<N>     — произвольная кривая из N точек (Portus, Tria, Tenebrae, потолок хоста).
+//   TanhShaper    — готовая кривая tanh(k·x) / tanh(k): k — сила перегруза, ±1 остаётся ±1 (Inferno).
+//   Shaper2<N>, TanhShaper2 — то же для пары каналов L и R с одной кривой: считают оба канала разом
+//                   (SIMD), а результат — до бита как у двух моно.
+//
+// ЗАЧЕМ OVERSAMPLE. Кривая рождает гармоники выше половины частоты дискретизации, а они
+// «заворачиваются» обратно в слышимый диапазон грязью, не кратной ноте. Oversample считает
+// кривую на удвоенной (учетверённой) частоте и отфильтровывает лишнее до возврата обратно.
+// Поле os: 1 — без него, 2 — '2x', 4 — '4x', как у WaveShaperNode.
+//
+// Три способа, и у каждого своя задержка:
+//   os 1          — без oversample, без задержки.
+//   os 2          — наш полуполосный FIR на 47 отводов: задержка ≈ 23 сэмпла, около 95 умножений
+//                   на сэмпл. Звучит почти как браузер, но не до сэмпла (Inferno, шина fire).
+//   os 2 Chromium — TanhShaper2 с chromium = true: ступень ровно как у Chromium, задержка 128,
+//                   около 260 умножений (голоса Tenebrae).
+//   os 4          — каскад двух ступеней Chromium, сверен с ним по сэмплам (tools/shaper-os4-ref.py):
+//                   задержка 192, около 770 умножений на сэмпл — дорого (Tenebrae drive, потолок хоста).
+//
+// ЛОВУШКИ:
+//   - Задержка зависит от os. Смешиваешь сухой сигнал с перегруженным — задержи сухой на столько же,
+//     иначе получится гребёнка.
+//   - Меняешь os на ходу — зови reset(): у ступени, которая включается, в истории лежит старый звук.
+//   - Кривая хранится во float (как Float32Array в вебе), точки строит build().
+//   - Вход за пределами [−1, 1]: Shaper держит крайнюю точку, TanhShaper зажимает в ±1.
+//   - Пары (…2) и пачки (stepK, step4, stepN) обязаны давать то же до бита, что моно по одному сэмплу:
+//     это проверяют тесты в core/tests/sdk_test.cpp. Меняешь порядок сложений в одной версии —
+//     меняй во всех.
+//   - Код ступеней написан ради скорости (на iPhone лагало): несколько независимых цепочек
+//     сложений в одной петле, чтобы процессор считал их параллельно. Не «упрощай» в одну цепочку
+//     без замера.
+//
+// Аллокаций нет, вся история — внутри объектов.
+
 #pragma once
+
 #include <cmath>
 
 namespace sdk {
 
-// два double одной операцией (NEON / SSE2 / wasm simd128; без SIMD компилятор разложит на скаляры). Без FMA (-ffp-contract=off) — до бита
+// Два double одной операцией (NEON / SSE2 / wasm simd128; без SIMD компилятор разложит на скаляры).
+// Сборка идёт без FMA (-ffp-contract=off) — поэтому каждая дорожка совпадает с моно до бита.
 typedef double V2 __attribute__((vector_size(16)));
 
-// история отсчётов: at()[0] — новейший, at()[k] — k шагов назад (двойной буфер — без деления по модулю и ветвления в свёртке)
+// Последние L отсчётов. recent()[0] — самый новый, recent()[k] — k шагов назад.
+// Каждый отсчёт пишется дважды (буфер 2·L), чтобы recent() всегда давал L подряд идущих
+// значений — свёртке не нужны ни деление по модулю, ни проверки края.
 template <class T, int L>
-struct Hist {
-  T b[2 * L] = {};
-  int p = 0;
-  void push(T v) { p = p == 0 ? L - 1 : p - 1; b[p] = b[p + L] = v; }
-  const T* at() const { return b + p; }
+struct History {
+  T buf[2 * L] = {};
+  int head = 0;
+  void push(T v) { head = head == 0 ? L - 1 : head - 1; buf[head] = buf[head + L] = v; }
+  const T* recent() const { return buf + head; }
 };
 
-// Одна ступень 2×: вход основной частоты → два отсчёта удвоенной → g на каждом → один отсчёт основной. g — кривая (или вложенная ступень).
-// Апсэмпл — полифазно: вход с нулями между отсчётами, слагаемые h·0 пропущены (прибавить точный ноль — ни одного бита), порядок остальных —
-// прежний (j по возрастанию). Отсчёт удвоенной p = 0 — чётные отводы по x[0], x[1] …; p = 1 — нечётные. T — double (моно) или V2 (пара).
+// ---- Ступень 2× на нашем FIR (47 отводов) ----
+//
+// Один шаг: сэмпл основной частоты → два сэмпла удвоенной → curve на каждом → обратно один сэмпл.
+// curve — кривая или вложенная ступень. T — double (моно) или V2 (пара каналов).
+//
+// Апсэмпл полифазный: «вход с нулями между отсчётами» не строим, а сразу берём чётные отводы
+// для первого сэмпла удвоенной частоты и нечётные — для второго. Пропущенные слагаемые — это h·0,
+// точный ноль, так что результат тот же до бита.
 template <class T>
 struct Os2T {
-  template <class G>
-  T step(T x, G&& g) {
+  template <class Curve>
+  T step(T x, Curve&& curve) {
     const double* h = taps();
-    up_.push(2 * x);
-    const T* xp = up_.at();
-    T u0 = T(), u1 = T();
-    for (int m = 0; m < NU - 1; m++) { u0 += h[2 * m] * xp[m]; u1 += h[2 * m + 1] * xp[m]; }   // две независимые цепочки
-    u0 += h[2 * (NU - 1)] * xp[NU - 1];
-    dn_.push(g(u0));
-    dn_.push(g(u1));
-    const T* dp = dn_.at();
-    T y = T();
-    for (int j = 0; j < N; j++) y += h[j] * dp[j];
-    return y;
+    upHistory_.push(2 * x);  // ×2 — компенсация нулей между отсчётами
+    const T* in = upHistory_.recent();
+    T even = T(), odd = T();
+    for (int m = 0; m < UP_TAPS - 1; m++) { even += h[2 * m] * in[m]; odd += h[2 * m + 1] * in[m]; }  // две независимые цепочки
+    even += h[2 * (UP_TAPS - 1)] * in[UP_TAPS - 1];
+    downHistory_.push(curve(even));
+    downHistory_.push(curve(odd));
+    const T* high = downHistory_.recent();
+    T out = T();
+    for (int j = 0; j < TAPS; j++) out += h[j] * high[j];
+    return out;
   }
-  // K ступеней за раз (голоса мира): у каждой — те же суммы в том же порядке, что в step, до бита; цепочки сложений K ступеней идут
-  // вперемешку — процессор считает их параллельно, а не ждёт каждую. g(v, u) — кривая ступени v
-  template <int K, class G>
-  static void stepK(Os2T* const* s, T* x, G&& g) {
+
+  // K ступеней за раз (голоса мира). У каждой — те же суммы в том же порядке, что в step, до бита;
+  // цепочки K ступеней идут вперемешку, и процессор считает их параллельно. curve(v, u) — кривая ступени v.
+  template <int K, class Curve>
+  static void stepK(Os2T* const* stage, T* x, Curve&& curve) {
     const double* h = taps();
-    const T* xp[K];
-    for (int v = 0; v < K; v++) { s[v]->up_.push(2 * x[v]); xp[v] = s[v]->up_.at(); }
-    T u0[K], u1[K];
-    for (int v = 0; v < K; v++) u0[v] = u1[v] = T();
-    for (int m = 0; m < NU - 1; m++)
-      for (int v = 0; v < K; v++) { u0[v] += h[2 * m] * xp[v][m]; u1[v] += h[2 * m + 1] * xp[v][m]; }
-    for (int v = 0; v < K; v++) u0[v] += h[2 * (NU - 1)] * xp[v][NU - 1];
-    const T* dp[K];
-    for (int v = 0; v < K; v++) { s[v]->dn_.push(g(v, u0[v])); s[v]->dn_.push(g(v, u1[v])); dp[v] = s[v]->dn_.at(); }
-    T y[K];
-    for (int v = 0; v < K; v++) y[v] = T();
-    for (int j = 0; j < N; j++)
-      for (int v = 0; v < K; v++) y[v] += h[j] * dp[v][j];
-    for (int v = 0; v < K; v++) x[v] = y[v];
+    const T* in[K];
+    for (int v = 0; v < K; v++) { stage[v]->upHistory_.push(2 * x[v]); in[v] = stage[v]->upHistory_.recent(); }
+    T even[K], odd[K];
+    for (int v = 0; v < K; v++) even[v] = odd[v] = T();
+    for (int m = 0; m < UP_TAPS - 1; m++)
+      for (int v = 0; v < K; v++) { even[v] += h[2 * m] * in[v][m]; odd[v] += h[2 * m + 1] * in[v][m]; }
+    for (int v = 0; v < K; v++) even[v] += h[2 * (UP_TAPS - 1)] * in[v][UP_TAPS - 1];
+    const T* high[K];
+    for (int v = 0; v < K; v++) {
+      stage[v]->downHistory_.push(curve(v, even[v]));
+      stage[v]->downHistory_.push(curve(v, odd[v]));
+      high[v] = stage[v]->downHistory_.recent();
+    }
+    T out[K];
+    for (int v = 0; v < K; v++) out[v] = T();
+    for (int j = 0; j < TAPS; j++)
+      for (int v = 0; v < K; v++) out[v] += h[j] * high[v][j];
+    for (int v = 0; v < K; v++) x[v] = out[v];
   }
-  void reset() { up_ = Hist<T, NU>(); dn_ = Hist<T, N>(); }
+
+  void reset() { upHistory_ = History<T, UP_TAPS>(); downHistory_ = History<T, TAPS>(); }
 
  private:
-  static constexpr int N = 47, NU = (N + 1) / 2;       // NU — отсчётов входа под ядром: 24
-  static const double* taps() {                         // полуполосный sinc (fc = ¼ частоты удвоенной), окно Блэкмана, сумма = 1
-    static double h[N];
+  static constexpr int TAPS = 47;
+  static constexpr int UP_TAPS = (TAPS + 1) / 2;  // сколько входных отсчётов попадает под ядро апсэмпла: 24
+
+  // Полуполосный sinc (срез — ¼ удвоенной частоты, то есть прежний Найквист), окно Блэкмана,
+  // сумма отводов = 1. Считается один раз на всю программу.
+  static const double* taps() {
+    static double h[TAPS];
     static bool ready = false;
     if (!ready) {
-      const int M = (N - 1) / 2;
+      const int M = (TAPS - 1) / 2;
       double s = 0;
-      for (int n = 0; n < N; n++) {
+      for (int n = 0; n < TAPS; n++) {
         const double t = n - M, a = M_PI * 0.5 * t;
         const double sinc = t == 0 ? 1.0 : std::sin(a) / a;
-        const double w = 0.42 - 0.5 * std::cos(2 * M_PI * n / (N - 1)) + 0.08 * std::cos(4 * M_PI * n / (N - 1));
-        h[n] = 0.5 * sinc * w; s += h[n];
+        const double w = 0.42 - 0.5 * std::cos(2 * M_PI * n / (TAPS - 1)) + 0.08 * std::cos(4 * M_PI * n / (TAPS - 1));
+        h[n] = 0.5 * sinc * w;
+        s += h[n];
       }
-      for (int n = 0; n < N; n++) h[n] /= s;
+      for (int n = 0; n < TAPS; n++) h[n] /= s;
       ready = true;
     }
     return h;
   }
-  Hist<T, NU> up_;
-  Hist<T, N> dn_;
+
+  History<T, UP_TAPS> upHistory_;  // вход основной частоты (×2)
+  History<T, TAPS> downHistory_;   // после кривой, удвоенная частота
 };
 
-// Ступень 2× из Chromium (UpSampler / DownSampler): апсэмпл — чётные отсчёты = вход, задержанный на 64, нечётные — свёртка с 128-точечным
-// sinc (сдвиг на полсэмпла, окно Блэкмана α = 0.16); даунсэмпл — 256-точечный полуполосный sinc·½ с тем же окном, берутся чётные отсчёты
-// (у полуполосного ядра нули на чётных смещениях, кроме центра, — их не считаем). Задержка ступени: 64 + 64 = 128 отсчётов основной частоты.
+// ---- Ступень 2× как в Chromium (UpSampler / DownSampler) ----
+//
+// Апсэмпл: чётные отсчёты удвоенной частоты — просто вход, задержанный на 64; нечётные — свёртка
+// со 128-точечным sinc, сдвинутым на полсэмпла (окно Блэкмана α = 0.16).
+// Даунсэмпл: 256-точечный полуполосный sinc·½ с тем же окном, берутся чётные отсчёты. У полуполосного
+// ядра на чётных смещениях нули (кроме центра) — их не считаем.
+// Задержка ступени: 64 + 64 = 128 сэмплов основной частоты.
 template <class T>
 struct OsChromiumT {
-  template <class G>
-  T step(T x, G&& g) {
+  template <class Curve>
+  T step(T x, Curve&& curve) {
     const Kernels& k = kernels();
-    ux_.push(x);
-    const T* xp = ux_.at();
-    de_.push(g(xp[UP / 2]));                            // чётный отсчёт удвоенной частоты (g — до g(u1), как всегда)
-    T u1 = T(), y = k.dn[DN / 2] * de_.at()[DN / 4];    // центр ядра: v[2m − 128]
-    const T* op = do_.at();
-    static_assert(UP == DN / 2, "одна петля на обе свёртки");
-    for (int t = 0; t < UP; t++) { u1 += k.up[t] * xp[t]; y += k.dn[2 * t + 1] * op[t]; }   // апсэмпл и нечётные смещения v[2m − 1 − 2t]
-    do_.push(g(u1));
-    return y;
-  }
-  // каскад 4× (o — внешняя ступень, i — внутренняя), до бита как o.step(x, [&](T u) { return i.step(u, g); }): те же суммы в том же порядке
-  // и та же очередь вызовов g, но свёртка внешней ступени и первого прохода внутренней — в одной петле (цепочки независимы: внешней
-  // нужен только вход и её история, внутренней — задержанный вход внешней), так у процессора вдвое больше цепочек сложений в работе
-  template <class G>
-  static T step4(OsChromiumT& o, OsChromiumT& i, T x, G&& g) {
-    const Kernels& k = kernels();
-    o.ux_.push(x);
-    const T* xp = o.ux_.at();
-    i.ux_.push(xp[UP / 2]);                             // внутренняя, первый проход: вход — чётный отсчёт внешней
-    const T* ip = i.ux_.at();
-    i.de_.push(g(ip[UP / 2]));
-    T iu = T(), iy = k.dn[DN / 2] * i.de_.at()[DN / 4];
-    T ou = T(), oy = k.dn[DN / 2] * o.de_.at()[DN / 4 - 1];   // у внешней push(v0) ещё впереди: at()[DN/4] после него — at()[DN/4 − 1] сейчас
-    const T *iop = i.do_.at(), *oop = o.do_.at();
-    for (int t = 0; t < UP; t++) {
-      iu += k.up[t] * ip[t]; iy += k.dn[2 * t + 1] * iop[t];
-      ou += k.up[t] * xp[t]; oy += k.dn[2 * t + 1] * oop[t];
+    input_.push(x);
+    const T* in = input_.recent();
+    evenHigh_.push(curve(in[UP_TAPS / 2]));  // чётный отсчёт удвоенной частоты (кривая на нём — раньше, чем на нечётном)
+    T odd = T(), out = k.down[DOWN_TAPS / 2] * evenHigh_.recent()[DOWN_TAPS / 4];  // центр ядра даунсэмпла
+    const T* oddHist = oddHigh_.recent();
+    static_assert(UP_TAPS == DOWN_TAPS / 2, "обе свёртки — в одной петле");
+    for (int t = 0; t < UP_TAPS; t++) {
+      odd += k.up[t] * in[t];                    // апсэмпл: нечётный отсчёт
+      out += k.down[2 * t + 1] * oddHist[t];     // даунсэмпл: нечётные смещения
     }
-    i.do_.push(g(iu));
-    o.de_.push(iy);                                     // v0 внешней = выход первого прохода внутренней
-    o.do_.push(i.step(ou, g));                          // второй проход внутренней — по апсэмплу внешней
-    return oy;
+    oddHigh_.push(curve(odd));
+    return out;
   }
-  // K ступеней 2× за раз (голоса мира): у каждой — те же суммы в том же порядке, что в step, до бита; цепочки K ступеней вперемешку.
-  // Вызовы g идут сперва чётные всех ступеней, потом нечётные — кривая g(v, u) у ступеней своя и без состояния, на биты это не влияет
-  template <int K, class G>
-  static void stepK(OsChromiumT* const* s, T* x, G&& g) {
+
+  // Каскад 4×: outer — внешняя ступень, inner — внутренняя. Даёт до бита то же, что
+  //   outer.step(x, [&](T u) { return inner.step(u, curve); })
+  // — те же суммы в том же порядке и та же очередь вызовов curve. Разница только в скорости:
+  // свёртка внешней ступени и первый проход внутренней идут в одной петле (они друг от друга
+  // не зависят), так у процессора вдвое больше цепочек сложений в работе.
+  template <class Curve>
+  static T step4(OsChromiumT& outer, OsChromiumT& inner, T x, Curve&& curve) {
     const Kernels& k = kernels();
-    const T *xp[K], *op[K];
-    T u1[K], y[K];
+    outer.input_.push(x);
+    const T* outerIn = outer.input_.recent();
+    inner.input_.push(outerIn[UP_TAPS / 2]);  // первый проход внутренней: её вход — чётный отсчёт внешней
+    const T* innerIn = inner.input_.recent();
+    inner.evenHigh_.push(curve(innerIn[UP_TAPS / 2]));
+    T innerOdd = T(), innerOut = k.down[DOWN_TAPS / 2] * inner.evenHigh_.recent()[DOWN_TAPS / 4];
+    // У внешней push чётного ещё впереди (ниже), поэтому центр её ядра сейчас — на шаг ближе: [DOWN_TAPS/4 − 1].
+    T outerOdd = T(), outerOut = k.down[DOWN_TAPS / 2] * outer.evenHigh_.recent()[DOWN_TAPS / 4 - 1];
+    const T *innerOddHist = inner.oddHigh_.recent(), *outerOddHist = outer.oddHigh_.recent();
+    for (int t = 0; t < UP_TAPS; t++) {
+      innerOdd += k.up[t] * innerIn[t]; innerOut += k.down[2 * t + 1] * innerOddHist[t];
+      outerOdd += k.up[t] * outerIn[t]; outerOut += k.down[2 * t + 1] * outerOddHist[t];
+    }
+    inner.oddHigh_.push(curve(innerOdd));
+    outer.evenHigh_.push(innerOut);                    // чётный отсчёт внешней = выход первого прохода внутренней
+    outer.oddHigh_.push(inner.step(outerOdd, curve));  // второй проход внутренней — по нечётному отсчёту внешней
+    return outerOut;
+  }
+
+  // K ступеней 2× за раз (голоса мира). У каждой — те же суммы в том же порядке, что в step, до бита.
+  // Кривая зовётся сперва на чётных отсчётах всех ступеней, потом на нечётных: у каждой ступени
+  // своя кривая curve(v, u) и без памяти, так что на результат порядок не влияет.
+  template <int K, class Curve>
+  static void stepK(OsChromiumT* const* stage, T* x, Curve&& curve) {
+    const Kernels& k = kernels();
+    const T *in[K], *oddHist[K];
+    T odd[K], out[K];
     for (int v = 0; v < K; v++) {
-      s[v]->ux_.push(x[v]);
-      xp[v] = s[v]->ux_.at();
-      s[v]->de_.push(g(v, xp[v][UP / 2]));
-      u1[v] = T(); y[v] = k.dn[DN / 2] * s[v]->de_.at()[DN / 4];
-      op[v] = s[v]->do_.at();
+      stage[v]->input_.push(x[v]);
+      in[v] = stage[v]->input_.recent();
+      stage[v]->evenHigh_.push(curve(v, in[v][UP_TAPS / 2]));
+      odd[v] = T();
+      out[v] = k.down[DOWN_TAPS / 2] * stage[v]->evenHigh_.recent()[DOWN_TAPS / 4];
+      oddHist[v] = stage[v]->oddHigh_.recent();
     }
-    for (int t = 0; t < UP; t++)
-      for (int v = 0; v < K; v++) { u1[v] += k.up[t] * xp[v][t]; y[v] += k.dn[2 * t + 1] * op[v][t]; }
-    for (int v = 0; v < K; v++) { s[v]->do_.push(g(v, u1[v])); x[v] = y[v]; }
+    for (int t = 0; t < UP_TAPS; t++)
+      for (int v = 0; v < K; v++) { odd[v] += k.up[t] * in[v][t]; out[v] += k.down[2 * t + 1] * oddHist[v][t]; }
+    for (int v = 0; v < K; v++) { stage[v]->oddHigh_.push(curve(v, odd[v])); x[v] = out[v]; }
   }
-  void reset() { ux_ = Hist<T, UP>(); de_ = Hist<T, DN / 4 + 1>(); do_ = Hist<T, DN / 2>(); }
+
+  void reset() { input_ = History<T, UP_TAPS>(); evenHigh_ = History<T, DOWN_TAPS / 4 + 1>(); oddHigh_ = History<T, DOWN_TAPS / 2>(); }
 
  private:
-  static constexpr int UP = 128, DN = 256;
+  static constexpr int UP_TAPS = 128, DOWN_TAPS = 256;
+
+  // Ядра Chromium, считаются один раз на всю программу.
   struct Kernels {
-    double up[UP], dn[DN];
+    double up[UP_TAPS], down[DOWN_TAPS];
     Kernels() {
-      const double a0 = 0.5 * (1 - 0.16), a1 = 0.5, a2 = 0.5 * 0.16;
-      for (int i = 0; i < UP; i++) {
-        const double s = M_PI * (i - UP / 2 + 0.5), x = (i + 0.5) / UP;
+      const double a0 = 0.5 * (1 - 0.16), a1 = 0.5, a2 = 0.5 * 0.16;  // окно Блэкмана, α = 0.16
+      for (int i = 0; i < UP_TAPS; i++) {
+        const double s = M_PI * (i - UP_TAPS / 2 + 0.5), x = (i + 0.5) / UP_TAPS;
         up[i] = (s == 0 ? 1.0 : std::sin(s) / s) * (a0 - a1 * std::cos(2 * M_PI * x) + a2 * std::cos(4 * M_PI * x));
       }
-      for (int i = 0; i < DN; i++) {
-        const double s = M_PI * (i - DN / 2) * 0.5, x = static_cast<double>(i) / DN;
-        dn[i] = 0.5 * (s == 0 ? 1.0 : std::sin(s) / s) * (a0 - a1 * std::cos(2 * M_PI * x) + a2 * std::cos(4 * M_PI * x));
+      for (int i = 0; i < DOWN_TAPS; i++) {
+        const double s = M_PI * (i - DOWN_TAPS / 2) * 0.5, x = static_cast<double>(i) / DOWN_TAPS;
+        down[i] = 0.5 * (s == 0 ? 1.0 : std::sin(s) / s) * (a0 - a1 * std::cos(2 * M_PI * x) + a2 * std::cos(4 * M_PI * x));
       }
     }
   };
   static const Kernels& kernels() { static const Kernels k; return k; }
-  Hist<T, UP> ux_;
-  Hist<T, DN / 4 + 1> de_;
-  Hist<T, DN / 2> do_;
+
+  History<T, UP_TAPS> input_;                 // вход основной частоты
+  History<T, DOWN_TAPS / 4 + 1> evenHigh_;    // чётные отсчёты удвоенной частоты после кривой
+  History<T, DOWN_TAPS / 2> oddHigh_;         // нечётные — после кривой
 };
 
 using Os2 = Os2T<double>;
 using OsChromium = OsChromiumT<double>;
 
-// Oversample по os (1, 2, 4): a — ступень 2× (при 4 — внешняя), b, c — внешняя и внутренняя ступени Chromium.
-template <class T, class G>
-inline T oversample(int os, Os2T<T>& a, OsChromiumT<T>& b, OsChromiumT<T>& c, T x, G&& g) {
-  if (os >= 4) return OsChromiumT<T>::step4(b, c, x, g);
-  if (os >= 2) return a.step(x, g);
-  return g(x);
+// Выбрать способ по os (1, 2, 4). fir2x — наша ступень для os 2; outer и inner — ступени Chromium для os 4.
+template <class T, class Curve>
+inline T oversample(int os, Os2T<T>& fir2x, OsChromiumT<T>& outer, OsChromiumT<T>& inner, T x, Curve&& curve) {
+  if (os >= 4) return OsChromiumT<T>::step4(outer, inner, x, curve);
+  if (os >= 2) return fir2x.step(x, curve);
+  return curve(x);
 }
+
+// ---- Кривые ----
 
 template <int N>
 struct Shaper {
+  // Точки кривой: c[0] — значение при x = −1, c[N − 1] — при x = +1, между ними — равномерно.
+  // Можно заполнить руками (Tenebrae так нормирует кривую по пику) или через build().
   float c[N] = {};
+
+  // Построить кривую из функции fn(x) на [−1, 1].
   template <class F>
-  void build(F fn) { for (int i = 0; i < N; i++) c[i] = static_cast<float>(fn(static_cast<double>(i) / (N - 1) * 2 - 1)); }   // x = i/(N−1)·2 − 1
+  void build(F fn) { for (int i = 0; i < N; i++) c[i] = static_cast<float>(fn(static_cast<double>(i) / (N - 1) * 2 - 1)); }
+
+  // Кривая в точке x, без oversample и без задержки. Между точками — линейно, как WaveShaperNode.
   double step(double x) const {
-    const double v = (N - 1) * (x + 1) * 0.5;
-    if (!(v > 0)) return c[0];
+    const double v = (N - 1) * (x + 1) * 0.5;  // x → номер точки (дробный)
+    if (!(v > 0)) return c[0];                  // !(v > 0), а не v <= 0: NaN тоже уходит в край
     if (v >= N - 1) return c[N - 1];
     const int k = static_cast<int>(v);
     const double f = v - k;
     return (1 - f) * c[k] + f * c[k + 1];
   }
-  double run(double x) { return oversample<double>(os, a_, b_, c_, x, [this](double u) { return step(u); }); }
-  void reset() { a_.reset(); b_.reset(); c_.reset(); }
+
+  // Кривая с oversample по os (см. шапку). Зовётся на каждый сэмпл подряд — у ступеней есть память.
+  double run(double x) { return oversample<double>(os, fir2x_, outer_, inner_, x, [this](double u) { return step(u); }); }
+  void reset() { fir2x_.reset(); outer_.reset(); inner_.reset(); }
   int os = 1;
 
  private:
-  Os2 a_;
-  OsChromium b_, c_;
+  Os2 fir2x_;
+  OsChromium outer_, inner_;
 };
 
-// пара каналов одной кривой: run(l, r) — до бита как run у двух Shaper<N> с той же кривой
+// Пара каналов с одной кривой: run(l, r) — до бита как run у двух Shaper<N> с той же кривой.
 template <int N>
 struct Shaper2 {
-  Shaper<N> curve;                                      // кривая (c, build, step); её собственный oversample не используется
+  Shaper<N> curve;  // кривая (c, build, step); собственный oversample у неё не используется
   int os = 1;
   void run(double& l, double& r) {
-    const V2 y = oversample<V2>(os, a_, b_, c_, V2{l, r}, [this](V2 u) { return V2{curve.step(u[0]), curve.step(u[1])}; });
-    l = y[0]; r = y[1];
+    const V2 y = oversample<V2>(os, fir2x_, outer_, inner_, V2{l, r}, [this](V2 u) { return V2{curve.step(u[0]), curve.step(u[1])}; });
+    l = y[0];
+    r = y[1];
   }
-  void reset() { a_.reset(); b_.reset(); c_.reset(); }
+  void reset() { fir2x_.reset(); outer_.reset(); inner_.reset(); }
 
  private:
-  Os2T<V2> a_;
-  OsChromiumT<V2> b_, c_;
+  Os2T<V2> fir2x_;
+  OsChromiumT<V2> outer_, inner_;
 };
 
 struct TanhShaper {
   int os = 1;
+  // Сила перегруза: около 0 — почти прямая, 1 — мягко, 5 и больше — почти квадрат. Меньше 0.001 не бывает
+  // (иначе tanh(k) → 0 и деление на него).
   void set(double k) { k_ = k < 1e-3 ? 1e-3 : k; norm_ = 1.0 / std::tanh(k_); }
   double k() const { return k_; }
+  // Сама кривая, без oversample: tanh(k·x) / tanh(k), вход зажат в [−1, 1].
   double shape(double x) const { x = x > 1 ? 1 : x < -1 ? -1 : x; return std::tanh(k_ * x) * norm_; }
-  double step(double x) { return oversample<double>(os, a_, b_, c_, x, [this](double u) { return shape(u); }); }
-  void reset() { a_.reset(); b_.reset(); c_.reset(); }
+  // Кривая с oversample по os. Зовётся на каждый сэмпл подряд.
+  double step(double x) { return oversample<double>(os, fir2x_, outer_, inner_, x, [this](double u) { return shape(u); }); }
+  void reset() { fir2x_.reset(); outer_.reset(); inner_.reset(); }
 
  private:
-  double k_ = 1, norm_ = 1 / std::tanh(1.0);
-  Os2 a_;
-  OsChromium b_, c_;
+  double k_ = 1, norm_ = 1 / std::tanh(1.0);  // norm_ = 1 / tanh(k): чтобы ±1 на входе давало ±1 на выходе
+  Os2 fir2x_;
+  OsChromium outer_, inner_;
 };
 
-// пара каналов с одним k: step(l, r) — до бита как step у двух TanhShaper с тем же k
+// Пара каналов с одним k: step(l, r) — до бита как step у двух TanhShaper с тем же k.
 struct TanhShaper2 {
   int os = 1;
-  bool chromium = false;                                // os 2 — ступенью Chromium (как '2x' WaveShaperNode до сэмпла, задержка 128), не FIR 47
-  void set(double k) { t_.set(k); }
+  bool chromium = false;  // при os 2 — ступень Chromium (как '2x' WaveShaperNode до сэмпла, задержка 128) вместо нашего FIR
+  void set(double k) { tanh_.set(k); }
   void step(double& l, double& r) {
-    const auto g = [this](V2 u) { return V2{t_.shape(u[0]), t_.shape(u[1])}; };
-    const V2 y = os == 2 && chromium ? b_.step(V2{l, r}, g) : oversample<V2>(os, a_, b_, c_, V2{l, r}, g);
-    l = y[0]; r = y[1];
+    const auto curve = [this](V2 u) { return V2{tanh_.shape(u[0]), tanh_.shape(u[1])}; };
+    const V2 y = os == 2 && chromium ? outer_.step(V2{l, r}, curve) : oversample<V2>(os, fir2x_, outer_, inner_, V2{l, r}, curve);
+    l = y[0];
+    r = y[1];
   }
-  // n пар за раз (у каждой свой k): до бита как sh[v]->step(io[2v], io[2v + 1]) по очереди; при os 2 (FIR 47 или Chromium) — ступени пачками до 6
+
+  // n пар за раз, у каждой свой k (голоса Tenebrae). io — L, R, L, R, …, пишется на место.
+  // До бита как sh[v]->step(io[2v], io[2v + 1]) по очереди. Если в пачке все с os 2 и одним способом —
+  // ступени считаются пачками до 6 (stepK), иначе — по одной.
   static void stepN(TanhShaper2* const* sh, double* io, int n) {
     while (n > 0) {
       const int m = n < 6 ? n : 6;
-      bool os2 = true, ch2 = true;
-      for (int v = 0; v < m; v++) { os2 = os2 && sh[v]->os == 2 && !sh[v]->chromium; ch2 = ch2 && sh[v]->os == 2 && sh[v]->chromium; }
-      const auto g = [sh](int v, V2 u) { return V2{sh[v]->t_.shape(u[0]), sh[v]->t_.shape(u[1])}; };
-      if (ch2) {
+      bool allFir2x = true, allChromium2x = true;
+      for (int v = 0; v < m; v++) {
+        allFir2x = allFir2x && sh[v]->os == 2 && !sh[v]->chromium;
+        allChromium2x = allChromium2x && sh[v]->os == 2 && sh[v]->chromium;
+      }
+      const auto curve = [sh](int v, V2 u) { return V2{sh[v]->tanh_.shape(u[0]), sh[v]->tanh_.shape(u[1])}; };
+      if (allChromium2x) {
         V2 x[6];
-        OsChromiumT<V2>* b[6];
-        for (int v = 0; v < m; v++) { x[v] = V2{io[2 * v], io[2 * v + 1]}; b[v] = &sh[v]->b_; }
-        switch (m) {
-          case 1: OsChromiumT<V2>::stepK<1>(b, x, g); break;
-          case 2: OsChromiumT<V2>::stepK<2>(b, x, g); break;
-          case 3: OsChromiumT<V2>::stepK<3>(b, x, g); break;
-          case 4: OsChromiumT<V2>::stepK<4>(b, x, g); break;
-          case 5: OsChromiumT<V2>::stepK<5>(b, x, g); break;
-          default: OsChromiumT<V2>::stepK<6>(b, x, g); break;
+        OsChromiumT<V2>* stage[6];
+        for (int v = 0; v < m; v++) { x[v] = V2{io[2 * v], io[2 * v + 1]}; stage[v] = &sh[v]->outer_; }
+        switch (m) {  // K — параметр шаблона, поэтому switch, а не переменная
+          case 1: OsChromiumT<V2>::stepK<1>(stage, x, curve); break;
+          case 2: OsChromiumT<V2>::stepK<2>(stage, x, curve); break;
+          case 3: OsChromiumT<V2>::stepK<3>(stage, x, curve); break;
+          case 4: OsChromiumT<V2>::stepK<4>(stage, x, curve); break;
+          case 5: OsChromiumT<V2>::stepK<5>(stage, x, curve); break;
+          default: OsChromiumT<V2>::stepK<6>(stage, x, curve); break;
         }
         for (int v = 0; v < m; v++) { io[2 * v] = x[v][0]; io[2 * v + 1] = x[v][1]; }
-      } else if (!os2) {
+      } else if (!allFir2x) {
         for (int v = 0; v < m; v++) sh[v]->step(io[2 * v], io[2 * v + 1]);
       } else {
         V2 x[6];
-        Os2T<V2>* a[6];
-        for (int v = 0; v < m; v++) { x[v] = V2{io[2 * v], io[2 * v + 1]}; a[v] = &sh[v]->a_; }
+        Os2T<V2>* stage[6];
+        for (int v = 0; v < m; v++) { x[v] = V2{io[2 * v], io[2 * v + 1]}; stage[v] = &sh[v]->fir2x_; }
         switch (m) {
-          case 1: Os2T<V2>::stepK<1>(a, x, g); break;
-          case 2: Os2T<V2>::stepK<2>(a, x, g); break;
-          case 3: Os2T<V2>::stepK<3>(a, x, g); break;
-          case 4: Os2T<V2>::stepK<4>(a, x, g); break;
-          case 5: Os2T<V2>::stepK<5>(a, x, g); break;
-          default: Os2T<V2>::stepK<6>(a, x, g); break;
+          case 1: Os2T<V2>::stepK<1>(stage, x, curve); break;
+          case 2: Os2T<V2>::stepK<2>(stage, x, curve); break;
+          case 3: Os2T<V2>::stepK<3>(stage, x, curve); break;
+          case 4: Os2T<V2>::stepK<4>(stage, x, curve); break;
+          case 5: Os2T<V2>::stepK<5>(stage, x, curve); break;
+          default: Os2T<V2>::stepK<6>(stage, x, curve); break;
         }
         for (int v = 0; v < m; v++) { io[2 * v] = x[v][0]; io[2 * v + 1] = x[v][1]; }
       }
-      sh += m; io += 2 * m; n -= m;
+      sh += m;
+      io += 2 * m;
+      n -= m;
     }
   }
-  void reset() { a_.reset(); b_.reset(); c_.reset(); }
+  void reset() { fir2x_.reset(); outer_.reset(); inner_.reset(); }
 
  private:
-  TanhShaper t_;                                        // кривая (k, shape); её собственный oversample не используется
-  Os2T<V2> a_;
-  OsChromiumT<V2> b_, c_;
+  TanhShaper tanh_;  // кривая (k, shape); собственный oversample у неё не используется
+  Os2T<V2> fir2x_;
+  OsChromiumT<V2> outer_, inner_;
 };
 
 }  // namespace sdk
