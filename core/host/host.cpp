@@ -19,8 +19,8 @@ void Host::prepare(double sr, uint32_t seed) {
   // Мастер-цепь (по умолчанию как MIX_DEF веба: LPF 22 кГц, компрессор −10/10/2.5, потолок 0 дБ)
   for (auto& f : hp_) f.set(sdk::Biquad::highpass, 30, 1, clk_.sr);
   masterLpf(22000);                                     // срез прежней сцены не переживает t2d_init
-  for (auto& f : lpf_) { f.x1 = f.x2 = f.y1 = f.y2 = 0; }
-  for (auto& f : hp_) { f.x1 = f.x2 = f.y1 = f.y2 = 0; }
+  for (auto& f : lpf_) f.reset();
+  for (auto& f : hp_) f.reset();
   comp_.set(-10, 2.5, clk_.sr);
   comp_.reset();
   const sdk::Knee kn{2.6 / std::tanh(2.6), 0.6, 0.98 - 0.6};

@@ -26,7 +26,7 @@ struct BpBank {
     for (Band& x : b) x.f.set(Biquad::bandpass, x.hz < top ? x.hz : top, x.q < 1e-3 ? 1e-3 : x.q, sr);
   }
   double step(double x) { double y = 0; for (Band& v : b) y += v.g * v.f.step(x); return y; }
-  void reset() { for (Band& v : b) v.f.x1 = v.f.x2 = v.f.y1 = v.f.y2 = 0; }
+  void reset() { for (Band& v : b) v.f.reset(); }
 };
 
 }  // namespace sdk

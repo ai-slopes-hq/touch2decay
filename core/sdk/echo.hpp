@@ -46,7 +46,7 @@ class TapeEcho {
   // Тишина на входе и в петле (последние time записей — нули, фильтр в нуле): блок не считается — выход 0, ручки доходят к цели
   // за n сэмплов разом ((1 − c)^n) — то же, что посэмпльно, с точностью до округления
   void process(const float* in, float* out, int n) {
-    if (zeros_ >= (glide_ ? (d_ < 128 ? 128 : d_) : d_) && lp_.y1 == 0 && lp_.y2 == 0 && lp_.x1 == 0 && lp_.x2 == 0) {
+    if (zeros_ >= (glide_ ? (d_ < 128 ? 128 : d_) : d_) && lp_.silent()) {
       bool quiet = true;
       for (int k = 0; k < n && quiet; k++) quiet = in[k] == 0;
       if (quiet) {
@@ -68,7 +68,8 @@ class TapeEcho {
       line_.write(w);
       out[k] = static_cast<float>(y);
     }
-    if (std::fabs(lp_.y1) < 1e-12 && std::fabs(lp_.y2) < 1e-12) lp_.y1 = lp_.y2 = 0;
+    if (std::fabs(lp_.previousOutput) < 1e-12 && std::fabs(lp_.outputBeforePrevious) < 1e-12)
+      lp_.previousOutput = lp_.outputBeforePrevious = 0;   // хвост фильтра — в ровный 0, чтобы сработала проверка тишины выше
   }
   double send() const { return send_.y; }
   double fb() const { return fb_.y; }

@@ -8,7 +8,10 @@ namespace sdk {
 namespace {
 
 inline double flush(double x) { return std::fabs(x) < kFlush ? 0.0 : x; }
-inline void flush(Biquad& b) { b.x1 = flush(b.x1); b.x2 = flush(b.x2); b.y1 = flush(b.y1); b.y2 = flush(b.y2); }
+inline void flush(Biquad& b) {                          // память фильтра — тоже без денормалов
+  b.previousInput = flush(b.previousInput); b.inputBeforePrevious = flush(b.inputBeforePrevious);
+  b.previousOutput = flush(b.previousOutput); b.outputBeforePrevious = flush(b.outputBeforePrevious);
+}
 
 // allpass на линии с дробным чтением (для модуляции): w = x + g·d, y = d − g·w — как sdk::Allpass, но с явным сбросом
 inline double allpass(Delay& l, double d_len, double g, double x) {

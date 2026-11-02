@@ -107,7 +107,7 @@ void World::process(const sdk::Out& out, int n) {
   const bool live = sound_.process(pL_, pR_, n, now);
   quiet_ = live ? 0 : quiet_ + n;
   if (quiet_ > sr_ / 2) {                               // полсекунды тишины: дека отзвучала — шина не считается
-    for (auto& b : body_) for (auto& q : b) q.x1 = q.x2 = q.y1 = q.y2 = 0;
+    for (auto& b : body_) for (auto& q : b) q.reset();
     bodyG_.y = bodyTo_; hallG_.y = hallTo_;
     chorus_.process(pL_, pR_, false, cL_, cR_, n);      // хвост хора дозвучивает и засыпает сам
     for (int k = 0; k < n; k++) {
