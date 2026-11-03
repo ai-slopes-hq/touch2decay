@@ -45,6 +45,8 @@ final class PortusView: World {
   private var prevOn = [Bool](repeating: false, count: Por.nstep)
   private var area: (W: Double, H: Double, topY: Double, safeBot: Double) = (390, 844, 59, 34)
   private(set) var now = 0.0
+  var fingers: [ObjectIdentifier: PorFinger] = [:]           // пальцы мира; touchReset (undo) забывает их все
+  var lastP = 0                                              // нота последнего кораблика: вехи ставят с неё (view.js:57)
 
   init(core: Core, readMirror: Reader? = nil, readHeard: Reader? = nil, rng: (() -> Double)? = nil) {
     self.core = core
@@ -126,13 +128,7 @@ final class PortusView: World {
     touchTick(now: now)
   }
 
-  // касания — задача 6 (PorTouch.swift): пока заглушки
-  func touchTick(now: Double) {}
-  func touchReset() {}
-  func down(_ f: Finger) {}
-  func move(_ f: Finger) {}
-  func up(_ f: Finger) {}
-  func cancel(_ f: Finger) {}
+  // касания — PorTouch.swift (down / move / up / cancel / touchTick / touchReset)
 
   func draw(_ d: Draw, now: Double) {}                       // картинка — план (б)
   func drawShot(_ d: Draw, now: Double) {}
