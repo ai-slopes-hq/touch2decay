@@ -2,7 +2,7 @@ import Foundation
 
 // зеркало ядра (175 чисел): 0…23 энергии мод, 24…31 голоса (hz, level) × 4, 32 f0, 33…39 fx, 40…44 bpm, playing, rec, rlen, mlen,
 // 45… ритм 16 × (on, vel, chance, has), 109… мелодия 16 × (on, x, y), 157…161 луна (on, depth, rate, shape, k),
-// 162…168 grid, lastHit x, y, cursor, stepRec on, r, m; дальше эхо (читает отдельный разбор) — core/worlds/cymatica/world.hpp
+// 162…168 grid, lastHit x, y, cursor, stepRec on, r, m; хвост (эхо, 169…174) не разбирается — виду он не нужен; core/worlds/cymatica/world.hpp
 struct CymMirror {
   var energy = [Double](repeating: 0, count: 24)
   var voices = [(hz: Double, level: Double)](repeating: (0, 0), count: 4)

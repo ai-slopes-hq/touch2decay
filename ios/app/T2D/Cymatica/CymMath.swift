@@ -9,7 +9,7 @@ enum Cym {
   static let echoDivs: [(String, Double)] = [("1/16t", 1.0 / 6), ("1/16", 1.0 / 4), ("1/8t", 1.0 / 3), ("1/16d", 3.0 / 8), ("1/8", 1.0 / 2),
                                              ("1/4t", 2.0 / 3), ("1/8d", 3.0 / 4), ("1/4", 1), ("1/4d", 3.0 / 2)]
   static let driftRates: [(String, Int)] = [("4 bars", 16), ("2 bars", 8), ("1 bar", 4), ("1/2", 2), ("1/4", 1)]
-  static let structs = 7                                    // ручек structure в model.hpp — по числу fx
+  static let structs = ["string", "membrane", "plate", "bell", "bowl", "handpan", "marimba", "kalimba"]   // тела по лучу structure (view.js:11)
   static let fxKeys = ["structure", "damping", "brightness", "hall", "echo", "time", "chance"]   // Fx в model.hpp
   static let driftKeys = ["depth", "rate", "shape"]         // DriftKey
   static let ringR = [0.9, 0.7, 0.33]                       // середины колец ханга: край, середина, центр

@@ -9,6 +9,7 @@ final class CymMathTests: XCTestCase {
   func testNoteName() {
     XCTAssertEqual(Cym.noteName(110), "A2"); XCTAssertEqual(Cym.noteName(55), "A1")
     XCTAssertEqual(Cym.noteName(440 * pow(2, 1.0 / 12)), "A♯4")
+    XCTAssertEqual(Cym.structs.count, 8); XCTAssertEqual(Cym.structs[2], "plate")
     XCTAssertEqual(Cym.echoDiv(0.75).0, "1/8d")
     XCTAssertEqual(Cym.driftRate(0.5).0, "1 bar")
     XCTAssertEqual(Cym.driftDepth(0.3), 2); XCTAssertEqual(Cym.driftDepth(0), 1)
@@ -49,10 +50,11 @@ final class CymMathTests: XCTestCase {
   }
 
   func testTwist() {
-    XCTAssertEqual(cymTwistOrPinch(a0: 0, a1: 0.2, d0: 100, d1: 100), .twist)
-    XCTAssertEqual(cymTwistOrPinch(a0: 0, a1: 0.1, d0: 100, d1: 130), .pinch)
-    XCTAssertNil(cymTwistOrPinch(a0: 0, a1: 0.1, d0: 100, d1: 105))
-    XCTAssertEqual(cymTwistOrPinch(a0: 0, a1: 0.3, d0: 100, d1: 140), .pinch)
+    func tp(_ a1: Double, _ d1: Double) -> CymTwo? { cymTwistOrPinch(a0: 0, a1: a1, d0: 100, d1: d1) }
+    XCTAssertTrue(tp(0.2, 100) == CymTwo.twist)
+    XCTAssertTrue(tp(0.1, 130) == CymTwo.pinch)
+    XCTAssertNil(tp(0.1, 105))
+    XCTAssertTrue(tp(0.3, 140) == CymTwo.pinch)
   }
 
   func testEffF0() {
