@@ -56,6 +56,31 @@ void Model::setIsle(int i, int key, double v) {
 }
 void Model::clearIsles() { for (auto& s : s_) s = Isle{}; }
 
+// кубик: порядок вызовов r.next() — как в dice() фасада (R() в model.js)
+void Model::dice(sdk::Rng& r) {
+  const auto pick = [&](std::initializer_list<int> v) { return *(v.begin() + static_cast<int>(r.next() * v.size())); };
+  clearIsles();
+  double roots[3] = {0, 0, 0};
+  roots[1] = pick({3, 5, 7, 10}); roots[2] = pick({0, 5, 7, 12});
+  const int chord = pick({2, 2, 3, 3, 1, 4});
+  static const int ORDER[12] = {2, 6, 10, 14, 3, 11, 7, 15, 0, 9, 13, 5};
+  int order[14], n = 0;
+  for (int j : ORDER) if (r.next() < 0.62 && n < 7) order[n++] = j;       // filter зовёт R для каждого из 12, slice(0, 7) — после
+  if (n < 3) { order[n++] = 2; order[n++] = 10; }
+  bool seen[NSTEP] = {};
+  for (int k = 0; k < n; k++) {
+    const int j = order[k];
+    if (seen[j]) continue;
+    seen[j] = true;
+    const double p = roots[j < 8 ? 0 : r.next() < 0.7 ? 1 : 2];
+    s_[j] = Isle{true, p, 0, 1, r.next() * 1000};
+  }
+  pharos_[CHORD] = chord;
+  echo_[TIME] = std::floor(r.next() * 5); buoyD_ = 0.25 + r.next() * 0.55; buoyFromEcho();
+  pharos_[OCT] = r.next() < 0.6 ? -1 : 0;
+  luna_[CUT] = 0.25 + r.next() * 0.45; luna_[RES] = r.next() * 0.6; fog_[AMT] = 0.25 + r.next() * 0.55;
+}
+
 // ---------- сцена ----------
 void Model::setLuna(int k, double v) { if (k >= 0 && k < NLUNA) luna_[k] = v; }
 void Model::buoyFromEcho() {

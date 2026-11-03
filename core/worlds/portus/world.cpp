@@ -94,6 +94,19 @@ void World::action(int kind, int i, const double* a, int n) {
     case BPM: model_.setBpm(arg(0, 120)); break;
     case FX: model_.setFx(key, arg(0, 0)); break;
     case CLEAR: model_.clearIsles(); break;
+    case DICE: model_.dice(rng_); break;
+    case sdk::ACT_LFO: {                                 // LFO плашек: только строки мира (i == −1), код — как в списке у action
+      if (n < 2 || i != -1) return;
+      const int c = static_cast<int>(a[0]);
+      if (c >= 0 && c < NFX) model_.setFx(c, a[1]);
+      else if (c >= 5 && c <= 7) model_.setLuna(c - 5, a[1]);
+      else if (c == 8) model_.setEcho(TONE, a[1]);
+      else if (c == 9) model_.setEcho(MIX, a[1]);
+      else if (c == 10) model_.setEcho(FB, a[1]);
+      else if (c == 11 || c == 12) model_.setFog(c - 11, a[1]);
+      else return;
+      break;
+    }
     case PLAY:
       playing_ = arg(0, 0) != 0;
       steps_.reset();                                    // часы — с начала (по сетке — к нынешней доле)

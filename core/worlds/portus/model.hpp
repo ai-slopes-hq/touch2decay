@@ -5,6 +5,7 @@
 #pragma once
 #include <string>
 #include "../../host/scale.hpp"
+#include "../../sdk/rng.hpp"
 
 namespace portus {
 
@@ -36,6 +37,7 @@ class Model {
   void setNote(int i, double p);
   void setIsle(int i, int key, double v);
   void clearIsles();
+  void dice(sdk::Rng& r);                              // дорожка и сцена по кубику фасада: порядок r.next() — как dice() в model.js
   // сцена
   void setLuna(int k, double v);
   void setBuoy(double u, double d);                    // тянут буй: вдаль — повторы, поперёк между берегами — время эха

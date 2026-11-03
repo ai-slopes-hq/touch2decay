@@ -1,5 +1,6 @@
 // Тесты блоков core/sdk — без библиотек: свои CHECK, код выхода ≠ 0 при провале. Эталонные числа (Rng, Biquad) посчитаны в Node
 // независимо: Rng — rnd() из tools/ref/pulsar-worklet.js, Biquad — формулы Web Audio (BiquadFilterNode), sr = 48000.
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <complex>
@@ -7,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -258,6 +260,83 @@ static void portusWorld() {
   sc.on = true; sc.idx = 1; sc.root = 0;
   CHECK(std::fabs(w.model().hzOf(0) - hz0) > 1e-9 || sc.inScale(1));
   sc.on = false;
+}
+
+// Portus: ACT_LFO — коды 0…12 (fx 0…4, luna 5…7, echo tone 8, mix 9, fb 10, fog 11, 12), чужое пропускается
+static void portusLfo() {
+  using namespace portus;
+  static Scale sc;
+  static World w(sc);
+  w.prepare(48000, 5);
+  double m[MIRROR_N];
+  const auto act = [&](int i, double code, double v) { const double a[2] = {code, v}; w.action(sdk::ACT_LFO, i, a, 2); };
+  for (int k = 0; k <= 12; k++) {
+    w.prepare(48000, 5);
+    act(-1, k, 0.3);
+    CHECK(w.mirror(m, MIRROR_N) == MIRROR_N);
+    if (k <= 4) NEAR(m[19 + k], 0.3, 1e-12);
+    else if (k <= 7) NEAR(m[4 + k - 5], 0.3, 1e-12);
+    else if (k == 8) NEAR(m[8], 0.3, 1e-12);
+    else if (k == 9) NEAR(m[9], 0.3, 1e-12);
+    else if (k == 10) NEAR(m[11], 0.03 + 0.3 * 0.92, 1e-12);
+    else NEAR(m[12 + k - 11], 0.3, 1e-12);
+  }
+}
+static void portusLfoIgnores() {
+  using namespace portus;
+  static Scale sc;
+  static World w(sc);
+  w.prepare(48000, 5);
+  double m0[MIRROR_N], m1[MIRROR_N];
+  w.mirror(m0, MIRROR_N);
+  const double a[2] = {-1, 0.9}, b[2] = {13, 0.9}, c[2] = {0, 0.9}, d[1] = {0};
+  w.action(sdk::ACT_LFO, -1, a, 2);
+  w.action(sdk::ACT_LFO, -1, b, 2);
+  w.action(sdk::ACT_LFO, 0, c, 2);
+  w.action(sdk::ACT_LFO, -1, d, 1);
+  w.mirror(m1, MIRROR_N);
+  CHECK(std::memcmp(m0, m1, sizeof(m0)) == 0);
+}
+
+// Portus: DICE — 3…7 мест из порядка кубика, тоники по половинам, сцена в пределах; то же зерно — та же сцена
+static void portusDice() {
+  using namespace portus;
+  static Scale sc;
+  static World w(sc), v(sc);
+  w.prepare(48000, 9); v.prepare(48000, 9);
+  double m[MIRROR_N], mv[MIRROR_N], f0[5], bpm0;
+  w.mirror(m, MIRROR_N); for (int k = 0; k < 5; k++) f0[k] = m[19 + k]; bpm0 = m[3];
+  const int allowed[12] = {2, 6, 10, 14, 3, 11, 7, 15, 0, 9, 13, 5};
+  std::set<std::vector<int>> sets;
+  for (int t = 0; t < 20; t++) {
+    w.action(DICE, 0, nullptr, 0);
+    w.mirror(m, MIRROR_N);
+    std::vector<int> on;
+    for (int j = 0; j < 16; j++) {
+      const double* s = m + 24 + 5 * j;
+      if (s[0] != 1) { CHECK(s[0] == 0); continue; }
+      on.push_back(j);
+      CHECK(std::find(allowed, allowed + 12, j) != allowed + 12);
+      const int p = static_cast<int>(s[1]);
+      CHECK(s[1] == p && (j < 8 ? p == 0 : (p == 0 || p == 3 || p == 5 || p == 7 || p == 10 || p == 12)));
+      CHECK(s[2] == 0 && s[3] == 1 && s[4] >= 0 && s[4] < 1000);
+    }
+    sets.insert(on);
+    CHECK(on.size() >= 3 && on.size() <= 7);
+    CHECK(m[14] >= 1 && m[14] <= 4 && m[14] == std::floor(m[14]));
+    CHECK(m[7] >= 0 && m[7] <= 4 && m[7] == std::floor(m[7]));
+    CHECK(m[11] >= 0.25 && m[11] <= 0.8);
+    CHECK(m[15] == -1 || m[15] == 0);
+    CHECK(m[4] >= 0.25 && m[4] <= 0.7 && m[5] >= 0 && m[5] <= 0.6 && m[12] >= 0.25 && m[12] <= 0.8);
+    for (int k = 0; k < 5; k++) CHECK(m[19 + k] == f0[k]);
+    CHECK(m[3] == bpm0 && m[1] == 0);
+  }
+  CHECK(sets.size() >= 2);
+  v.action(DICE, 0, nullptr, 0);
+  w.prepare(48000, 9);
+  w.action(DICE, 0, nullptr, 0);
+  w.mirror(m, MIRROR_N); v.mirror(mv, MIRROR_N);
+  CHECK(std::memcmp(m, mv, sizeof(m)) == 0);
 }
 
 
@@ -3187,7 +3266,7 @@ static void lfoSpecNan() {
 
 // чужие миры ACT_LFO не знают: не падают и не звучат иначе
 static void lfoForeign() {
-  for (int slot : {1, 2, 5, 11, 12}) {
+  for (int slot : {1, 2, 5, 11, 12, 13}) {
     auto run = [&](bool send) {
       t2d_app_init(48000, 7, 1e9, 0);
       const double a[2] = {0, 0.5};
@@ -3837,7 +3916,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

@@ -11,7 +11,8 @@
 //   PLACE i = место, a = [нота p, зерно качания];  SINK i;  MOVE i = откуда, a = [куда];  NOTE i, a = [p];  ISLE i, a = [ключ (0 oct, 1 lvl), v]
 //   LUNA i = ключ (cut, res, env), a = [v];  BUOY a = [u, d];  ECHO i = ключ (time, tone, mix, fb), a = [v];  FOG i = ключ (amt, size), a = [v]
 //   PHAROS i = ключ (chord, oct, len, lvl, swing), a = [v];  BPM a = [bpm];  FX i = ключ (wow, mare, drive, spread, chance), a = [v];  CLEAR
-//   PLAY a = [on];  KILL;  AUDITION i = место
+//   PLAY a = [on];  KILL;  AUDITION i = место;  DICE — случайная дорожка и сцена (ГСЧ мира; пуск не трогает)
+//   ACT_LFO i = −1, a = [код, v]: fx 0…4, luna cut/res/env 5…7, echo tone 8, mix 9, fb 10 (буй встаёт по нему), fog amt/size 11…12; прочее — пропуск
 // Зеркало: [шаг (−1 — стоит), играет, голосов, bpm, luna×3, echo×3 (time, tone, mix), buoy u, d, fog×2, pharos×5, fx×5, затем на каждое из 16 мест:
 //   занято, p, oct, lvl, sd]
 #pragma once
@@ -31,7 +32,7 @@
 
 namespace portus {
 
-enum Act { PLACE, SINK, MOVE, NOTE, ISLE, LUNA, BUOY, ECHO, FOG, PHAROS, BPM, FX, CLEAR, PLAY, KILL, AUDITION };
+enum Act { PLACE, SINK, MOVE, NOTE, ISLE, LUNA, BUOY, ECHO, FOG, PHAROS, BPM, FX, CLEAR, PLAY, KILL, AUDITION, DICE };
 constexpr int VOICES = 8, MAXIV = 6, MAXOSC = 2 * MAXIV;
 // параметры шины, которые мир собирает из модели (порядок — как у stateArgs этапа 1)
 enum St { S_BPM, S_CHANCE, S_SWING, S_CHORD, S_LVL, S_LEN, S_FC, S_RES, S_ENV, S_DT, S_TONE, S_MIX, S_FB, S_FOG, S_SIZE, S_DRIVE, S_WOW, S_MARE, S_SPREAD, S_HEAD };
