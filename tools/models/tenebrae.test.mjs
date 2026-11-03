@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createModel, PIN_MAX, TAIL, UNPIN_TAIL, LFO_DEF, BEAT_MIN, BEAT_MAX, SHIFT_DEF } from '../../worlds/tenebrae/model.js';
+import { createModel, SET_KEYS, PIN_MAX, TAIL, UNPIN_TAIL, LFO_DEF, BEAT_MIN, BEAT_MAX, SHIFT_DEF } from '../../worlds/tenebrae/model.js';
 import { LFO_KEYS, LINK_TYPES } from '../../worlds/tenebrae/engine.js';
 import { seeded } from './util.mjs';
 import { lerpLog } from '../../host/util.js';
@@ -134,7 +134,7 @@ test('load', () => {
 
 const two = (m) => [m.spawn(0.2, 0.5, 0), m.spawn(0.6, 0.5, 0)];
 const autos = (m) => m.state.voices.flatMap((v) => v.mods.filter((x) => x.auto).map((x) => ({ dst: v.i, x })));
-const snapshot = (m) => JSON.stringify(m.state.voices.map((v) => v.mods.map((x) => ({ src: x.src.i, type: x.type, depth: x.depth, until: x.until }))));
+const snapshot = (m) => JSON.stringify(m.state.voices.map((v) => v.mods.map((x) => ({ src: x.src, type: x.type, depth: x.depth, until: x.until }))));
 
 test('remove drops links everywhere', () => {
   const { m, V } = rig();
@@ -170,12 +170,13 @@ test('lfo edit in place', () => {
   const spec = { ...LFO_DEF };
   m.lfo(i, 'cut', spec);
   assert.equal(calls.filter((c) => c[0] === 'lfo').length, 1);
-  assert.deepEqual(calls.find((c) => c[0] === 'lfo'), ['lfo', i, 'cut', spec]);
-  assert.equal(V[i].lfo.cut.ph, 0);
+  const made = V[i].lfo.cut;
+  assert.deepEqual(calls.find((c) => c[0] === 'lfo'), ['lfo', i, 'cut', made]);
+  assert.ok(!('ph' in made));
   const n = calls.length;
   m.lfo(i, 'cut', { rate: 3 });
-  assert.equal(V[i].lfo.cut, spec);
-  assert.equal(spec.rate, 3);
+  assert.equal(V[i].lfo.cut, made);
+  assert.equal(made.rate, 3);
   assert.equal(calls.length, n);
   assert.ok(V[i].dirty);
   m.lfo(i, 'cut', null);
@@ -196,7 +197,7 @@ test('chaos seeded', () => {
   assert.ok(list.length > 0);
   for (const { dst, x } of list) {
     assert.equal(x.auto, true);
-    assert.ok(x.src.active && x.src.i !== dst);
+    assert.ok(m.state.voices[x.src].active && x.src !== dst);
     assert.ok(x.k >= 0.15 && x.k < 0.55);
     assert.equal(x.depth, 0.5 * x.k);
   }
@@ -471,4 +472,31 @@ test('events: an empty drain allocates nothing and stays empty', () => {
   const i = m.spawn(0.4, 0.3, 0); m.pin(i);
   assert.deepEqual(m.events(), [{ t: 'burst', i }]);
   assert.deepEqual(m.events(), []);
+});
+
+test('set ignores keys outside the list', () => {
+  const { m, V } = rig(); const i = m.spawn(0.4, 0.3, 0); m.tick(0.01);
+  m.set(i, 'active', false); m.set(i, 'x', 0.9); m.set(i, 'cut', 0.1);
+  assert.ok(V[i].active); assert.equal(V[i].x, 0.4); assert.equal(V[i].cut, 0.1);
+  assert.equal(SET_KEYS.length, 7);
+});
+test('inactive voice ignores grab, pin, remove, move, set, lfo', () => {
+  const { m, V, calls } = rig(); const v = V[3], before = JSON.stringify(v);
+  m.grab(3); m.move(3, 0.9, 0.9, 0.5); m.set(3, 'cut', 0.1); m.lfo(3, 'cut', { depth: 0.5 }); m.remove(3);
+  assert.equal(m.pin(3), null);
+  assert.equal(JSON.stringify(v), before); assert.equal(calls.length, 0); assert.equal(m.events().length, 0);
+});
+test('new lfo merges LFO_DEF and writes no ph', () => {
+  const { m, V } = rig(); const i = m.spawn(0.4, 0.3, 0), spec = { depth: 0.8 };
+  m.lfo(i, 'cut', spec); m.lfo(i, 'nope', { depth: 1 });
+  assert.deepEqual(V[i].lfo, { cut: { morph: 0, rate: 1.2, depth: 0.8 } });
+  assert.deepEqual(spec, { depth: 0.8 });
+});
+test('links hold voice numbers; mod(dst, src) finds them', () => {
+  const { m, V } = rig(); const [a, b] = two(m);
+  const x = m.link(a, b);
+  assert.equal(V[a].mods[0].src, b); assert.equal(m.mod(a, b), x); assert.equal(m.mod(b, a), undefined);
+});
+test('fresh voices are clean: first tick sends no voice', () => {
+  const { m, names } = rig(); m.tick(0.01); assert.ok(!names().includes('voice'));
 });

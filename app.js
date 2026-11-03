@@ -523,7 +523,7 @@ function rollDice() {
 // связь — гравитационная нить: квадратичная кривая от источника к приёмнику, прогнутая к солнцу;
 // чем глубже связь, тем сильнее прогиб
 function linkCurve(dst, m) {
-  const x1 = vx(m.src), y1 = vy(m.src), x2 = vx(dst), y2 = vy(dst);
+  const x1 = vx(V[m.src]), y1 = vy(V[m.src]), x2 = vx(dst), y2 = vy(dst);
   const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, L = Math.hypot(x2 - x1, y2 - y1) || 1;
   let nx = -(y2 - y1) / L, ny = (x2 - x1) / L;            // поперёк нити — в сторону солнца
   if (nx * (geo.ox - mx) + ny * (geo.oy - my) < 0) { nx = -nx; ny = -ny; }
@@ -628,9 +628,9 @@ function uiHit(f) {
   for (const v of V) {                      // ручка на середине связи
     if (!v.active) continue;
     for (const m of v.mods) {
-      if (!m.src.active || m.auto) continue;
+      if (!V[m.src].active || m.auto) continue;
       const c = linkMid(v, m);
-      if (Math.hypot(f.x - c.x, f.y - c.y) < HANDLE_R) return { k: 'link', dst: v, m };
+      if (Math.hypot(f.x - c.x, f.y - c.y) < HANDLE_R) return { k: 'link', dst: v, src: m.src };
     }
   }
   return null;
@@ -700,7 +700,7 @@ function uiDown(f) {
     return;
   }
   if (f.ui === 'void') { closeEditor(); return; }
-  if (f.ui === 'link') { openLink(f, f.hit.dst, f.hit.m); return; }
+  if (f.ui === 'link') { openLink(f, f.hit.dst, f.hit.src); return; }
   if (f.ui === 'ring') { ringTouch(f, true); return; }
   if (f.ui === 'lfooff') {                  // снять LFO с выбранного параметра
     const tg = modTarget(f);
@@ -812,7 +812,7 @@ function uiUp(f) {
     return;
   }
   if (f.ui === 'ring') {
-    if (editor && editor.kind === 'link' && editor.cutting) { model.unlink(editor.dst.i, editor.m.src.i); setEditor(null); }
+    if (editor && editor.kind === 'link' && editor.cutting) { model.unlink(editor.dst.i, editor.src); setEditor(null); }
     return;
   }
   if (f.ui !== 'scl') return;
@@ -880,23 +880,24 @@ function openMenu(f) {
 }
 
 // кольцо связи на весу: луч типа — характер, расстояние — глубина; луч cut — удалить
-function openLink(f, dst, m) {
-  const c = linkMid(dst, m), orig = { type: m.type, depth: m.depth };
+function openLink(f, dst, src) {
+  model.link(dst.i, src);                   // тронутую хаос-связь пользователь забирает себе
+  const m0 = model.mod(dst.i, src), c = linkMid(dst, m0), orig = { type: m0.type, depth: m0.depth };
   f.menuWas = true;
-  model.link(dst.i, m.src.i);               // тронутую хаос-связь пользователь забирает себе
-  const setType = (t) => { if (m.type !== t) model.linkType(dst.i, m.src.i, t); };
+  const cur = () => model.mod(dst.i, src) || orig;   // связь берётся в момент чтения; отрезанная — прежние числа
+  const setType = (t) => { if (cur().type !== t) model.linkType(dst.i, src, t); };
   let cutting = false;                      // «отрезать» — состояние вида, не модели
   const rc = ringCenter(c.x, c.y);
   f.menu = {
-    cx: rc.cx, cy: rc.cy, gx: f.x, gy: f.y, sector: null, sectors: LINK_SECTORS, span: MENU_SPAN, link: m, dst, overPin: true,
-    get: (k) => (k === 'cut' ? (cutting ? 1 : 0) : m.type === k ? m.depth : 0),
+    cx: rc.cx, cy: rc.cy, gx: f.x, gy: f.y, sector: null, sectors: LINK_SECTORS, span: MENU_SPAN, src, dst, overPin: true,
+    get: (k) => (k === 'cut' ? (cutting ? 1 : 0) : cur().type === k ? cur().depth : 0),
     set: (k, t) => {
       cutting = k === 'cut' && t > 0.35;
-      if (k !== 'cut') { setType(k); model.linkDepth(dst.i, m.src.i, t); }
+      if (k !== 'cut') { setType(k); model.linkDepth(dst.i, src, t); }
     },
-    text: (k) => (k === 'cut' ? (cutting ? 'release to cut' : 'pull further') : `${Math.round(m.depth * 100)}%`),
-    restore: () => { cutting = false; setType(orig.type); model.linkDepth(dst.i, m.src.i, orig.depth); },
-    commit: () => { if (cutting) model.unlink(dst.i, m.src.i); },
+    text: (k) => (k === 'cut' ? (cutting ? 'release to cut' : 'pull further') : `${Math.round(cur().depth * 100)}%`),
+    restore: () => { cutting = false; setType(orig.type); model.linkDepth(dst.i, src, orig.depth); },
+    commit: () => { if (cutting) model.unlink(dst.i, src); },
   };
 }
 
@@ -928,7 +929,7 @@ function pinFrom(m) {
   if (m.voice) {
     setEditor({ kind: 'voice', v: m.voice, group: m.group, key: m.sector ? m.sector.key : null, cx: m.cx, cy: m.cy, sectors: SECTORS });
   } else {
-    setEditor({ kind: 'link', dst: m.dst, m: m.link, key: m.link.type, cx: m.cx, cy: m.cy, sectors: LINK_SECTORS, cutting: false });
+    setEditor({ kind: 'link', dst: m.dst, src: m.src, key: (model.mod(m.dst.i, m.src) || { type: null }).type, cx: m.cx, cy: m.cy, sectors: LINK_SECTORS, cutting: false });
   }
 }
 
@@ -943,7 +944,7 @@ function pinMenu(f) {
 function leaveMenu(m) {
   if (m.overPin) { pinFrom(m); return; }
   if (m.commit) m.commit();
-  if (m.link && !m.dst.mods.includes(m.link)) return;   // связь только что удалена
+  if (m.src != null && !model.mod(m.dst.i, m.src)) return;   // связь только что удалена
   ghost = { menu: m, until: performance.now() + GHOST_MS };
 }
 
@@ -972,8 +973,10 @@ function ringTouch(f, first) {
   }
   if (f.sector.key === 'cut') { e.cutting = t > 0.35; return; }
   e.cutting = false;
-  model.linkType(e.dst.i, e.m.src.i, f.sector.key);
-  model.linkDepth(e.dst.i, e.m.src.i, t); e.key = e.m.type;
+  model.linkType(e.dst.i, e.src, f.sector.key);
+  model.linkDepth(e.dst.i, e.src, t);
+  const lk = model.mod(e.dst.i, e.src);
+  if (lk) e.key = lk.type;
 }
 
 // ---------- аудио: звук — ядро SDK, слот 1 (клей worlds/tenebrae/engine.js); модель шлёт ему поля голосов, связи, LFO и FX ----------
@@ -1217,10 +1220,10 @@ function drawLinks(now, skip) {
   for (const v of V) {
     if (!v.active) continue;
     for (const m of v.mods) {
-      const s = m.src;
+      const s = V[m.src];
       if (!s.active || m === skip) continue;
       const k = m.auto ? 0.45 : 1;
-      const editing = editor && editor.m === m;
+      const editing = editor && editor.kind === 'link' && editor.dst === v && editor.src === m.src;
       const a = (0.15 + 0.55 * Math.min(1, s.env * 1.2)) * (0.4 + 0.6 * m.depth) * k;
       const c = linkCurve(v, m);
       g.setLineDash(LINK_DASH[m.type]); g.lineDashOffset = -now * 0.02;
@@ -1356,7 +1359,9 @@ function drawEditor() {
     contour(v, x, y, 34, 1, 2, true);
     return;
   }
-  const m = e.m, mid = linkMid(e.dst, m);
+  const m = model.mod(e.dst.i, e.src);
+  if (!m) return;
+  const mid = linkMid(e.dst, m);
   tether(e.cx, e.cy, mid.x, mid.y);
   drawRing({
     cx: e.cx, cy: e.cy, span: MENU_SPAN, sectors: e.sectors, sel: e.cutting ? 'cut' : m.type, link: true,
@@ -1383,12 +1388,14 @@ function drawHeld(m, pointer) {
     if (m.sector && m.sector.key === 'wave') drawCurve(morphFn(clamp(v.wave + VW[v.i].wv)), at.x, at.y - 30, 60, 22, 1);
     contour(v, vx(v), vy(v), 34, 1, 2, true);
   } else {
-    const mid = linkMid(m.dst, m.link);
+    const lk = model.mod(m.dst.i, m.src);
+    if (!lk) return;
+    const mid = linkMid(m.dst, lk);
     tether(m.cx, m.cy, mid.x, mid.y);
     drawRing({
-      cx: m.cx, cy: m.cy, span: m.span, sectors: m.sectors, sel: m.sector ? m.sector.key : m.link.type, link: true,
+      cx: m.cx, cy: m.cy, span: m.span, sectors: m.sectors, sel: m.sector ? m.sector.key : lk.type, link: true,
       get: m.get, pointer: m.sector && pointer ? pointer : null,
-      readout: m.sector ? `${m.sector.label} · ${m.text(m.sector.key)}` : `${m.link.type} · ${Math.round(m.link.depth * 100)}%`,
+      readout: m.sector ? `${m.sector.label} · ${m.text(m.sector.key)}` : `${lk.type} · ${Math.round(lk.depth * 100)}%`,
       readoutAt: at,
     });
     diamond(m.cx, m.cy, 6, 1, true);
@@ -1888,7 +1895,7 @@ function solTick(now, dt) {
       burst(v);
     } else if (e.t === 'strike') VW[v.i].strike = { t0: performance.now(), p: e.p, a: Math.atan2(vy(v) - geo.oy, vx(v) - geo.ox) };
   }
-  if (editor && ((editor.kind === 'voice' && !editor.v.active) || (editor.kind === 'link' && !editor.dst.mods.includes(editor.m)))) setEditor(null);
+  if (editor && ((editor.kind === 'voice' && !editor.v.active) || (editor.kind === 'link' && !model.mod(editor.dst.i, editor.src)))) setEditor(null);
   // экран держит общий сторож ниже — по всем мирам, не только по Tenebrae
 
 }

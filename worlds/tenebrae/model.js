@@ -17,12 +17,13 @@ export const CUT_DEF = 0.68;
 export const RES_DEF = 0.21;
 export const WAVE_DEF = 0.125;
 export const SHIFT_DEF = 0.5;
+export const SET_KEYS = ['wave', 'cut', 'res', 'beat', 'fm', 'shift', 'amp'];
 export const LFO_DEF = { morph: 0, rate: 1.2, depth: 0.35 };
 
 const makeVoice = (i) => ({
   i, x: 0.35, y: 0.22, beat: BEAT_DEF, wave: WAVE_DEF, fm: 0, cut: CUT_DEF, res: RES_DEF, shift: SHIFT_DEF, amp: 1, holeT: 0,
   mods: [], lfo: {}, pinned: false, active: false, live: false,
-  env: 0, envT: 0, envTau: 0.05, held: 0, snap: true, dirty: true, sunT: 0, strikeNext: 0,
+  env: 0, envT: 0, envTau: 0.05, held: 0, snap: true, dirty: false, sunT: 0, strikeNext: 0,
 });
 
 export function createModel({ rng = Math.random, engine = () => null, wake = () => {} } = {}) {
@@ -62,7 +63,7 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
   }
   const clearLfos = (v) => { for (const key of Object.keys(v.lfo)) removeLfo(v, key); };
 
-  function addLink(dst, src, depth, type = 'tzfm') {
+  function addLink(dst, src, depth, type = 'tzfm') {   // src — номер голоса
     const m = { src, type, depth };
     dst.mods.push(m);
     dst.dirty = true;
@@ -80,7 +81,7 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
     v.dirty = true;
     for (const u of V) {
       const keepMods = [];
-      for (const m of u.mods) { if (m.src === v) u.dirty = true; else keepMods.push(m); }
+      for (const m of u.mods) { if (m.src === v.i) u.dirty = true; else keepMods.push(m); }
       u.mods = keepMods;
     }
   }
@@ -108,7 +109,7 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
     return v.i;
   }
 
-  const grab = (i) => { V[i].held++; };
+  const grab = (i) => { if (!V[i].active) return; V[i].held++; };
 
   function letGo(i, fade = true) {
     const v = V[i];
@@ -130,17 +131,20 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
 
   function move(i, p, c, holeT) {
     const v = V[i];
+    if (!v.active) return;
     v.x = p; v.y = c; v.holeT = holeT;
     v.dirty = true;
   }
 
   function set(i, key, val) {
+    if (!V[i].active || !SET_KEYS.includes(key)) return;
     V[i][key] = val;
     V[i].dirty = true;
   }
 
   function pin(i) {
     const v = V[i];
+    if (!v.active) return null;
     queue.push({ t: 'burst', i });
     if (v.pinned) {
       v.pinned = false;
@@ -157,6 +161,7 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
 
   function remove(i) {
     const v = V[i];
+    if (!v.active) return;
     v.pinned = false; v.held = 0;
     unlinkAll(v);
     release(i, 0.25);
@@ -166,30 +171,31 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
 
   // связи: dst модулируется кружком src. Есть связь — становится ручной, глубина остаётся
   function link(dst, src) {
-    const d = V[dst], s = V[src];
-    const m = d.mods.find((k) => k.src === s) || addLink(d, s, LINK_NEW);
+    const d = V[dst];
+    const m = d.mods.find((k) => k.src === src) || addLink(d, src, LINK_NEW);
     m.auto = false; d.dirty = true;
     return m;
   }
-  const find = (dst, src) => V[dst].mods.find((k) => k.src === V[src]);
+  const mod = (dst, src) => V[dst].mods.find((k) => k.src === src);
   function linkDepth(dst, src, depth) {
-    const m = find(dst, src);
+    const m = mod(dst, src);
     if (!m) return;
     m.depth = depth; V[dst].dirty = true;
   }
   function linkType(dst, src, type) {
-    const m = find(dst, src);
+    const m = mod(dst, src);
     if (!m) return;
     m.type = type; V[dst].dirty = true;
   }
   function unlink(dst, src) {
-    const m = find(dst, src);
+    const m = mod(dst, src);
     if (m) dropLink(V[dst], m);
   }
 
   // LFO: нет ключа — новый генератор (фаза для рисования с нуля); есть — правка на месте; null — снять
   function lfo(i, key, spec) {
     const v = V[i];
+    if (!v.active || !LFO_KEYS.includes(key)) return;
     if (spec === null) {
       removeLfo(v, key);
       v.dirty = true;
@@ -198,10 +204,10 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
     if (v.lfo[key]) {
       Object.assign(v.lfo[key], spec);
     } else {
-      spec.ph = 0;
-      v.lfo[key] = spec;
+      const made = { ...LFO_DEF, ...spec };
+      v.lfo[key] = made;
       const e = engine();
-      if (e) e.lfo(i, key, spec);
+      if (e) e.lfo(i, key, made);
     }
     v.dirty = true;
   }
@@ -215,12 +221,12 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
     for (const v of V) {
       const auto = v.mods.find((m) => m.auto);
       if (!v.active || c < 0.02 || act.length < 2) { if (auto) dropLink(v, auto); continue; }
-      if (auto && state.time < auto.until && auto.src.active) { auto.depth = c * auto.k; v.dirty = true; continue; }
+      if (auto && state.time < auto.until && V[auto.src].active) { auto.depth = c * auto.k; v.dirty = true; continue; }
       if (auto) dropLink(v, auto);
       if (rng() > 0.35) continue;      // не все сразу
-      const cands = act.filter((u) => u !== v && !v.mods.some((m) => m.src === u));
+      const cands = act.filter((u) => u !== v && !v.mods.some((m) => m.src === u.i));
       if (!cands.length) continue;
-      const m = addLink(v, cands[Math.floor(rng() * cands.length)], 0, LINK_TYPES[Math.floor(rng() * 4)]);
+      const m = addLink(v, cands[Math.floor(rng() * cands.length)].i, 0, LINK_TYPES[Math.floor(rng() * 4)]);
       m.auto = true;
       m.k = 0.15 + rng() * 0.4;
       m.depth = c * m.k;
@@ -243,7 +249,7 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
 
   // голос изменился: связи и LFO — до полей, чтобы голос применился один раз (и со snap)
   function syncMods(v, e) {
-    e.links(v.i, v.mods.map((m) => ({ src: m.src.i, type: m.type, depth: m.depth })));
+    e.links(v.i, v.mods.map((m) => ({ src: m.src, type: m.type, depth: m.depth })));
     for (const key of LFO_KEYS) e.lfo(v.i, key, v.lfo[key] || null);
   }
   function sync(v) {
@@ -339,7 +345,7 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
       v: pins.map((v) => ({
         i: v.i, x: r4(v.x), y: r4(v.y), amp: r4(v.amp), wave: r4(v.wave), cut: r4(v.cut), res: r4(v.res), beat: r4(v.beat), fm: r4(v.fm), shift: r4(v.shift), hole: r4(v.holeT),
         lfo: Object.fromEntries(Object.entries(v.lfo).map(([k, sp]) => [k, { morph: r4(sp.morph), rate: r4(sp.rate), depth: r4(sp.depth) }])),
-        mods: v.mods.filter((m) => !m.auto && ids.has(m.src.i)).map((m) => ({ src: m.src.i, type: m.type, depth: r4(m.depth) })),
+        mods: v.mods.filter((m) => !m.auto && ids.has(m.src)).map((m) => ({ src: m.src, type: m.type, depth: r4(m.depth) })),
       })),
       fx: Object.fromEntries(Object.entries(state.fx).map(([k, x]) => [k, r4(x)])),
     });
@@ -362,7 +368,7 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
     }
     for (const d of st.v) {
       const v = V[d.i];
-      for (const m of d.mods) addLink(v, V[m.src], m.depth, m.type);
+      for (const m of d.mods) addLink(v, m.src, m.depth, m.type);
       for (const [k, sp] of Object.entries(d.lfo)) lfo(v.i, k, { ...sp });
     }
     fx(st.fx);
@@ -381,5 +387,5 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
   }
 
   return { fx, dice, clear, snapshot, restore, build, state, attack, release, spawn, grab, letGo, keep, unkeep, move, set, pin, remove, retune, load, sounding, events,
-    link, linkDepth, linkType, unlink, lfo, sun, tick };
+    link, mod, linkDepth, linkType, unlink, lfo, sun, tick };
 }
