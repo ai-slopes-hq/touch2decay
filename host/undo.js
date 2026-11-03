@@ -8,10 +8,10 @@ export const hists = {}, lasts = {};               // мир → история 
 export const entry = (n) => JSON.stringify({ w: worlds[n].snapshot(), scl: { on: scl.on, idx: scl.idx, root: scl.root } });
 onRegister.push((n) => { hists[n] = []; lasts[n] = entry(n); });
 // после каждого жеста (когда отпущены все пальцы — один жест, один шаг): если сохраняемое изменилось — прежнее состояние в историю
-export function commit() {
+export function commit(shown = nav.world) {   // shown — чей шаг; отложенный шаг мира I — он сам, даже если ушли на карту
   for (const k of Object.keys(worlds)) {      // шаг — только у мира на экране; изменения других миров «из-за кадра» — без шага
     const n = +k, now = entry(n), h = hists[n];
-    if (n === nav.world && now !== lasts[n]) {
+    if (n === shown && now !== lasts[n]) {
       const was = JSON.parse(lasts[n]);
       h.push({ w: was.w, scl: was.scl, after: JSON.parse(now).scl });   // лад до и после шага
       if (h.length > UNDO_MAX) h.shift();

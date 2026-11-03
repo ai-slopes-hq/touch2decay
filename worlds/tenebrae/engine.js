@@ -9,13 +9,14 @@ export const DLY_REPEATS = 0.46; // обратная связь дилея (ка
 
 // model — фасад (worlds/tenebrae/model.js); core — ядро хоста (host/audio.js: send, dry, listen)
 export function createEngine({ model }) {
-  let dryTo = null, from = null;
+  let dryTo = null, from = null, gen = 0;
   function build(core, out) {                            // новый контекст — новый узел ядра: сухой выход в канал, порт — фасаду
     if (dryTo) { try { from.disconnect(dryTo); } catch (_) { /* старый контекст закрыт */ } }
     from = core.dry[SLOT]; dryTo = out;
     from.connect(out);
     model.bind(core.send);
-    core.listen((d) => { const w = d.w && d.w[SLOT]; if (w) model.sync(w.mirror, d.n, w.heard); });
+    const mine = ++gen;                                  // зеркало от прежнего ядра (до restartAudio) в очереди — не слушать
+    core.listen((d) => { if (mine !== gen) return; const w = d.w && d.w[SLOT]; if (w) model.sync(w.mirror, d.n, w.heard); });
   }
   return { build, dispose() { if (dryTo) { try { from.disconnect(dryTo); } catch (_) { /* уже отключён */ } dryTo = null; } } };
 }

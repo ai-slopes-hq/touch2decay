@@ -209,7 +209,7 @@ export function createModel({ send = () => 0, wake = () => {} } = {}) {
     mark(act(ACT.lfo, i, [k, s.morph, s.rate, s.depth]), i);
   }
   function sun(i, t) {
-    if (!ok(i)) return;
+    if (!ok(i) || V[i].sunT === t) return;               // кадровый вызов с той же глубиной — не слать и не метить голос грязным
     V[i].sunT = t;
     mark(act(ACT.sun, i, [t]), i);
   }
@@ -235,7 +235,11 @@ export function createModel({ send = () => 0, wake = () => {} } = {}) {
     return (a.length + 0.15 * a.reduce((n, v) => n + Object.keys(v.lfo).length, 0)) / VOICES;
   };
   const sounding = () => V.some((v) => v.active);
-  const busy = () => applied < waitAt;
+  const busy = () => {
+    if (applied < waitAt) return true;
+    for (let i = 0; i < VOICES; i++) if (dirty[i] > applied) return true;   // голос, который ядро ещё не видело, — шаг отмены подождёт
+    return false;
+  };
 
   const r4 = (x) => Math.round(x * 1e4) / 1e4;
   // строка побайтно та же, что у эталона (host/undo.js сравнивает снимки как строки)
@@ -298,6 +302,7 @@ export function createModel({ send = () => 0, wake = () => {} } = {}) {
     }
   }
   function sync(m, ack, heard = []) {                    // ack — сколько сообщений ядро уже применило
+    if (!m || m.length < MIRROR.MODEL_N) return;
     applied = ack;
     state.time = m[1]; state.strikes = m[2];
     if (ack >= fxAt) for (let k = 0; k < FX_KEYS.length; k++) state.fx[FX_KEYS[k]] = m[3 + k];

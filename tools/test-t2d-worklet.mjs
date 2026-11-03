@@ -141,3 +141,14 @@ test('MIDI clock through the wrapper: bytes in, clock events out right after the
   assert.ok(m.host && m.host.on && Math.abs(m.host.p - 0.5) < 1e-3, JSON.stringify(m.host));
   assert.ok(t > 2);
 });
+
+test('tenebrae: spawn, grab and release queued before ready do not collapse into one step', async () => {
+  const w = loadWorklet([1]);
+  const a = (kind, i, args) => w.proc.port.onmessage({ data: act(1, kind, i, args) });
+  a(16, 0, [0.3, 0.5, 0]); a(17, 0, []); a(21, 0, [0.3, 0.5, 0]); a(18, 0, [1]);   // касание до старта звука: всё приходит пачкой
+  await w.ready;
+  for (let k = 0; k < 40; k++) block(w);
+  const m = [...w.posted].reverse().find((p) => p.t === 'm').w[1].mirror;
+  assert.equal(m[15], 1, 'voice 0 is still fading, not dead');
+  assert.ok(m[15 + 15] > 0.004, `env ${m[15 + 15]}`);
+});

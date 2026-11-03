@@ -68,7 +68,7 @@ let scan = null;
 // ---------- голоса (кружки): модель — worlds/tenebrae/model.js; вид только читает поля голосов, пишет методами модели ----------
 const model = createModel({ wake });   // фасад модели в ядре SDK (слот 1); порт и зеркало ему отдаёт клей engine
 const engine = createEngine({ model });
-let commitWait = false;               // шаг отмены ждёт, пока кубик или очистка дойдут из ядра
+let commitWait = 0;                   // шаг отмены ждёт, пока кубик или очистка дойдут из ядра: срок в мс (0 — не ждёт); мир I, даже если ушли на карту
 const V = model.state.voices;
 // картинные поля голоса (только рисование): dx — где кружок виден, wob/wv — сдвиги от LFO, ox/oy — смещение пальца,
 // hole — глубина дыры (сглаженная), strike — удар по солнцу, emit — таймер импульса, ph/vph — фазы LFO по ключам,
@@ -1890,7 +1890,7 @@ function solTick(now, dt) {
   model.tick(dt);                             // звук и состояние кружков: хаос, удары, огибающие, смерть; события — для картинки
   for (const v of V) VW[v.i].hole += (v.holeT - VW[v.i].hole) * (1 - Math.exp(-dt / 0.15));
   const evs = model.events();
-  if (commitWait && !model.busy()) { commitWait = false; commit(); }
+  if (commitWait && (!model.busy() || now > commitWait)) { commitWait = 0; commit(1); }   // нет ответа ядра за 2 с (контекст завис) — шаг всё равно
   for (let k = 0; k < evs.length; k++) {
     const e = evs[k], v = V[e.i];
     if (e.t === 'burst') {
@@ -2027,7 +2027,7 @@ function drawSheet0(now) {
 cv.addEventListener('pointerdown', down, { passive: false });
 cv.addEventListener('pointermove', move);
 // шаг отмены — когда отпущены все пальцы; кубик и очистка в Tenebrae считает ядро — шаг после того, как они дошли (solTick)
-function settle() { if (nav.world === 1 && model.busy()) commitWait = true; else commit(); }
+function settle() { if (nav.world === 1 && model.busy()) commitWait = performance.now() + 2000; else commit(); }
 cv.addEventListener('pointerup', (e) => { up(e); if (!F.size) settle(); });
 cv.addEventListener('pointercancel', (e) => { up(e); if (!F.size) settle(); });
 

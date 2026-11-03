@@ -49,7 +49,10 @@ class T2d extends AudioWorkletProcessor {
       if (x._initialize) x._initialize();
       x.t2d_init(sampleRate, po.seed == null ? 1 : po.seed >>> 0);
       this.x = x; this.cap = x.t2d_str_cap();
-      for (const d of this.queue) this.apply(d);
+      for (const d of this.queue) {
+        this.apply(d);
+        if (d.t === 'action' && d.kind >= 16) this.settle();   // касание до старта звука приходит пачкой: модель Tenebrae — шаг после каждого действия
+      }
       this.queue = [];
       this.port.postMessage({ t: 'ready' });
     }).catch((err) => this.port.postMessage({ t: 'err', msg: String(err) }));
@@ -80,6 +83,13 @@ class T2d extends AudioWorkletProcessor {
       new Uint8Array(x.memory.buffer, x.t2d_str_buf(), b.length).set(b);
       x.t2d_restore(d.slot, b.length);
     }
+  }
+  // короткий шаг ядра без вывода: спавн, хват и отпускание из одной пачки иначе сходятся в один шаг, и кружок гаснет, не успев зазвучать
+  settle() {
+    const x = this.x;
+    this.views(x);
+    x.t2d_time(typeof currentTime === 'number' ? currentTime : 0);
+    x.t2d_process(32);
   }
   views(x) {                                            // представления памяти ядра — кэш; заново, только когда память выросла (в process без выделений)
     if (this.buf === x.memory.buffer) return;

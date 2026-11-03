@@ -685,3 +685,29 @@ test('core: engine build wires the facade', () => {
   listener({ n: 1, w: { 1: { mirror, heard: [] } } });
   assert.equal(m.state.time, 12.5);
 });
+
+test('core: unchanged sun depth does not keep voices dirty', () => {
+  const m = asyncCore(), V = m.state.voices;
+  const [a, b] = pinned(m, 2);
+  m.flush(); m.deliver();
+  m.dice();
+  m.flush(); m.core.process(128);                        // кубик применён, зеркало с новыми тембрами
+  for (let i = 0; i < 6; i++) m.sun(i, 0);               // как кадровый sunStrikes: глубина та же
+  m.deliver();                                           // ack: кубик есть, свежих sun нет
+  assert.equal(m.busy(), false);
+  assert.equal(V[a].wave, m.coreVoice(a).wave);
+  assert.equal(V[b].wave, m.coreVoice(b).wave);
+});
+
+test('engine: a mirror from the previous core is ignored after rebuild', async () => {
+  const { createEngine } = await import('../../worlds/tenebrae/engine.js');
+  const synced = [];
+  const model = { bind() {}, sync: (m, n) => synced.push(n) };
+  const node = () => ({ connect() {}, disconnect() {} });
+  const mk = () => { const c = { dry: { [facade.SLOT]: node() }, send() {}, cb: null, listen(f) { c.cb = f; } }; return c; };
+  const e = createEngine({ model }), old = mk(), cur = mk();
+  e.build(old, node()); e.build(cur, node());
+  const d = (n) => ({ n, w: { [facade.SLOT]: { mirror: [], heard: [] } } });
+  old.cb(d(7)); cur.cb(d(2));
+  assert.deepEqual(synced, [2]);
+});
