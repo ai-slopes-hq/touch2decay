@@ -87,14 +87,14 @@ func cymTwistOrPinch(a0: Double, a1: Double, d0: Double, d1: Double) -> CymTwo? 
 }
 
 // высота с луной: база (щипок) + k ступеней по ступеням лада — model.js:49-60
-func cymEffF0(f0: Double, driftOn: Bool, k: Int, scale: CymScale) -> Double {
+func cymEffF0(f0: Double, driftOn: Bool, k: Int, scale: CymScale, semis: [Int]? = nil) -> Double {
   if !driftOn || k == 0 { return f0 }
-  let list = scale.semis()
+  let list = semis ?? scale.semis()                          // кадр передаёт кеш — без выделений
   let i = Int(clamp(Double(cymNearestIdx(list, cymFs(f0)) + k), 0, Double(list.count - 1)))
   return clamp(Cym.fMin * pow(2, Double(list[i]) / 12), Cym.fMin, Cym.fMax)
 }
 func cymFs(_ eff: Double) -> Double { 12 * log2(eff / Cym.fMin) }
-func cymBase(_ fs: Double, scale: CymScale) -> Int { cymNearestIdx(scale.noteList(), fs) }
+func cymBase(_ fs: Double, scale: CymScale, list: [Int]? = nil) -> Int { cymNearestIdx(list ?? scale.noteList(), fs) }
 
 // view.js:71-89 — пластина посередине (r ∝ f^−¼), кольца астролябии над ней (+64), ▶/● под ней (+104)
 struct CymGeo {

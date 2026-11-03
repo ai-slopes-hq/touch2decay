@@ -24,18 +24,19 @@ struct CymMirror {
     guard n >= Cym.mirrorN, b.count >= Cym.mirrorN else { return false }
     func num(_ v: Double, _ f: inout Double) { if v.isFinite { f = v } }
     func int(_ v: Double, _ f: inout Int) { if v.isFinite, abs(v) < 1e6 { f = Int(Horo.jsRound(v)) } }
+    func num(_ v: Double, _ f: inout Double, _ lo: Double, _ hi: Double) { if v.isFinite { f = min(hi, max(lo, v)) } }   // конечное, но битое — в диапазон
     func flag(_ v: Double, _ f: inout Bool) { if v.isFinite { f = v > 0.5 } }
     for k in 0..<24 { num(b[k], &energy[k]) }
     for v in 0..<4 { num(b[24 + 2 * v], &voices[v].hz); num(b[25 + 2 * v], &voices[v].level) }
-    num(b[32], &f0)
-    for k in 0..<fx.count { num(b[33 + k], &fx[k]) }
-    num(b[40], &bpm); flag(b[41], &playing); flag(b[42], &rec); int(b[43], &rlen); int(b[44], &mlen)
+    num(b[32], &f0, Cym.fMin, Cym.fMax)
+    for k in 0..<fx.count { num(b[33 + k], &fx[k], 0, 1) }
+    num(b[40], &bpm, 1, 999); flag(b[41], &playing); flag(b[42], &rec); int(b[43], &rlen); int(b[44], &mlen)
     for i in 0..<Cym.slots {
       let r = 45 + i * 4, m = 109 + i * 3
       flag(b[r], &rhythm[i].on); num(b[r + 1], &rhythm[i].vel); num(b[r + 2], &rhythm[i].chance); flag(b[r + 3], &rhythm[i].has)
       flag(b[m], &melody[i].on); num(b[m + 1], &melody[i].x); num(b[m + 2], &melody[i].y)
     }
-    flag(b[157], &drift.on); num(b[158], &drift.depth); num(b[159], &drift.rate); num(b[160], &drift.shape); int(b[161], &drift.k)
+    flag(b[157], &drift.on); num(b[158], &drift.depth, 0, 1); num(b[159], &drift.rate, 0, 1); num(b[160], &drift.shape, 0, 1); int(b[161], &drift.k)
     int(b[162], &grid); num(b[163], &lastHit.x); num(b[164], &lastHit.y); int(b[165], &cursor)
     flag(b[166], &stepRec.on); int(b[167], &stepRec.r); int(b[168], &stepRec.m)
     return true
@@ -60,7 +61,7 @@ func cymHeard(_ b: [Double], n: Int, into out: inout [CymHeard]) {
       let ri = Int(Horo.jsRound(r)), mi = Int(Horo.jsRound(m))
       guard (0..<Cym.slots).contains(ri), (0..<Cym.slots).contains(mi) else { continue }
       out.append(.step(r: ri, m: mi, hit: b[o + 4].isFinite && b[o + 4] != 0))
-    } else if k == 2, b[o + 1].isFinite, abs(b[o + 1]) < 1e6 {
+    } else if k == 2, b[o + 1].isFinite, (0...120).contains(b[o + 1]) {
       out.append(.answer(semi: Int(Horo.jsRound(b[o + 1]))))
     }
   }

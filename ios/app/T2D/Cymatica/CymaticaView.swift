@@ -36,8 +36,9 @@ final class CymaticaView: World {
   let waves = CymWaves()
   private(set) var mirror = CymMirror()
   var state = CymState()                                     // единственный экземпляр; касания зовут его мутирующие методы
-  var scl = CymScale(pcs: nil, root: 0)
-  private(set) var noteList: [Int]                           // кеш списка нот лада; пересчёт в scale()
+  var scl = CymScale(pcs: nil, root: 0) { didSet { noteList = scl.noteList(); semis = scl.semis() } }
+  private(set) var noteList: [Int]                           // кеш списка нот лада; пересчёт при смене scl
+  private(set) var semis: [Int]                              // кеш ступеней лада (кубик, луна); там же
   let readMirror: Reader, readHeard: Reader
   let seed: () -> UInt32
   private var mbuf = [Double](repeating: 0, count: 192)
@@ -61,6 +62,7 @@ final class CymaticaView: World {
     self.core = core
     geo = CymGeo(W: 390, H: 844, topY: 59, safeBot: 34, shownF0: Cym.fDef)
     noteList = CymScale(pcs: nil, root: 0).noteList()
+    semis = CymScale(pcs: nil, root: 0).semis()
     self.readMirror = readMirror ?? { b in Int(t2d_app_mirror(Int32(CymaticaView.slotN), &b, Int32(b.count))) }
     self.readHeard = readHeard ?? { b in Int(t2d_app_heard(Int32(CymaticaView.slotN), &b, Int32(b.count))) }
     self.seed = seed ?? { var g = SystemRandomNumberGenerator(); return UInt32.random(in: 0...UInt32.max, using: &g) }
@@ -102,8 +104,8 @@ final class CymaticaView: World {
     return s
   }
   // высота с луной (cymEffF0) и ступень пластины в списке нот
-  func effF0() -> Double { let d = drift; return cymEffF0(f0: f0, driftOn: d.on, k: d.k, scale: scl) }
-  func base() -> Int { cymBase(cymFs(effF0()), scale: scl) }
+  func effF0() -> Double { let d = drift; return cymEffF0(f0: f0, driftOn: d.on, k: d.k, scale: scl, semis: semis) }
+  func base() -> Int { cymNearestIdx(noteList, cymFs(effF0())) }
   func noteOf(_ x: Double, _ y: Double) -> Int? { cymNoteAt(x, y, b: base(), n: scl.degPerOct, list: noteList) }
 
   // ---------- действия: единственный путь — ядро и свои значения получают одно и то же ----------
@@ -116,8 +118,7 @@ final class CymaticaView: World {
   func clear() { send(Cym.Act.clear) }
 
   func scale(pcs: [Int]?, root: Int) {
-    scl = CymScale(pcs: pcs, root: root)
-    noteList = scl.noteList()
+    scl = CymScale(pcs: pcs, root: root)                     // кеши списков — в didSet
     state.rebase()                                           // другая сетка клеток — не вспышка
   }
   func enter() { state.rebase() }

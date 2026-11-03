@@ -164,7 +164,7 @@ extension CymaticaView {
     }
     let p = g.toPlate(x, y)
     if hypot(p.x, p.y) > 1 { t.kind = .away; fingers[f.id] = t; return }   // вне пластины (но на столе) — как мимо стола
-    if noteOf(p.x, p.y) == nil { return }                     // клетка за 1760 Гц — молчит
+    if noteOf(p.x, p.y) == nil { t.kind = .none; fingers[f.id] = t; return }   // клетка за 1760 Гц — молчит, но палец лежит: второй встанет с ним в пару (view.js:217)
     send(A.strikeAt, 0, [p.x, p.y], touchTime: f.touchTime)
     state.starPush(p.x, p.y, now)
     t.kind = .live; fingers[f.id] = t

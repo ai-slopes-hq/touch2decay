@@ -193,6 +193,31 @@ final class CymaticaDrawTests: XCTestCase {
     _ = shot { p, d in view.litCells(); view.drawAstro(p, d, now: 5) }
   }
 
+  func testMirrorCorruptFinite() {
+    put { $0[32] = 0; $0[40] = 1e12; for k in 33..<40 { $0[k] = 1e9 }; $0[158] = 1e9; $0[159] = -1e9; $0[160] = 1e9
+      $0[43] = 1e5; $0[44] = 1e5; $0[161] = 1e5; $0[162] = 1e5; $0[165] = 1e5; $0[167] = 1e5; $0[168] = 1e5 }
+    XCTAssertEqual(view.mirror.f0, 55); XCTAssertEqual(view.mirror.bpm, 999); XCTAssertEqual(view.mirror.fx[3], 1)
+    XCTAssertEqual(view.mirror.drift.depth, 1); XCTAssertEqual(view.mirror.drift.rate, 0)
+    var ev: [CymHeard] = []
+    var h = [Double](repeating: 0, count: 5); h[0] = 2; h[1] = 1e5
+    cymHeard(h, n: 5, into: &ev)
+    XCTAssertEqual(ev.count, 0)
+    _ = frame(2); _ = shot { p, d in view.litCells(); view.drawAstro(p, d, now: 5) }
+  }
+
+  func testCachesFollowScale() {
+    put { $0[157] = 1; $0[161] = 3; $0[32] = 110 }
+    let flat = CymScale(pcs: nil, root: 0)
+    XCTAssertEqual(view.effF0(), cymEffF0(f0: 110, driftOn: true, k: 3, scale: flat), accuracy: 1e-9)
+    XCTAssertEqual(view.base(), cymBase(cymFs(view.effF0()), scale: flat))
+    view.scale(pcs: [0, 3, 7], root: 2)
+    let sc = CymScale(pcs: [0, 3, 7], root: 2)
+    XCTAssertEqual(view.noteList, sc.noteList()); XCTAssertEqual(view.semis, sc.semis())
+    XCTAssertEqual(view.effF0(), cymEffF0(f0: 110, driftOn: true, k: 3, scale: sc), accuracy: 1e-9)
+    XCTAssertEqual(view.base(), cymBase(cymFs(view.effF0()), scale: sc))
+    XCTAssertNotEqual(view.effF0(), cymEffF0(f0: 110, driftOn: true, k: 3, scale: flat))
+  }
+
   // ---------- кадр: курсор, подписи, резонатор, drawFrame ----------
   private func frame(_ now: Double, _ v: CymaticaView? = nil) -> CGImage {
     let w = v ?? view

@@ -64,9 +64,23 @@ final class CymTouchTests: XCTestCase {
     XCTAssertEqual(view.state.stars.count, 1)
     rec.acts.removeAll()
     load(mirror(f0: 880))                                       // центр: клетка за списком нот — молчит
-    tap(f2, (G.cx, G.cy))
+    view.down(F(f2, (G.cx, G.cy)))
     XCTAssertEqual(kinds(), [])
+    XCTAssertEqual(view.fingers.count, 1)                       // палец лежит (view.js:217 touches.set до strikeAt)
+    view.up(F(f2, (G.cx, G.cy)))
+    XCTAssertEqual(kinds(), [])                                 // up молчащего пальца ничего не шлёт (!f.live)
     XCTAssertEqual(view.fingers.count, 0)
+  }
+
+  func testSilentFingerPairs() {
+    load(mirror(f0: 880))
+    view.down(F(f1, (G.cx, G.cy)))                              // молчащая клетка
+    view.down(F(f2, (G.cx + 45, G.cy)))
+    XCTAssertNotNil(view.pair)                                  // второй палец встал в пару с молчащим
+    rec.acts.removeAll()
+    view.move(F(f2, (G.cx + 45, G.cy), to: (G.cx + 105, G.cy)))
+    XCTAssertEqual(kinds(), [A.setF0])
+    XCTAssertLessThan(rec.acts[0].a[0], 880)
   }
 
   func testButtons() {

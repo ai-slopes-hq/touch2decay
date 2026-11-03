@@ -92,6 +92,7 @@ final class CymMathTests: XCTestCase {
     for i in 0..<175 { b[i] = Double(i) + 0.25 }
     for i in [41, 42, 45, 48, 157, 166] { b[i] = 1 }   // on-флаги: playing, rec, rhythm[0].on, rhythm[0].has, drift.on, stepRec.on
     b[43] = 12; b[44] = 5; b[165] = 3; b[161] = -2; b[162] = 4
+    b[32] = 123.25; b[38] = 0.625; b[40] = 133.25; b[158] = 0.375   // f0, fx, bpm, depth — в рабочих диапазонах (load зажимает)
     var m = CymMirror()
     XCTAssertTrue(m.load(b, n: 175))
     XCTAssertEqual(m.energy[3], 3.25); XCTAssertEqual(m.voices[1].level, b[27]); XCTAssertEqual(m.voices[1].hz, b[26])

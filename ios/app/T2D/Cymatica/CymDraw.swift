@@ -88,7 +88,8 @@ extension CymaticaView {
       let a = Double(k) / Double(n) * tau - Double.pi / 2
       p.move(g.cx, g.cy); p.to(g.cx + cos(a) * g.r, g.cy + sin(a) * g.r)
     }
-    for r in [rings[1], rings[2]] { p.move(g.cx + r * g.r, g.cy); p.arc(g.cx, g.cy, r * g.r, 0, tau) }
+    p.move(g.cx + rings[1] * g.r, g.cy); p.arc(g.cx, g.cy, rings[1] * g.r, 0, tau)
+    p.move(g.cx + rings[2] * g.r, g.cy); p.arc(g.cx, g.cy, rings[2] * g.r, 0, tau)
     p.stroke()
     for ring in 0..<3 {
       for s in 0..<n {

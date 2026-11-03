@@ -10,6 +10,7 @@ extension CymaticaView {
     let g = geo, A = g, grid = max(1, self.grid), sr = stepRec
     let stepS = 60 / max(1, bpm) / 4
     let rl = rlen, ml = mlen
+    let b = base(), nd = scl.degPerOct                          // один раз на кадр, не на бусину
     let cx = CGFloat(g.cx), cy = CGFloat(g.cy)
     for R in [A.R1, A.R2] { d.ring(cx, cy, CGFloat(R), 0.6, 1.1); d.ring(cx, cy, CGFloat(R + 2.5), 0.2, 1) }
     p.g.setLineWidth(1)
@@ -39,7 +40,7 @@ extension CymaticaView {
       if !onM { d.dot(CGFloat(mx), CGFloat(my), 1, 0.12) }    // за длиной кольца — гаснет, подписи нет
       else {
         p.fillPap(0.85); p.begin(); p.arc(mx, my, 11, 0, tau); p.fill()   // тёмная подложка — читается поверх волн
-        if mk.on, let s = noteOf(mk.x, mk.y) {
+        if mk.on, let s = cymNoteAt(mk.x, mk.y, b: b, n: nd, list: noteList) {
           d.mapText(Cym.noteName(Cym.fMin * pow(2, Double(s) / 12)), CGFloat(mx), CGFloat(my), CGFloat(14 + 4 * bm), 1, align: .center)
         } else { d.dot(CGFloat(mx), CGFloat(my), 2, 0.6) }
         d.ring(CGFloat(mx), CGFloat(my), 11, CGFloat(0.25 + 0.75 * bm), CGFloat(1 + 0.6 * bm))
