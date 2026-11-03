@@ -162,7 +162,8 @@ final class CymTouchTests: XCTestCase {
 
   func testMark() {
     load(mirror(marks: [1: (0, -0.9)]))
-    tap(f1, pt(0, -0.9))
+    view.down(F(f1, pt(0, -0.9), touchTime: 7.5)); view.up(F(f1, pt(0, -0.9)))
+    XCTAssertEqual(rec.acts[0].t, 7.5)                         // удар по метке несёт время касания пальца
     XCTAssertEqual(kinds(), [A.strike]); XCTAssertEqual(rec.acts[0].i, 0); XCTAssertEqual(rec.acts[0].a, [0, -0.9, 110, 1, 0.5, 0])
     XCTAssertEqual(view.markHot?.i, 1)
     rec.acts.removeAll()

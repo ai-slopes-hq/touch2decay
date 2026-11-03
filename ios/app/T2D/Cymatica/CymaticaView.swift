@@ -32,6 +32,8 @@ final class CymaticaView: World {
   typealias Reader = (inout [Double]) -> Int
   let core: Core
   var geo: CymGeo
+  var shownF0 = Cym.fDef                                     // показанная высота: пластина плавно доезжает до действующей (view.js:651)
+  let waves = CymWaves()
   private(set) var mirror = CymMirror()
   var state = CymState()                                     // единственный экземпляр; касания зовут его мутирующие методы
   var scl = CymScale(pcs: nil, root: 0)
@@ -68,9 +70,8 @@ final class CymaticaView: World {
     area = (Double(W), Double(H), Double(topY), Double(safeBot))
     rebuildGeo()
   }
-  // в плане (а) показанная высота = действующая; плавность — план (б)
   private func rebuildGeo() {
-    geo = CymGeo(W: area.W, H: area.H, topY: area.topY, safeBot: area.safeBot, shownF0: effF0())
+    geo = CymGeo(W: area.W, H: area.H, topY: area.topY, safeBot: area.safeBot, shownF0: shownF0)
   }
   func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool { cymResonatorHit(Double(x), Double(y), W: area.W, H: area.H, safeBot: area.safeBot) }
   var objs: Int { (0..<Cym.slots).reduce(0) { $0 + (mark($1).on ? 1 : 0) } }
@@ -143,6 +144,8 @@ final class CymaticaView: World {
       break
     }
     state.starsAge(now: now)
+    let k = dt > 0 ? min(dt, 0.1) : 1.0 / 60                  // view.js:651: τ 0.08 с, dt зажат
+    shownF0 += (effF0() - shownF0) * (1 - exp(-k / 0.08))
     rebuildGeo()
     touchTick(now: now)
   }

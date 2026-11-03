@@ -157,7 +157,7 @@ extension CymaticaView {
       t.kind = .mark; t.i = mk; fingers[f.id] = t
       let m = mark(mk)
       if let note = noteOf(m.x, m.y) {
-        send(A.strike, 0, [m.x, m.y, Cym.fMin * pow(2, Double(note) / 12), 1, 0.5, 0])
+        send(A.strike, 0, [m.x, m.y, Cym.fMin * pow(2, Double(note) / 12), 1, 0.5, 0], touchTime: f.touchTime)
         markHot = (mk, now)
       }
       return
