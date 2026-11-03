@@ -330,7 +330,7 @@ function startBridge(fa, fb, B) {
   addFinger(B, fb.id);
   fb.voice = B;
   const m = model.link(A.i, B.i);
-  const br = { A, B, fa, fb, m, d0: Math.max(30, fdist(fa, fb)), depth0: m.depth };
+  const br = { A, B, fa, fb, d0: Math.max(30, fdist(fa, fb)), depth0: m.depth };   // связь — по паре (A.i, B.i), объект не храним
   fa.bridge = br; fb.bridge = br;
   fa.wasBridge = true; fb.wasBridge = true;
   focus = A;
@@ -342,7 +342,8 @@ function bridgeMove(br) {
 
 function endBridge(br) {
   br.fa.bridge = null; br.fb.bridge = null;
-  if (br.m.depth < 0.06) model.unlink(br.A.i, br.B.i);
+  const m = model.mod(br.A.i, br.B.i);
+  if (m && m.depth < 0.06) model.unlink(br.A.i, br.B.i);
   for (const f of [br.fa, br.fb]) if (f.voice) { f.moved = true; rebase(f.voice); }
 }
 
@@ -1180,7 +1181,9 @@ function drawBridge(br, now) {
   const p = br.fa, q = br.fb;
   const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1;
   const nx = -dy / L, ny = dx / L;
-  const amp = 3 + br.m.depth * 16, waves = 1.5 + L / 70;
+  const bm = model.mod(br.A.i, br.B.i);
+  if (!bm) return;
+  const amp = 3 + bm.depth * 16, waves = 1.5 + L / 70;
   const ph = (now / 1000) * (1.5 + freq(br.B) / 120) * Math.PI * 2;
   const N = 120, A = [], B = [];
   for (let i = 0; i <= N; i++) {
@@ -1209,19 +1212,19 @@ function drawBridge(br, now) {
     }
     dot(f.x, f.y, 3, 1);
   }
-  text(br.m.type, (p.x + q.x) / 2, (p.y + q.y) / 2 - 18, 11, 0.6, 400, 'center');
+  text(bm.type, (p.x + q.x) / 2, (p.y + q.y) / 2 - 18, 11, 0.6, 400, 'center');
 }
 
 // связи — гравитационные нити: кривая к солнцу, штрих — характер (fm, tzfm, am, rm), по нити от источника
 // к приёмнику летят частицы: их число — глубина, скорость — частота источника. На середине — ручка
 const LINK_DASH = { fm: [3, 6], tzfm: [1, 3], am: [10, 6], rm: [2, 2, 8, 2] };
-function drawLinks(now, skip) {
+function drawLinks(now, skip) {   // skip — пара { dst, src } номеров или null
   g.save();
   for (const v of V) {
     if (!v.active) continue;
     for (const m of v.mods) {
       const s = V[m.src];
-      if (!s.active || m === skip) continue;
+      if (!s.active || (skip && skip.dst === v.i && skip.src === m.src)) continue;
       const k = m.auto ? 0.45 : 1;
       const editing = editor && editor.kind === 'link' && editor.dst === v && editor.src === m.src;
       const a = (0.15 + 0.55 * Math.min(1, s.env * 1.2)) * (0.4 + 0.6 * m.depth) * k;
@@ -1941,7 +1944,7 @@ function solDraw(now, dt) {
 
   let heldF = null, bridge = null;
   for (const f of F.values()) { if (f.menu && !f.menu.fx) heldF = f; if (f.bridge) bridge = f.bridge; }
-  drawLinks(now, bridge && bridge.m);
+  drawLinks(now, bridge ? { dst: bridge.A.i, src: bridge.B.i } : null);
   for (const f of F.values()) {               // Shift-нить: пунктир от A за курсором, планета под курсором подсвечена
     if (f.ui !== 'thread' || !f.A.active) continue;
     const B = hit(f.x, f.y);
