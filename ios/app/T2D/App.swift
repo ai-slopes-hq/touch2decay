@@ -331,8 +331,9 @@ struct T2DApp: App {
   }
 
   // Portus: portus — кубик; -empty — пусто; -play — места 2 и 10 (ноты 0 и 7), веха 6, играет; -echo — как play, луна открыта (cut 0.8),
-  // буй к морю (как в sc_portus); -star — падающая звезда в небе; -bloodmoon — туман 0.8, через 1 с плашка луны с LFO на cutoff;
-  // -sheet — плашка маяка; действие — раньше кадра shot.sh (+5 с)
+  // буй к морю (как в sc_portus); -star — как echo, через 4.3 с тап по небу: звезда в полёте на кадре (+5 с);
+  // -bloodmoon — туман 0.8, через 1 с плашка луны с LFO на cutoff; -sheet — как play, октава маяка −1, через 1.5 с плашка маяка;
+  // действие — раньше кадра shot.sh (+5 с)
   private func shotPortus(_ name: String) {
     host.go(PortusView.slotN)
     let q = DispatchQueue.main
@@ -340,18 +341,24 @@ struct T2DApp: App {
     func lane() {
       por.send(A.place, 2, [0, 500]); por.send(A.place, 10, [7, 500]); por.send(A.place, 6, [7, 500]); por.send(A.play, 0, [1])
     }
-    switch name {
-    case "portus-play": lane()
-    case "portus-echo":
+    // луна открыта, буй к морю — общая подготовка для echo и star
+    func echo() {
       lane(); por.send(A.luna, 0, [0.8])
       let b = por.geo.slotPt(14, 2), u = por.geo.unP(b.x, b.y)
       por.send(A.buoy, 0, [u.u, u.d])
+    }
+    switch name {
+    case "portus-play": lane()
+    case "portus-echo": echo()
     case "portus-star":
-      lane(); por.send(A.kill, 0); por.state.kill(x: 200, y: 120, now: por.now)
+      echo()
+      q.asyncAfter(deadline: .now() + 4.3) { por.send(A.kill, 0); por.state.kill(x: 200, y: 120, now: por.now) }
     case "portus-bloodmoon":
       lane(); por.send(A.fog, 0, [0.8])
       q.asyncAfter(deadline: .now() + 1) { host.shotSheet(por.lunaSpec, lfoKey: "cut"); host.shotLfo(rate: 1, depth: 0.5) }
-    case "portus-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(por.pharosSpec) }
+    case "portus-sheet":
+      lane(); por.send(A.pharos, 1, [-1])   // oct — индекс 1 в PHAROS ядра, значение — октава как есть
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(por.pharosSpec) }
     case "portus": por.dice()
     default: break
     }
