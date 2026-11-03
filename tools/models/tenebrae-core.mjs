@@ -1,7 +1,7 @@
 // Tenebrae (мир I): модель в ядре, сырой доступ для сверки с эталоном tools/ref/tenebrae-model.js — без фасада.
-// Раскладки и коды — как в core/worlds/tenebrae/world.hpp; фасад (worlds/tenebrae/facade.js) держит те же числа.
+// Раскладки и коды — как в core/worlds/tenebrae/world.hpp; фасад (worlds/tenebrae/model.js) держит те же числа.
 import { loadT2d } from '../t2d-core.mjs';
-import { createModel as facade } from '../../worlds/tenebrae/facade.js';
+import { createModel as facade } from '../../worlds/tenebrae/model.js';
 import { sdkFacade } from './sdk-facade.mjs';
 
 export const SLOT = 1, SR = 48000;
@@ -65,7 +65,7 @@ export function coreRig(seed) {
   };
 }
 
-// Фасад веба (worlds/tenebrae/facade.js) над ядром в Node: порт и зеркало — sdk-facade.mjs (async: сообщения копятся до flush(), зеркало — по deliver()).
+// Фасад веба (worlds/tenebrae/model.js) над ядром в Node: порт и зеркало — sdk-facade.mjs (async: сообщения копятся до flush(), зеркало — по deliver()).
 // coreVoice(i) — голос из зеркала ядра сейчас, мимо фасада (для проверки гонок).
 const ACTIONS = ['spawn', 'grab', 'letGo', 'keep', 'unkeep', 'move', 'sun', 'set', 'pin', 'remove', 'attack', 'release', 'link', 'linkDepth', 'linkType', 'unlink',
   'lfo', 'fx', 'dice', 'clear', 'retune', 'restore'];

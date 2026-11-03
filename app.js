@@ -66,8 +66,9 @@ const LINK_SECTORS = [                     // кольцо связи: хара�
 let scan = null;
 
 // ---------- голоса (кружки): модель — worlds/tenebrae/model.js; вид только читает поля голосов, пишет методами модели ----------
-let engine = null;        // звук — ядро SDK, слот 1 (клей worlds/tenebrae/engine.js); модель берёт его через engine()
-const model = createModel({ engine: () => engine, wake });
+const model = createModel({ wake });   // фасад модели в ядре SDK (слот 1); порт и зеркало ему отдаёт клей engine
+const engine = createEngine({ model });
+let commitWait = false;               // шаг отмены ждёт, пока кубик или очистка дойдут из ядра
 const V = model.state.voices;
 // картинные поля голоса (только рисование): dx — где кружок виден, wob/wv — сдвиги от LFO, ox/oy — смещение пальца,
 // hole — глубина дыры (сглаженная), strike — удар по солнцу, emit — таймер импульса, ph/vph — фазы LFO по ключам,
@@ -980,13 +981,11 @@ function ringTouch(f, first) {
   if (lk) e.key = lk.type;
 }
 
-// ---------- аудио: звук — ядро SDK, слот 1 (клей worlds/tenebrae/engine.js); модель шлёт ему поля голосов, связи, LFO и FX ----------
-// звук Tenebrae — в ядре (слот 1), engine — клей к нему. Первый build — клей и всё из модели: голоса, связи, LFO, FX;
-// после смены контекста (restartAudio) клей сам шлёт новому ядру всё, что помнит
+// ---------- аудио: модель и звук — ядро SDK, слот 1 (клей worlds/tenebrae/engine.js) ----------
+// каждый build (первый и после смены контекста) — новый узел ядра: сухой выход в канал, порт и зеркало — фасаду модели;
+// закреплённую сцену фасад шлёт новому ядру сам (bind)
 function solBuild(_, chanIn) {
-  if (engine) { engine.bind({ core, out: chanIn }); return; }
-  engine = createEngine({ core, out: chanIn });
-  model.build();
+  engine.build(core, chanIn);
 }
 
 // экран не гаснет, пока что-то звучит
@@ -1065,7 +1064,7 @@ function resize() {
 // контур кружка — его собственный звук: два периода сигнала, обёрнутые по кругу.
 // Синус — плавные лепестки, пила и fold — зубцы, шум — рваный край, биения — контур дышит
 function contour(v, x, y, r, a, lw, glow) {
-  const b = engine && engine.scope(v.i);     // 128 точек: два периода сигнала голоса
+  const b = model.scope(v.i);     // 128 точек: два периода сигнала голоса
   let pts = null;
   if (b) {
     const N = b.length;
@@ -1891,6 +1890,7 @@ function solTick(now, dt) {
   model.tick(dt);                             // звук и состояние кружков: хаос, удары, огибающие, смерть; события — для картинки
   for (const v of V) VW[v.i].hole += (v.holeT - VW[v.i].hole) * (1 - Math.exp(-dt / 0.15));
   const evs = model.events();
+  if (commitWait && !model.busy()) { commitWait = false; commit(); }
   for (let k = 0; k < evs.length; k++) {
     const e = evs[k], v = V[e.i];
     if (e.t === 'burst') {
@@ -2026,8 +2026,10 @@ function drawSheet0(now) {
 // ---------- события ----------
 cv.addEventListener('pointerdown', down, { passive: false });
 cv.addEventListener('pointermove', move);
-cv.addEventListener('pointerup', (e) => { up(e); if (!F.size) commit(); });   // шаг отмены — когда отпущены все пальцы
-cv.addEventListener('pointercancel', (e) => { up(e); if (!F.size) commit(); });
+// шаг отмены — когда отпущены все пальцы; кубик и очистка в Tenebrae считает ядро — шаг после того, как они дошли (solTick)
+function settle() { if (nav.world === 1 && model.busy()) commitWait = true; else commit(); }
+cv.addEventListener('pointerup', (e) => { up(e); if (!F.size) settle(); });
+cv.addEventListener('pointercancel', (e) => { up(e); if (!F.size) settle(); });
 
 // в iOS звук разрешается на «полноценных» жестах — ловим все
 document.addEventListener('pointerdown', unlock, { capture: true });
@@ -2105,7 +2107,7 @@ window.t2d = {
   get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.send === 'function' && T2D.snapSemi(3.4) === 3.4; },
   hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
   voices: V, voiceView: VW, rings, fx, model, scl, freq, cutoff, applyFx: () => model.fx({}), place, unplace, semi,
-  get ctx() { return ctx; }, get core() { return core && { ready: core.ready, sent: core.sent, node: !!core.node }; }, strikeSound: (p) => engine && engine.strike(p), holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
+  get ctx() { return ctx; }, get core() { return core && { ready: core.ready, sent: core.sent, node: !!core.node }; }, strikeSound: (p) => core && core.send({ t: 'action', slot: 1, kind: 7, i: 0, a: [p] }), holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
 };   // для отладки из консоли
 
 resize();

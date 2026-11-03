@@ -1,12 +1,14 @@
 // Тесты модели Tenebrae в Node. Каждый общий тест — дважды: против эталона (tools/ref/tenebrae-model.js) и против модели ядра (t2d.wasm)
-// через фасад веба worlds/tenebrae/facade.js (порт — tenebrae-core.mjs, sdk-facade.mjs). Проверки — по state, events() и ответам методов,
+// через фасад веба worlds/tenebrae/model.js (порт — tenebrae-core.mjs, sdk-facade.mjs). Проверки — по state, events() и ответам методов,
 // state из теста не пишется. Команды клея движка (tick sync order, build, restore order, хвосты затухания) — только у эталона (`ref:`).
 // Внизу — гонки фасада (асинхронный порт: flush / deliver), только на ядре (`core:`).
 //   core/build.sh && node --test tools/models/tenebrae.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createModel as refModel, SET_KEYS, PIN_MAX, TAIL, UNPIN_TAIL, LFO_DEF, BEAT_MIN, BEAT_MAX, SHIFT_DEF, LFO_KEYS, LINK_TYPES } from '../ref/tenebrae-model.js';
-import * as facade from '../../worlds/tenebrae/facade.js';
+import { createModel as refModel, SET_KEYS, PIN_MAX, TAIL, UNPIN_TAIL, LFO_DEF, BEAT_MIN, BEAT_MAX, SHIFT_DEF } from '../ref/tenebrae-model.js';
+import * as facade from '../../worlds/tenebrae/model.js';
+import { createEngine } from '../../worlds/tenebrae/engine.js';
+const { LFO_KEYS, LINK_TYPES } = facade;
 import * as coreLib from './tenebrae-core.mjs';
 import { createModel as coreModel, MODEL_SEED } from './tenebrae-core.mjs';
 import { seeded, near } from './util.mjs';
@@ -667,4 +669,19 @@ test('core: scope is null until the core has contours', () => {
   assert.ok(sc.some((x) => x !== 0));
   assert.equal(m.scope(5), null);
   assert.equal(m.scope(i), sc);                          // тот же массив каждый кадр
+});
+
+test('core: engine build wires the facade', () => {
+  const sent = [], conns = [];
+  let listener = null;
+  const m = facade.createModel();
+  const core = { dry: [null, { connect(o) { conns.push(o); return o; } }], send: (x) => { sent.push(x); return sent.length; }, listen(fn) { listener = fn; } };
+  const out = {};
+  createEngine({ model: m }).build(core, out);
+  assert.deepEqual(conns, [out]);
+  assert.ok(sent.some((x) => x.t === 'restore' && x.slot === 1));
+  const mirror = new Array(facade.MIRROR.MODEL_N).fill(0);
+  mirror[0] = 6; mirror[1] = 12.5;
+  listener({ n: 1, w: { 1: { mirror, heard: [] } } });
+  assert.equal(m.state.time, 12.5);
 });

@@ -11,7 +11,7 @@ import * as S from './tenebrae-scenes.js';
 const { SCENES, FIELDS, SR, cliInput } = S;
 import * as G from '../../worlds/tenebrae/engine.js';   // клей к ядру — те же коды
 if (JSON.stringify([ACT, LINK_TYPES, LFO_KEYS]) !== JSON.stringify([S.ACT, S.LINK_TYPES, S.LFO_KEYS])) throw new Error('коды сцен ≠ tenebrae-engine.js');
-if (JSON.stringify([G.ACT, G.LINK_TYPES, G.LFO_KEYS]) !== JSON.stringify([S.ACT, S.LINK_TYPES, S.LFO_KEYS])) throw new Error('коды сцен ≠ worlds/tenebrae/engine.js');
+if (JSON.stringify([G.LINK_TYPES, G.LFO_KEYS]) !== JSON.stringify([S.LINK_TYPES, S.LFO_KEYS])) throw new Error('коды сцен ≠ worlds/tenebrae/engine.js');
 
 const b64 = (f) => { const u = new Uint8Array(f.buffer); let s = ''; for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); };
 const BLOCK = 128 / SR;

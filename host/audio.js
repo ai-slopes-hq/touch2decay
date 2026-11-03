@@ -1,6 +1,6 @@
 // звук хоста: контекст, мастер (срез, компрессор, потолок), микшер-каналы миров, общий зал, громкость,
 // ядро SDK (t2d.wasm: миры SDK и четыре общих ревербера, посылы миров T.send), перезапуск при смене выхода, разблокировка звука в iOS.
-// Звук Tenebrae — тоже в ядре (слот 1); клей worlds/tenebrae/engine.js строит app.js (solBuild), после смены контекста он шлёт ядру всё заново
+// Звук Tenebrae — тоже в ядре (слот 1); клей worlds/tenebrae/engine.js строит app.js (solBuild); модель мира — фасад в ядре, снимок и restore — как у остальных миров
 import { startClock } from './clock.js';
 import { clamp } from './util.js';
 import { worlds, nav } from './registry.js';
@@ -169,11 +169,11 @@ try { Object.assign(audioPref, JSON.parse(localStorage.getItem('t2d-audio') || '
 export function saveAudioPref() { try { localStorage.setItem('t2d-audio', JSON.stringify(audioPref)); } catch (_) { /* приватный режим */ } }
 export let restartAt = 0;
 // перезапуск звука без потери патчей: Safari после смены выхода (USB-интерфейс, другая частота) хрипит, пока контекст не пересоздан.
-// Снимки миров (кроме мира I: его снимок — модель JS, звук ядру заново шлёт его клей из build) → новый контекст → миры восстанавливаются из снимков
+// Снимки миров → новый контекст → миры восстанавливаются из снимков (у мира I снимок — закреплённая сцена фасада модели)
 export function restartAudio() {
   if (!ctx) return;
   const keep = {};
-  for (const [n, w] of Object.entries(worlds)) if (+n !== 1 && w.snapshot) { try { keep[n] = w.snapshot(); } catch (_) { /* мир без снимка */ } }
+  for (const [n, w] of Object.entries(worlds)) if (w.snapshot) { try { keep[n] = w.snapshot(); } catch (_) { /* мир без снимка */ } }
   const old = ctx;
   build();
   try { old.close(); } catch (_) { /* уже закрыт */ }
