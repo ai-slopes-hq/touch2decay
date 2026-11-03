@@ -11,7 +11,15 @@
 - Мост: держишь планету A, второй палец на B → B модулирует A (fm / tzfm / am / rm). Ромб на середине нити — кольцо связи (тап — сразу закреплённое). На компьютере — Shift + тянуть мышью от A к B (`f.ui = 'thread'`, отпустил на B — `addLink`).
 - Верхняя строка: заголовок + индикатор нагрузки (Сатурн, краснеет после 80 %) слева; справа фейдер громкости (`drawVol`, `setVol`, `vol` в localStorage `t2d-vol`, гейн мастера `masterG`; кружок, как остальные кнопки; на 375–390 px места впритык — кнопки сдвинуты плотнее; заголовок — имя текущего мира `cur().title` («Tenebrae», «Cymatica»), не «touch2decay»), лад (тулбокс: список ладов и тоник вниз), FX (веер вниз-влево: hall, decay, delay, chaos, drive), кубик, отмена (10 шагов), корзина.
 
-## Код: где что в `app.js`
+## Код: модель в `worlds/tenebrae/model.js`, остальное в `app.js`
+
+Фаза 4, шаг А (03.11): модель вынесена из `app.js` в `worlds/tenebrae/model.js` (`createModel({ rng, engine, wake })`), поведение веба то же. Модель — без DOM, Web Audio и `Math.random`: голоса `V` (`model.state.voices`), мосты и LFO планет, общие FX, закрепление, кубик, снимок. API: `fx`, `dice`, `clear`, `snapshot`, `restore`, `build`, `attack`, `release`, `spawn`, `grab`, `letGo`, `keep`, `unkeep`, `move`, `set`, `pin`, `remove`, `retune`, `load`, `sounding`, `events`, `link*`, `unlink`, `lfo`, `sun`, `tick`. Картинки в ней нет: `x`, `y` — позиция в (p, c), `holeT` считает вид.
+
+- **События для вида:** `burst` (кольцо при кубике и появлении) и `strike` (удар солнца) копятся в очереди; `app.js` забирает их `model.events()` в `solTick`.
+- **`app.js` (клей и вид):** поле, касания, пальцы (`addFinger/dropFinger/forgetFingers`), `setEditor`, `sunStrikes`, рисование. Поля картинки голосов — массив `VW` (`dx`, `wob`, `hole`, `strike`, `ph`, `fingers` …), для тестов `t2d.voiceView`; кольца — `t2d.rings`. Звук идёт через `engine.js` в ядро.
+- Отладка: `T2D_TRACE=<папка> python3 tools/shot.py <сценарий>` пишет трассу действий клея, `tools/trace-diff.py` сравнивает с эталоном (`docs/testing.md`).
+
+Секции `app.js` (в основном вид и клей; голоса, мосты и LFO теперь делает модель), по порядку:
 
 Секции помечены комментариями `// ---------- … ----------` (по порядку):
 
