@@ -1,6 +1,8 @@
 // Tenebrae (мир I): модель в ядре, сырой доступ для сверки с эталоном tools/ref/tenebrae-model.js — без фасада.
 // Раскладки и коды — как в core/worlds/tenebrae/world.hpp; фасад (worlds/tenebrae/facade.js) держит те же числа.
 import { loadT2d } from '../t2d-core.mjs';
+import { createModel as facade } from '../../worlds/tenebrae/facade.js';
+import { sdkFacade } from './sdk-facade.mjs';
 
 export const SLOT = 1, SR = 48000;
 export const MODEL_SEED = 0x4d4f44;
@@ -61,4 +63,14 @@ export function coreRig(seed) {
     state: () => parseMirror(core.mirror(SLOT)),
     events: () => parseHeard(core.heard(SLOT)),
   };
+}
+
+// Фасад веба (worlds/tenebrae/facade.js) над ядром в Node: порт и зеркало — sdk-facade.mjs (async: сообщения копятся до flush(), зеркало — по deliver()).
+// coreVoice(i) — голос из зеркала ядра сейчас, мимо фасада (для проверки гонок).
+const ACTIONS = ['spawn', 'grab', 'letGo', 'keep', 'unkeep', 'move', 'sun', 'set', 'pin', 'remove', 'attack', 'release', 'link', 'linkDepth', 'linkType', 'unlink',
+  'lfo', 'fx', 'dice', 'clear', 'retune', 'restore'];
+export function createModel({ seed = 1, async = false, ...opts } = {}) {
+  const m = sdkFacade(facade, SLOT, ACTIONS, { seed, async, heard: true, ...opts });
+  m.coreVoice = (i) => parseMirror(m.mirror()).voices[i];
+  return m;
 }
