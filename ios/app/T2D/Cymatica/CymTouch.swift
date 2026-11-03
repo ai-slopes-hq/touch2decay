@@ -12,6 +12,7 @@ struct CymFinger {
   var ring = 0                                               // кольцо длины: 0 ритм, 1 мелодия
   var r0 = 0.0, c0 = 0.0, bpm0 = 0.0                         // радиус и шанс удара в начале; темп в начале
   var ci: Int?                                               // клетка бусины в списке нот
+  var moved = false                                          // сдвиг дальше 10 px от места, где лёг; раз выставлен — не снимается (как f.moved в вебе)
   var menu = false, combed = false, two = false              // плашка луны открыта; сетка причёсана; палец в паре
   var t0 = 0.0, x0 = 0.0, y0 = 0.0, x = 0.0, y = 0.0
 }
@@ -25,8 +26,12 @@ private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { mi
 extension CymaticaView {
   private static let holdS = Touch.holdMs / 1000, shift = 10.0, tapMove = 12.0
 
-  // сдвинут — от 10 px от места, где лёг
-  func moved(_ f: CymFinger) -> Bool { hypot(f.x - f.x0, f.y - f.y0) >= Self.shift }
+  // сдвинут — раз ушёл на 10 px от места, где лёг, остаётся сдвинутым, даже вернувшись
+  func moved(_ f: CymFinger) -> Bool { f.moved }
+  private func follow(_ t: inout CymFinger, _ f: Finger) {
+    t.x = Double(f.x); t.y = Double(f.y)
+    if hypot(t.x - t.x0, t.y - t.y0) >= Self.shift { t.moved = true }
+  }
   private func isButton(_ k: CymKind) -> Bool { k == .play || k == .rec || k == .grid || k == .drift }
 
   // ---------- попадания (view.js:91-109) ----------
@@ -105,7 +110,7 @@ extension CymaticaView {
 
   func move(_ f: Finger) {
     guard var t = fingers[f.id] else { return }
-    t.x = Double(f.x); t.y = Double(f.y)
+    follow(&t, f)
     defer { fingers[f.id] = t }
     let g = geo, mv = moved(t)
     switch t.kind {
@@ -139,7 +144,7 @@ extension CymaticaView {
 
   func up(_ f: Finger) {
     guard var t = fingers.removeValue(forKey: f.id) else { return }
-    t.x = Double(f.x); t.y = Double(f.y)
+    follow(&t, f)
     let mv = moved(t)
     switch t.kind {
     case .grid:

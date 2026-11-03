@@ -92,6 +92,22 @@ final class CymTouchTests: XCTestCase {
     XCTAssertEqual(kinds(), [A.comb])
   }
 
+  // сдвинут — навсегда: ушёл и вернулся, всё равно не тап и не удержание
+  func testMovedIsSticky() {
+    view.down(F(f1, play)); view.move(F(f1, play, to: (play.x + 40, play.y))); view.move(F(f1, play)); view.up(F(f1, play))
+    XCTAssertEqual(kinds(), [A.bpm, A.bpm])                     // назад к 96 — тоже темп; ни CURSOR, ни PLAY
+    rec.acts.removeAll(); load(mirror())
+    view.down(F(f1, gridB)); view.move(F(f1, gridB, to: (gridB.x + 15, gridB.y))); view.move(F(f1, gridB)); at(0.43)
+    XCTAssertEqual(kinds(), [])
+    view.up(F(f1, gridB))
+    XCTAssertEqual(kinds(), [A.grid])                           // сетка: тап и после сдвига переключает (как в вебе), но без COMB
+    rec.acts.removeAll()
+    view.down(F(f1, driftB)); view.move(F(f1, driftB, to: (driftB.x + 15, driftB.y))); view.move(F(f1, driftB)); at(0.43)
+    XCTAssertEqual(opened.count, 0)
+    view.up(F(f1, driftB))
+    XCTAssertEqual(kinds(), [])
+  }
+
   func testDriftTapHold() {
     tap(f1, driftB)
     XCTAssertEqual(kinds(), [A.driftToggle]); XCTAssertEqual(opened.count, 0)
