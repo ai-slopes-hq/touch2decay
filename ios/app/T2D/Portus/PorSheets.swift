@@ -51,7 +51,7 @@ extension PortusView {
 
   // маяк: аккорд, октава, длина, свинг, громкость
   var pharosSpec: SheetSpec {
-    let keys = ["chord", "oct", "len", "swing", "lvl"]
+    let keys = ["chord", "oct", "len", "lvl", "swing"]          // порядок ядра (PHAROS k, зеркало 14…18); строки ниже — в порядке веба
     func idx(_ k: String) -> Int { keys.firstIndex(of: k) ?? 0 }
     return SheetSpec(
       title: "pharos", hint: "the lighthouse — tap outside to close",
@@ -86,7 +86,7 @@ extension PortusView {
       lfo: nil, reset: nil, arc: nil, obj: j)
   }
 
-  // веер: порядок секторов wow 180°, mare 150°, drive 130°, chance 110°, spread 90°; коды LFO — по Por.fxKeys
+  // веер: порядок секторов wow 180°, mare 150°, drive 130°, chance 110°, spread 90°; индекс FX и код LFO — по Por.fxKeys (spread 3, chance 4), не по порядку строк
   var fxSpec: SheetSpec {
     let keys = ["wow", "mare", "drive", "chance", "spread"]
     func idx(_ k: String) -> Int { Por.fxKeys.firstIndex(of: k) ?? 0 }

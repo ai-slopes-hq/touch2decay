@@ -118,7 +118,12 @@ final class PortusTests: XCTestCase {
     p.set("chord", 0.5); XCTAssertEqual(rec.acts[2].i, 0); XCTAssertEqual(rec.acts[2].a, [2])
     p.set("len", 0.95); XCTAssertEqual(p.text("len"), "endless")
     p.set("len", 0.25); XCTAssertEqual(p.text("len"), "148 ms")
-    XCTAssertEqual(p.text("swing"), "80%")
+    XCTAssertEqual(p.text("lvl"), "80%"); XCTAssertEqual(p.text("swing"), "0%")
+    rec.acts.removeAll()
+    p.set("swing", 0.3); XCTAssertEqual(rec.acts[0].i, 4); XCTAssertEqual(rec.acts[0].a, [0.3])
+    p.set("lvl", 0.6); XCTAssertEqual(rec.acts[1].i, 3); XCTAssertEqual(rec.acts[1].a, [0.6])
+    XCTAssertEqual(p.get("swing"), 0.3); XCTAssertEqual(p.get("lvl"), 0.6)
+    rec.acts.removeAll()
     p.set("oct", 1); XCTAssertEqual(p.text("oct"), "octave +2")
 
     let s = view.isleSpec(2)
