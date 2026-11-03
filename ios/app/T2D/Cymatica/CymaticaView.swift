@@ -44,7 +44,10 @@ final class CymaticaView: World {
   var area: (W: Double, H: Double, topY: Double, safeBot: Double) = (390, 844, 59, 34)
   private(set) var now = 0.0
   var fingers: [ObjectIdentifier: CymFinger] = [:]           // пальцы мира; touchReset (undo) забывает их все
-  var pair: CymPair?                                         // два пальца: поворот или щипок (задача 5)
+  var pair: CymPair?                                         // два пальца: поворот или щипок
+  var ringTurn = [0.0, 0.0], ringOrn = [0.0, 0.0]            // для картинки: остаток поворота кольца (°) и накопленный поворот узора; 0 ритм, 1 мелодия
+  var twistLabel: (text: String, x: Double, y: Double, until: Double)?
+  var labelUntil = 0.0                                       // подпись высоты после щипка живёт секунду
   // подписи для картинки (план (б)): живут секунду после правки; markHot — удар по метке, горячая 160 мс
   var bpmUntil = 0.0
   var chanceEdit: (i: Int, until: Double)?

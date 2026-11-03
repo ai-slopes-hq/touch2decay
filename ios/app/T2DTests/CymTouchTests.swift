@@ -218,4 +218,81 @@ final class CymTouchTests: XCTestCase {
     XCTAssertEqual(rec.acts.count, n)
     XCTAssertEqual(view.fingers.count, 0)
   }
+
+  // ---------- два пальца (view.js:155-199) ----------
+  // два пальца на расстоянии h от центра пластины по горизонтали; поворот на deg вокруг середины шагами по 5°
+  private func pairDown(_ h: Double) {
+    view.down(F(f1, (G.cx - h, G.cy))); view.down(F(f2, (G.cx + h, G.cy)))
+  }
+  private func spin(_ h: Double, _ deg: Double) {
+    let n = Int((abs(deg) / 5).rounded(.up))
+    for s in 1...n {
+      let a = deg * Double(s) / Double(n) * Double.pi / 180, c = cos(a), sn = sin(a)
+      let p1 = (x: G.cx - h * c, y: G.cy - h * sn), p2 = (x: G.cx + h * c, y: G.cy + h * sn)
+      view.move(F(f1, (G.cx - h, G.cy), to: p1)); view.move(F(f2, (G.cx + h, G.cy), to: p2))
+    }
+  }
+  private func turns() -> [(kind: Int, i: Int, a: [Double], t: Double)] { rec.acts.filter { $0.kind == A.turn } }
+
+  func testPinchNoScale() {
+    pairDown(45); rec.acts.removeAll()
+    view.move(F(f2, (G.cx + 45, G.cy), to: (G.cx + 105, G.cy)))
+    XCTAssertEqual(kinds(), [A.setF0])
+    XCTAssertEqual(rec.acts[0].a[0], 110 * pow(2, -60.0 / 144), accuracy: 1e-9)
+    XCTAssertGreaterThan(view.labelUntil, view.now)
+    XCTAssertEqual(turns().count, 0)
+  }
+
+  func testPinchScale() {
+    view.scale(pcs: [0, 2, 3, 5, 7, 8, 10], root: 0)
+    pairDown(45); rec.acts.removeAll()
+    view.move(F(f2, (G.cx + 45, G.cy), to: (G.cx + 85, G.cy)))
+    XCTAssertEqual(kinds(), [A.stepScale])
+    XCTAssertEqual(rec.acts[0].a[0], 12, accuracy: 1e-9); XCTAssertEqual(rec.acts[0].a[1], -2)
+  }
+
+  func testTwistPlate() {
+    load(mirror(marks: [0: (0.2, -0.3)]))
+    pairDown(45); rec.acts.removeAll()
+    spin(45, 45)
+    let t = turns()
+    XCTAssertEqual(t.last?.i, 2); XCTAssertEqual(t.last?.a.count, 49); XCTAssertEqual(t.last?.a[0], 2)
+    XCTAssertEqual(view.twistLabel?.text, "+2")
+    XCTAssertEqual(view.ringTurn, [0, 0])                       // пластина — без доводки кольца
+  }
+
+  func testTwistRing() {
+    pairDown(175); rec.acts.removeAll()
+    spin(175, 50)
+    let t = turns()
+    XCTAssertEqual(t.last?.i, 0); XCTAssertEqual(t.last?.a.count, 65); XCTAssertEqual(t.last?.a[0], 2)
+    XCTAssertEqual(view.ringTurn[0], 5, accuracy: 1e-6)
+    view.up(F(f1, (G.cx - 175, G.cy)))
+    XCTAssertEqual(view.ringOrn[0], 45, accuracy: 1e-9); XCTAssertEqual(view.ringTurn, [0, 0]); XCTAssertNil(view.pair)
+    rec.acts.removeAll()
+    view.move(F(f2, (G.cx + 175, G.cy), to: (G.cx + 100, G.cy))); view.up(F(f2, (G.cx + 175, G.cy), to: (G.cx + 100, G.cy)))
+    XCTAssertEqual(kinds(), [])                                 // второй палец пары больше ничего не шлёт
+  }
+
+  func testTwistOrigFromMirror() {
+    load(mirror(strikes: [0]))
+    pairDown(175); rec.acts.removeAll()
+    spin(175, 25)
+    load(mirror())                                              // ядро повернуло — зеркало уже другое
+    spin(175, 50)
+    let t = turns()
+    XCTAssertGreaterThanOrEqual(t.count, 2)
+    for x in t { XCTAssertEqual(x.a[1], 1, "исходный узор: удар в гнезде 0") }
+  }
+
+  func testRestoredMidTwo() {
+    pairDown(175); spin(175, 30)
+    XCTAssertNotNil(view.pair)
+    rec.acts.removeAll()
+    view.restored()
+    view.move(F(f1, (G.cx - 175, G.cy), to: (G.cx - 100, G.cy + 100))); view.move(F(f2, (G.cx + 175, G.cy), to: (G.cx + 100, G.cy - 100)))
+    view.up(F(f1, (G.cx - 175, G.cy))); view.up(F(f2, (G.cx + 175, G.cy)))
+    XCTAssertEqual(turns().count, 0)
+    XCTAssertEqual(view.ringTurn, [0, 0]); XCTAssertNil(view.pair)
+  }
 }

@@ -17,14 +17,23 @@ struct CymFinger {
   var t0 = 0.0, x0 = 0.0, y0 = 0.0, x = 0.0, y = 0.0
 }
 
-// два пальца: поворот или щипок (задача 5)
-struct CymPair {}
+// два пальца: поворот или щипок (view.js:155-199)
+struct CymPair {
+  var a: ObjectIdentifier, b: ObjectIdentifier              // первый и второй палец пары
+  var a0: Double, d0: Double                                // угол и расстояние (≥ 20 px) в начале
+  var kind: CymTwo?                                         // решается один раз
+  var target: Int                                           // 0 ритм, 1 мелодия, 2 пластина
+  var f00: Double, fromSemi: Double                         // высота в начале жеста и она же в полутонах от F_MIN
+  var orig: [Double], mel: [Double]                         // узор из зеркала на начало: ритм 16 × (on, vel, chance, has), мелодия 16 × (on, x, y)
+  var last: Double, deg = 0.0, k = 0                        // последний угол, накопленный поворот (°), ступень
+  var sent: Double?                                         // что щипок послал последним — шлём при смене значения
+}
 
 private typealias A = Cym.Act
 private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { min(b, max(a, x)) }
 
 extension CymaticaView {
-  private static let holdS = Touch.holdMs / 1000, shift = 10.0, tapMove = 12.0
+  private static let holdS = Touch.holdMs / 1000, shift = 10.0, tapMove = 12.0, pxSemi = 12.0, pxDeg = 18.0
 
   // сдвинут — раз ушёл на 10 px от места, где лёг, остаётся сдвинутым, даже вернувшись
   func moved(_ f: CymFinger) -> Bool { f.moved }
@@ -73,8 +82,61 @@ extension CymaticaView {
     return -1
   }
 
-  // второй палец — поворот или щипок (задача 5); пока не пара — палец не заводится
-  func startTwo(_ other: ObjectIdentifier, _ f: Finger) {}
+  // ---------- два пальца: что крутим — по средней дистанции от центра (при повороте она не меняется): стол — пластина, до границы между кольцами — мелодия, дальше — ритм ----------
+  func startTwo(_ other: ObjectIdentifier, _ f: Finger) {
+    guard var o = fingers[other] else { return }
+    let g = geo, x = Double(f.x), y = Double(f.y)
+    o.kind = .two; o.two = true
+    fingers[other] = o
+    var t = CymFinger(t0: Double(f.t0), x0: x, y0: y, x: x, y: y)
+    t.kind = .two; t.two = true
+    fingers[f.id] = t
+    let d = (hypot(o.x - g.cx, o.y - g.cy) + hypot(x - g.cx, y - g.cy)) / 2
+    let a0 = atan2(y - o.y, x - o.x), f00 = f0
+    var orig: [Double] = []
+    for i in 0..<Cym.slots { let s = mirror.rhythm[i]; orig += [s.on ? 1 : 0, s.vel, s.chance, s.has ? 1 : 0] }
+    var mel: [Double] = []
+    for i in 0..<Cym.slots { let m = mirror.melody[i]; mel += [m.on ? 1 : 0, m.x, m.y] }
+    pair = CymPair(a: other, b: f.id, a0: a0, d0: max(20, hypot(x - o.x, y - o.y)), kind: nil,
+                   target: d < g.rMax ? 2 : d < g.RM ? 1 : 0, f00: f00, fromSemi: cymFs(f00), orig: orig, mel: mel, last: a0)
+  }
+
+  private func wrapDeg(_ d: Double) -> Double { ((d + 180).truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) - 180 }
+
+  private func moveTwo() {
+    guard var p = pair, let a = fingers[p.a], let b = fingers[p.b] else { return }
+    let a1 = atan2(b.y - a.y, b.x - a.x), d1 = max(20, hypot(b.x - a.x, b.y - a.y))
+    if p.kind == nil { p.kind = cymTwistOrPinch(a0: p.a0, a1: a1, d0: p.d0, d1: d1) }
+    defer { pair = p }
+    if p.kind == .pinch {                                      // развёл — пластина больше и ниже
+      let dd = d1 - p.d0
+      labelUntil = now + 1
+      if !scl.on {
+        let hz = p.f00 * pow(2, -dd / Self.pxSemi / 12)
+        if hz != p.sent { p.sent = hz; send(A.setF0, 0, [hz]) }
+      } else {
+        let steps = Horo.jsRound(-dd / Self.pxDeg)
+        if steps != p.sent { p.sent = steps; send(A.stepScale, 0, [p.fromSemi, steps]) }
+      }
+    }
+    guard p.kind == .twist else { return }
+    p.deg += wrapDeg((a1 - p.last) * 180 / Double.pi); p.last = a1
+    // кольца — 22.5° на гнездо, пластина — 20° на ступень лада; кольцо идёт за пальцами, отпустил — встаёт в гнездо
+    let k = Int(Horo.jsRound(p.deg / (p.target == 2 ? 20 : 22.5)))
+    if p.target != 2 { ringTurn[p.target] = p.deg - Double(k) * 22.5 }
+    twistLabel = ((k > 0 ? "+" : "") + String(k), (a.x + b.x) / 2, (a.y + b.y) / 2, now + 1)
+    if k == p.k { return }
+    p.k = k
+    send(A.turn, p.target, [Double(k)] + (p.target == 0 ? p.orig : p.mel))   // пластина: каждое место — на k ступеней; вернул в ноль — места как были
+  }
+
+  // отпустил — кольцо встаёт в гнездо, его узор остаётся повёрнутым
+  private func endTurn() {
+    if let p = pair, p.target != 2 { ringOrn[p.target] = (ringOrn[p.target] + Double(p.k) * 22.5).truncatingRemainder(dividingBy: 360) }
+    ringTurn = [0, 0]
+    pair = nil
+  }
+  private func inPair(_ id: ObjectIdentifier) -> Bool { pair.map { $0.a == id || $0.b == id } ?? false }
 
   // ---------- касания ----------
   func down(_ f: Finger) {
@@ -85,7 +147,7 @@ extension CymaticaView {
       b.t0 = t.t0; b.x0 = x; b.y0 = y; b.x = x; b.y = y; b.bpm0 = bpm
       fingers[f.id] = b; return
     }
-    if pair == nil, let o = fingers.first(where: { $0.key != f.id && !isButton($0.value.kind) }) {   // второй палец — поворот или щипок
+    if pair == nil, let o = fingers.first(where: { $0.key != f.id && !isButton($0.value.kind) && $0.value.kind != .two }) {   // второй палец — поворот или щипок
       startTwo(o.key, f); return
     }
     if var a = h { a.t0 = t.t0; a.x0 = x; a.y0 = y; a.x = x; a.y = y; a.bpm0 = bpm; fingers[f.id] = a; return }
@@ -138,6 +200,8 @@ extension CymaticaView {
     case .mark where mv:                                      // метку тащишь — место меняется
       let p = g.toPlate(t.x, t.y)
       send(A.moveMark, t.i, [p.x, p.y])
+    case .two:
+      fingers[f.id] = t; moveTwo()                            // moveTwo читает оба пальца — свежий кладём до него
     default: break
     }
   }
@@ -161,6 +225,7 @@ extension CymaticaView {
     case .mark:
       let m = mark(t.i)
       if m.on && mv && hypot(m.x, m.y) > 1.05 { send(A.dropMark, t.i) }   // за край — место удалено, шаг — пауза
+    case .two: if inPair(f.id) { endTurn() }                 // любой палец пары: кольцо встаёт в гнездо; второй палец больше ничего не шлёт
     case .away:
       if stepRec.on && hypot(t.x - t.x0, t.y - t.y0) < Self.tapMove { send(A.skip) }   // запись по шагам: тап мимо пластины — пауза, курсоры дальше
       else { send(A.cursor, 0, [-1]) }
@@ -169,7 +234,7 @@ extension CymaticaView {
   }
 
   // система отняла палец: без действий up
-  func cancel(_ f: Finger) { fingers.removeValue(forKey: f.id) }
+  func cancel(_ f: Finger) { fingers.removeValue(forKey: f.id); if inPair(f.id) { endTurn() } }
 
   // держишь, не двигая: луна — плашка, сетка — причесать ритм (view.js:323-338)
   func touchTick(now: Double) {
@@ -181,5 +246,5 @@ extension CymaticaView {
   }
 
   // undo: пальцы и пара забыты — move / up прежних ничего не шлют
-  func touchReset() { fingers.removeAll(keepingCapacity: true); pair = nil }
+  func touchReset() { fingers.removeAll(keepingCapacity: true); pair = nil; ringTurn = [0, 0]; twistLabel = nil }
 }
