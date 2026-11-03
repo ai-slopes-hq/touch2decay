@@ -1,4 +1,5 @@
-// C-обёртка над Engine (один статический экземпляр: кольца и снимки ~3 МБ — не на стек).
+// C-обёртка над Engine (core/app/engine.hpp) и чистые функции для картинки (лад, форма LFO, страна Arcadia).
+// Engine один и статический: кольца и снимки ~3 МБ — не на стек.
 #include "t2d_app.h"
 #include "engine.hpp"
 #include "../bridge/t2d.h"

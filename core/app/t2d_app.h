@@ -1,5 +1,13 @@
-// C-API слоя приложения (iOS): render для аудиопотока, действия UI, зеркало и heard по слотам, статистика. Реализация — engine.cpp.
-// Сверху ядра SDK (core/bridge/t2d.h). Один экземпляр на процесс.
+// C API слоя приложения iOS (Swift зовёт через мост, ios/app): render для аудиопотока, действия UI, зеркала, heard, снимки,
+// уровни, LFO и статистика по слотам. Поверх ядра (core/bridge/t2d.h); реализация — core/app/engine.cpp (Engine), обёртка —
+// t2d_app.cpp. Один экземпляр на процесс. В t2d.wasm не идёт — правка только здесь коммитится с [no-wasm].
+//
+// Кто что зовёт:
+//   аудиопоток (блок рендера AVAudioSourceNode) — только t2d_app_render;
+//   поток UI (один!) — action, restore, mirror, heard, snap_take, levels, lfo, stats;
+//   любой поток — scale_steps, arc_* (чистые); lfo_sample — тоже, но не во время init (читает таблицы хоста, init их пересобирает);
+//   init — пока аудио стоит (см. ниже).
+// Ядро (t2d_*) из Swift напрямую не звать: его трогает только аудиопоток, всё — через кольца этого слоя.
 #pragma once
 #include <stdint.h>
 #ifdef __cplusplus
