@@ -2,6 +2,8 @@
 // Картинки нет: x, y — позиция в (p, c), holeT — глубина дыры, которую считает вид. Звук — через движок (engine() может вернуть null).
 // События для вида (burst, strike) копятся в очереди и отдаются events().
 import { LINK_TYPES, LFO_KEYS } from './engine.js';
+import { lerpLog } from '../../host/util.js';
+import { LFO_RATE_MIN, LFO_RATE_MAX } from '../../host/sl.js';
 export { LINK_TYPES };
 
 export const VOICES = 6;          // 3 закреплённых + 3 временных
@@ -240,11 +242,14 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
   }
 
   // голос изменился: связи и LFO — до полей, чтобы голос применился один раз (и со snap)
+  function syncMods(v, e) {
+    e.links(v.i, v.mods.map((m) => ({ src: m.src.i, type: m.type, depth: m.depth })));
+    for (const key of LFO_KEYS) e.lfo(v.i, key, v.lfo[key] || null);
+  }
   function sync(v) {
     const e = engine();
     if (!e) return;
-    e.links(v.i, v.mods.map((m) => ({ src: m.src.i, type: m.type, depth: m.depth })));
-    for (const key of LFO_KEYS) e.lfo(v.i, key, v.lfo[key] || null);
+    syncMods(v, e);
     e.voice(v.i, v);
     v.snap = false;
   }
@@ -285,6 +290,94 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
     return out;
   }
 
-  return { state, attack, release, spawn, grab, letGo, keep, unkeep, move, set, pin, remove, retune, load, sounding, events,
+  function fx(o) {
+    Object.assign(state.fx, o);
+    const e = engine();
+    if (e) e.fx(state.fx);
+  }
+
+  // кубик: случайный тембр живым (не гаснущим) голосам, их ручным связям и LFO; пусто — false, rng не тронут
+  function dice() {
+    const vs = V.filter((v) => v.active && v.envT > 0);
+    if (!vs.length) return false;
+    const R = rng;
+    for (const v of vs) {
+      v.wave = R();
+      v.cut = 0.3 + 0.62 * R();
+      v.res = 0.75 * R() ** 1.5;
+      v.beat = lerpLog(BEAT_MIN, BEAT_MAX, 0.85 * R());
+      v.fm = R() < 0.45 ? 0 : 0.7 * R();
+      v.shift = R() < 0.5 ? SHIFT_DEF : R();
+      for (const m of v.mods) {
+        if (m.auto) continue;
+        m.type = LINK_TYPES[Math.floor(R() * 4)];
+        m.depth = 0.15 + 0.75 * R();
+      }
+      for (const spec of Object.values(v.lfo)) { spec.morph = R(); spec.rate = lerpLog(LFO_RATE_MIN, LFO_RATE_MAX, 0.15 + 0.7 * R()); }
+      v.dirty = true;
+      queue.push({ t: 'burst', i: v.i });
+    }
+    return true;
+  }
+
+  // все активные гаснут за 0.25 с; движок забывает связи и LFO
+  function clear() {
+    for (const v of V) if (v.active) remove(v.i);
+    const e = engine();
+    if (e) e.clear();
+    state.kept = [];
+  }
+
+  const r4 = (x) => Math.round(x * 1e4) / 1e4;
+  // строка побайтно та же, что у старого app.js (host/undo.js сравнивает снимки как строки)
+  function snapshot() {
+    const pins = V.filter((v) => v.active && v.pinned);
+    const ids = new Set(pins.map((v) => v.i));
+    return JSON.stringify({
+      v: pins.map((v) => ({
+        i: v.i, x: r4(v.x), y: r4(v.y), amp: r4(v.amp), wave: r4(v.wave), cut: r4(v.cut), res: r4(v.res), beat: r4(v.beat), fm: r4(v.fm), shift: r4(v.shift), hole: r4(v.holeT),
+        lfo: Object.fromEntries(Object.entries(v.lfo).map(([k, sp]) => [k, { morph: r4(sp.morph), rate: r4(sp.rate), depth: r4(sp.depth) }])),
+        mods: v.mods.filter((m) => !m.auto && ids.has(m.src.i)).map((m) => ({ src: m.src.i, type: m.type, depth: r4(m.depth) })),
+      })),
+      fx: Object.fromEntries(Object.entries(state.fx).map(([k, x]) => [k, r4(x)])),
+    });
+  }
+
+  function restore(js) {
+    const st = JSON.parse(js);
+    const inSnap = new Set(st.v.map((d) => d.i));
+    for (const v of V) if (v.active && v.pinned && !inSnap.has(v.i)) remove(v.i);
+    for (const d of st.v) {
+      const v = V[d.i];
+      v.held = 0;
+      unlinkAll(v);
+      clearLfos(v);
+      v.snap = !v.active || v.env < 0.02;
+      Object.assign(v, { x: d.x, y: d.y, amp: d.amp == null ? 1 : d.amp, wave: d.wave, cut: d.cut, res: d.res, beat: d.beat, fm: d.fm, shift: d.shift, holeT: d.hole || 0 });
+      v.pinned = true; v.dirty = true;
+      if (!v.active || v.envT === 0) attack(v.i);
+      queue.push({ t: 'burst', i: v.i });
+    }
+    for (const d of st.v) {
+      const v = V[d.i];
+      for (const m of d.mods) addLink(v, V[m.src], m.depth, m.type);
+      for (const [k, sp] of Object.entries(d.lfo)) lfo(v.i, k, { ...sp });
+    }
+    fx(st.fx);
+    state.kept = [];
+  }
+
+  // первая сборка движка (engine() уже отдаёт его): FX, LIVE — до полей и ON, затем связи, LFO, голоса со snap, ON
+  function build() {
+    const e = engine();
+    if (!e) return;
+    e.fx(state.fx);
+    for (const v of V) { v.live = v.active; if (v.active) e.live(v.i, true); }
+    for (const v of V) syncMods(v, e);
+    for (const v of V) { v.snap = true; e.voice(v.i, v); v.snap = false; v.dirty = false; }
+    for (const v of V) if (v.active && v.envT === 1) e.on(v.i);
+  }
+
+  return { fx, dice, clear, snapshot, restore, build, state, attack, release, spawn, grab, letGo, keep, unkeep, move, set, pin, remove, retune, load, sounding, events,
     link, linkDepth, linkType, unlink, lfo, sun, tick };
 }

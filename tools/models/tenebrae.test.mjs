@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createModel, PIN_MAX, TAIL, UNPIN_TAIL, LFO_DEF } from '../../worlds/tenebrae/model.js';
-import { LFO_KEYS } from '../../worlds/tenebrae/engine.js';
+import { createModel, PIN_MAX, TAIL, UNPIN_TAIL, LFO_DEF, BEAT_MIN, BEAT_MAX, SHIFT_DEF } from '../../worlds/tenebrae/model.js';
+import { LFO_KEYS, LINK_TYPES } from '../../worlds/tenebrae/engine.js';
 import { seeded } from './util.mjs';
+import { lerpLog } from '../../host/util.js';
 
 const GLUE = ['voice', 'on', 'off', 'live', 'links', 'lfo', 'fx', 'strike', 'clear', 'busEnv'];
 function rig(seed = 1) {
@@ -186,7 +187,7 @@ test('chaos seeded', () => {
   const run = () => {
     const { m } = rig(7);
     two(m);
-    m.state.fx.chaos = 0.5;
+    m.fx({ chaos: 0.5 });
     for (let k = 0; k < 50; k++) m.tick(0.1);
     return m;
   };
@@ -205,15 +206,15 @@ test('chaos seeded', () => {
 test('chaos off', () => {
   const { m } = rig(7);
   two(m);
-  m.state.fx.chaos = 0.5;
+  m.fx({ chaos: 0.5 });
   for (let k = 0; k < 50; k++) m.tick(0.1);
   assert.ok(autos(m).length > 0);
-  m.state.fx.chaos = 0;
+  m.fx({ chaos: 0 });
   m.tick(0.5);
   assert.equal(autos(m).length, 0);
   const r = rig(7);
   r.m.spawn(0.2, 0.5, 0);
-  r.m.state.fx.chaos = 1;
+  r.m.fx({ chaos: 1 });
   for (let k = 0; k < 50; k++) r.m.tick(0.1);
   assert.equal(autos(r.m).length, 0);
 });
@@ -221,7 +222,7 @@ test('chaos off', () => {
 test('chaos expiry', () => {
   const { m } = rig(7);
   two(m);
-  m.state.fx.chaos = 0.5;
+  m.fx({ chaos: 0.5 });
   let first = null;
   for (let k = 0; k < 200 && !first; k++) { m.tick(0.1); first = autos(m)[0] || null; }
   assert.ok(first);
@@ -229,8 +230,9 @@ test('chaos expiry', () => {
   while (m.state.time <= x.until) m.tick(0.1);
   m.tick(0.5);
   assert.ok(!m.state.voices[dst].mods.includes(x));
-  const now = m.state.voices[dst].mods.find((y) => y.auto);
-  if (now) assert.ok(now.until > x.until);
+  let now = null;
+  for (let k = 0; k < 100 && !now; k++) { m.tick(0.1); now = m.state.voices[dst].mods.find((y) => y.auto) || null; }
+  assert.ok(now && now !== x && now.until > x.until);   // зерно 7: после истечения выпадает новая авто-связь
 });
 
 test('tick sync order', () => {
@@ -305,7 +307,7 @@ test('sun strikes', () => {
 test('tick dt 0 and long', () => {
   const { m, V } = rig(7);
   two(m);
-  m.state.fx.chaos = 0.5;
+  m.fx({ chaos: 0.5 });
   m.tick(0.1);
   const env = V.map((v) => v.env);
   m.tick(0);
@@ -313,4 +315,150 @@ test('tick dt 0 and long', () => {
   assert.ok(V.every((v) => !Number.isNaN(v.env) && !Number.isNaN(v.holeT)));
   m.tick(30);
   assert.ok(V.every((v) => v.mods.filter((x) => x.auto).length <= 1));
+  const untils = autos(m).map(({ x }) => x.until);
+  assert.ok(untils.length > 0);
+  m.tick(0.1);   // хаос уже отработал один раз за tick(30): следующий tick связи не трогает
+  assert.deepEqual(autos(m).map(({ x }) => x.until), untils);
+});
+
+// ---- кубик, снимок, очистка, сборка, FX ----
+function loaded(seed = 5) {
+  const r = rig(seed);
+  const a = r.m.spawn(0.2, 0.5, 0), b = r.m.spawn(0.6, 0.5, 0);
+  r.m.pin(a); r.m.pin(b);
+  r.m.link(a, b); r.m.link(b, a);
+  r.m.lfo(a, 'cut', { ...LFO_DEF }); r.m.lfo(b, 'wave', { ...LFO_DEF });
+  return { ...r, a, b };
+}
+
+test('fx merges and tells the engine', () => {
+  const { m, calls } = rig();
+  m.fx({ rev: 0.7 });
+  assert.equal(m.state.fx.rev, 0.7);
+  assert.equal(m.state.fx.dirt, 0.2);
+  assert.deepEqual(calls.at(-1), ['fx', m.state.fx]);
+});
+
+test('dice ranges', () => {
+  const { m, V, a, b } = loaded();
+  m.fx({ chaos: 0.5 });
+  const c = m.spawn(0.9, 0.5, 0);
+  m.tick(0.5);
+  m.events();
+  const autoBefore = autos(m).map(({ x }) => ({ ...x }));
+  assert.equal(m.dice(), true);
+  for (const i of [a, b, c]) {
+    const v = V[i];
+    assert.ok(v.wave >= 0 && v.wave < 1);
+    assert.ok(v.cut >= 0.3 && v.cut < 0.92);
+    assert.ok(v.res >= 0 && v.res < 0.75);
+    assert.ok(v.beat >= BEAT_MIN && v.beat <= lerpLog(BEAT_MIN, BEAT_MAX, 0.85));
+    assert.ok(v.fm === 0 || v.fm < 0.7);
+    assert.ok(v.shift === SHIFT_DEF || v.shift < 1);
+    for (const l of v.mods.filter((x) => !x.auto)) assert.ok(l.depth >= 0.15 && l.depth < 0.9 && LINK_TYPES.includes(l.type));
+  }
+  assert.deepEqual(autos(m).map(({ x }) => ({ ...x })), autoBefore);
+  assert.deepEqual(m.events().map((e) => e.i).sort(), [a, b, c].sort());
+});
+
+test('dice empty', () => {
+  const calls = [];
+  const m = createModel({ rng: () => { throw new Error('rng'); }, engine: () => null });
+  assert.equal(m.dice(), false);
+  const i = m.spawn(0.1, 0.5, 0);
+  m.release(i, TAIL);
+  assert.equal(m.dice(), false);   // гаснущие не в счёт
+  assert.deepEqual(calls, []);
+});
+
+test('dice seeded', () => {
+  const run = () => { const r = loaded(9); r.m.dice(); return JSON.stringify(r.m.snapshot()) + JSON.stringify(r.V.map((v) => [v.wave, v.cut, v.res, v.beat, v.fm, v.shift, v.lfo])); };
+  assert.equal(run(), run());
+});
+
+test('snapshot roundtrip', () => {
+  const r = loaded(), t = r.m.spawn(0.9, 0.5, 0);
+  r.m.fx({ chaos: 0.5 }); r.m.tick(0.5);
+  const s = r.m.snapshot();
+  const o = JSON.parse(s);
+  assert.deepEqual(o.v.map((d) => d.i), [r.a, r.b]);
+  assert.ok(!o.v.some((d) => d.i === t));
+  assert.ok(o.v.every((d) => d.mods.every((x) => [r.a, r.b].includes(x.src))));
+  assert.deepEqual(Object.keys(o.fx), ['rev', 'decay', 'dly', 'chaos', 'dirt']);
+  const n = rig();
+  n.m.restore(s);
+  assert.equal(n.m.snapshot(), s);
+});
+
+test('snapshot format', () => {
+  const { m, V } = rig();
+  const i = m.spawn(0.123456, 0.5, 0.1);
+  m.pin(i);
+  Object.assign(V[i], { wave: 0.3333333, amp: 0.5 });
+  m.lfo(i, 'cut', { morph: 0.5, rate: 2, depth: 0.25 });
+  assert.equal(m.snapshot(),
+    '{"v":[{"i":0,"x":0.1235,"y":0.5,"amp":0.5,"wave":0.3333,"cut":0.68,"res":0.21,"beat":0.35,"fm":0,"shift":0.5,"hole":0.1,"lfo":{"cut":{"morph":0.5,"rate":2,"depth":0.25}},"mods":[]}],"fx":{"rev":0.3,"decay":3.5,"dly":0.3,"chaos":0,"dirt":0.2}}');
+});
+
+test('restore removes extra pinned', () => {
+  const { m, calls } = rig();
+  const [a, b] = pinned(m, 2);
+  const s = m.snapshot();
+  const c = m.spawn(0.9, 0.5, 0); m.pin(c);
+  m.restore(s);
+  assert.equal(offs(calls, c).at(-1)[2], 0.25);
+  assert.equal(m.state.voices[c].pinned, false);
+  assert.ok(m.state.voices[a].pinned && m.state.voices[b].pinned);
+});
+
+test('restore order', () => {
+  const r = loaded();
+  const s = r.m.snapshot();
+  const n = rig();
+  n.m.restore(s);
+  assert.ok(n.names().includes('fx'));
+  n.calls.length = 0;
+  n.m.tick(0.016);
+  const mine = n.calls.filter((c) => c[1] === r.a).map((c) => c[0]);
+  assert.ok(mine.lastIndexOf('lfo') < mine.indexOf('voice'));
+  assert.ok(mine.indexOf('links') < mine.indexOf('voice'));
+  assert.equal(n.m.state.voices[r.a].mods.length, 1);
+  assert.equal(n.m.state.voices[r.a].lfo.cut.rate, LFO_DEF.rate);
+});
+
+test('restore keeps held temp', () => {
+  const r = loaded();
+  const s = r.m.snapshot();
+  const t = r.m.spawn(0.9, 0.5, 0);
+  r.m.grab(t);
+  r.m.restore(s);
+  assert.ok(r.V[t].active);
+  assert.equal(r.V[t].held, 1);
+});
+
+test('clear', () => {
+  const r = loaded();
+  const t = r.m.spawn(0.9, 0.5, 0);
+  r.m.keep([t]);
+  r.calls.length = 0;
+  r.m.clear();
+  for (const i of [r.a, r.b, t]) assert.equal(offs(r.calls, i).at(-1)[2], 0.25);
+  assert.ok(r.names().includes('clear'));
+  assert.deepEqual(r.m.state.kept, []);
+});
+
+test('build order', () => {
+  const r = rig();
+  const [a, b] = two(r.m);
+  r.m.link(a, b);
+  r.calls.length = 0;
+  r.m.build();
+  const rank = { fx: 0, live: 1, links: 2, lfo: 2, voice: 3, on: 4 };
+  const seq = r.names().map((n) => rank[n]);
+  assert.deepEqual(seq, [...seq].sort((x, y) => x - y));
+  assert.equal(r.names().filter((n) => n === 'live').length, 2);
+  assert.equal(r.names().filter((n) => n === 'on').length, 2);
+  assert.equal(r.names().filter((n) => n === 'voice').length, 6);
+  assert.equal(r.V[a].dirty, false);
+  assert.equal(r.V[a].snap, false);
 });
