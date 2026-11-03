@@ -76,13 +76,17 @@ let scan = null;
 
 // ---------- голоса (кружки) ----------
 const V = Array.from({ length: VOICES }, (_, i) => ({
-  i, x: 0.35, dx: 0.35, wob: 0, wv: 0, y: 0.22, ox: 0, oy: 0,
-  beat: BEAT_DEF, wave: WAVE_DEF, fm: 0, cut: CUT_DEF, res: RES_DEF, shift: SHIFT_DEF, amp: 1, hole: 0, holeT: 0,
+  i, x: 0.35, y: 0.22,
+  beat: BEAT_DEF, wave: WAVE_DEF, fm: 0, cut: CUT_DEF, res: RES_DEF, shift: SHIFT_DEF, amp: 1, holeT: 0,
   mods: [], lfo: {},
   fingers: [], pinned: false, active: false,
-  env: 0, envT: 0, envTau: 0.05, emit: 0, t: 0,
+  env: 0, envT: 0, envTau: 0.05,
   dirty: true, snap: true, live: false,   // live — голос подключён к графу движка (молчащий отцеплен и не тратит процессор)
 }));
+// картинные поля голоса (только рисование): dx — где кружок виден, wob/wv — сдвиги от LFO, ox/oy — смещение пальца,
+// hole — глубина дыры (сглаженная), strike — удар по солнцу, emit — таймер импульса, ph/vph — фазы LFO по ключам.
+// Назвать W нельзя: так зовётся ширина холста из host/draw.js
+const VW = V.map(() => ({ dx: 0.35, wob: 0, wv: 0, ox: 0, oy: 0, hole: 0, strike: null, emit: 0, ph: {}, vph: {} }));
 let focus = V[0];
 let touchedOnce = false;
 let lastTap = null;       // { v, t } — для двойного тапа
@@ -113,8 +117,8 @@ const fmOpen = (v) => Math.min(1, v.fm + v.mods.reduce((s, m) => s + (m.type ===
 // cutoff кружка — на весь диапазон; ось Y ведёт его ещё на ±2.25 октавы: внизу тёмно, вверху открыто
 const cutoff = (v) => cutoffOf(v.cut, v.y, fmOpen(v));
 // dx — где кружок виден (с ладом он съезжает к ноте); wob — сдвиг от LFO на высоте
-const vx = (v) => place(v.dx + v.wob, v.y).x;
-const vy = (v) => place(v.dx + v.wob, v.y).y;
+const vx = (v) => place(VW[v.i].dx + VW[v.i].wob, v.y).x;
+const vy = (v) => place(VW[v.i].dx + VW[v.i].wob, v.y).y;
 
 // ---------- поле: полярные координаты от нижнего левого угла ----------
 // высота — расстояние от угла, характер — место на дуге: у нижнего/правого края чисто, у левого/верхнего шум.
@@ -233,7 +237,7 @@ function normAt(v, key, lfo) {
 function liveRange(v, key) {
   const spec = v.lfo[key];
   if (!spec) return null;
-  const now = morphFn(spec.morph)(spec.ph || 0) * spec.depth;
+  const now = morphFn(spec.morph)(VW[v.i].ph[key] || 0) * spec.depth;
   const a = normAt(v, key, -spec.depth), b = normAt(v, key, spec.depth);
   return { now: normAt(v, key, now), lo: Math.min(a, b), hi: Math.max(a, b) };
 }
@@ -255,16 +259,17 @@ function hit(x, y) {
 function rebase(v) {
   if (v.fingers.length !== 1) return;
   const f = F.get(v.fingers[0]);
-  v.ox = vx(v) - f.x;
-  v.oy = vy(v) - f.y;
+  VW[v.i].ox = vx(v) - f.x;
+  VW[v.i].oy = vy(v) - f.y;
 }
 
 function follow(v) {
   if (v.fingers.length !== 1) return;
   const f = F.get(v.fingers[0]);
   if (!f || f.menu || f.parked || f.bridge) return;
-  const q = unplace(f.x + v.ox, f.y + v.oy);
-  v.x = q.p; v.y = q.c; v.holeT = holeDepth(f.x + v.ox, f.y + v.oy);
+  const w = VW[v.i];
+  const q = unplace(f.x + w.ox, f.y + w.oy);
+  v.x = q.p; v.y = q.c; v.holeT = holeDepth(f.x + w.ox, f.y + w.oy);
   v.dirty = true;
   focus = v;
 }
@@ -286,11 +291,12 @@ function spawn(f) {
   unlinkAll(v);
   clearLfos(v);
   const sp = outOfHole(f.x, f.y), q = unplace(sp.x, sp.y);
-  v.x = q.p; v.dx = v.x; v.y = q.c; v.hole = v.holeT = holeDepth(sp.x, sp.y);
-  v.ox = sp.x - f.x; v.oy = sp.y - f.y;     // вытолкнули из дыры — палец ведёт планету с этим сдвигом
+  const w = VW[v.i];
+  v.x = q.p; w.dx = v.x; v.y = q.c; w.hole = v.holeT = holeDepth(sp.x, sp.y);
+  w.ox = sp.x - f.x; w.oy = sp.y - f.y;     // вытолкнули из дыры — палец ведёт планету с этим сдвигом
   v.beat = BEAT_DEF; v.wave = WAVE_DEF; v.fm = 0; v.cut = CUT_DEF; v.res = RES_DEF; v.shift = SHIFT_DEF; v.amp = 1;
   v.pinned = false; v.fingers = [];
-  v.snap = v.env < 0.02; v.dirty = true; v.emit = 1e9;
+  v.snap = v.env < 0.02; v.dirty = true; w.emit = 1e9;
   attack(v);
   return v;
 }
@@ -360,7 +366,7 @@ function chaosTick(now) {
 
 // ---------- LFO на параметрах кружка (генераторы — в движке) ----------
 function setLfo(v, key, spec) {
-  if (!v.lfo[key]) spec.ph = 0;              // фаза для рисования: генератор тоже стартует с нуля
+  if (!v.lfo[key]) { VW[v.i].ph[key] = 0; VW[v.i].vph[key] = 0; }   // фаза для рисования: генератор тоже стартует с нуля
   v.lfo[key] = spec;
   if (engine) engine.lfo(v.i, key, spec);
   v.dirty = true;
@@ -369,6 +375,7 @@ function setLfo(v, key, spec) {
 function removeLfo(v, key) {
   if (!v.lfo[key]) return;
   delete v.lfo[key];
+  delete VW[v.i].ph[key]; delete VW[v.i].vph[key];
   if (engine) engine.lfo(v.i, key, null);
 }
 
@@ -491,7 +498,6 @@ function solDown(f, e) {
     if (!v) return;
   }
   v.fingers.push(f.id);
-  v.t = now;
   f.voice = v;
   rebase(v);
   follow(v);
@@ -594,7 +600,7 @@ function rollDice() {
     const pt = place(zoom * (0.08 + 0.75 * R()), 0.1 + 0.6 * R());
     const v = spawn({ x: pt.x, y: pt.y });
     if (!v) return;
-    v.pinned = true; v.t = performance.now();
+    v.pinned = true;
     vs = [v];
   }
   for (const v of vs) {
@@ -763,7 +769,8 @@ function restore(js) {
     unlinkAll(v);
     clearLfos(v);
     v.snap = !v.active || v.env < 0.02;
-    Object.assign(v, { x: d.x, dx: d.x, y: d.y, amp: d.amp == null ? 1 : d.amp, wave: d.wave, cut: d.cut, res: d.res, beat: d.beat, fm: d.fm, shift: d.shift, hole: d.hole || 0, holeT: d.hole || 0 });
+    Object.assign(v, { x: d.x, y: d.y, amp: d.amp == null ? 1 : d.amp, wave: d.wave, cut: d.cut, res: d.res, beat: d.beat, fm: d.fm, shift: d.shift, holeT: d.hole || 0 });
+    VW[v.i].dx = d.x; VW[v.i].hole = d.hole || 0;
     v.pinned = true; v.dirty = true;
     if (!v.active || v.envT === 0) attack(v);
     burst(v);
@@ -1246,8 +1253,9 @@ const MOON_R = { pitch: 50, wave: 56, cut: 62, res: 68, beat: 74, fm: 80, shift:
 // чёрная дыра съедает свет: у края планета тускнеет и вытягивается к центру, глубже — падает в центр,
 // сжимается и гаснет; остаётся едва видный след — за него можно вытащить. Звук — шум — идёт дальше
 function drawVoice(v, now, dt) {
-  if (v.hole < 0.005) { drawPlanet(v, now, dt); return; }
-  const x = vx(v), y = vy(v), c = holeAt(), a = Math.atan2(y - c.y, x - c.x), h = v.hole;
+  const h = VW[v.i].hole;
+  if (h < 0.005) { drawPlanet(v, now, dt); return; }
+  const x = vx(v), y = vy(v), c = holeAt(), a = Math.atan2(y - c.y, x - c.x);
   const e = clamp((h - 0.3) / 0.7) ** 1.5, s = 1 - 0.8 * e;      // e — насколько уже съедена
   const px = x + (c.x - x) * e, py = y + (c.y - y) * e;
   g.save();
@@ -1260,7 +1268,7 @@ function drawPlanet(v, now, dt) {
   const k = kick(v, performance.now()), x = vx(v) + k.x, y = vy(v) + k.y;
   const held = v.fingers.length > 0;
   const editing = editor && editor.kind === 'voice' && editor.group.includes(v);
-  const R = planetR(v), far = v.dx + v.wob > zoom * 1.0001;   // за горизонтом зума — у края, бледно
+  const R = planetR(v), far = VW[v.i].dx + VW[v.i].wob > zoom * 1.0001;   // за горизонтом зума — у края, бледно
   const a = Math.min(1, v.env * 1.3) * (far ? 0.4 : 1);
   if (!v.pinned) {                            // хвост кометы — от солнца
     const ang = Math.atan2(y - geo.oy, x - geo.ox), fade = v.envT === 0 ? 1 - v.env : 0;
@@ -1304,7 +1312,7 @@ function drawPlanet(v, now, dt) {
   }
   // спутники: орбита по параметру, размер — глубина, след за спутником — форма LFO
   for (const [key, spec] of Object.entries(v.lfo)) {
-    const r = MOON_R[key] || 60, ph = spec.vph || 0, fn = morphFn(spec.morph);
+    const r = MOON_R[key] || 60, ph = VW[v.i].vph[key] || 0, fn = morphFn(spec.morph);
     g.strokeStyle = ink(a * 0.07); g.lineWidth = 1;
     g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
     g.strokeStyle = ink(a * 0.3); g.lineWidth = 1; g.lineJoin = 'round';
@@ -1500,7 +1508,7 @@ function drawEditor() {
       readout: sc ? `${sc.label} · ${valueText(v, sc.key)}${many}` : e.key === 'amp' ? `amp · ${ampText(v.amp)}${many}` : null,
       readoutAt: readoutAt(e.cx, e.cy),
     });
-    if (e.key === 'wave') drawCurve(morphFn(clamp(v.wave + v.wv)), e.cx, e.cy, 30, 18, 1, 2, 1.4);
+    if (e.key === 'wave') drawCurve(morphFn(clamp(v.wave + VW[v.i].wv)), e.cx, e.cy, 30, 18, 1, 2, 1.4);
     contour(v, x, y, 34, 1, 2, true);
     return;
   }
@@ -1528,7 +1536,7 @@ function drawHeld(m, pointer) {
       pointer: m.sector && pointer ? pointer : null,
       readout: m.sector ? `${m.sector.label} · ${m.text(m.sector.key)}` : null, readoutAt: at,
     });
-    if (m.sector && m.sector.key === 'wave') drawCurve(morphFn(clamp(v.wave + v.wv)), at.x, at.y - 30, 60, 22, 1);
+    if (m.sector && m.sector.key === 'wave') drawCurve(morphFn(clamp(v.wave + VW[v.i].wv)), at.x, at.y - 30, 60, 22, 1);
     contour(v, vx(v), vy(v), 34, 1, 2, true);
   } else {
     const mid = linkMid(m.dst, m.link);
@@ -1624,7 +1632,7 @@ function drawLfoPanel0(tg, now) {
   g.beginPath();
   const N = Math.min(600, Math.max(120, Math.round(span * 24)));
   for (let i = 0; i <= N; i++) {
-    const t = i / N, ph = (((spec.ph || 0) - (1 - t) * span) % 1 + 1) % 1;
+    const t = i / N, ph = (((VW[tg.v.i].ph[tg.key] || 0) - (1 - t) * span) % 1 + 1) % 1;
     const x = p.x + PAD_IN + t * (p.w - 2 * PAD_IN), y = mid - fn(ph) * amp;
     if (i) g.lineTo(x, y); else g.moveTo(x, y);
   }
@@ -1634,7 +1642,7 @@ function drawLfoPanel0(tg, now) {
   g.beginPath(); g.moveTo(Math.round(cx) + 0.5, pd.y + 1); g.lineTo(Math.round(cx) + 0.5, by);
   g.moveTo(p.x + 1, Math.round(cy) + 0.5); g.lineTo(p.x + p.w - 1, Math.round(cy) + 0.5); g.stroke();
   g.restore();
-  dot(p.x + p.w - PAD_IN, mid - fn(spec.ph || 0) * amp, 2.5, 0.9);
+  dot(p.x + p.w - PAD_IN, mid - fn(VW[tg.v.i].ph[tg.key] || 0) * amp, 2.5, 0.9);
   ring(cx, cy, on ? 11 : 8, 1, on ? 2 : 1.4);
   dot(cx, cy, 2.5, 1);
 }
@@ -1695,10 +1703,10 @@ function drawHole(now) {
   const c = holeAt();
   g.save(); g.beginPath(); g.rect(c.x, c.y, W, H); g.clip();   // видна четверть
   let feed = 0, near = 0;
-  for (const v of V) if (v.active) feed = Math.max(feed, v.hole * v.env);
+  for (const v of V) if (v.active) feed = Math.max(feed, VW[v.i].hole * v.env);
   for (const f of F.values()) {
     const v = f.voice;
-    if (v && f.moved && !f.ui && !f.parked && !f.bridge && !f.menu) near = Math.max(near, clamp((HOLE_R * 1.7 - Math.hypot(f.x + v.ox - c.x, f.y + v.oy - c.y)) / (HOLE_R * 0.7)));
+    if (v && f.moved && !f.ui && !f.parked && !f.bridge && !f.menu) near = Math.max(near, clamp((HOLE_R * 1.7 - Math.hypot(f.x + VW[v.i].ox - c.x, f.y + VW[v.i].oy - c.y)) / (HOLE_R * 0.7)));
   }
   const spin = now * (0.004 + 0.02 * feed), tilt = -0.5, S = HOLE_R * 0.46;
   const disk = (front) => {
@@ -1727,9 +1735,9 @@ function sunStrikes(now) {
   for (const f of F.values()) {
     const v = f.voice;
     if (!v || !f.moved || f.ui || f.parked || f.bridge || f.menu) continue;
-    const t = clamp((SUN_R + 24 - Math.hypot(f.x + v.ox - ox, f.y + v.oy - oy)) / 70);
+    const t = clamp((SUN_R + 24 - Math.hypot(f.x + VW[v.i].ox - ox, f.y + VW[v.i].oy - oy)) / 70);
     if (t <= 0 || now < (v.strikeNext || 0)) continue;
-    v.strike = { t0: now, p: t, a: Math.atan2(vy(v) - oy, vx(v) - ox) };
+    VW[v.i].strike = { t0: now, p: t, a: Math.atan2(vy(v) - oy, vx(v) - ox) };
     v.strikeNext = now + (440 - 320 * t) * (0.6 + 0.8 * Math.random());
     if (engine) engine.strike(t);
     strikes++;
@@ -1739,7 +1747,7 @@ function sunStrikes(now) {
 // удар солнца: отдача — планету отбрасывает от солнца и она возвращается
 const STRIKE_MS = 110, NO_KICK = { x: 0, y: 0 };
 function kick(v, now) {
-  const st = v.strike, age = st ? now - st.t0 : Infinity;
+  const st = VW[v.i].strike, age = st ? now - st.t0 : Infinity;
   if (age > 700) return NO_KICK;
   const m = (6 + 16 * st.p) * (1 - Math.exp(-age / 14)) * Math.exp(-age / 130);
   return { x: Math.cos(st.a) * m, y: Math.sin(st.a) * m };
@@ -1775,7 +1783,7 @@ function drawSun() {
   }
   const now = performance.now();
   for (const v of V) {                        // молния живёт ~0.1 с после удара и мерцает
-    const st = v.strike;
+    const st = VW[v.i].strike;
     if (!st || !v.active || now - st.t0 > STRIKE_MS || Math.random() < 0.25) continue;
     const k = kick(v, now), px = vx(v) + k.x, py = vy(v) + k.y, d = Math.hypot(px - ox, py - oy), R = planetR(v), t = st.p;
     for (let s = 0, n = 1 + Math.round(2 * t); s < n; s++) {
@@ -2012,18 +2020,20 @@ function solTick(now, dt) {
   const sliding = now < scl.slideUntil;
   for (const v of V) {
     const tx = soundX(v);
-    v.dx = sliding || scl.on ? v.dx + (tx - v.dx) * (1 - Math.exp(-dt / 0.07)) : v.x;
+    const w = VW[v.i];
+    w.dx = sliding || scl.on ? w.dx + (tx - w.dx) * (1 - Math.exp(-dt / 0.07)) : v.x;
   }
 
   // LFO видно: высота качает кружок по полю, волна — форму
   for (const v of V) {
-    v.wob = 0; v.wv = 0;
+    const w = VW[v.i];
+    w.wob = 0; w.wv = 0;
     for (const [key, spec] of Object.entries(v.lfo)) {
-      spec.ph = ((spec.ph || 0) + dt * spec.rate) % 1;
-      spec.vph = ((spec.vph || 0) + dt * Math.min(spec.rate, 2.5)) % 1;
-      const val = morphFn(spec.morph)(spec.ph) * spec.depth;
-      if (key === 'pitch') v.wob = xOf(semi(v.dx) + (val * 700) / 100) - v.dx;
-      else if (key === 'wave') v.wv = val;
+      w.ph[key] = ((w.ph[key] || 0) + dt * spec.rate) % 1;
+      w.vph[key] = ((w.vph[key] || 0) + dt * Math.min(spec.rate, 2.5)) % 1;
+      const val = morphFn(spec.morph)(w.ph[key]) * spec.depth;
+      if (key === 'pitch') w.wob = xOf(semi(w.dx) + (val * 700) / 100) - w.dx;
+      else if (key === 'wave') w.wv = val;
     }
   }
 
@@ -2031,7 +2041,7 @@ function solTick(now, dt) {
   for (const v of V) {
     if (v.dirty) { v.dirty = false; sync(v); }   // tzfm-приёмники идут за высотой источника сами (движок)
     v.env += (v.envT - v.env) * (1 - Math.exp(-dt / v.envTau));
-    v.hole += (v.holeT - v.hole) * (1 - Math.exp(-dt / 0.15));
+    VW[v.i].hole += (v.holeT - VW[v.i].hole) * (1 - Math.exp(-dt / 0.15));
     if (v.active && v.holeT > 0.9 && !v.fingers.length && v.envT !== 0) { v.pinned = false; release(v, 0.4); }   // отпущена в глубине дыры — умирает
     if (v.active && !v.pinned && !v.fingers.length && v.envT === 0 && v.env < 0.004) {
       v.active = false;
@@ -2053,10 +2063,11 @@ function solDraw(now, dt) {
 
   // волны от кружков — в ритме биений detune: что видно, то и слышно
   for (const v of V) {
-    if (!v.active || v.env < 0.02 || v.hole > 0.5) continue;   // из дыры свет не выходит
-    v.emit += dt;
-    if (v.emit >= clamp(1 / v.beat, 0.7, 4)) {      // быстрые биения — не чаще ~1.4 импульса в секунду
-      v.emit = 0;
+    if (!v.active || v.env < 0.02 || VW[v.i].hole > 0.5) continue;   // из дыры свет не выходит
+    const w = VW[v.i];
+    w.emit += dt;
+    if (w.emit >= clamp(1 / v.beat, 0.7, 4)) {      // быстрые биения — не чаще ~1.4 импульса в секунду
+      w.emit = 0;
       const p = { x: vx(v), y: vy(v), r: 36, a: v.env * 0.7, sp: 40 + freq(v) * 0.1 };
       if (rings.length < 60) rings.push(p);
       // delay: тот же импульс повторяется пунктиром через время задержки, каждый повтор бледнее
@@ -2138,9 +2149,9 @@ function drawSheet0(now) {
   const wv = s.wave;
   hairBox(s.x, wv.y, s.w, wv.h, 0.3);
   for (let i = 0; i < NW; i++) drawCurve(WAVES[i].fn, s.x + 18 + (i / (NW - 1)) * (s.w - 36), wv.y + wv.h / 2, 22, 14, 0.4, 1, 1);
-  const wx = s.x + 18 + clamp(v.wave + v.wv) * (s.w - 36);
+  const wx = s.x + 18 + clamp(v.wave + VW[v.i].wv) * (s.w - 36);
   hairBox(wx - 15, wv.y + 3, 30, wv.h - 6, 0.95);
-  drawCurve(morphFn(clamp(v.wave + v.wv)), wx, wv.y + wv.h / 2, 22, 14, 1, 1, 1.4);
+  drawCurve(morphFn(clamp(v.wave + VW[v.i].wv)), wx, wv.y + wv.h / 2, 22, 14, 1, 1, 1.4);
   for (const r of s.rows) {                   // строка: имя, нить с бегунком, полоса размаха LFO, значение, «~»
     const cy = r.y + r.h / 2, sel = e.lfo && e.key === r.k, rf = [...F.values()].some((f) => f.ui === 'srow' && f.key === r.k);
     text(r.label, s.x, cy, 14, rf || sel ? 1 : 0.75);
@@ -2247,7 +2258,7 @@ window.t2d = {
   get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, get audioPanel() { return !!audioPanel; }, panelGeo: () => panelGeo(), legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, get deck() { return deck; }, setDeck, mixRows: () => mixGeo().rows.map((r) => r.n), restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey, slAdd: (k) => { if (fxSheet && fxSheet.spec.lfo) { const e = slAdd(fxSheet.spec, k); e.spec.depth = 0.8; e.spec.rate = 1; return true; } return false; },   // сразу в мир, без касаний (тесты)
   get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.send === 'function' && T2D.snapSemi(3.4) === 3.4; },
   hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
-  voices: V, fx, scl, freq, cutoff, applyFx, place, unplace, semi,
+  voices: V, voiceView: VW, fx, scl, freq, cutoff, applyFx, place, unplace, semi,
   get ctx() { return ctx; }, get core() { return core && { ready: core.ready, sent: core.sent, node: !!core.node }; }, strikeSound: (p) => engine && engine.strike(p), holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
 };   // для отладки из консоли
 
