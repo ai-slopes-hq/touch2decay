@@ -15,21 +15,20 @@
 
 Фаза 4, шаг А (03.11): модель вынесена из `app.js` в `worlds/tenebrae/model.js` (`createModel({ rng, engine, wake })`), поведение веба то же. Модель — без DOM, Web Audio и `Math.random`: голоса `V` (`model.state.voices`), мосты и LFO планет, общие FX, закрепление, кубик, снимок. API: `fx`, `dice`, `clear`, `snapshot`, `restore`, `build`, `attack`, `release`, `spawn`, `grab`, `letGo`, `keep`, `unkeep`, `move`, `set`, `pin`, `remove`, `retune`, `load`, `sounding`, `events`, `link*`, `unlink`, `lfo`, `sun`, `tick`. Картинки в ней нет: `x`, `y` — позиция в (p, c), `holeT` считает вид.
 
-- **События для вида:** `burst` (кольцо при кубике и появлении) и `strike` (удар солнца) копятся в очереди; `app.js` забирает их `model.events()` в `solTick`.
+- **События для вида:** `model.events()` отдаёт и очищает очередь `{t:'burst', i}` (кольцо при кубике и появлении) и `{t:'strike', i, p}` (удар солнца). `app.js` забирает её раз в кадр после `model.tick` (в `solTick`); нативный вид обязан забирать каждый кадр, иначе очередь растёт.
+- **Время модели:** повторы хаоса, жизнь авто-связей и интервалы ударов солнца идут по времени модели (сумма `dt`, в `solTick` каждый тик ограничен 0.05 с), а не по часам стены: ниже 20 fps они растягиваются.
 - **`app.js` (клей и вид):** поле, касания, пальцы (`addFinger/dropFinger/forgetFingers`), `setEditor`, `sunStrikes`, рисование. Поля картинки голосов — массив `VW` (`dx`, `wob`, `hole`, `strike`, `ph`, `fingers` …), для тестов `t2d.voiceView`; кольца — `t2d.rings`. Звук идёт через `engine.js` в ядро.
 - Отладка: `T2D_TRACE=<папка> python3 tools/shot.py <сценарий>` пишет трассу действий клея, `tools/trace-diff.py` сравнивает с эталоном (`docs/testing.md`).
 
-Секции `app.js` (в основном вид и клей; голоса, мосты и LFO теперь делает модель), по порядку:
-
-Секции помечены комментариями `// ---------- … ----------` (по порядку):
+Секции `app.js` помечены комментариями `// ---------- … ----------` (по порядку; в основном вид и клей, логика — в `model.js`):
 
 1. Палитра, константы звука/жестов (пороги касаний и пальцы `F` — `host/touch.js`), таблицы `WAVES` (`host/waves.js`) (морф по линии triangle → sharp → saw → pulse → fold → sync → crush → metal → grain).
-2. Голоса `V`, лад `SCALES`, общие FX `fx`.
+2. Голоса `V` и общие FX `fx` — только чтение `model.state.voices` / `model.state.fx` (правит модель: `model.fx({…})`), лад `SCALES`.
 3. **Поле**: геометрия `geo`, `place/unplace`, зум.
-4. Связи (`addLink`, `chaosTick`; узлы связей — в движке), LFO (`setLfo`, `removeLfo`), мост (`startBridge`).
-5. **Касания**: `down`, `move`, `up`, `spawn`, `deleteVoice`, зум.
-6. **Кнопки и меню**: `uiHit`, `uiDown/uiMove/uiUp` (верхняя строка — `host/ui-top.js`, плашка FX — `host/sheet.js`), лад, кубик `rollDice`, **отмена** (`snapshot`, `restore`; `commit` — `host/undo.js`), веер FX, кольца (`openMenu`, `openLink`, `pinFrom`, `ringTouch`).
-7. **Аудио**: `solBuild` (первый раз — клей `worlds/tenebrae/engine.js` на ядро и отправка всего из модели; после `restartAudio` — `engine.bind({ core, out })`: клей помнит голоса, связи, LFO, FX и шлёт их ядру заново, порядок FX → LIVE → LINKS/LFO → VOICE → ON), `sync(v)` (голос `dirty` → `links`, `lfo`, `voice`), `applyFx`. Сам звук — в ядре, слот 1 (см. «Звук в ядре» ниже); прежний движок на узлах Web Audio — эталон `tools/ref/tenebrae-engine.js`.
+4. Связи, хаос и LFO — в модели (`link` / `linkDepth` / `linkType` / `unlink`, `chaos` внутри `tick`, `lfo`); в `app.js` остался клей: `addLfo` / `removeLfo` (фазы рисования + `model.lfo`) и мост `startBridge`.
+5. **Касания**: `down`, `move`, `up`, `spawn` / `spawnAt` (место и дыра — вид, сам голос — `model.spawn`; удаление — `model.remove`), зум.
+6. **Кнопки и меню**: `uiHit`, `uiDown/uiMove/uiUp` (верхняя строка — `host/ui-top.js`, плашка FX — `host/sheet.js`), лад, кубик `rollDice`, **отмена** (`model.snapshot` / `model.restore`; `commit` — `host/undo.js`), веер FX, кольца (`openMenu`, `openLink`, `pinFrom`, `ringTouch`).
+7. **Аудио**: `solBuild` (первый раз — клей `worlds/tenebrae/engine.js` на ядро и отправка всего из модели; после `restartAudio` — `engine.bind({ core, out })`: клей помнит голоса, связи, LFO, FX и шлёт их ядру заново, порядок FX → LIVE → LINKS/LFO → VOICE → ON), `sync(v)` — внутри `model.tick` (голос `dirty` → `links`, `lfo`, `voice`), FX — `model.fx`. Сам звук — в ядре, слот 1 (см. «Звук в ядре» ниже); прежний движок на узлах Web Audio — эталон `tools/ref/tenebrae-engine.js`.
 8. **Рисование**: `resize` (фон-звёзды в `scan`), `contour` (контур из сигнала), `drawVoice` (планета, кольцо Сатурна, двойная звезда, спутники, хвост кометы), `drawLinks` (нити), кольца `drawRing/drawEditor/drawHeld`, `drawLfoPanel`, `drawAmpStrip`, поле `drawField` (кеш `orbitLayer` + `bgLayer`), `drawSun`, `drawUI`, `frame`.
 9. **Нагрузка** — `host/strain.js`: `measureStrain` (время кадра, отставание звуковых часов, доля графа — от мира I через `setGraphLoad`) → `drawStrain`.
 
@@ -37,7 +36,7 @@
 
 ## Звук в ядре
 
-С 26.10 (этап 1 плана `docs/superpowers/plans/2026-10-26-tenebrae-core.md`) звук мира I считает C++-ядро, слот 1 `t2d.wasm`; модель, жесты и рисование остались в `app.js`. Картинка не менялась: контур планеты рисуется из зеркала ядра.
+С 26.10 (этап 1 плана `docs/superpowers/plans/2026-10-26-tenebrae-core.md`) звук мира I считает C++-ядро, слот 1 `t2d.wasm`; модель — `worlds/tenebrae/model.js` (с 03.11), жесты и рисование остались в `app.js`. Картинка не менялась: контур планеты рисуется из зеркала ядра.
 
 - **Ядро:** `core/worlds/tenebrae/` — `world.{hpp,cpp}` (мир SDK: действия, шина `1/√Σenv`, FX, удар солнца, зеркало), `voice.{hpp,cpp}` (голос: генераторы, фильтры, comb, связи, LFO), `waves.{hpp,cpp}` (таблицы волн по октавам), `shifter.hpp` (Hilbert-сдвиг), `tone.hpp` (формулы высоты, как `worlds/tenebrae/tone.js`). Общие блоки — `core/sdk/` (`Shaper` os 4, `waveforms.hpp`, `PingPong` с раздельными временем и wow ног).
 - **Клей:** `worlds/tenebrae/engine.js` — тот же API `createEngine` (`voice/on/off/live/links/lfo/fx/strike/clear/busEnv/scope`), но каждый вызов — действие `t2d_action(1, kind, i, a, n)`; коды `ACT`: `VOICE 0, ON 1, OFF 2, LIVE 3, LINKS 4, LFO 5, FX 6, STRIKE 7, CLEAR 8`. Своего звука у клея нет, `busEnv` пустой (ядро считает шину само). `scope(i)` — 128 точек контура из зеркала `t2d_mirror(1)`: `[число голосов (6)]`, на голос `[live, env, p0…p127]`; для не живого голоса — `null`. Ни одного живого голоса — зеркало из одного заголовка `[6]` (ворклет не копирует и не шлёт 781 число 60 раз в секунду), клей видит это как «контуров нет».
