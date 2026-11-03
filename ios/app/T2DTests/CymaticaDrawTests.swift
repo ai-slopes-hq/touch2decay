@@ -192,4 +192,62 @@ final class CymaticaDrawTests: XCTestCase {
     view.state.lastStep = (15, 15, 5)
     _ = shot { p, d in view.litCells(); view.drawAstro(p, d, now: 5) }
   }
+
+  // ---------- кадр: курсор, подписи, резонатор, drawFrame ----------
+  private func frame(_ now: Double, _ v: CymaticaView? = nil) -> CGImage {
+    let w = v ?? view
+    return shot { _, d in w.drawFrame(d, now: now) }
+  }
+
+  func testDrawPure() {
+    let fresh = CymaticaView(core: RecD(), readMirror: { _ in 0 }, readHeard: { _ in 0 }, seed: { 7 })
+    fresh.layout(W: 390, H: 844, topY: 50, safeBot: 34)
+    _ = frame(0.5, fresh)                                    // до первого тика не падает
+    view.state.stars.append((x: 0.2, y: -0.3, t: 1.0))
+    view.fingers[ObjectIdentifier(self)] = CymFinger(kind: .mark, i: 2)
+    view.pair = CymPair(a: ObjectIdentifier(self), b: ObjectIdentifier(view), a0: 0, d0: 30, kind: nil, target: 2, f00: 110, fromSemi: 12, orig: [], mel: [], last: 0)
+    _ = frame(1.5); _ = frame(1.6)
+    XCTAssertEqual(view.state.stars.count, 1)
+    XCTAssertEqual(view.fingers.count, 1)
+    XCTAssertNotNil(view.pair)
+    XCTAssertEqual(view.shownF0, 110, accuracy: 1e-9)
+  }
+
+  func testResonatorAnswer() {
+    view.state.heard(.answer(semi: 12), mirror: view.mirror, list: view.noteList, now: 1)
+    let G = (x: 390.0 - 18, y: 844.0 - 34 - 16), r = box(G.x, G.y, 20, 20)
+    let a = litPixels(frame(1.2), in: r, bg: bg), b = litPixels(frame(3), in: r, bg: bg)
+    XCTAssertGreaterThan(a, b)
+    XCTAssertGreaterThan(a, 0)
+  }
+
+  func testLabelUsesBaseF0() {
+    put { $0[157] = 1; $0[161] = 3; $0[32] = 110 }
+    view.labelUntil = view.now + 1
+    _ = frame(view.now)
+    XCTAssertEqual(view.drawLabelText(now: view.now), "A2 · 110 Hz")
+    XCTAssertNil(view.drawLabelText(now: view.labelUntil))
+    XCTAssertNil(view.drawLabelText(now: view.labelUntil + 1))
+  }
+
+  func testCursorDrawn() {
+    put { $0[165] = 15; $0[44] = 7 }                         // курсор 15 при mlen 7: i = 1
+    let G = view.geo, p = G.slotXY(1, G.R1)
+    let c = litPixels(frame(5), in: box(p.x, p.y, 40, 40), bg: bg)
+    put { $0[165] = -1 }
+    XCTAssertGreaterThan(c, litPixels(frame(5), in: box(p.x, p.y, 40, 40), bg: bg))
+  }
+
+  func testDrawWide() {
+    view.layout(W: 1024, H: 1366, topY: 50, safeBot: 34)
+    let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = true
+    let img = UIGraphicsImageRenderer(size: CGSize(width: 1024, height: 1366), format: f).image { r in
+      let d = Draw(g: r.cgContext, W: 1024, H: 1366)
+      d.setTheme(view.theme)
+      view.drawFrame(d, now: 5)
+    }.cgImage!
+    XCTAssertGreaterThan(litPixels(img, in: box(1024 - 34, 1366 - 34, 6, 6), bg: bg), 0)
+  }
+
+  func testCymaticaOnMap() { XCTAssertEqual(Worlds.info(2)?.view, true) }
 }

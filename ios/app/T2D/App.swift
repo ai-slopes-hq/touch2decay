@@ -13,7 +13,8 @@ import SwiftUI
 //   tria | tria-lux | tria-fall | tria-held | tria-sheet | tria-fan — go(11), см. shotTria;
 //   inferno | inferno-held | inferno-sheet | inferno-fx | inferno-storm | inferno-fan — go(5), см. shotInferno;
 //   natura | natura-play | natura-fx | natura-res | natura-skiff | natura-ducks-away | natura-sheet | natura-menu — go(4), см. shotNatura;
-//   portus | portus-empty | portus-play | portus-echo | portus-star | portus-bloodmoon | portus-sheet — go(13), см. shotPortus.
+//   portus | portus-empty | portus-play | portus-echo | portus-star | portus-bloodmoon | portus-sheet — go(13), см. shotPortus;
+//   cymatica | cym-empty | cym-play | cym-pinch | cym-steprec | cym-chance | cym-drift | cym-luna — go(2), см. shotCymatica.
 @main
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
@@ -34,6 +35,7 @@ struct T2DApp: App {
   @State private var inf: InfernoView                // нужен только -shot inferno*; Host держит миры сам
   @State private var nat: NaturaView                 // нужен только -shot natura*; Host держит миры сам
   @State private var por: PortusView                 // нужен только -shot portus*; Host держит миры сам
+  @State private var cym: CymaticaView               // нужен только -shot cym*; Host держит миры сам
   @State private var host: Host
 
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
@@ -50,6 +52,7 @@ struct T2DApp: App {
     case InfernoView.slotN: return InfernoView(core: AppCore(slot: slot))
     case NaturaView.slotN: return NaturaView(core: AppCore(slot: slot))
     case PortusView.slotN: return PortusView(core: AppCore(slot: slot))
+    case CymaticaView.slotN: return CymaticaView(core: AppCore(slot: slot))
     default: return nil
     }
   }
@@ -63,7 +66,7 @@ struct T2DApp: App {
     a.onInit = { h.reapply() }
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _nat = State(initialValue: views.compactMap { $0 as? NaturaView }[0]); _por = State(initialValue: views.compactMap { $0 as? PortusView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _nat = State(initialValue: views.compactMap { $0 as? NaturaView }[0]); _por = State(initialValue: views.compactMap { $0 as? PortusView }[0]); _cym = State(initialValue: views.compactMap { $0 as? CymaticaView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -96,6 +99,7 @@ struct T2DApp: App {
     case "inferno", "inferno-held", "inferno-sheet", "inferno-fx", "inferno-storm", "inferno-fan": shotInferno(T2DApp.shotName); return
     case "natura", "natura-play", "natura-fx", "natura-res", "natura-skiff", "natura-ducks-away", "natura-sheet", "natura-menu": shotNatura(T2DApp.shotName); return
     case "portus", "portus-empty", "portus-play", "portus-echo", "portus-star", "portus-bloodmoon", "portus-sheet": shotPortus(T2DApp.shotName); return
+    case "cymatica", "cym-empty", "cym-play", "cym-pinch", "cym-steprec", "cym-chance", "cym-drift", "cym-luna": shotCymatica(T2DApp.shotName); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -360,6 +364,36 @@ struct T2DApp: App {
       lane(); por.send(A.pharos, 1, [-1])   // oct — индекс 1 в PHAROS ядра, значение — октава как есть
       q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(por.pharosSpec) }
     case "portus": por.dice()
+    default: break
+    }
+  }
+
+  // Cymatica: cymatica — кубик (для карты); -empty — покой; -play — ритм 8, мелодия 3, 120 BPM, кубик (как astrolabe веба);
+  // -pinch — без лада, подпись высоты, удар в клетку (кольцо 1, сектор 1); -steprec — пошаговый ввод: три удара, пропуск, удар;
+  // -chance — удар 0 с шансом 0.5 и подписью; -drift — кубик, дрейф луны, играет; -luna — как drift, плашка луны (как sc_* веба)
+  private func shotCymatica(_ name: String) {
+    host.go(CymaticaView.slotN)
+    typealias A = Cym.Act
+    let until = cym.now + 60
+    func plate(_ x: Double, _ y: Double) -> [Double] { [x / cym.geo.r, y / cym.geo.r] }
+    switch name {
+    case "cym-play":
+      cym.send(A.len, 0, [8]); cym.send(A.len, 1, [3]); cym.send(A.bpm, 0, [120]); cym.dice()
+    case "cym-pinch":
+      cym.labelUntil = until
+      let c = cymCellCenter(ring: 1, sector: 1, n: cym.scl.degPerOct)   // координаты плиты
+      cym.send(A.strikeAt, 0, [c.x, c.y])
+    case "cym-steprec":
+      cym.send(A.clear); cym.send(A.stepRec, 0, [1, 0, 0])
+      cym.send(A.strikeAt, 0, plate(-40, 0)); cym.send(A.strikeAt, 0, plate(30, -30))
+      cym.send(A.skip); cym.send(A.strikeAt, 0, plate(0, 40))
+    case "cym-chance":
+      cym.send(A.beat, 0); cym.send(A.chanceAt, 0, [0.5]); cym.chanceEdit = (0, until)
+    case "cym-drift": cym.dice(); cym.send(A.driftToggle); cym.send(A.play, 0, [1])
+    case "cym-luna":
+      cym.dice(); cym.send(A.driftToggle); cym.send(A.play, 0, [1])
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(cym.driftSpec) }
+    case "cymatica": cym.dice()
     default: break
     }
   }

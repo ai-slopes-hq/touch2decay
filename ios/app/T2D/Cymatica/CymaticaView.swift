@@ -2,7 +2,7 @@ import UIKit
 import T2DCore
 
 // Cymatica (мир II) — связка ядра и Swift: единственный путь действий send, тик, чтение значений, легенда
-// (порт worlds/cymatica/view.js; модель и звук — в ядре, веер и плашка луны — CymSheets.swift; касания — CymTouch.swift, картинка — план (б))
+// (порт worlds/cymatica/view.js; модель и звук — в ядре, веер и плашка луны — CymSheets.swift; касания — CymTouch.swift, картинка — CymScene / CymDraw / CymAstro / CymFrame)
 final class CymaticaView: World {
   static let slotN = 2
 
@@ -153,6 +153,6 @@ final class CymaticaView: World {
 
   // касания (down / move / up / cancel) — CymTouch.swift
 
-  func draw(_ d: Draw, now: Double) {}                       // картинка — план (б)
-  func drawShot(_ d: Draw, now: Double) {}
+  func draw(_ d: Draw, now: Double) { drawFrame(d, now: now) }   // картинка — CymScene / CymDraw / CymAstro / CymFrame
+  func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now) }   // у веба нет mapShot: снимок карты — тот же кадр
 }

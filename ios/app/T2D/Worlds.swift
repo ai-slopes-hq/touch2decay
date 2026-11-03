@@ -18,7 +18,7 @@ enum Worlds {
   // темы — theme из worlds/<мир>/view.js (Natura — scene.js:5); у Tenebrae, Cymatica и Monochordum своей нет — база (host/draw.js:5)
   static let all: [WorldInfo] = [
     WorldInfo(slot: 1, title: "Tenebrae", roman: "I", theme: .base, col: 2, row: 1, view: false),
-    WorldInfo(slot: 2, title: "Cymatica", roman: "II", theme: .base, col: 1, row: 1, view: false),
+    WorldInfo(slot: 2, title: "Cymatica", roman: "II", theme: .base, col: 1, row: 1, view: true),
     WorldInfo(slot: 4, title: "Natura", roman: "IV", theme: th((38, 26, 16), (226, 211, 174), (226, 211, 174)), col: 2, row: 2, view: true),
     WorldInfo(slot: 5, title: "Inferno", roman: "V", theme: th((207, 196, 182), (5, 4, 3), (5, 4, 3)), col: 2, row: 0, view: true),
     WorldInfo(slot: 7, title: "Monochordum", roman: "VII", theme: .base, col: 1, row: 3, view: true),
