@@ -55,6 +55,7 @@ final class CymaticaView: World {
   var chanceEdit: (i: Int, until: Double)?
   var noteEdit: (i: Int, until: Double)?
   var markHot: (i: Int, at: Double)?
+  var lit = [Double](repeating: 0, count: 36)                // свет клеток: ring·12 + sector; пишет litCells из кадра (view.js:382)
 
   init(core: Core, readMirror: Reader? = nil, readHeard: Reader? = nil, seed: (() -> UInt32)? = nil) {
     self.core = core
