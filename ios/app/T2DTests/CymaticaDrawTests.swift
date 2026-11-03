@@ -119,4 +119,77 @@ final class CymaticaDrawTests: XCTestCase {
     let g = shot { p, d in view.flash(d, 100, 100, 1, now: 1.6) }
     XCTAssertEqual(litPixels(g, in: box(100, 100, 40, 40), bg: bg), 0)
   }
+
+  // ---------- астролябия (view.js:459-580) ----------
+  private func put(_ edit: (inout [Double]) -> Void) { edit(&mirrorBuf); view.tick(now: 1.0 + Double(tickN) * 0.1, dt: 0.1); tickN += 1 }
+  private var tickN = 1
+
+  func testLenHeldBrighter() {
+    put { $0[43] = 8 }
+    let G = view.geo, a = CymGeo.slotAng(0) + 7.5 * Double.pi * 2 / 16
+    let r = box(G.cx + cos(a) * G.R2, G.cy + sin(a) * G.R2, 12, 12)
+    let free = shot { p, d in view.drawAstro(p, d, now: 5) }
+    view.fingers[ObjectIdentifier(view)] = CymFinger(kind: .len, ring: 0)
+    let held = shot { p, d in view.drawAstro(p, d, now: 5) }
+    XCTAssertGreaterThan(litPixels(held, in: r, bg: bg), litPixels(free, in: r, bg: bg))
+  }
+
+  func testChanceSmaller() {
+    put { $0[45 + 12] = 1 }
+    let G = view.geo, q = G.slotXY(3, G.R2), r = box(q.x, q.y, 10, 10)
+    let full = shot { p, d in view.drawAstro(p, d, now: 5) }
+    put { $0[45 + 12 + 2] = 0.3 }
+    let part = shot { p, d in view.drawAstro(p, d, now: 5) }
+    let hi: RGB = (80, 80, 80)                               // заливка длины (альфа 0.09) светит всю коробку: считаем только яркое
+    XCTAssertLessThan(litPixels(part, in: r, bg: hi), litPixels(full, in: r, bg: hi))
+  }
+
+  func testHandsOnlyPlaying() {
+    let G = view.geo, q = G.slotXY(0, (G.rMax + G.R2) / 2), r = box(q.x, q.y, 6, 6)
+    view.state.lastStep = (0, 0, 5)
+    let still = shot { p, d in view.drawAstro(p, d, now: 5) }
+    put { $0[41] = 1 }
+    view.state.lastStep = (0, 0, 5)
+    let play = shot { p, d in view.drawAstro(p, d, now: 5) }
+    XCTAssertGreaterThan(litPixels(play, in: r, bg: bg), litPixels(still, in: r, bg: bg))
+  }
+
+  func testPlayGlyph() {
+    let G = view.geo
+    let tri = box(G.playX + 1.5, G.ty - 2.33, 2, 2), corner = box(G.playX + 5, G.ty - 5, 2.5, 2.5)
+    let still = shot { p, d in view.drawAstro(p, d, now: 5) }
+    XCTAssertGreaterThan(litPixels(still, in: tri, bg: bg), 0)
+    XCTAssertEqual(litPixels(still, in: corner, bg: bg), 0)
+    put { $0[41] = 1 }
+    let play = shot { p, d in view.drawAstro(p, d, now: 5) }
+    XCTAssertEqual(litPixels(play, in: tri, bg: bg), 0)
+    XCTAssertGreaterThan(litPixels(play, in: corner, bg: bg), 0)
+  }
+
+  func testStepRecCursors() {
+    let G = view.geo, pr = G.slotXY(2, G.R2 - 12), pm = G.slotXY(5, G.R1 + 15)
+    let off = shot { p, d in view.drawAstro(p, d, now: 5) }
+    put { $0[166] = 1; $0[167] = 2; $0[168] = 5 }
+    let on = shot { p, d in view.drawAstro(p, d, now: 5) }
+    for q in [pr, pm] { XCTAssertGreaterThan(litPixels(on, in: box(q.x, q.y, 5, 5), bg: bg), litPixels(off, in: box(q.x, q.y, 5, 5), bg: bg)) }
+  }
+
+  func testDrawExtremes() {
+    let moon: (inout [Double]) -> Void = { $0[157] = 1; $0[160] = 1; $0[161] = 7 }
+    for (rl, ml) in [(1, 1), (16, 16)] {
+      put { $0[43] = Double(rl); $0[44] = Double(ml); $0[162] = 4; $0[165] = 15; $0[166] = 1; $0[167] = 15; $0[168] = 15; moon(&$0) }
+      let img = shot { p, d in view.litCells(); view.drawStars(p, d, now: 5); view.drawCells(p, d, now: 5); view.drawAstro(p, d, now: 5) }
+      if ml == 16 {                                          // круг замкнут: свет на стыке у slotAng(−0.5)
+        let G = view.geo, a = CymGeo.slotAng(0) - Double.pi / 16
+        XCTAssertGreaterThan(litPixels(img, in: box(G.cx + cos(a) * G.R1, G.cy + sin(a) * G.R1, 6, 6), bg: bg), 0)
+      }
+    }
+    put { $0[43] = 16; $0[44] = 7; $0[165] = 15; $0[24] = 2000; $0[25] = 0; $0[26] = 110; $0[27] = 0
+      for i in 0..<16 { $0[45 + 4 * i] = 1; $0[45 + 4 * i + 2] = 0.05 }
+      for k in 33..<40 { $0[k] = 0 } }
+    _ = shot { p, d in view.litCells(); view.drawAstro(p, d, now: 5) }
+    put { for k in 33..<40 { $0[k] = 1 }; $0[44] = 1000; $0[43] = -3; $0[162] = 0; $0[167] = 99; $0[168] = -4 }
+    view.state.lastStep = (15, 15, 5)
+    _ = shot { p, d in view.litCells(); view.drawAstro(p, d, now: 5) }
+  }
 }
