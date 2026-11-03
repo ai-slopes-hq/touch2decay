@@ -93,6 +93,11 @@ final class Host {
         guard let self else { return }
         self.undo.commit(slot: slot, scl: self.scl)
       }
+      v.goMap = { [weak self] in self?.goMap() }
+      v.lfoBase = { [weak self] obj, code in    // свежий снимок ядра, не lfos плашки
+        guard let b = self?.core.lfoSnap().first(where: { $0.slot == slot && $0.obj == obj && $0.key == code })?.base, b.isFinite else { return nil }
+        return b
+      }
       v.rowLfoOff = { [weak self] code in
         guard let self else { return }
         self.core.lfoOff(slot: slot, obj: -1, key: code)

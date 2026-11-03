@@ -51,6 +51,8 @@ private final class HWorld: World {
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
   var rowLfoOff: ((Int) -> Void)?
+  var goMap: (() -> Void)?
+  var lfoBase: ((Int, Int) -> Double?)?
   var onClear: (() -> Void)?
   var sets: [(String, Double)] = []
   var downs = 0, moves = 0, ups = 0, cancels = 0, dices = 0, clears = 0, restoredN = 0
@@ -418,6 +420,23 @@ final class HostTests: XCTestCase {
     let g = finger(0, 350, 750); host.down(g)
     var m = g; m.x = 100; m.y = 300; host.move(m); host.up(m)
     XCTAssertEqual(host.nav.view, .world(10), "ушёл с угла — остаёмся")
+  }
+
+  func testWorldGoMap() {
+    XCTAssertEqual(host.nav.view, .world(10))
+    world.goMap?()
+    XCTAssertEqual(host.nav.view, .map)
+  }
+
+  func testWorldLfoBase() {
+    core.lfoSnaps = [LfoSnap(slot: 10, obj: -1, key: 5, base: 0.7, morph: 0, rate: 1, depth: 0.5, u: 0, shape: 0, seed: 0),
+                     LfoSnap(slot: 11, obj: -1, key: 5, base: 0.2, morph: 0, rate: 1, depth: 0.5, u: 0, shape: 0, seed: 0)]
+    XCTAssertNil(host.sheet, "плашка закрыта — снимок всё равно свежий")
+    XCTAssertEqual(world.lfoBase?(-1, 5), 0.7)
+    XCTAssertNil(world.lfoBase?(-1, 6))
+    XCTAssertNil(world.lfoBase?(0, 5))
+    core.lfoSnaps[0].base = .nan
+    XCTAssertNil(world.lfoBase?(-1, 5), "не конечная база — nil")
   }
 
   func testEdgeSwipe() {

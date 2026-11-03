@@ -29,6 +29,8 @@ protocol World: AnyObject {
   var openSheet: ((SheetSpec) -> Void)? { get set }      // ставит хост: мир просит открыть плашку
   var objGone: ((Int) -> Void)? { get set }              // ставит хост: объект мира пропал (его LFO гасит хост)
   var rowLfoOff: ((Int) -> Void)? { get set }            // ставит хост: снять LFO строки мира (obj −1) по коду, база вернётся
+  var goMap: (() -> Void)? { get set }                   // ставит хост: мир просит уйти на карту (предмет-угол, который сам ведёт касание)
+  var lfoBase: ((Int, Int) -> Double?)? { get set }      // ставит хост: (obj, код) → база LFO строки этого слота или nil
   func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat)
   func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool     // предмет, ведущий на карту
   func dice()
@@ -49,9 +51,25 @@ protocol World: AnyObject {
 
 extension World {
   var hasFx: Bool { fx != nil }
+  var goMap: (() -> Void)? { get { nil } set {} }        // прочим мирам не нужно
+  var lfoBase: ((Int, Int) -> Double?)? { get { nil } set {} }
   func drawShot(_ d: Draw, now: Double) { draw(d, now: now) }
   var objs: Int { 0 }
   func enter() {}
   func scale(pcs: [Int]?, root: Int) {}
   func idle() {}                                         // карта: мир не тикает — слить то, что копится в ядре (кольцо heard)
+}
+
+// ближайшая нота лада (host/scale.js): строгое <, при равенстве — нижняя
+func scaleSnap(_ s: Double, pcs: [Int]) -> Double {
+  var best = s, bd = 99.0
+  var n = Int(s.rounded(.down)) - 7
+  let hi = Int(s.rounded(.up)) + 7
+  while n <= hi {
+    defer { n += 1 }
+    if n < 0 || !pcs.contains(((n % 12) + 12) % 12) { continue }
+    let d = abs(Double(n) - s)
+    if d < bd { bd = d; best = Double(n) }
+  }
+  return best
 }

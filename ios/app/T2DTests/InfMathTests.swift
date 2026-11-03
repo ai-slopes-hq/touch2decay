@@ -41,8 +41,8 @@ final class InfMathTests: XCTestCase {
     XCTAssertEqual(infSemi(0, 0.5, pcs: nil), 56.6667, accuracy: 1e-3)
     XCTAssertEqual(infNote(0), "A1"); XCTAssertEqual(infNote(56.6667), "F#6"); XCTAssertEqual(infNote(3), "C2")
     let pcs = [0, 2, 3, 5, 7, 8, 10]
-    XCTAssertEqual(infSnap(1, pcs: pcs), 0)
-    XCTAssertEqual(infSnap(6, pcs: pcs), 5)
+    XCTAssertEqual(scaleSnap(1, pcs: pcs), 0)
+    XCTAssertEqual(scaleSnap(6, pcs: pcs), 5)
     XCTAssertEqual(infSemi(8, 0.15, pcs: pcs), 0)
   }
 

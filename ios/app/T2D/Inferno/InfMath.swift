@@ -67,24 +67,10 @@ struct InfGeo {
   }
 }
 
-// ближайшая нота лада (host/scale.js): строгое <, при равенстве — нижняя
-func infSnap(_ s: Double, pcs: [Int]) -> Double {
-  var best = s, bd = 99.0
-  var n = Int(s.rounded(.down)) - 7
-  let hi = Int(s.rounded(.up)) + 7
-  while n <= hi {
-    defer { n += 1 }
-    if n < 0 || !pcs.contains(((n % 12) + 12) % 12) { continue }
-    let d = abs(Double(n) - s)
-    if d < bd { bd = d; best = Double(n) }
-  }
-  return best
-}
-
 // высота круга в полутонах от 55 Гц (model.js semiOf)
 func infSemi(_ k: Int, _ pos: Double, pcs: [Int]?) -> Double {
   var s = Double(8 - k) * Inf.span + pos * Inf.span
-  if let p = pcs { s = infSnap(Horo.jsRound(s), pcs: p) }
+  if let p = pcs { s = scaleSnap(Horo.jsRound(s), pcs: p) }
   return s
 }
 
