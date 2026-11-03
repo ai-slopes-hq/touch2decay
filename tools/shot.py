@@ -8,7 +8,7 @@
 Внимание: headless рисует программно (без видеокарты) — частота кадров здесь не равна iPhone.
 Сам проверяй картинку глазами: открой .shots/*.png.
 """
-import asyncio, math, os, sys
+import asyncio, json, math, os, sys
 from playwright.async_api import async_playwright
 
 URL = os.environ.get('T2D_URL', 'http://localhost:8765/index.html')
@@ -1912,6 +1912,14 @@ async def sc_nav(p):                               # стрелка у назв�
 SCENARIOS = {'firmsheet': sc_firmsheet, 'firmtop': sc_firmtop, 'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'arcadia-fixed': sc_arcadia_fixed, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'tenscale': sc_tenscale, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
 
 
+TRACE = os.environ.get('T2D_TRACE')              # папка: трасса действий клея слота 1 -> <папка>/<сценарий>.json (tools/trace-diff.py)
+TRACE_JS = """(() => { window.__trace = []; let f = 0; const tick = () => { f++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
+  const o = MessagePort.prototype.postMessage;
+  MessagePort.prototype.postMessage = function (m, ...r) {
+    if (m && m.t === 'action' && m.slot === 1) window.__trace.push([f, m.kind, m.i, m.a]);
+    return o.call(this, m, ...r); }; })();"""
+
+
 async def main(names):
     failed = False
     async with async_playwright() as pw:
@@ -1921,12 +1929,16 @@ async def main(names):
             pg = await c.new_page()
             errs = []
             pg.on('pageerror', lambda e: errs.append(str(e)))
+            if TRACE: await pg.add_init_script(TRACE_JS)
             await pg.goto(URL); await pg.wait_for_timeout(600)
             if n != 'startmap': await pg.evaluate('()=>t2d.go(1)')   # приложение открывается на карте; сценарии начинают в Tenebrae
             try:
                 await SCENARIOS[n](Phone(pg, await c.new_cdp_session(pg)))
             except Exception as e:                  # проверка не прошла или сценарий упал
                 print(n, 'FAILED:', type(e).__name__, e); failed = True
+            if TRACE:
+                os.makedirs(TRACE, exist_ok=True)
+                with open(os.path.join(TRACE, n + '.json'), 'w') as f: json.dump(await pg.evaluate('()=>window.__trace||[]'), f)
             print(n, 'errors:', errs)
             if errs: failed = True
             await b.close()
