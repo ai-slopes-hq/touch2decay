@@ -32,7 +32,7 @@ test('spawn temps limit and eviction', () => {
 });
 
 test('spawn never evicts pinned, held or kept', () => {
-  const { m, V } = rig();
+  const { m } = rig();
   const a = m.spawn(0.1, 0.5, 0), b = m.spawn(0.2, 0.5, 0), c = m.spawn(0.3, 0.5, 0);
   for (const i of [a, b, c]) m.release(i, TAIL);
   m.grab(a); m.keep([b]);
@@ -44,7 +44,6 @@ test('spawn never evicts pinned, held or kept', () => {
   pinned(r.m, 3);
   for (let k = 0; k < 3; k++) assert.ok(r.m.spawn(0.5, 0.5, 0) >= 0);
   assert.equal(r.m.spawn(0.5, 0.5, 0), -1);
-  void V;
 });
 
 test('pin cycle', () => {
@@ -84,7 +83,6 @@ test('letGo fades free voice only', () => {
 test('letGo at zero', () => {
   const { m, V, calls } = rig();
   const i = m.spawn(0.1, 0.5, 0);
-  m.pin(i);
   const n = calls.length;
   m.letGo(i);
   assert.equal(V[i].held, 0);

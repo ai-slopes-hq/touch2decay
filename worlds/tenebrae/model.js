@@ -97,7 +97,8 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
 
   function letGo(i, fade = true) {
     const v = V[i];
-    v.held = Math.max(0, v.held - 1);
+    if (!v.held) return;
+    v.held--;
     if (fade && !v.held && !v.pinned && !kept(v)) release(i, TAIL);
   }
 
@@ -163,5 +164,5 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
     return out;
   }
 
-  return { state, attack, release, spawn, grab, letGo, keep, unkeep, move, set, pin, remove, retune, load, sounding, events, unlinkAll, clearLfos, removeLfo };
+  return { state, attack, release, spawn, grab, letGo, keep, unkeep, move, set, pin, remove, retune, load, sounding, events };
 }
