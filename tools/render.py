@@ -2,7 +2,7 @@
 выполняет JS (например, меняет тембр) и пишет WAV + печатает RMS и время расчёта.
 
     python3 tools/render.py                                   # одна планета, 4 с
-    python3 tools/render.py "()=>{const v=t2d.voices.find(v=>v.active); v.wave=0.75; v.dirty=true}"
+    python3 tools/render.py "()=>{const v=t2d.voices.find(v=>v.active); t2d.model.set(v.i,'wave',0.75)}"
     python3 tools/render.py --world 2                         # Cymatica: удар по пластине
 
 Время расчёта — грубая мера нагрузки звукового графа (сравнивай версии между собой).

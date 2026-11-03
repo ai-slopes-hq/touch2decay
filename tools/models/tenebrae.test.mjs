@@ -462,3 +462,13 @@ test('build order', () => {
   assert.equal(r.V[a].dirty, false);
   assert.equal(r.V[a].snap, false);
 });
+
+test('events: an empty drain allocates nothing and stays empty', () => {
+  const { m } = rig();
+  const a = m.events(), b = m.events();
+  assert.equal(a, b);
+  assert.deepEqual(a, []);
+  const i = m.spawn(0.4, 0.3, 0); m.pin(i);
+  assert.deepEqual(m.events(), [{ t: 'burst', i }]);
+  assert.deepEqual(m.events(), []);
+});

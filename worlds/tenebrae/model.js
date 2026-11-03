@@ -284,7 +284,9 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
 
   const sounding = () => V.some((v) => v.active);
 
+  const NO_EVENTS = Object.freeze([]);
   function events() {
+    if (!queue.length) return NO_EVENTS;   // кадр без событий — без новой пустой очереди
     const out = queue;
     queue = [];
     return out;

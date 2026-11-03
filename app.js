@@ -22,7 +22,8 @@ import { backPos, btnHit, btnPos, drawBuild, drawUI, headHit, ITEM_H, markDice, 
 import { commit, hists, undo } from './host/undo.js';
 import { clamp, inBox, invLog, lerpLog } from './host/util.js';
 import { cutoffOf, freqOf, quantX, shiftHz } from './worlds/tenebrae/tone.js';
-import { createEngine, DLY_REPEATS, LFO_KEYS, LINK_TYPES, RES_MAX } from './worlds/tenebrae/engine.js';
+import { createEngine, DLY_REPEATS, RES_MAX } from './worlds/tenebrae/engine.js';
+import { BEAT_DEF, BEAT_MAX, BEAT_MIN, createModel, CUT_DEF, LFO_DEF, PIN_MAX, RES_DEF, SHIFT_DEF, WAVE_DEF } from './worlds/tenebrae/model.js';
 import { morphFn, morphName, NW, WAVES } from './host/waves.js';
 setClockVer(new URL(import.meta.url).searchParams.get('v') || '0');   // версия для addModule метронома (у host/ её нет)
 setCoreVer(new URL(import.meta.url).searchParams.get('v') || '0');    // и для ядра SDK (t2d-worklet.js, t2d.wasm)
@@ -32,22 +33,12 @@ const F_LO = 55;          // нижняя нота поля (A1)
 const OCT = 5;            // весь диапазон: A1–A6, 55–1760 Гц; на экране — сколько позволяет зум
 const SEMIS = OCT * 12;
 const WARP = 1.45;        // как у эквалайзеров: нижним октавам больше места, верхним меньше
-const BEAT_MIN = 0.05, BEAT_MAX = 24;      // detune: от фазирования до треска
-const BEAT_DEF = 0.35;    // по умолчанию пара медленно «дышит»
-const CUT_LO = 40, CUT_HI = 18000, CUT_DEF = 0.68;   // cutoff — на весь слышимый диапазон
-const RES_DEF = 0.21;                      // res по умолчанию (Q в дБ — RES_MAX движка)
-const TAIL = 1.6;         // хвост после отпускания (τ, с)
-const UNPIN_TAIL = 0.8;   // хвост после снятия с закрепления
-const LINK_NEW = 0.5;     // глубина нового моста
-
-const WAVE_DEF = 0.125;   // позиция морфинга: 0 — triangle … 1 — grain; 0.125 — sharp
+const CUT_LO = 40, CUT_HI = 18000;   // cutoff — на весь слышимый диапазон (числа по умолчанию, хвосты и лимиты голосов — worlds/tenebrae/model.js)
 
 // ---------- LFO: панель внизу, пока открыто кольцо; пад — скорость и глубина одним жестом ----------
 const LFO_TARGET_LABEL = { pitch: 'pitch', wave: 'wave', cut: 'cutoff', res: 'res', beat: 'detune', fm: 'fm', shift: 'shift', amp: 'amp' };
 
 // ---------- жесты ----------
-const VOICES = 6;         // сколько кружков может звучать одновременно: 3 закреплённых + 3 временных
-const PIN_MAX = 3, TEMP_MAX = 3;
 const GRAB_R = 52;        // радиус, в котором палец «ловит» кружок, px
 const MENU_DEAD = 40;
 let MENU_SPAN = 150;       // на узком экране кольцо меньше, чтобы лучи с подписями помещались
@@ -63,7 +54,7 @@ const SECTORS = [                          // кольцо свойств кру
   { key: 'shift', label: 'shift', ang: deg(210) },
 ];
 // сдвиг частоты: середина луча — ноль, дальше вверх, ближе к центру — вниз; до ±1.5 кГц, у нуля — медленно
-const SHIFT_DEF = 0.5, SHIFT_MAX = 1500;
+const SHIFT_MAX = 1500;
 const LINK_SECTORS = [                     // кольцо связи: характер и глубина; cut — удалить
   { key: 'fm', label: 'fm', ang: deg(-90) },
   { key: 'tzfm', label: 'tzfm', ang: deg(-18) },
@@ -74,19 +65,15 @@ const LINK_SECTORS = [                     // кольцо связи: хара�
 
 let scan = null;
 
-// ---------- голоса (кружки) ----------
-const V = Array.from({ length: VOICES }, (_, i) => ({
-  i, x: 0.35, y: 0.22,
-  beat: BEAT_DEF, wave: WAVE_DEF, fm: 0, cut: CUT_DEF, res: RES_DEF, shift: SHIFT_DEF, amp: 1, holeT: 0,
-  mods: [], lfo: {},
-  fingers: [], pinned: false, active: false,
-  env: 0, envT: 0, envTau: 0.05,
-  dirty: true, snap: true, live: false,   // live — голос подключён к графу движка (молчащий отцеплен и не тратит процессор)
-}));
+// ---------- голоса (кружки): модель — worlds/tenebrae/model.js; вид только читает поля голосов, пишет методами модели ----------
+let engine = null;        // звук — ядро SDK, слот 1 (клей worlds/tenebrae/engine.js); модель берёт его через engine()
+const model = createModel({ engine: () => engine, wake });
+const V = model.state.voices;
 // картинные поля голоса (только рисование): dx — где кружок виден, wob/wv — сдвиги от LFO, ox/oy — смещение пальца,
-// hole — глубина дыры (сглаженная), strike — удар по солнцу, emit — таймер импульса, ph/vph — фазы LFO по ключам.
+// hole — глубина дыры (сглаженная), strike — удар по солнцу, emit — таймер импульса, ph/vph — фазы LFO по ключам,
+// fingers — id пальцев на кружке (их число — v.held модели).
 // Назвать W нельзя: так зовётся ширина холста из host/draw.js
-const VW = V.map(() => ({ dx: 0.35, wob: 0, wv: 0, ox: 0, oy: 0, hole: 0, strike: null, emit: 0, ph: {}, vph: {} }));
+const VW = V.map(() => ({ dx: 0.35, wob: 0, wv: 0, ox: 0, oy: 0, hole: 0, strike: null, emit: 0, ph: {}, vph: {}, fingers: [] }));
 let focus = V[0];
 let touchedOnce = false;
 let lastTap = null;       // { v, t } — для двойного тапа
@@ -94,7 +81,7 @@ const full = [];          // касания, которым не хватило 
 const rings = [];
 
 // ---------- общие эффекты (кнопка FX): посылы и характер; сухой звук не трогают ----------
-const fx = { rev: 0.3, decay: 3.5, dly: 0.3, chaos: 0, dirt: 0.2 };
+const fx = model.state.fx;      // только чтение; правит model.fx({...})
 const DECAY_MIN = 0.6, DECAY_MAX = 14;
 const FX_SECTORS = [                        // веер от кнопки вверху: влево → вниз
   { key: 'rev', label: 'hall', ang: deg(180) },
@@ -209,13 +196,10 @@ function norm(v, key) {
 }
 
 function setNorm(v, key, t) {
-  if (key === 'wave') v.wave = t;
-  else if (key === 'cut') v.cut = t;
-  else if (key === 'res') v.res = t;
-  else if (key === 'beat') v.beat = lerpLog(BEAT_MIN, BEAT_MAX, t);
-  else if (key === 'shift') v.shift = Math.abs(t - 0.5) < 0.02 ? 0.5 : t;   // у середины — защёлка на ноль
-  else v.fm = t;
-  v.dirty = true;
+  if (key === 'wave' || key === 'cut' || key === 'res') model.set(v.i, key, t);
+  else if (key === 'beat') model.set(v.i, 'beat', lerpLog(BEAT_MIN, BEAT_MAX, t));
+  else if (key === 'shift') model.set(v.i, 'shift', Math.abs(t - 0.5) < 0.02 ? 0.5 : t);   // у середины — защёлка на ноль
+  else model.set(v.i, 'fm', t);
 }
 
 // где параметр с учётом LFO, в долях луча: lfo — текущий выход LFO (−depth…+depth);
@@ -248,7 +232,7 @@ const groupOf = (v) => [v];
 function hit(x, y) {
   let v = null, best = GRAB_R;
   for (const u of V) {
-    if (!u.active || u.fingers.length) continue;
+    if (!u.active || u.held) continue;
     const d = Math.hypot(vx(u) - x, vy(u) - y);
     if (d < best) { best = d; v = u; }
   }
@@ -257,129 +241,74 @@ function hit(x, y) {
 
 // палец лёг на кружок не в центр — запомнить смещение, чтобы кружок не прыгал
 function rebase(v) {
-  if (v.fingers.length !== 1) return;
-  const f = F.get(v.fingers[0]);
+  const fs = VW[v.i].fingers;
+  if (fs.length !== 1) return;
+  const f = F.get(fs[0]);
   VW[v.i].ox = vx(v) - f.x;
   VW[v.i].oy = vy(v) - f.y;
 }
 
 function follow(v) {
-  if (v.fingers.length !== 1) return;
-  const f = F.get(v.fingers[0]);
-  if (!f || f.menu || f.parked || f.bridge) return;
   const w = VW[v.i];
+  if (w.fingers.length !== 1) return;
+  const f = F.get(w.fingers[0]);
+  if (!f || f.menu || f.parked || f.bridge) return;
   const q = unplace(f.x + w.ox, f.y + w.oy);
-  v.x = q.p; v.y = q.c; v.holeT = holeDepth(f.x + w.ox, f.y + w.oy);
-  v.dirty = true;
+  model.move(v.i, q.p, q.c, holeDepth(f.x + w.ox, f.y + w.oy));
   focus = v;
 }
 
-// временных — не больше трёх. Мест нет — уступает только затухающий временный (самый тихий).
-// Закреплённые, удерживаемые и открытые в кольце не трогаются никогда; если заняты все — касание
-// не звучит, видно отказ
+const kept = (v) => model.state.kept.includes(v.i);
+const addFinger = (v, id) => { VW[v.i].fingers.push(id); model.grab(v.i); };
+// палец ушёл с кружка (не отпущен, а забыт): id из списка вида, счётчик модели вниз
+const dropFinger = (v, id, fade) => {
+  const fs = VW[v.i].fingers, k = fs.indexOf(id);
+  if (k >= 0) fs.splice(k, 1);
+  model.letGo(v.i, fade);
+};
+// модель обнулила held (remove / restore / clear): пальцы на таких кружках забыть
+function forgetFingers() {
+  for (const v of V) if (!v.held) VW[v.i].fingers.length = 0;
+  for (const f of F.values()) if (f.voice && !f.voice.held) { f.voice = null; f.menu = null; }
+}
+
+// новый кружок на пустом месте (палец или кубик): точку выталкивает из дыры вид, остальное — model.spawn.
+// Мест нет — -1. Временных не больше трёх; уступает только затухающий временный (самый тихий), закреплённые,
+// удерживаемые и открытые в кольце не трогаются никогда
+function spawnAt(x, y) {
+  const sp = outOfHole(x, y), q = unplace(sp.x, sp.y), h = holeDepth(sp.x, sp.y);
+  const i = model.spawn(q.p, q.c, h);
+  if (i < 0) return -1;
+  const v = V[i], w = VW[i];
+  if (lastTap && lastTap.v === v) lastTap = null;
+  w.dx = v.x; w.hole = h; w.emit = 1e9;
+  w.ox = sp.x - x; w.oy = sp.y - y;     // вытолкнули из дыры — палец ведёт планету с этим сдвигом
+  w.fingers.length = 0;
+  return i;
+}
+
 function spawn(f) {
-  const temps = V.filter((u) => u.active && !u.pinned).length;
-  let v = temps < TEMP_MAX ? V.find((u) => !u.active) : null;
-  if (!v) {
-    for (const u of V) {
-      if (!u.active || u.pinned || u.fingers.length || kept(u) || u.envT !== 0) continue;
-      if (!v || u.env < v.env) v = u;
-    }
-    if (v && lastTap && lastTap.v === v) lastTap = null;
-  }
-  if (!v) { full.push({ x: f.x, y: f.y, t: performance.now() }); return null; }
-  unlinkAll(v);
-  clearLfos(v);
-  const sp = outOfHole(f.x, f.y), q = unplace(sp.x, sp.y);
-  const w = VW[v.i];
-  v.x = q.p; w.dx = v.x; v.y = q.c; w.hole = v.holeT = holeDepth(sp.x, sp.y);
-  w.ox = sp.x - f.x; w.oy = sp.y - f.y;     // вытолкнули из дыры — палец ведёт планету с этим сдвигом
-  v.beat = BEAT_DEF; v.wave = WAVE_DEF; v.fm = 0; v.cut = CUT_DEF; v.res = RES_DEF; v.shift = SHIFT_DEF; v.amp = 1;
-  v.pinned = false; v.fingers = [];
-  v.snap = v.env < 0.02; v.dirty = true; w.emit = 1e9;
-  attack(v);
-  return v;
-}
-
-function attack(v) {
-  v.active = true; v.envT = 1; v.envTau = 0.12;
-  if (engine) {
-    if (!v.live) { v.live = true; engine.live(v.i, true); }   // молчащий кружок отключён от графа и не тратит процессор
-    engine.on(v.i);
-  }
-  wake();
-}
-
-function release(v, tau) {
-  v.envT = 0; v.envTau = tau;
-  if (engine) engine.off(v.i, tau);
+  const i = spawnAt(f.x, f.y);
+  if (i < 0) { full.push({ x: f.x, y: f.y, t: performance.now() }); return null; }
+  return V[i];
 }
 
 function burst(v) {
   rings.push({ x: vx(v), y: vy(v), r: 36, a: 1.6, sp: 420 });
 }
 
-// ---------- связи: другой кружок модулирует этот; характер — fm, tzfm, am или rm ----------
-// узлы связей — в движке: приёмник, у которого изменились mods, помечен dirty и шлёт их целиком (sync)
-function addLink(dst, src, depth, type = 'tzfm') {
-  const m = { src, type, depth };
-  dst.mods.push(m);
-  dst.dirty = true;
-  return m;
-}
-
-function dropLink(dst, m) {
-  const i = dst.mods.indexOf(m);
-  if (i < 0) return;
-  dst.mods.splice(i, 1);
-  dst.dirty = true;
-}
-
-function unlinkAll(v) {
-  v.mods = [];
-  v.dirty = true;
-  for (const u of V) {
-    const keep = [];
-    for (const m of u.mods) { if (m.src === v) u.dirty = true; else keep.push(m); }
-    u.mods = keep;
-  }
-}
-
-// хаос: слабые случайные связи между звучащими кружками, которые сами меняются
-function chaosTick(now) {
-  const act = V.filter((v) => v.active);
-  for (const v of V) {
-    const auto = v.mods.find((m) => m.auto);
-    if (!v.active || fx.chaos < 0.02 || act.length < 2) { if (auto) dropLink(v, auto); continue; }
-    if (auto && now < auto.until && auto.src.active) { auto.depth = fx.chaos * auto.k; v.dirty = true; continue; }
-    if (auto) dropLink(v, auto);
-    if (Math.random() > 0.35) continue;      // не все сразу
-    const cands = act.filter((u) => u !== v && !v.mods.some((m) => m.src === u));
-    if (!cands.length) continue;
-    const m = addLink(v, cands[Math.floor(Math.random() * cands.length)], 0, LINK_TYPES[Math.floor(Math.random() * 4)]);
-    m.auto = true;
-    m.k = 0.15 + Math.random() * 0.4;
-    m.depth = fx.chaos * m.k;
-    m.until = now + 3000 + Math.random() * 7000;
-  }
-}
-
-// ---------- LFO на параметрах кружка (генераторы — в движке) ----------
-function setLfo(v, key, spec) {
-  if (!v.lfo[key]) { VW[v.i].ph[key] = 0; VW[v.i].vph[key] = 0; }   // фаза для рисования: генератор тоже стартует с нуля
-  v.lfo[key] = spec;
-  if (engine) engine.lfo(v.i, key, spec);
-  v.dirty = true;
+// ---------- LFO на параметрах кружка (генераторы — в движке, спека — в модели) ----------
+// фаза для рисования: генератор тоже стартует с нуля
+function addLfo(v, key, spec) {
+  if (!v.lfo[key]) { VW[v.i].ph[key] = 0; VW[v.i].vph[key] = 0; }
+  model.lfo(v.i, key, spec);
 }
 
 function removeLfo(v, key) {
   if (!v.lfo[key]) return;
-  delete v.lfo[key];
   delete VW[v.i].ph[key]; delete VW[v.i].vph[key];
-  if (engine) engine.lfo(v.i, key, null);
+  model.lfo(v.i, key, null);
 }
-
-function clearLfos(v) { for (const key of Object.keys(v.lfo)) removeLfo(v, key); }
 
 // во что смотрит панель LFO: луч кольца (на весу или закреплённого); центр кольца — высота
 function modTarget(except) {
@@ -397,11 +326,10 @@ const fdist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
 
 function startBridge(fa, fb, B) {
   const A = fa.voice;
-  if (!B.pinned) attack(B);
-  B.fingers.push(fb.id);
+  if (!B.pinned) model.attack(B.i);
+  addFinger(B, fb.id);
   fb.voice = B;
-  const m = A.mods.find((k) => k.src === B) || addLink(A, B, LINK_NEW);
-  m.auto = false;
+  const m = model.link(A.i, B.i);
   const br = { A, B, fa, fb, m, d0: Math.max(30, fdist(fa, fb)), depth0: m.depth };
   fa.bridge = br; fb.bridge = br;
   fa.wasBridge = true; fb.wasBridge = true;
@@ -409,13 +337,12 @@ function startBridge(fa, fb, B) {
 }
 
 function bridgeMove(br) {
-  br.m.depth = clamp(br.depth0 + (fdist(br.fa, br.fb) / br.d0 - 1));
-  br.A.dirty = true;
+  model.linkDepth(br.A.i, br.B.i, clamp(br.depth0 + (fdist(br.fa, br.fb) / br.d0 - 1)));
 }
 
 function endBridge(br) {
   br.fa.bridge = null; br.fb.bridge = null;
-  if (br.m.depth < 0.06) dropLink(br.A, br.m);
+  if (br.m.depth < 0.06) model.unlink(br.A.i, br.B.i);
   for (const f of [br.fa, br.fb]) if (f.voice) { f.moved = true; rebase(f.voice); }
 }
 
@@ -424,29 +351,21 @@ function endBridge(br) {
 // кольцо на весу. Булавка на кольце (вторым пальцем) оставляет его открытым: крути что хочешь,
 // тап мимо — закрыть
 let editor = null;          // закреплённое кольцо кружка или связи
+// editor меняют только через setEditor: kept модели пуст ⇔ плашки кружка нет (ни вытеснить, ни погасить удержанное плашкой)
+function setEditor(e) {
+  editor = e;
+  model.keep(e && e.kind === 'voice' ? e.group.map((u) => u.i) : []);
+}
 const PIN_R = 17;
 const pinPos = (cx, cy) => ({ x: cx, y: cy });   // булавка — в центре кольца, под пальцем
-const kept = (v) => !!editor && editor.kind === 'voice' && editor.group.includes(v);
 // отпустил палец — кольцо ещё гаснет полторы секунды, и булавку можно тапнуть
 const GHOST_MS = 1600;
 let ghost = null;           // { menu, until }
 
-function deleteVoice(v) {
-  if (editor && (editor.v === v || editor.dst === v || (editor.m && editor.m.src === v))) editor = null;
-  for (const f of F.values()) if (f.voice === v) { f.voice = null; f.menu = null; }
-  v.pinned = false; v.fingers = [];
-  unlinkAll(v);
-  release(v, 0.25);
-  burst(v);
-  if (lastTap && lastTap.v === v) lastTap = null;
-  ghost = null;
-}
-
 // закрыть закреплённое кольцо; кружки, которые держало только оно, гаснут
 function closeEditor() {
-  const e = editor;
-  editor = null;
-  if (e && e.kind === 'voice') for (const u of e.group) if (u.active && !u.pinned && !u.fingers.length) release(u, TAIL);
+  model.unkeep();
+  setEditor(null);
 }
 
 function down(e) {
@@ -478,13 +397,13 @@ function solDown(f, e) {
   if (v) {
     // другой палец уже держит кружок — это мост
     for (const o of F.values()) {
-      if (o !== f && o.voice && o.voice !== v && !o.menu && !o.parked && !o.bridge && o.voice.fingers.length === 1) {
+      if (o !== f && o.voice && o.voice !== v && !o.menu && !o.parked && !o.bridge && o.voice.held === 1) {
         startBridge(o, f, v);
         return;
       }
     }
     f.caught = true;
-    if (!v.pinned) attack(v);
+    if (!v.pinned) model.attack(v.i);
   } else {
     v = spawn(f);                           // пустое место — новый кружок
     f.spawned = true;
@@ -497,7 +416,7 @@ function solDown(f, e) {
     }
     if (!v) return;
   }
-  v.fingers.push(f.id);
+  addFinger(v, f.id);
   f.voice = v;
   rebase(v);
   follow(v);
@@ -540,8 +459,8 @@ function startZoom(z) {
   for (const q of [z.a, z.b]) {
     const v = q.voice;
     if (v) {
-      v.fingers = v.fingers.filter((id) => id !== q.id);
-      if (!v.pinned && !v.fingers.length && !kept(v)) release(v, 0.03);
+      dropFinger(v, q.id, false);
+      if (!v.pinned && !v.held && !kept(v)) model.release(v.i, 0.03);
     }
     q.voice = null; q.zoom = z;
   }
@@ -562,25 +481,22 @@ function solUp(f) {
   f.menu = null;
   const v = f.voice;
   if (!v) return;
-  v.fingers = v.fingers.filter((id) => id !== f.id);
+  const fs = VW[v.i].fingers, k = fs.indexOf(f.id);
+  if (k >= 0) fs.splice(k, 1);
 
   const now = performance.now();
   const tap = !f.wasBridge && !f.menuWas && now - f.t0 < TAP_MS && Math.hypot(f.x - f.x0, f.y - f.y0) < TAP_MOVE;
-  if (tap && !v.fingers.length) {
+  if (tap && v.held === 1) {
     if (lastTap && lastTap.v === v && now - lastTap.t < DTAP_MS) {
       lastTap = null;
-      burst(v);
-      if (v.pinned) { v.pinned = false; if (!kept(v)) release(v, UNPIN_TAIL); }
-      else if (V.filter((u) => u.active && u.pinned).length >= PIN_MAX) {   // закреплённых уже три — отказ
-        full.push({ x: vx(v), y: vy(v), t: now });
-        if (!v.fingers.length && !kept(v)) release(v, TAIL);
-      } else v.pinned = true;
+      model.letGo(v.i, false);                // хвост отпускания не нужен: закрепить / открепить — решает pin
+      if (model.pin(v.i) === 'full') full.push({ x: vx(v), y: vy(v), t: now });   // закреплённых уже три — отказ
       return;
     }
     lastTap = { v, t: now };
   }
-  if (v.fingers.length) rebase(v);
-  else if (!v.pinned && !kept(v)) release(v, TAIL);
+  model.letGo(v.i);
+  if (v.held) rebase(v);
 }
 
 // панель LFO внизу, под большой палец: полоса формы и пад — вправо скорость, вверх глубина
@@ -593,32 +509,13 @@ const lfoPanel = () => {
 // заодно связи и LFO; высота и место не трогаются. Планет нет — кубик сам ставит закреплённый тон
 // в случайном месте видимой части карты, с ладом — сразу на ноту лада
 function rollDice() {
-  const R = Math.random;
-  const live = (v) => v.active && v.envT > 0;   // гаснущие не в счёт
-  let vs = V.filter(live);
-  if (!vs.length) {
+  if (!model.dice()) {                          // живых планет нет (гаснущие не в счёт)
+    const R = Math.random;
     const pt = place(zoom * (0.08 + 0.75 * R()), 0.1 + 0.6 * R());
-    const v = spawn({ x: pt.x, y: pt.y });
-    if (!v) return;
-    v.pinned = true;
-    vs = [v];
-  }
-  for (const v of vs) {
-    v.wave = R();
-    v.cut = 0.3 + 0.62 * R();
-    v.res = 0.75 * R() ** 1.5;
-    v.beat = lerpLog(BEAT_MIN, BEAT_MAX, 0.85 * R());
-    v.fm = R() < 0.45 ? 0 : 0.7 * R();
-    v.shift = R() < 0.5 ? SHIFT_DEF : R();
-    for (const m of v.mods) {
-      if (m.auto) continue;
-      const t = LINK_TYPES[Math.floor(R() * 4)];
-      m.type = t;
-      m.depth = 0.15 + 0.75 * R();
-    }
-    for (const spec of Object.values(v.lfo)) { spec.morph = R(); spec.rate = lerpLog(LFO_RATE_MIN, LFO_RATE_MAX, 0.15 + 0.7 * R()); }
-    v.dirty = true;
-    burst(v);
+    const i = spawnAt(pt.x, pt.y);
+    if (i < 0) return;
+    model.pin(i);
+    model.dice();
   }
   markDice();
 }
@@ -651,12 +548,11 @@ function sheetGeo() {
   return { x, w, top, bottom, wave, rows, lfoTop: bottom - lfoH, tx0: x + 70, tx1: x + w - 112, lfoX: x + w - 18, close: { x: x + w - 64, y: top + 12, w: 64, h: 30 }, pitch: { x: x + w - 140, y: top + 12, w: 66, h: 30 } };
 }
 const ampRowT = (v) => (v.amp > 0 ? ampT(v.amp) : 0);
-function setAmpT(u, t) { const amp = lerpLog(AMP_MIN, AMP_MAX, clamp(t)); u.amp = t <= 0.005 ? 0 : Math.abs(20 * Math.log10(amp)) < 0.6 ? 1 : amp; u.dirty = true; }
+function setAmpT(u, t) { const amp = lerpLog(AMP_MIN, AMP_MAX, clamp(t)); model.set(u.i, 'amp', t <= 0.005 ? 0 : Math.abs(20 * Math.log10(amp)) < 0.6 ? 1 : amp); }
 const ROW_DEF = { cut: CUT_DEF, res: RES_DEF, beat: null, fm: 0, shift: SHIFT_DEF, amp: null };
 function rowDefault(u, k) {                     // двойной тап по строке — значение по умолчанию
-  if (k === 'amp') u.amp = 1; else if (k === 'beat') u.beat = BEAT_DEF; else if (k === 'cut') u.cut = CUT_DEF; else if (k === 'res') u.res = RES_DEF;
-  else if (k === 'shift') u.shift = SHIFT_DEF; else if (k === 'fm') u.fm = 0; else if (k === 'wave') u.wave = WAVE_DEF;
-  u.dirty = true;
+  if (k === 'amp') model.set(u.i, 'amp', 1); else if (k === 'beat') model.set(u.i, 'beat', BEAT_DEF); else if (k === 'cut') model.set(u.i, 'cut', CUT_DEF); else if (k === 'res') model.set(u.i, 'res', RES_DEF);
+  else if (k === 'shift') model.set(u.i, 'shift', SHIFT_DEF); else if (k === 'fm') model.set(u.i, 'fm', 0); else if (k === 'wave') model.set(u.i, 'wave', WAVE_DEF);
 }
 // полоса громкости над панелью LFO — в опциях планеты, без лишнего луча
 const ampStrip = () => { const p = lfoPanel(); return { x: p.x, w: p.w, y: p.top - 52, h: 34 }; };
@@ -740,55 +636,31 @@ function uiHit(f) {
   return null;
 }
 
-function allDirty() { for (const v of V) v.dirty = true; }
+const allDirty = model.retune;
 setRetune(allDirty);
-setGraphLoad(() => { const act = V.filter((v) => v.active); return (act.length + 0.15 * act.reduce((n, v) => n + Object.keys(v.lfo).length, 0)) / VOICES; });
+setGraphLoad(model.load);
 
-const r4 = (x) => Math.round(x * 1e4) / 1e4;
-function snapshot() {
-  const pins = V.filter((v) => v.active && v.pinned);
-  const ids = new Set(pins.map((v) => v.i));
-  return JSON.stringify({
-    v: pins.map((v) => ({
-      i: v.i, x: r4(v.x), y: r4(v.y), amp: r4(v.amp), wave: r4(v.wave), cut: r4(v.cut), res: r4(v.res), beat: r4(v.beat), fm: r4(v.fm), shift: r4(v.shift), hole: r4(v.holeT),
-      lfo: Object.fromEntries(Object.entries(v.lfo).map(([k, sp]) => [k, { morph: r4(sp.morph), rate: r4(sp.rate), depth: r4(sp.depth) }])),
-      mods: v.mods.filter((m) => !m.auto && ids.has(m.src.i)).map((m) => ({ src: m.src.i, type: m.type, depth: r4(m.depth) })),
-    })),
-    fx: Object.fromEntries(Object.entries(fx).map(([k, x]) => [k, r4(x)])),
-  });
-}
 function restore(js) {
-  const st = JSON.parse(js);
-  editor = null; ghost = null;
-  const keep = new Set(st.v.map((d) => d.i));
-  for (const v of V) if (v.active && v.pinned && !keep.has(v.i)) deleteVoice(v);
-  for (const d of st.v) {
-    const v = V[d.i];
-    for (const f of F.values()) if (f.voice === v) { f.voice = null; f.menu = null; }
-    v.fingers = [];
-    unlinkAll(v);
-    clearLfos(v);
-    v.snap = !v.active || v.env < 0.02;
-    Object.assign(v, { x: d.x, y: d.y, amp: d.amp == null ? 1 : d.amp, wave: d.wave, cut: d.cut, res: d.res, beat: d.beat, fm: d.fm, shift: d.shift, holeT: d.hole || 0 });
-    VW[v.i].dx = d.x; VW[v.i].hole = d.hole || 0;
-    v.pinned = true; v.dirty = true;
-    if (!v.active || v.envT === 0) attack(v);
-    burst(v);
+  setEditor(null); ghost = null;
+  const gone = V.filter((v) => v.active && v.pinned);
+  const lfos = V.map((v) => ({ ...v.lfo }));
+  model.restore(js);
+  for (const d of JSON.parse(js).v) { VW[d.i].dx = d.x; VW[d.i].hole = d.hole || 0; }
+  for (const v of V) {                          // LFO, которые поставил restore, рисуются с нуля
+    for (const key of Object.keys(v.lfo)) if (lfos[v.i][key] !== v.lfo[key]) { VW[v.i].ph[key] = 0; VW[v.i].vph[key] = 0; }
   }
-  for (const d of st.v) {
-    const v = V[d.i];
-    for (const m of d.mods) addLink(v, V[m.src], m.depth, m.type);
-    for (const [k, sp] of Object.entries(d.lfo)) setLfo(v, k, { ...sp });
-  }
-  Object.assign(fx, st.fx); applyFx();
+  if (lastTap && gone.includes(lastTap.v) && !lastTap.v.pinned) lastTap = null;
+  forgetFingers();
 }
 
 // все кружки, включая закреплённые, гаснут за полсекунды; связи, LFO и выделение снимаются
 function clearAll() {
-  editor = null;
-  for (const v of V) if (v.active) deleteVoice(v);
-  if (engine) engine.clear();
+  const any = model.sounding();
+  setEditor(null);
+  if (any) ghost = null;
+  model.clear();
   lastTap = null;
+  forgetFingers();
 }
 
 function uiDown(f) {
@@ -815,14 +687,14 @@ function uiDown(f) {
     const e = editor, k = f.hit.key;
     if (e.lfo && e.key === k) { e.lfo = false; return; }
     e.key = k; e.lfo = true;
-    for (const u of e.group) if (!u.lfo[k]) { setLfo(u, k, { morph: 0, rate: 1.2, depth: 0.35 }); u.dirty = true; }
+    for (const u of e.group) if (!u.lfo[k]) addLfo(u, k, { ...LFO_DEF });
     return;
   }
   if (f.ui === 'vol') { f.vol0 = vol; return; }
   if (f.ui === 'pin') {
     if (f.hit.ghost) {                      // кольцо уже гасло — кружки снова звучат
       pinFrom(f.hit.ghost);
-      if (f.hit.ghost.voice) for (const u of f.hit.ghost.group) if (u.active && !u.pinned && !u.fingers.length) attack(u);
+      if (f.hit.ghost.voice) for (const u of f.hit.ghost.group) if (u.active && !u.pinned && !u.held) model.attack(u.i);
     } else if (f.hit.holder) pinMenu(f.hit.holder);
     else closeEditor();
     return;
@@ -832,7 +704,7 @@ function uiDown(f) {
   if (f.ui === 'ring') { ringTouch(f, true); return; }
   if (f.ui === 'lfooff') {                  // снять LFO с выбранного параметра
     const tg = modTarget(f);
-    if (tg) for (const u of tg.group) { removeLfo(u, tg.key); u.dirty = true; }
+    if (tg) for (const u of tg.group) removeLfo(u, tg.key);
     return;
   }
   if (f.ui === 'amp') {
@@ -847,10 +719,7 @@ function uiDown(f) {
     const tg = modTarget(f);
     if (!tg) return;
     f.tg = tg; f.strip = f.hit.strip;
-    for (const u of tg.group) {
-      const cur = u.lfo[tg.key];
-      setLfo(u, tg.key, cur ? { ...cur } : { morph: 0, rate: 1.2, depth: 0.35 });
-    }
+    for (const u of tg.group) if (!u.lfo[tg.key]) addLfo(u, tg.key, { ...LFO_DEF });
     lfoStrip(f);
     return;
   }
@@ -864,7 +733,7 @@ function uiDown(f) {
 function ampSet(f) {
   if (!f.tg) return;
   const a = ampStrip(), t = (f.x - a.x - PAD_IN) / (a.w - 2 * PAD_IN), amp = lerpLog(AMP_MIN, AMP_MAX, clamp(t));
-  for (const u of f.tg.group) { u.amp = t <= 0 ? 0 : Math.abs(20 * Math.log10(amp)) < 0.6 ? 1 : amp; u.dirty = true; }   // у 0 дБ — защёлка; левее шкалы — off
+  for (const u of f.tg.group) model.set(u.i, 'amp', t <= 0 ? 0 : Math.abs(20 * Math.log10(amp)) < 0.6 ? 1 : amp);   // у 0 дБ — защёлка; левее шкалы — off
 }
 
 // панель LFO: форма — где палец на полосе; на паде одним жестом скорость (вправо) и глубина (вверх)
@@ -874,16 +743,15 @@ function lfoStrip(f) {
   for (const u of f.tg.group) {
     const spec = u.lfo[f.tg.key];
     if (!spec) continue;
-    if (f.strip === 'shape') spec.morph = shapeT(p, f.x);
-    else { spec.rate = padRate(p, f.x); spec.depth = padDepth(p, f.y); }
-    u.dirty = true;
+    if (f.strip === 'shape') model.lfo(u.i, f.tg.key, { morph: shapeT(p, f.x) });
+    else model.lfo(u.i, f.tg.key, { rate: padRate(p, f.x), depth: padDepth(p, f.y) });
   }
 }
 
 let lastRowTap = null;
 function sheetWave(f) {                     // волна: где палец на полосе — та таблица (морфинг между ними)
   const s = sheetGeo(), t = clamp((f.x - s.x - 18) / (s.w - 36));
-  for (const u of editor.group) { u.wave = t; u.dirty = true; }
+  for (const u of editor.group) model.set(u.i, 'wave', t);
 }
 function uiMove(f) {
   if (f.ui === 'mixf') { mixMove(f); return; }
@@ -928,8 +796,8 @@ function uiUp(f) {
   if (f.ui === 'thread') {
     const B = hit(f.x, f.y), A = f.A;
     if (!B || B === A || !A.active) return;
-    const m = A.mods.find((k) => k.src === B) || addLink(A, B, LINK_NEW);
-    m.auto = false; A.dirty = true; focus = A;
+    model.link(A.i, B.i);
+    focus = A;
     return;
   }
   if (f.ui === 'vol') { volTap(f); try { localStorage.setItem('t2d-vol', vol.toFixed(3)); } catch (_) { /* приватный режим */ } return; }   // тап — панель audio
@@ -944,7 +812,7 @@ function uiUp(f) {
     return;
   }
   if (f.ui === 'ring') {
-    if (editor && editor.kind === 'link' && editor.cutting) { dropLink(editor.dst, editor.m); editor = null; }
+    if (editor && editor.kind === 'link' && editor.cutting) { model.unlink(editor.dst.i, editor.m.src.i); setEditor(null); }
     return;
   }
   if (f.ui !== 'scl') return;
@@ -962,9 +830,7 @@ function fxGet(key) {
   return fx[key];
 }
 function fxSet(key, t) {
-  if (key === 'decay') fx.decay = lerpLog(DECAY_MIN, DECAY_MAX, t);
-  else fx[key] = t;
-  applyFx();
+  model.fx(key === 'decay' ? { decay: lerpLog(DECAY_MIN, DECAY_MAX, t) } : { [key]: t });
 }
 function fxText(key) {
   if (key === 'decay') return fx.decay.toFixed(fx.decay < 10 ? 1 : 0) + ' s';
@@ -994,7 +860,7 @@ function openSheet(f) {
   const v = f.voice;
   f.menuWas = true; f.parked = true;
   ghost = null;
-  editor = { kind: 'voice', v, group: groupOf(v), key: null, sheet: true, lfo: false, cx: vx(v), cy: vy(v), sectors: SECTORS };
+  setEditor({ kind: 'voice', v, group: groupOf(v), key: null, sheet: true, lfo: false, cx: vx(v), cy: vy(v), sectors: SECTORS });
   focus = v;
 }
 // ---------- кольцо на весу: тот же палец ведёт по лучу; расстояние от точки касания — значение ----------
@@ -1008,7 +874,7 @@ function openMenu(f) {
     get: (k) => norm(v, k),
     set: (k, t) => { for (const u of group) setNorm(u, k, t); },
     text: (k) => valueText(v, k) + (group.length > 1 ? `  ×${group.length}` : ''),
-    restore: () => { for (const { u, o } of origs) { Object.assign(u, o); u.dirty = true; } },
+    restore: () => { for (const { u, o } of origs) for (const k in o) model.set(u.i, k, o[k]); },
   };
   focus = v;
 }
@@ -1017,20 +883,19 @@ function openMenu(f) {
 function openLink(f, dst, m) {
   const c = linkMid(dst, m), orig = { type: m.type, depth: m.depth };
   f.menuWas = true;
-  m.auto = false;                           // тронутую хаос-связь пользователь забирает себе
-  const setType = (t) => { if (m.type !== t) { m.type = t; dst.dirty = true; } };
+  model.link(dst.i, m.src.i);               // тронутую хаос-связь пользователь забирает себе
+  const setType = (t) => { if (m.type !== t) model.linkType(dst.i, m.src.i, t); };
   const rc = ringCenter(c.x, c.y);
   f.menu = {
     cx: rc.cx, cy: rc.cy, gx: f.x, gy: f.y, sector: null, sectors: LINK_SECTORS, span: MENU_SPAN, link: m, dst, overPin: true,
     get: (k) => (k === 'cut' ? (m.cutting ? 1 : 0) : m.type === k ? m.depth : 0),
     set: (k, t) => {
       m.cutting = k === 'cut' && t > 0.35;
-      if (k !== 'cut') { setType(k); m.depth = t; }
-      dst.dirty = true;
+      if (k !== 'cut') { setType(k); model.linkDepth(dst.i, m.src.i, t); }
     },
     text: (k) => (k === 'cut' ? (m.cutting ? 'release to cut' : 'pull further') : `${Math.round(m.depth * 100)}%`),
-    restore: () => { m.cutting = false; setType(orig.type); m.depth = orig.depth; dst.dirty = true; },
-    commit: () => { if (m.cutting) dropLink(dst, m); },
+    restore: () => { m.cutting = false; setType(orig.type); model.linkDepth(dst.i, m.src.i, orig.depth); },
+    commit: () => { if (m.cutting) model.unlink(dst.i, m.src.i); },
   };
 }
 
@@ -1060,10 +925,10 @@ function menuMove(f) {
 function pinFrom(m) {
   ghost = null;
   if (m.voice) {
-    editor = { kind: 'voice', v: m.voice, group: m.group, key: m.sector ? m.sector.key : null, cx: m.cx, cy: m.cy, sectors: SECTORS };
+    setEditor({ kind: 'voice', v: m.voice, group: m.group, key: m.sector ? m.sector.key : null, cx: m.cx, cy: m.cy, sectors: SECTORS });
   } else {
     m.link.cutting = false;
-    editor = { kind: 'link', dst: m.dst, m: m.link, key: m.link.type, cx: m.cx, cy: m.cy, sectors: LINK_SECTORS, cutting: false };
+    setEditor({ kind: 'link', dst: m.dst, m: m.link, key: m.link.type, cx: m.cx, cy: m.cy, sectors: LINK_SECTORS, cutting: false });
   }
 }
 
@@ -1107,38 +972,17 @@ function ringTouch(f, first) {
   }
   if (f.sector.key === 'cut') { e.cutting = t > 0.35; return; }
   e.cutting = false;
-  e.m.type = f.sector.key;
-  e.m.depth = t; e.key = e.m.type;
-  e.dst.dirty = true;
+  model.linkType(e.dst.i, e.m.src.i, f.sector.key);
+  model.linkDepth(e.dst.i, e.m.src.i, t); e.key = e.m.type;
 }
 
 // ---------- аудио: звук — ядро SDK, слот 1 (клей worlds/tenebrae/engine.js); модель шлёт ему поля голосов, связи, LFO и FX ----------
-let engine = null;
-
-function applyFx() { if (engine) engine.fx(fx); }
-
-// голос изменился (dirty): связи и LFO — до полей, чтобы голос применился один раз (и со snap, если он есть)
-function syncMods(v) {
-  engine.links(v.i, v.mods.map((m) => ({ src: m.src.i, type: m.type, depth: m.depth })));
-  for (const key of LFO_KEYS) engine.lfo(v.i, key, v.lfo[key] || null);
-}
-function sync(v) {
-  if (!engine) return;
-  syncMods(v);
-  engine.voice(v.i, v);
-  v.snap = false;
-}
-
 // звук Tenebrae — в ядре (слот 1), engine — клей к нему. Первый build — клей и всё из модели: голоса, связи, LFO, FX;
 // после смены контекста (restartAudio) клей сам шлёт новому ядру всё, что помнит
 function solBuild(_, chanIn) {
   if (engine) { engine.bind({ core, out: chanIn }); return; }
   engine = createEngine({ core, out: chanIn });
-  applyFx();
-  for (const v of V) { v.live = v.active; if (v.active) engine.live(v.i, true); }   // LIVE — до полей и ON: неживому голосу ядро ставит цели без хода
-  for (const v of V) syncMods(v);
-  for (const v of V) { v.snap = true; engine.voice(v.i, v); v.snap = false; v.dirty = false; }
-  for (const v of V) if (v.active && v.envT === 1) engine.on(v.i);
+  model.build();
 }
 
 // экран не гаснет, пока что-то звучит
@@ -1266,7 +1110,7 @@ function drawVoice(v, now, dt) {
 }
 function drawPlanet(v, now, dt) {
   const k = kick(v, performance.now()), x = vx(v) + k.x, y = vy(v) + k.y;
-  const held = v.fingers.length > 0;
+  const held = v.held > 0;
   const editing = editor && editor.kind === 'voice' && editor.group.includes(v);
   const R = planetR(v), far = VW[v.i].dx + VW[v.i].wob > zoom * 1.0001;   // за горизонтом зума — у края, бледно
   const a = Math.min(1, v.env * 1.3) * (far ? 0.4 : 1);
@@ -1729,19 +1573,17 @@ function drawHole(now) {
 
 // планету тянут на солнце (палец заходит в его зону) — солнце бьёт её: молния, треск, отдача; глубже — чаще и сильнее.
 // Это звук — считается в solTick, даже когда на экране карта или другой мир; молнии рисует drawSun
-let strikes = 0;
-function sunStrikes(now) {
+const sunDepth = new Float64Array(V.length);
+function sunStrikes() {
   const { ox, oy } = geo;
+  sunDepth.fill(0);
   for (const f of F.values()) {
     const v = f.voice;
     if (!v || !f.moved || f.ui || f.parked || f.bridge || f.menu) continue;
     const t = clamp((SUN_R + 24 - Math.hypot(f.x + VW[v.i].ox - ox, f.y + VW[v.i].oy - oy)) / 70);
-    if (t <= 0 || now < (v.strikeNext || 0)) continue;
-    VW[v.i].strike = { t0: now, p: t, a: Math.atan2(vy(v) - oy, vx(v) - ox) };
-    v.strikeNext = now + (440 - 320 * t) * (0.6 + 0.8 * Math.random());
-    if (engine) engine.strike(t);
-    strikes++;
+    if (t > sunDepth[v.i]) sunDepth[v.i] = t;
   }
+  for (let i = 0; i < V.length; i++) model.sun(i, sunDepth[i]);   // всем шести, без пальца на солнце — 0: прежняя глубина не залипает
 }
 
 // удар солнца: отдача — планету отбрасывает от солнца и она возвращается
@@ -1956,7 +1798,7 @@ function drawField() {
 // долгое касание пойманного кружка: дуга дорисовывается — и открывается кольцо
 function drawHold(now) {
   for (const f of F.values()) {
-    if (f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
+    if (f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.held !== 1) continue;
     const p = (now - f.t0) / HOLD_MS;
     if (p < 0.15 || p >= 1) continue;
     const v = f.voice;
@@ -1974,7 +1816,7 @@ function readLevel() {
   sunLevel += (Math.min(1, Math.sqrt(e / 256) * 2.2) - sunLevel) * 0.08;
 }
 
-let last = performance.now(), chaosAt = 0, sunLevel = 0;
+let last = performance.now(), sunLevel = 0;
 
 // кадр: звук и состояние — у всех миров (звучат все), рисуется — карта или текущий мир; верхняя строка общая
 function frame(now) {
@@ -2007,12 +1849,11 @@ function solTick(now, dt) {
   // долгое касание пойманного кружка — кольцо свойств на весу (только пока Tenebrae на экране: с карты кольцо не открыть)
   const shown = nav.view === 'play' && !nav.anim && nav.world === 1;
   for (const f of F.values()) {
-    if (!shown || f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.fingers.length !== 1) continue;
+    if (!shown || f.menu || f.menuWas || f.moved || f.bridge || !f.caught || !f.voice || f.voice.held !== 1) continue;
     if (now - f.t0 > HOLD_MS) openSheet(f);
   }
 
-  if (now > chaosAt) { chaosAt = now + 400; chaosTick(now); }
-  sunStrikes(performance.now());
+  sunStrikes();
   zoom += (zoomT - zoom) * (1 - Math.exp(-dt / 0.06));
   if (Math.abs(zoomT - zoom) < 1e-4) zoom = zoomT;
 
@@ -2037,22 +1878,15 @@ function solTick(now, dt) {
     }
   }
 
-  let anyActive = false;
-  for (const v of V) {
-    if (v.dirty) { v.dirty = false; sync(v); }   // tzfm-приёмники идут за высотой источника сами (движок)
-    v.env += (v.envT - v.env) * (1 - Math.exp(-dt / v.envTau));
-    VW[v.i].hole += (v.holeT - VW[v.i].hole) * (1 - Math.exp(-dt / 0.15));
-    if (v.active && v.holeT > 0.9 && !v.fingers.length && v.envT !== 0) { v.pinned = false; release(v, 0.4); }   // отпущена в глубине дыры — умирает
-    if (v.active && !v.pinned && !v.fingers.length && v.envT === 0 && v.env < 0.004) {
-      v.active = false;
-      unlinkAll(v);
-      clearLfos(v);
-      if (v.live) { v.live = false; if (engine) engine.live(v.i, false); }
-    }
-    if (v.active) anyActive = true;
+  model.tick(dt);                             // звук и состояние кружков: хаос, удары, огибающие, смерть; события — для картинки
+  for (const v of V) VW[v.i].hole += (v.holeT - VW[v.i].hole) * (1 - Math.exp(-dt / 0.15));
+  const evs = model.events();
+  for (let k = 0; k < evs.length; k++) {
+    const e = evs[k], v = V[e.i];
+    if (e.t === 'burst') burst(v);
+    else VW[v.i].strike = { t0: performance.now(), p: e.p, a: Math.atan2(vy(v) - geo.oy, vx(v) - geo.ox) };
   }
-  if (editor && ((editor.kind === 'voice' && !editor.v.active) || (editor.kind === 'link' && !editor.dst.mods.includes(editor.m)))) editor = null;
-  if (engine) engine.busEnv(V.reduce((s, v) => s + (v.active ? v.env : 0), 0));   // чем больше кружков, тем тише каждый
+  if (editor && ((editor.kind === 'voice' && !editor.v.active) || (editor.kind === 'link' && !editor.dst.mods.includes(editor.m)))) setEditor(null);
   // экран держит общий сторож ниже — по всем мирам, не только по Tenebrae
 
 }
@@ -2225,9 +2059,9 @@ if (document.fonts && document.fonts.load) {
 const solNiger = {
   n: 'I', title: 'Tenebrae', sub: 'orbes · strepitus',
   corner: { hit: (f) => WORLDS_ON && !editor && Math.hypot(f.x - geo.ox, f.y - geo.oy) < 46, draw: () => {} },   // солнце рисует drawField
-  fx: { sectors: FX_SECTORS, get: fxGet, set: fxSet, text: fxText, arc: () => fx.rev, save: () => ({ ...fx }), load: (o) => { Object.assign(fx, o); applyFx(); } },
+  fx: { sectors: FX_SECTORS, get: fxGet, set: fxSet, text: fxText, arc: () => fx.rev, save: () => ({ ...fx }), load: (o) => model.fx(o) },
   tick: solTick, draw: solDraw, down: solDown, move: solMove, up: solUp, wheel: wheelZoom,
-  dice: rollDice, clear: clearAll, snapshot, restore, sounding: () => V.some((v) => v.active), build: solBuild,
+  dice: rollDice, clear: clearAll, snapshot: model.snapshot, restore, sounding: model.sounding, build: solBuild,
 };
 registerWorld(1, solNiger);
 
@@ -2252,13 +2086,13 @@ window.T2D = {
 };
 
 window.t2d = {
-  worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return strikes; },
+  worlds, get world() { return nav.world; }, get view() { return nav.view; }, get strikes() { return model.state.strikes; },
   go(w) { if (!worlds[w]) return false; nav.world = w; nav.view = 'play'; nav.anim = null; nav.settings = false; if (worlds[w].enter) worlds[w].enter(); },
   mix, chanLvl, mixGeo: () => mixGeo(), backPos: () => backPos(), get chanGains() { return Object.fromEntries(Object.entries(chans).map(([n, c]) => [n, c.g.gain.value])); },
   get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, get audioPanel() { return !!audioPanel; }, panelGeo: () => panelGeo(), legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, get deck() { return deck; }, setDeck, mixRows: () => mixGeo().rows.map((r) => r.n), restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey, slAdd: (k) => { if (fxSheet && fxSheet.spec.lfo) { const e = slAdd(fxSheet.spec, k); e.spec.depth = 0.8; e.spec.rate = 1; return true; } return false; },   // сразу в мир, без касаний (тесты)
   get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.send === 'function' && T2D.snapSemi(3.4) === 3.4; },
   hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
-  voices: V, voiceView: VW, fx, scl, freq, cutoff, applyFx, place, unplace, semi,
+  voices: V, voiceView: VW, fx, model, scl, freq, cutoff, applyFx: () => model.fx({}), place, unplace, semi,
   get ctx() { return ctx; }, get core() { return core && { ready: core.ready, sent: core.sent, node: !!core.node }; }, strikeSound: (p) => engine && engine.strike(p), holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
 };   // для отладки из консоли
 

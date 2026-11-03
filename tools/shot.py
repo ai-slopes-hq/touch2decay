@@ -87,6 +87,7 @@ async def sc_ring(p):                              # долгое касание
     await p.pin(200, 300)
     await p.hold(200, 300, ms=600); await p.up(); await p.pg.wait_for_timeout(200)
     e = await p.js("()=>t2d.editor&&{sheet:!!t2d.editor.sheet}"); assert e and e['sheet'], f'hold a planet — its sheet: {e}'
+    assert await p.js("()=>t2d.model.state.kept.length===1"), 'voice sheet open — its planet is kept'
     s = await p.js('()=>t2d.sheetGeo()'); row = lambda k: next(r for r in s['rows'] if r['k'] == k)
     c0 = await p.js('()=>t2d.voices.find(v=>v.pinned).cut'); r = row('cut'); y = r['y'] + r['h'] / 2
     pid = await p.hold(s['tx0'] + 40, y, ms=60); await p.drag(pid, s['tx0'] + 40, y, s['tx0'] + 140, y, steps=8); await p.up(); await p.pg.wait_for_timeout(100)
@@ -101,6 +102,7 @@ async def sc_ring(p):                              # долгое касание
     assert abs(await p.js('()=>t2d.voices.find(v=>v.pinned).res') - 0.21) < 1e-6, 'double tap a row — back to default'
     await p.tap(200, s['top'] - 60); await p.pg.wait_for_timeout(100)
     assert not await p.js('()=>t2d.editor'), 'tap above the sheet — closed'
+    assert await p.js("()=>!(t2d.editor&&t2d.editor.kind==='voice') === (t2d.model.state.kept.length===0)"), 'no voice sheet <=> kept is empty'
     print('ring:', st)
 
 
