@@ -43,7 +43,13 @@ final class CymaticaView: World {
   private var evs: [CymHeard] = []
   var area: (W: Double, H: Double, topY: Double, safeBot: Double) = (390, 844, 59, 34)
   private(set) var now = 0.0
-  var fingers: [ObjectIdentifier: CymFinger] = [:]           // пальцы мира; touchReset (undo) забывает их все (задача 4)
+  var fingers: [ObjectIdentifier: CymFinger] = [:]           // пальцы мира; touchReset (undo) забывает их все
+  var pair: CymPair?                                         // два пальца: поворот или щипок (задача 5)
+  // подписи для картинки (план (б)): живут секунду после правки; markHot — удар по метке, горячая 160 мс
+  var bpmUntil = 0.0
+  var chanceEdit: (i: Int, until: Double)?
+  var noteEdit: (i: Int, until: Double)?
+  var markHot: (i: Int, at: Double)?
 
   init(core: Core, readMirror: Reader? = nil, readHeard: Reader? = nil, seed: (() -> UInt32)? = nil) {
     self.core = core
@@ -138,15 +144,8 @@ final class CymaticaView: World {
     touchTick(now: now)
   }
 
-  // касания — CymTouch.swift (down / move / up / cancel); пока пустые
-  func down(_ f: Finger) {}
-  func move(_ f: Finger) {}
-  func up(_ f: Finger) {}
-  func cancel(_ f: Finger) {}
+  // касания (down / move / up / cancel) — CymTouch.swift
 
   func draw(_ d: Draw, now: Double) {}                       // картинка — план (б)
   func drawShot(_ d: Draw, now: Double) {}
 }
-
-// палец мира (задача 4 заполнит поля)
-struct CymFinger {}
