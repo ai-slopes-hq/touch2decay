@@ -45,6 +45,15 @@ final class PorStateTests: XCTestCase {
     XCTAssertEqual(s.isle(2, mirror: M, now: 1.31).lvl, 0.5)
   }
 
+  // луч маяка идёт за лодкой: lastHit переезжает вместе с hitT (как в вебе)
+  func testMoveKeepsLastHit() {
+    var s = PorState()
+    s.own(A.place, 0, [3, 1], mirror: M, now: 1)
+    s.heard(0, isleOn: true, dt: 0.25, fb: 0.5, now: 1.5)
+    s.own(A.move, 0, [1], mirror: M, now: 1.1)
+    XCTAssertEqual(s.lastHit, 1)
+  }
+
   func testOwnBuoyEcho() {
     var s = PorState()
     s.own(A.buoy, 0, [0.9, 0.99], mirror: M, now: 1)

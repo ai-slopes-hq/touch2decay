@@ -101,6 +101,7 @@ struct PorState {
       if placed, cur.on, j != i, (0..<Por.nstep).contains(j), !isle(j, mirror: mirror, now: now).on {
         put(j, cur, now); put(i, PorIsle(), now)
         hitT[j] = hitT[i]; hitT[i] = Self.none
+        if lastHit == i { lastHit = j }                          // луч маяка идёт за лодкой
       }
     case A.note: if placed && cur.on { cur.p = arg(0); put(i, cur, now) }
     case A.isle:

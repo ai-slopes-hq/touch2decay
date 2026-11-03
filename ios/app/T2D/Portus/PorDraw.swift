@@ -134,7 +134,7 @@ extension PortusView {
       p.to(G.fx1, bot); p.close(); p.fill()
     }
     g.setLineWidth(0.8)
-    let rows = Int(Horo.jsRound(10 + 22 * amt))
+    let rows = max(2, Int(Horo.jsRound(10 + 22 * amt)))             // при amt < -0.48 не падает 0..<rows
     for j in 0..<rows {                                                                  // штрихи плывут вбок, к краям пелены бледнее
       let f = Double(j) / Double(rows - 1), y = top + 4 + (bot - top - 8) * f
       let a = (0.05 + 0.16 * sin(Double.pi * f)) * (0.6 + 0.6 * amt)
