@@ -2,7 +2,7 @@ import UIKit
 import T2DCore
 
 // Portus (мир XIII) — связка ядра и Swift: единственный путь действий send, тик, чтение значений, легенда
-// (порт worlds/portus/view.js; модель и звук — в ядре, плашки и веер — PorSheets.swift; касания — задача 6, картинка — план (б))
+// (порт worlds/portus/view.js; модель и звук — в ядре, плашки и веер — PorSheets.swift; касания — PorTouch.swift, картинка — PorScene / PorDraw / PorFrame)
 final class PortusView: World {
   static let slotN = 13
 
@@ -46,6 +46,7 @@ final class PortusView: World {
   private var area: (W: Double, H: Double, topY: Double, safeBot: Double) = (390, 844, 59, 34)
   private(set) var now = 0.0
   var fingers: [ObjectIdentifier: PorFinger] = [:]           // пальцы мира; touchReset (undo) забывает их все
+  let wall = PorWall()                                       // кеш неподвижного (PorScene)
   var lastP = 0                                              // нота последнего кораблика: вехи ставят с неё (view.js:57)
 
   init(core: Core, readMirror: Reader? = nil, readHeard: Reader? = nil, rng: (() -> Double)? = nil) {
@@ -130,6 +131,6 @@ final class PortusView: World {
 
   // касания — PorTouch.swift (down / move / up / cancel / touchTick / touchReset)
 
-  func draw(_ d: Draw, now: Double) {}                       // картинка — план (б)
-  func drawShot(_ d: Draw, now: Double) {}
+  func draw(_ d: Draw, now: Double) { drawFrame(d, now: now) }   // картинка — PorFrame.swift
+  func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now, sun: false) }   // карта рисует свою луну в углу
 }

@@ -27,7 +27,7 @@ enum Worlds {
     WorldInfo(slot: 10, title: "Firmamentum", roman: "X", theme: th((232, 224, 200), (10, 9, 20), (10, 9, 20)), col: 3, row: 1, view: true),
     WorldInfo(slot: 11, title: "Tria corpora", roman: "XI", theme: th((222, 198, 152), (19, 15, 10), (19, 15, 10)), col: 3, row: 0, view: true),
     WorldInfo(slot: 12, title: "Arcadia", roman: "XII", theme: th((40, 46, 32), (224, 221, 198), (224, 221, 198)), col: 0, row: 3, view: true),
-    WorldInfo(slot: 13, title: "Portus", roman: "XIII", theme: th((196, 208, 216), (6, 9, 13), (6, 9, 13)), col: 3, row: 3, view: false),
+    WorldInfo(slot: 13, title: "Portus", roman: "XIII", theme: th((196, 208, 216), (6, 9, 13), (6, 9, 13)), col: 3, row: 3, view: true),
     WorldInfo(slot: 15, title: "Goetia", roman: "XV", theme: th((226, 214, 190), (12, 8, 7), (12, 8, 7)), col: 2, row: 3, view: false),
   ]
   // рубашки — клетки без открытого мира (III и VI выключены, две свободные)

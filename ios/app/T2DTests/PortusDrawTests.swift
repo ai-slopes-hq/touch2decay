@@ -42,12 +42,13 @@ final class PortusDrawTests: XCTestCase {
   }
   private func tick(_ b: [Double], now: Double = 1.1) { mirrorBuf = b; view.tick(now: now, dt: 0.1) }
 
-  private func shot(_ draw: (NatPen, Draw) -> Void) -> CGImage {
+  private func shot(size: CGSize? = nil, _ draw: (NatPen, Draw) -> Void) -> CGImage {
+    let size = size ?? self.size
     let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = true
     return UIGraphicsImageRenderer(size: size, format: f).image { r in
       let p = NatPen(g: r.cgContext, inkC: view.theme.ink, papC: view.theme.paper)
-      p.fill(bg, 1); p.fillRect(0, 0, 390, 844)
-      let d = Draw(g: r.cgContext, W: 390, H: 844)
+      p.fill(bg, 1); p.fillRect(0, 0, Double(size.width), Double(size.height))
+      let d = Draw(g: r.cgContext, W: size.width, H: size.height)
       d.setTheme(view.theme)
       draw(p, d)
     }.cgImage!
@@ -162,5 +163,77 @@ final class PortusDrawTests: XCTestCase {
     let clean = litPixels(shot { p, d in view.drawBuoy(p, d, nowMs: 9000) }, in: rect, bg: bg)
     view.state.heard(0, isleOn: true, dt: 0.25, fb: 0.5, now: 7.0)
     XCTAssertEqual(litPixels(shot { p, d in view.drawBuoy(p, d, nowMs: 9000) }, in: rect, bg: bg), clean)
+  }
+
+  // ---------- кадр целиком (PorFrame) ----------
+  private func finger(_ o: NSObject, _ x: Double, _ y: Double) -> Finger {
+    Finger(id: ObjectIdentifier(o), x: CGFloat(x), y: CGFloat(y), x0: CGFloat(x), y0: CGFloat(y), t0: 0, moved: false, touchTime: 0)
+  }
+  private func frame(_ v: PortusView? = nil, now: Double = 1.1, sun: Bool = true, size: CGSize? = nil) -> CGImage {
+    let v = v ?? view
+    return shot(size: size) { _, d in v.drawFrame(d, now: now, sun: sun) }
+  }
+
+  func testDrawPure() {
+    let fresh = PortusView(core: rec, readMirror: { _ in 0 }, readHeard: { _ in 0 }, rng: { 0.5 })   // до первого tick: зеркало пустое
+    fresh.layout(W: 390, H: 844, topY: 50, safeBot: 34)
+    _ = frame(fresh, now: 0.5)
+    tick(mirror(on: [3, 9], playing: true, step: 3))
+    view.state.heard(3, isleOn: true, dt: 0.25, fb: 0.6, now: 1.05)
+    view.state.kill(x: 200, y: 120, now: 1.0)
+    view.state.heard(9, isleOn: true, dt: 0.25, fb: 0.6, now: 1.06)
+    let o = NSObject(), q = view.geo.slotPt(3, view.isle(3).p)
+    view.down(finger(o, q.x, q.y))
+    let hits = view.state.hits.count, kill = view.state.killAt, fingers = view.fingers.count, kxy = view.state.killXY
+    _ = frame(now: 1.1); _ = frame(now: 1.1)
+    XCTAssertEqual(view.state.hits.count, hits); XCTAssertEqual(view.state.killAt, kill)
+    XCTAssertEqual(view.fingers.count, fingers); XCTAssertEqual(view.state.killXY.x, kxy.x)
+    XCTAssertEqual(fingers, 1)
+  }
+
+  func testShotNoMoon() {
+    let M = view.geo.moon
+    func centre(_ img: CGImage) -> (r: Int, g: Int, b: Int) {
+      let px = rgba(img), o = (Int(M.y) * img.width + Int(M.x + M.r * 0.5)) * 4
+      return (Int(px[o]), Int(px[o + 1]), Int(px[o + 2]))
+    }
+    let off = centre(frame(sun: false)), on = centre(frame(sun: true))
+    XCTAssertLessThanOrEqual(abs(off.r - Int(bg.r)), 6); XCTAssertLessThanOrEqual(abs(off.g - Int(bg.g)), 6); XCTAssertLessThanOrEqual(abs(off.b - Int(bg.b)), 6)
+    XCTAssertGreaterThan(on.r, Int(bg.r) + 30)
+  }
+
+  func testStarFades() {
+    let rect = CGRect(x: 150, y: 100, width: 80, height: 60)
+    func lit(_ now: Double) -> Int { litPixels(frame(now: now), in: rect, bg: bg) }
+    let none = lit(2.0)
+    view.state.kill(x: 200, y: 120, now: 1)
+    XCTAssertGreaterThan(lit(1.3), none + 5)
+    XCTAssertEqual(lit(2.0), none)                       // старше 0.9 с — звезды нет
+  }
+
+  func testCaptionsOnlyWhileHeld() {
+    tick(mirror(on: [3]))
+    let p = view.geo.slotPt(3, view.isle(3).p), y = p.y - 30 - 22 * p.s
+    let band = CGRect(x: p.x - 60, y: y - 8, width: 120, height: 16)
+    let o = NSObject()
+    let free = litPixels(frame(), in: band, bg: bg)
+    view.down(finger(o, p.x, p.y))
+    let held = litPixels(frame(), in: band, bg: bg)
+    view.up(finger(o, p.x, p.y))
+    XCTAssertGreaterThan(held, free + 20)
+    XCTAssertEqual(litPixels(frame(), in: band, bg: bg), free)
+  }
+
+  func testDrawWide() {
+    view.layout(W: 1024, H: 1366, topY: 50, safeBot: 34)
+    tick(mirror(on: [2, 10], playing: true, step: 2), now: 1.2)
+    let img = frame(size: CGSize(width: 1024, height: 1366))
+    let G = view.geo
+    var cols = 0, lit = 0
+    let x0 = G.P(Por.edge(-1, 1), 1).x, x1 = G.P(Por.edge(1, 1), 1).x      // линия горизонта — между мысами на всю воду
+    var x = x0 + 8
+    while x < x1 - 8 { cols += 1; if litPixels(img, in: CGRect(x: x, y: G.hor - 3, width: 2, height: 7), bg: bg) > 0 { lit += 1 }; x += 8 }
+    XCTAssertGreaterThan(cols, 20)
+    XCTAssertGreaterThan(Double(lit) / Double(cols), 0.95)
   }
 }

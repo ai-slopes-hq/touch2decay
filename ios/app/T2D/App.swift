@@ -12,7 +12,8 @@ import SwiftUI
 //   arcadia | arcadia-land | arcadia-held | arcadia-held-rim | arcadia-sheet | arcadia-fan — go(12), см. shotArc;
 //   tria | tria-lux | tria-fall | tria-held | tria-sheet | tria-fan — go(11), см. shotTria;
 //   inferno | inferno-held | inferno-sheet | inferno-fx | inferno-storm | inferno-fan — go(5), см. shotInferno;
-//   natura | natura-play | natura-fx | natura-res | natura-skiff | natura-ducks-away | natura-sheet | natura-menu — go(4), см. shotNatura.
+//   natura | natura-play | natura-fx | natura-res | natura-skiff | natura-ducks-away | natura-sheet | natura-menu — go(4), см. shotNatura;
+//   portus | portus-empty | portus-play | portus-echo | portus-star | portus-bloodmoon | portus-sheet — go(13), см. shotPortus.
 @main
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
@@ -32,6 +33,7 @@ struct T2DApp: App {
   @State private var tria: TriaView                  // нужен только -shot tria*; Host держит миры сам
   @State private var inf: InfernoView                // нужен только -shot inferno*; Host держит миры сам
   @State private var nat: NaturaView                 // нужен только -shot natura*; Host держит миры сам
+  @State private var por: PortusView                 // нужен только -shot portus*; Host держит миры сам
   @State private var host: Host
 
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
@@ -47,6 +49,7 @@ struct T2DApp: App {
     case TriaView.slotN: return TriaView(core: AppCore(slot: slot))
     case InfernoView.slotN: return InfernoView(core: AppCore(slot: slot))
     case NaturaView.slotN: return NaturaView(core: AppCore(slot: slot))
+    case PortusView.slotN: return PortusView(core: AppCore(slot: slot))
     default: return nil
     }
   }
@@ -60,7 +63,7 @@ struct T2DApp: App {
     a.onInit = { h.reapply() }
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _nat = State(initialValue: views.compactMap { $0 as? NaturaView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _nat = State(initialValue: views.compactMap { $0 as? NaturaView }[0]); _por = State(initialValue: views.compactMap { $0 as? PortusView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -92,6 +95,7 @@ struct T2DApp: App {
     case "tria", "tria-lux", "tria-fall", "tria-held", "tria-sheet", "tria-fan": shotTria(T2DApp.shotName); return
     case "inferno", "inferno-held", "inferno-sheet", "inferno-fx", "inferno-storm", "inferno-fan": shotInferno(T2DApp.shotName); return
     case "natura", "natura-play", "natura-fx", "natura-res", "natura-skiff", "natura-ducks-away", "natura-sheet", "natura-menu": shotNatura(T2DApp.shotName); return
+    case "portus", "portus-empty", "portus-play", "portus-echo", "portus-star", "portus-bloodmoon", "portus-sheet": shotPortus(T2DApp.shotName); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -322,6 +326,33 @@ struct T2DApp: App {
     case "natura-ducks-away": q.asyncAfter(deadline: .now() + 3.9) { nat.send(A.scare, 0) }
     case "natura-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(nat.lilySpec(3)) }
     case "natura-menu": q.asyncAfter(deadline: .now() + 1.5) { nat.menuShot() }
+    default: break
+    }
+  }
+
+  // Portus: portus — кубик; -empty — пусто; -play — места 2 и 10 (ноты 0 и 7), веха 6, играет; -echo — как play, луна открыта (cut 0.8),
+  // буй к морю (как в sc_portus); -star — падающая звезда в небе; -bloodmoon — туман 0.8, через 1 с плашка луны с LFO на cutoff;
+  // -sheet — плашка маяка; действие — раньше кадра shot.sh (+5 с)
+  private func shotPortus(_ name: String) {
+    host.go(PortusView.slotN)
+    let q = DispatchQueue.main
+    typealias A = Por.Act
+    func lane() {
+      por.send(A.place, 2, [0, 500]); por.send(A.place, 10, [7, 500]); por.send(A.place, 6, [7, 500]); por.send(A.play, 0, [1])
+    }
+    switch name {
+    case "portus-play": lane()
+    case "portus-echo":
+      lane(); por.send(A.luna, 0, [0.8])
+      let b = por.geo.slotPt(14, 2), u = por.geo.unP(b.x, b.y)
+      por.send(A.buoy, 0, [u.u, u.d])
+    case "portus-star":
+      lane(); por.send(A.kill, 0); por.state.kill(x: 200, y: 120, now: por.now)
+    case "portus-bloodmoon":
+      lane(); por.send(A.fog, 0, [0.8])
+      q.asyncAfter(deadline: .now() + 1) { host.shotSheet(por.lunaSpec, lfoKey: "cut"); host.shotLfo(rate: 1, depth: 0.5) }
+    case "portus-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(por.pharosSpec) }
+    case "portus": por.dice()
     default: break
     }
   }
