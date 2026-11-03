@@ -50,3 +50,27 @@ for (const [name, sc] of Object.entries(SCENES)) {
     console.log(`  ${name}: max |wasm − native| ${worst.toExponential(2)}, пик ${peak.toFixed(3)}`);
   });
 }
+
+// ---------- модель в ядре (действия от 16) против эталона: JS-модель → клей кодов 0–8 → то же ядро ----------
+// Сухой L/R — 1e-6 на сэмпл; события (burst, strike) — по блокам, в том же порядке. Модель в ядре шлёт голосам те же команды, что клей.
+import { ACTS, refPath, corePath } from './tenebrae-scenarios.mjs';
+
+const rms = (a) => Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length);
+const same = (a, b, what) => {
+  assert.equal(a.length, b.length, `${what}: length`);
+  for (let k = 0; k < a.length; k++) if (!(Math.abs(a[k] - b[k]) <= 1e-6)) assert.fail(`${what}: sample ${k}: ${a[k]} vs ${b[k]}`);
+};
+const SANITY = {
+  sun: (r) => r.heard.some((h) => h.events.some((e) => e.t === 'strike')),
+  chaos: (r) => r.autos > 0,
+  dice: (r) => r.heard.some((h) => h.events.some((e) => e.t === 'burst')),
+};
+for (const name of Object.keys(ACTS)) {
+  test(`sdk: dry output matches the reference: ${name}`, () => {
+    const r = refPath(ACTS[name]), c = corePath(ACTS[name]);
+    assert.ok(rms(r.L) + rms(r.R) > 1e-3, `${name}: reference is silent`);
+    if (SANITY[name]) assert.ok(SANITY[name](r), `${name}: scenario does not exercise what it should`);
+    same(c.L, r.L, `${name} L`); same(c.R, r.R, `${name} R`);
+    assert.deepEqual(c.heard, r.heard, `${name}: heard`);
+  });
+}
