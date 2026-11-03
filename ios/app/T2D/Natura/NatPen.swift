@@ -1,7 +1,7 @@
 import UIKit
 
-// кисть Natura: canvas-семантика поверх CGContext (y вниз, углы как у canvas arc — как в InfDraw.swift).
-// Цвет — ink(a) / pap(a) темы мира; без аллокаций CGColor и массивов в кадре.
+// кисть Natura и Portus: canvas-семантика поверх CGContext (y вниз, углы как у canvas arc — как в InfDraw.swift).
+// Цвет — ink(a) / pap(a) темы мира или явный RGB (fill / stroke: LIGHT, BGC Portus); без аллокаций CGColor и массивов в кадре.
 struct NatPen {
   let g: CGContext
   let inkC: RGB
@@ -12,6 +12,9 @@ struct NatPen {
   func fillInk(_ a: Double) { g.setFillColor(red: inkC.r / 255, green: inkC.g / 255, blue: inkC.b / 255, alpha: CGFloat(a)) }
   func fillPap(_ a: Double) { g.setFillColor(red: papC.r / 255, green: papC.g / 255, blue: papC.b / 255, alpha: CGFloat(a)) }
   func strokeInk(_ a: Double) { g.setStrokeColor(red: inkC.r / 255, green: inkC.g / 255, blue: inkC.b / 255, alpha: CGFloat(a)) }
+
+  func fill(_ c: RGB, _ a: Double) { g.setFillColor(red: c.r / 255, green: c.g / 255, blue: c.b / 255, alpha: CGFloat(a)) }
+  func stroke(_ c: RGB, _ a: Double) { g.setStrokeColor(red: c.r / 255, green: c.g / 255, blue: c.b / 255, alpha: CGFloat(a)) }
 
   func begin() { g.beginPath() }
   func close() { g.closePath() }

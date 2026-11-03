@@ -7,6 +7,7 @@ enum Por {
   static let dt = [2, 3, 4, 6, 8], dtName = ["1/8", "3/16", "1/4", "3/8", "1/2"]
   static let notes = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
   static let fxKeys = ["wow", "mare", "drive", "spread", "chance"]
+  static let light: RGB = (238, 198, 126)   // LIGHT view.js:8 — свой цвет Portus, не тема
   static let mirrorN = 104, head = 24, isleN = 5
 
   // коды action ядра — core/worlds/portus/world.hpp

@@ -21,22 +21,13 @@ final class NatLayers {
     var rnd = NatLCG()
     if !skySame {
       skyBuilds += 1
-      sky = NatLayers.canvas(size, dpr) { NatScene.paintSky(NatPen(g: $0, inkC: ink, papC: pap), w: G.W, h: G.H, rnd: &rnd) }
+      sky = Draw.layer(size, dpr) { NatScene.paintSky(NatPen(g: $0, inkC: ink, papC: pap), w: G.W, h: G.H, rnd: &rnd) }
     } else {
       for _ in 0..<(260 * 3) { _ = rnd.next() }   // счёт крапа — без рисования, земля продолжает с того же места
     }
     built = true; kW = w; kH = h; kD = d; kTop = G.top; kBot = G.bot; kRes = rq
     landBuilds += 1
-    land = NatLayers.canvas(size, dpr) { NatScene.paintLand(NatPen(g: $0, inkC: ink, papC: pap), G, res: res, rnd: &rnd) }
-  }
-
-  // начало слева сверху, масштаб DPR; фон прозрачный (как canvas веба)
-  private static func canvas(_ size: CGSize, _ dpr: CGFloat, _ draw: (CGContext) -> Void) -> CGImage? {
-    guard let g = CGContext(data: nil, width: Int((size.width * dpr).rounded()), height: Int((size.height * dpr).rounded()), bitsPerComponent: 8,
-                            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return nil }
-    g.translateBy(x: 0, y: CGFloat(g.height)); g.scaleBy(x: dpr, y: -dpr)
-    draw(g)
-    return g.makeImage()
+    land = Draw.layer(size, dpr) { NatScene.paintLand(NatPen(g: $0, inkC: ink, papC: pap), G, res: res, rnd: &rnd) }
   }
 }
 

@@ -251,14 +251,6 @@ extension NaturaView {
     if k >= 0 && k < O.count { d.mapText(Nat.waves[k], CGFloat(O[k].x), CGFloat(O[k].y - 30), 14, 0.9, align: .center) }
   }
 
-  // CGImage-кеш на весь вид: образ лежит «вверх ногами» к нашему перевёрнутому контексту
-  private func drawLayer(_ img: CGImage?, _ d: Draw) {
-    guard let img else { return }
-    let g = d.g
-    g.saveGState(); g.translateBy(x: 0, y: d.H); g.scaleBy(x: 1, y: -1)
-    g.draw(img, in: CGRect(x: 0, y: 0, width: d.W, height: d.H)); g.restoreGState()
-  }
-
   // ---------- кадр (view.js:504-532) ----------
   func drawFrame(_ d: Draw, now: Double, sun: Bool = true) {
     let g = d.g, G = geo, nowMs = now * 1000, th = theme
@@ -266,12 +258,12 @@ extension NaturaView {
     layers.update(G, size: CGSize(width: d.W, height: d.H), dpr: Draw.scale, res: fxv(5), ink: th.ink, pap: th.paper)
     if G.ox > 0 { p.fillPap(1); p.fillRect(0, 0, Double(d.W), Double(d.H)) }   // по бокам — бумага
     g.saveGState(); g.translateBy(x: CGFloat(G.ox), y: 0)
-    drawLayer(layers.sky, d)
+    d.blit(layers.sky)
     g.saveGState(); p.begin(); p.rect(13, 13, G.W - 26, G.bot + 14); g.clip()   // рамка: T.H − safeBot − 26
     if sun { drawSun(d, nowMs: nowMs) }
     drawBirds(p, nowMs: nowMs)
     g.restoreGState()
-    drawLayer(layers.land, d)
+    d.blit(layers.land)
     drawFog(p, nowMs: nowMs)
     drawRainRings(p, nowMs: nowMs)
     drawPier(p, nowMs: nowMs)

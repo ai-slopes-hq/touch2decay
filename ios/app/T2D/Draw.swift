@@ -30,6 +30,22 @@ final class Draw {
   private func fill(_ c: RGB, _ a: CGFloat) { g.setFillColor(red: c.r / 255, green: c.g / 255, blue: c.b / 255, alpha: a) }
   private func stroke(_ c: RGB, _ a: CGFloat) { g.setStrokeColor(red: c.r / 255, green: c.g / 255, blue: c.b / 255, alpha: a) }
 
+  // слой-кеш: начало слева сверху, масштаб DPR; фон прозрачный (как canvas веба)
+  static func layer(_ size: CGSize, _ dpr: CGFloat, _ draw: (CGContext) -> Void) -> CGImage? {
+    guard let g = CGContext(data: nil, width: Int((size.width * dpr).rounded()), height: Int((size.height * dpr).rounded()), bitsPerComponent: 8,
+                            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return nil }
+    g.translateBy(x: 0, y: CGFloat(g.height)); g.scaleBy(x: dpr, y: -dpr)
+    draw(g)
+    return g.makeImage()
+  }
+
+  // CGImage-кеш на весь вид: образ лежит «вверх ногами» к нашему перевёрнутому контексту
+  func blit(_ img: CGImage?) {
+    guard let img else { return }
+    g.saveGState(); g.translateBy(x: 0, y: H); g.scaleBy(x: 1, y: -1)
+    g.draw(img, in: CGRect(x: 0, y: 0, width: W, height: H)); g.restoreGState()
+  }
+
   // ---------- свечение ----------
   // draw.js:35-41 — спрайт 128 px из INK0 (не следует теме, как в вебе); строится один раз
   static let glowSprite: CGImage = {
