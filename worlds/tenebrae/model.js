@@ -1,7 +1,7 @@
 // Tenebrae (мир I) — модель: кружки (голоса), пальцы, плашка, закрепление. Без DOM, Web Audio и Math.random (случайность — rng).
 // Картинки нет: x, y — позиция в (p, c), holeT — глубина дыры, которую считает вид. Звук — через движок (engine() может вернуть null).
 // События для вида (burst, strike) копятся в очереди и отдаются events().
-import { LINK_TYPES } from './engine.js';
+import { LINK_TYPES, LFO_KEYS } from './engine.js';
 export { LINK_TYPES };
 
 export const VOICES = 6;          // 3 закреплённых + 3 временных
@@ -24,7 +24,6 @@ const makeVoice = (i) => ({
 });
 
 export function createModel({ rng = Math.random, engine = () => null, wake = () => {} } = {}) {
-  void rng;
   const state = {
     voices: Array.from({ length: VOICES }, (_, i) => makeVoice(i)),
     fx: { rev: 0.3, decay: 3.5, dly: 0.3, chaos: 0, dirt: 0.2 },
@@ -32,6 +31,7 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
   };
   const V = state.voices;
   let queue = [];
+  let chaosAt = 0;
 
   const kept = (v) => state.kept.includes(v.i);
 
@@ -59,6 +59,19 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
     if (e) e.lfo(v.i, key, null);
   }
   const clearLfos = (v) => { for (const key of Object.keys(v.lfo)) removeLfo(v, key); };
+
+  function addLink(dst, src, depth, type = 'tzfm') {
+    const m = { src, type, depth };
+    dst.mods.push(m);
+    dst.dirty = true;
+    return m;
+  }
+  function dropLink(dst, m) {
+    const k = dst.mods.indexOf(m);
+    if (k < 0) return;
+    dst.mods.splice(k, 1);
+    dst.dirty = true;
+  }
 
   function unlinkAll(v) {
     v.mods = [];
@@ -149,6 +162,114 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
     state.kept = state.kept.filter((k) => k !== i);
   }
 
+  // связи: dst модулируется кружком src. Есть связь — становится ручной, глубина остаётся
+  function link(dst, src) {
+    const d = V[dst], s = V[src];
+    const m = d.mods.find((k) => k.src === s) || addLink(d, s, LINK_NEW);
+    m.auto = false; d.dirty = true;
+    return m;
+  }
+  const find = (dst, src) => V[dst].mods.find((k) => k.src === V[src]);
+  function linkDepth(dst, src, depth) {
+    const m = find(dst, src);
+    if (!m) return;
+    m.depth = depth; V[dst].dirty = true;
+  }
+  function linkType(dst, src, type) {
+    const m = find(dst, src);
+    if (!m) return;
+    m.type = type; V[dst].dirty = true;
+  }
+  function unlink(dst, src) {
+    const m = find(dst, src);
+    if (m) dropLink(V[dst], m);
+  }
+
+  // LFO: нет ключа — новый генератор (фаза для рисования с нуля); есть — правка на месте; null — снять
+  function lfo(i, key, spec) {
+    const v = V[i];
+    if (spec === null) {
+      removeLfo(v, key);
+      v.dirty = true;
+      return;
+    }
+    if (v.lfo[key]) {
+      Object.assign(v.lfo[key], spec);
+    } else {
+      spec.ph = 0;
+      v.lfo[key] = spec;
+      const e = engine();
+      if (e) e.lfo(i, key, spec);
+    }
+    v.dirty = true;
+  }
+
+  const sun = (i, t) => { V[i].sunT = t; };
+
+  // хаос: слабые случайные связи между звучащими кружками, которые сами меняются
+  function chaos() {
+    const act = V.filter((v) => v.active);
+    const c = state.fx.chaos;
+    for (const v of V) {
+      const auto = v.mods.find((m) => m.auto);
+      if (!v.active || c < 0.02 || act.length < 2) { if (auto) dropLink(v, auto); continue; }
+      if (auto && state.time < auto.until && auto.src.active) { auto.depth = c * auto.k; v.dirty = true; continue; }
+      if (auto) dropLink(v, auto);
+      if (rng() > 0.35) continue;      // не все сразу
+      const cands = act.filter((u) => u !== v && !v.mods.some((m) => m.src === u));
+      if (!cands.length) continue;
+      const m = addLink(v, cands[Math.floor(rng() * cands.length)], 0, LINK_TYPES[Math.floor(rng() * 4)]);
+      m.auto = true;
+      m.k = 0.15 + rng() * 0.4;
+      m.depth = c * m.k;
+      m.until = state.time + 3 + rng() * 7;
+    }
+  }
+
+  // планету держат на солнце — оно бьёт: чем глубже, тем чаще
+  function strikes() {
+    for (const v of V) {
+      if (v.held <= 0 || v.sunT <= 0 || state.time < v.strikeNext) continue;
+      const t = v.sunT;
+      v.strikeNext = state.time + (0.44 - 0.32 * t) * (0.6 + 0.8 * rng());
+      const e = engine();
+      if (e) e.strike(t);
+      state.strikes++;
+      queue.push({ t: 'strike', i: v.i, p: t });
+    }
+  }
+
+  // голос изменился: связи и LFO — до полей, чтобы голос применился один раз (и со snap)
+  function sync(v) {
+    const e = engine();
+    if (!e) return;
+    e.links(v.i, v.mods.map((m) => ({ src: m.src.i, type: m.type, depth: m.depth })));
+    for (const key of LFO_KEYS) e.lfo(v.i, key, v.lfo[key] || null);
+    e.voice(v.i, v);
+    v.snap = false;
+  }
+
+  function tick(dt) {
+    state.time += dt;
+    if (state.time > chaosAt) { chaosAt = state.time + 0.4; chaos(); }
+    strikes();
+    let sum = 0;
+    for (const v of V) {
+      if (v.dirty) { v.dirty = false; sync(v); }
+      v.env += (v.envT - v.env) * (1 - Math.exp(-dt / v.envTau));
+      if (v.active && v.holeT > 0.9 && !v.held && v.envT !== 0) { v.pinned = false; release(v.i, 0.4); }   // отпущена в глубине дыры — умирает
+      if (v.active && !v.pinned && !v.held && v.envT === 0 && v.env < 0.004) {
+        v.active = false;
+        unlinkAll(v);
+        clearLfos(v);
+        if (v.live) { v.live = false; const e = engine(); if (e) e.live(v.i, false); }
+      }
+      if (v.active) sum += v.env;
+    }
+    const e = engine();
+    if (e) e.busEnv(sum);   // чем больше кружков, тем тише каждый
+  }
+
   function retune() { for (const v of V) v.dirty = true; }
 
   function load() {
@@ -164,5 +285,6 @@ export function createModel({ rng = Math.random, engine = () => null, wake = () 
     return out;
   }
 
-  return { state, attack, release, spawn, grab, letGo, keep, unkeep, move, set, pin, remove, retune, load, sounding, events };
+  return { state, attack, release, spawn, grab, letGo, keep, unkeep, move, set, pin, remove, retune, load, sounding, events,
+    link, linkDepth, linkType, unlink, lfo, sun, tick };
 }
