@@ -374,21 +374,26 @@ struct T2DApp: App {
   private func shotCymatica(_ name: String) {
     host.go(CymaticaView.slotN)
     typealias A = Cym.Act
-    let until = cym.now + 60
     func plate(_ x: Double, _ y: Double) -> [Double] { [x / cym.geo.r, y / cym.geo.r] }
+    // дедлайны и деления на радиус плиты — после первого тика: до него now = 0, а geo не собран под экран
+    func later(_ f: @escaping () -> Void) { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: f) }
     switch name {
     case "cym-play":
       cym.send(A.len, 0, [8]); cym.send(A.len, 1, [3]); cym.send(A.bpm, 0, [120]); cym.dice()
     case "cym-pinch":
-      cym.labelUntil = until
-      let c = cymCellCenter(ring: 1, sector: 1, n: cym.scl.degPerOct)   // координаты плиты
-      cym.send(A.strikeAt, 0, [c.x, c.y])
+      later {
+        cym.labelUntil = cym.now + 60
+        let c = cymCellCenter(ring: 1, sector: 1, n: cym.scl.degPerOct)   // координаты плиты
+        cym.send(A.strikeAt, 0, [c.x, c.y])
+      }
     case "cym-steprec":
-      cym.send(A.clear); cym.send(A.stepRec, 0, [1, 0, 0])
-      cym.send(A.strikeAt, 0, plate(-40, 0)); cym.send(A.strikeAt, 0, plate(30, -30))
-      cym.send(A.skip); cym.send(A.strikeAt, 0, plate(0, 40))
+      later {
+        cym.send(A.clear); cym.send(A.stepRec, 0, [1, 0, 0])
+        cym.send(A.strikeAt, 0, plate(-40, 0)); cym.send(A.strikeAt, 0, plate(30, -30))
+        cym.send(A.skip); cym.send(A.strikeAt, 0, plate(0, 40))
+      }
     case "cym-chance":
-      cym.send(A.beat, 0); cym.send(A.chanceAt, 0, [0.5]); cym.chanceEdit = (0, until)
+      later { cym.send(A.beat, 0); cym.send(A.chanceAt, 0, [0.5]); cym.chanceEdit = (0, cym.now + 60) }
     case "cym-drift": cym.dice(); cym.send(A.driftToggle); cym.send(A.play, 0, [1])
     case "cym-luna":
       cym.dice(); cym.send(A.driftToggle); cym.send(A.play, 0, [1])
