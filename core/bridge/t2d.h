@@ -2,7 +2,7 @@
 // build.sh. Подробно, что делает каждая функция, — у соответствующего метода Host (core/host/host.hpp).
 //
 // Обмен числами — через общие буферы: args (вход action, до 256 чисел), mbuf (выход mirror / heard / hmirror / hevents /
-// lfo_state, до 1024 чисел), str_buf (JSON снимка в обе стороны, ёмкость — str_cap). Функции возвращают, сколько записано.
+// lfo_state, до 2048 чисел), str_buf (JSON снимка в обе стороны, ёмкость — str_cap). Функции возвращают, сколько записано.
 #pragma once
 #ifdef __cplusplus
 extern "C" {

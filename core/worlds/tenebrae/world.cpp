@@ -6,6 +6,7 @@
 namespace tenebrae {
 
 namespace {
+bool okVoice(int i) { return i >= 0 && i < VOICES; }
 constexpr double DLY_REPEATS = 0.46;                    // обратная связь эха
 // тише этого (без живых голосов и ударов) 0.5 с — блок не считается; −120 дБ: у asym в нуле постоянка ~1e-8, через эхо — ~1e-7
 constexpr double QUIET = 1e-6;
@@ -16,6 +17,8 @@ void World::prepare(double sr, uint32_t seed) {
   sr_ = sr > 0 ? sr : 48000;
   if (!built_) { T_.build(); built_ = true; }           // таблицы не зависят от частоты — один раз
   const uint32_t ws = seed ^ 0x54454eu;                 // зерно мира
+  model_.listen(&World::onModel, this);
+  model_.reset(seed ^ MODEL_SEED);
   nz_ = sdk::Rng(ws);
   rs_ = sdk::Rng(ws ^ 0x53545249u);
   for (int i = 0; i < VOICES; i++) {
@@ -51,6 +54,10 @@ void World::prepare(double sr, uint32_t seed) {
   for (Strike& s : st_) s.on = false;
   scApplied_ = sc_;
   now_ = 0;
+  {
+    const double fx[3] = {0.3, 0.3, 0.2};               // FX модели по умолчанию (rev, dly, dirt) — как build в вебе
+    cmd(FX, 0, fx, 3);
+  }
   quiet_ = std::lround(0.5 * sr_);                      // пока ничего не прислали — не считается
 }
 
@@ -116,6 +123,45 @@ void World::setLinks(int i, const double* a, int n) {
 
 void World::action(int kind, int i, const double* a, int n) {
   retune();
+  if (kind <= CLEAR) { cmd(kind, i, a, n); return; }
+  if (!okVoice(i) && kind != KEEP && kind != SETFX && kind != DICE && kind != WIPE && kind != RETUNE && kind != UNKEEP) return;
+  switch (kind) {
+    case SPAWN: if (n >= 3) model_.spawn(i, a[0], a[1], a[2]); break;
+    case GRAB: model_.grab(i); break;
+    case LETGO: if (n >= 1) model_.letGo(i, a[0] != 0); break;
+    case KEEP: {
+      int ids[VOICES], m = 0;
+      for (int k = 0; k < n && m < VOICES; k++) ids[m++] = static_cast<int>(a[k]);
+      model_.keep(ids, m);
+      break;
+    }
+    case UNKEEP: model_.unkeep(); break;
+    case MOVE: if (n >= 3) model_.move(i, a[0], a[1], a[2]); break;
+    case SUN: if (n >= 1) model_.sun(i, a[0]); break;
+    case SET: if (n >= 2 && a[0] >= 0 && a[0] <= 6) model_.set(i, static_cast<int>(a[0]), a[1]); break;
+    case PIN: model_.pin(i); break;
+    case REMOVE: model_.remove(i); break;
+    case ATTACK: model_.attack(i); break;
+    case RELEASE: if (n >= 1) model_.release(i, a[0]); break;
+    case LINK: if (n >= 1) model_.link(i, static_cast<int>(a[0])); break;
+    case LINKDEPTH: if (n >= 2) model_.linkDepth(i, static_cast<int>(a[0]), a[1]); break;
+    case LINKTYPE: if (n >= 2) model_.linkType(i, static_cast<int>(a[0]), static_cast<int>(a[1])); break;
+    case UNLINK: if (n >= 1) model_.unlink(i, static_cast<int>(a[0])); break;
+    case SETLFO:
+      if (n >= 4 && a[0] >= 0 && a[0] < NLFO) {
+        const double sp[3] = {a[1], a[2], a[3]};
+        model_.lfo(i, static_cast<int>(a[0]), a[3] < 0 ? nullptr : sp);
+      }
+      break;
+    case SETFX: if (n >= 5) model_.fx(a); break;
+    case DICE: model_.dice(); break;
+    case WIPE: model_.clear(); break;
+    case RETUNE: model_.retune(); break;
+    default: break;
+  }
+}
+
+void World::cmd(int kind, int i, const double* a, int n) {
   if (kind == FX) {
     if (n < 3) return;
     const double rev = a[0], dly = a[1], dirt = std::max(0.0, a[2]);
@@ -196,6 +242,7 @@ void World::process(const sdk::Out& out, int n) {
   if (n <= 0) return;
   if (n > 128) n = 128;
   retune();
+  model_.tick(n / sr_);                                 // шаг модели — в начале блока: действия кадра применены до звука
   bool live = false, strk = false;
   double envSum = 0;
   for (const Voice& v : v_) if (v.isLive()) { live = true; envSum += v.env(); }
@@ -258,18 +305,43 @@ void World::process(const sdk::Out& out, int n) {
 }
 
 int World::mirror(double* buf, int cap) const {
-  if (!buf || cap < MIRROR_N) return 0;
+  if (!buf || cap < MODEL_N) return 0;
   buf[0] = VOICES;
+  buf[1] = model_.time();
+  buf[2] = model_.strikes();
+  for (int k = 0; k < 5; k++) buf[3 + k] = model_.fx(k);
+  int kept[VOICES];
+  const int nk = model_.kept(kept);
+  buf[8] = nk;
+  for (int k = 0; k < VOICES; k++) buf[9 + k] = k < nk ? kept[k] : -1;
+  for (int i = 0; i < VOICES; i++) {
+    double* m = buf + MODEL_HEAD + i * MVOICE;
+    const MVoice& v = model_.voice(i);
+    const double f[17] = {v.active ? 1.0 : 0.0, v.live ? 1.0 : 0.0, v.pinned ? 1.0 : 0.0, static_cast<double>(v.held), v.x, v.y, v.beat, v.wave, v.fm,
+                          v.cut, v.res, v.shift, v.amp, v.holeT, v.sunT, v.env, v.envT};
+    for (int k = 0; k < 17; k++) m[k] = f[k];
+    m[17] = v.nmods;
+    for (int k = 0; k < MAXMOD; k++) {
+      double* q = m + 18 + 4 * k;
+      if (k < v.nmods) { q[0] = v.mods[k].src; q[1] = v.mods[k].type; q[2] = v.mods[k].depth; q[3] = v.mods[k].autoLink ? 1 : 0; }
+      else q[0] = q[1] = q[2] = q[3] = 0;
+    }
+    for (int k = 0; k < NLFO; k++) {
+      double* q = m + 38 + 3 * k;
+      const LfoSpec& s = v.lfo[k];
+      if (s.on) { q[0] = s.morph; q[1] = s.rate; q[2] = s.depth; }
+      else { q[0] = q[1] = 0; q[2] = -1; }
+    }
+  }
   bool any = false;
   for (const Voice& v : v_) any = any || v.isLive();
-  if (!any) return MIRROR_HEAD;                         // ни одного живого — контуров нет: ворклет не копирует и не шлёт 781 число 60 раз в с
+  if (!any || cap < MIRROR_N) return MODEL_N;           // ни одного живого — контуров нет: ворклет не шлёт 1161 число 60 раз в с
   for (int i = 0; i < VOICES; i++) {
-    double* m = buf + MIRROR_HEAD + i * MIRROR_V;
+    double* m = buf + MODEL_N + i * SCOPE_V;
     const Voice& v = v_[i];
     m[0] = v.isLive() ? 1 : 0;
-    m[1] = v.env();
-    if (v.isLive() && has_[i]) v.scope(m + 2);
-    else for (int j = 0; j < 128; j++) m[2 + j] = 0;
+    if (v.isLive() && has_[i]) v.scope(m + 1);
+    else for (int j = 0; j < 128; j++) m[1 + j] = 0;
   }
   return MIRROR_N;
 }

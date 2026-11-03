@@ -2525,38 +2525,38 @@ static void tenebraeMirror() {
   static Scale sc;
   static tenebrae::World w(sc);
   w.prepare(48000, 1);
-  static double m[1024];
-  CHECK(w.mirror(m, 1024) == tenebrae::MIRROR_HEAD);     // ни одного живого — только заголовок (ворклет не гонит 781 число)
+  static double m[2048];
+  CHECK(w.mirror(m, 2048) == tenebrae::MODEL_N);        // ни одного живого — только модель (ворклет не гонит контуры)
   CHECK(m[0] == 6);
   tenebraeVoiceOn(w, 0, 0.4);
   tenebraeRender(w, 1);
-  CHECK(w.mirror(m, 1024) == tenebrae::MIRROR_N);
-  CHECK(tenebrae::MIRROR_N == 781);
-  CHECK(w.mirror(m, 780) == 0);                          // не влезло — ничего
-  w.mirror(m, 1024);
+  CHECK(w.mirror(m, 2048) == tenebrae::MIRROR_N);
+  CHECK(tenebrae::MIRROR_N == 1161 && tenebrae::MODEL_N == 387);
+  CHECK(w.mirror(m, 386) == 0);                          // не влезло — ничего
+  w.mirror(m, 2048);
   CHECK(m[0] == 6);
-  const double* v0 = m + tenebrae::MIRROR_HEAD;
+  const double* v0 = m + tenebrae::MODEL_N;
   CHECK(v0[0] == 1);
-  CHECK(v0[1] > 0.9);                                    // env после 1 с (τ 0.12)
+  CHECK(w.voice(0).env() > 0.9);                         // env после 1 с (τ 0.12)
   bool any = false;
-  for (int j = 0; j < 128; j++) if (v0[2 + j] != 0) any = true;
+  for (int j = 0; j < 128; j++) if (v0[1 + j] != 0) any = true;
   CHECK(any);
-  const double* v1 = m + tenebrae::MIRROR_HEAD + tenebrae::MIRROR_V;
+  const double* v1 = m + tenebrae::MODEL_N + tenebrae::SCOPE_V;
   CHECK(v1[0] == 0);
   bool none = true;
-  for (int j = 0; j < 128; j++) if (v1[2 + j] != 0) none = false;
+  for (int j = 0; j < 128; j++) if (v1[1 + j] != 0) none = false;
   CHECK(none);
   double h[4];
   CHECK(w.heard(h, 4) == 0);
-  CHECK(w.snapshot().empty());
+  CHECK(w.snapshot().find("\"v\":[]") != std::string::npos);   // снимок модели: закреплённых нет
   const double zero = 0, one = 1;
   w.action(tenebrae::LIVE, 0, &zero, 1);                 // отцепили — снова заголовок; подключили — снова весь контур
-  CHECK(w.mirror(m, 1024) == tenebrae::MIRROR_HEAD);
+  CHECK(w.mirror(m, 2048) == tenebrae::MODEL_N);
   w.action(tenebrae::LIVE, 0, &one, 1);
   tenebraeRender(w, 0.1);
-  CHECK(w.mirror(m, 1024) == tenebrae::MIRROR_N);
+  CHECK(w.mirror(m, 2048) == tenebrae::MIRROR_N);
   any = false;
-  for (int j = 0; j < 128; j++) if (v0[2 + j] != 0) any = true;
+  for (int j = 0; j < 128; j++) if (v0[1 + j] != 0) any = true;
   CHECK(v0[0] == 1 && any);
 }
 
@@ -2581,6 +2581,8 @@ static void tenebraeStrikeClear() {
   static Scale sc;
   static tenebrae::World w(sc);
   w.prepare(48000, 1);
+  const double fx0[5] = {0, 3.5, 0, 0, 0.2};             // prepare шлёт FX по умолчанию (эхо 0.3) — здесь эха нет
+  w.action(tenebrae::SETFX, 0, fx0, 5);
   const double p = 1;
   w.action(tenebrae::STRIKE, 0, &p, 1);                  // удар без голосов — в шину, слышен
   double peak = 0;

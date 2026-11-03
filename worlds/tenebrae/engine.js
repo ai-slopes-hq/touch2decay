@@ -1,7 +1,7 @@
 // Звук Tenebrae (мир I) — в ядре SDK (core/worlds/tenebrae → t2d.wasm, узел хоста core, слот 1). Здесь — тонкий клей с прежним API «действий»:
 // модель (app.js) шлёт поля голоса, связи, LFO и FX, клей переводит их в {t:'action', slot: 1, kind, i, a} (коды — enum Act в world.hpp).
 // Сухой выход мира — в канал микшера мира I; посыл в общий зал, фейдер посыла, шина (1/√Σ огибающих), лад — в ядре.
-// Из ядра обратно — только зеркало: [6, по голосу: live, env, 128 точек контура] → scope(i). Клей помнит последнее действие каждого вида
+// Из ядра обратно — только зеркало: [модель 387 чисел, по голосу: live, 128 точек контура] → scope(i). Клей помнит последнее действие каждого вида
 // по голосу: после смены аудиоконтекста bind() шлёт новому ядру всё заново. Эталон прежнего движка на узлах Web Audio — tools/ref/tenebrae-engine.js.
 
 // коды действий — те же числа, что enum Act в core/worlds/tenebrae/world.hpp
@@ -12,7 +12,7 @@ export const LFO_KEYS = ['pitch', 'wave', 'cut', 'res', 'beat', 'shift', 'amp', 
 export const RES_MAX = 24;       // res: Q фильтра в дБ (как в ядре) — для подписей и LFO res на поле
 export const DLY_REPEATS = 0.46; // обратная связь дилея (как в ядре) — для эха на поле
 const SLOT = 1, VOICES = 6, SCOPE_N = 128;
-const M_HEAD = 1, M_V = 2 + SCOPE_N;   // зеркало: MIRROR_HEAD, MIRROR_V
+const M_HEAD = 387, M_V = 1 + SCOPE_N;   // зеркало: контуры идут после модели (MODEL_N), на голос live + 128 точек (SCOPE_V)
 
 // core — ядро хоста (host/audio.js: send, dry, listen); out — вход канала мира I
 export function createEngine({ core, out }) {
@@ -97,9 +97,10 @@ export function createEngine({ core, out }) {
     scope(i) {
       if (!mir || !vo[i]) return null;
       const b = M_HEAD + i * M_V;
+      if (mir.length < b + M_V) return null;           // ни одного живого — зеркало только с моделью
       if (!mir[b]) return null;
       const p = pts[i];
-      for (let j = 0; j < SCOPE_N; j++) p[j] = mir[b + 2 + j] || 0;
+      for (let j = 0; j < SCOPE_N; j++) p[j] = mir[b + 1 + j] || 0;
       return p;
     },
     dispose() { if (dryTo) { try { k.dry[SLOT].disconnect(dryTo); } catch (_) { /* ok */ } dryTo = null; } k = null; },

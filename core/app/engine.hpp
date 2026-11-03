@@ -38,7 +38,7 @@ class Engine {
   static constexpr int BLOCK = 128, SLOTS = 16;
   static constexpr int ACT_CAP = 256, ACT_ARGS = 128;       // кольцо действий; чисел в действии (узор Cymatica — 117)
   static constexpr int HEARD_RECS = 64, HEARD_REC = 256;    // записей heard на слот; чисел в записи (Cymatica ≤ 200)
-  static constexpr int MIRROR_CAP = 1024;                   // = MBUF ядра
+  static constexpr int MIRROR_CAP = 2048;                   // = MBUF ядра
   static constexpr int LFO_N = T2D_APP_LFO_MAX * T2D_APP_LFO_REC;   // снимок LFO: LFO_MAX · 10 чисел
   static constexpr int STR = 1 << 16;                       // строка снимка, = t2d_str_cap()
   enum { RESTORE = 15 };                                    // внутренний kind слота хоста (после T2D_H_*, не пересекается с ними): строка из кольца UI → аудио

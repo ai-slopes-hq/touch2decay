@@ -1,5 +1,5 @@
 // Tenebrae в t2d.wasm (слот 1) против нативного core/build/tenebrae-cli на сценах сверки (tools/ref/tenebrae-scenes.js): сухой выход L и R —
-// до 1e-5 по сэмплам (одни и те же исходники C++; различие — только libm wasm и хоста), зеркало — 6 голосов по 130 чисел, live как в сцене,
+// до 1e-5 по сэмплам (одни и те же исходники C++; различие — только libm wasm и хоста), зеркало — модель 387 чисел, затем 6 контуров по 129 (live и 128 точек), live как в сцене,
 // у живого голоса контур не пустой, у молчащего — нули.
 //   core/build.sh && node --test tools/test-tenebrae-core.mjs
 import { test } from 'node:test';
@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { loadT2d } from './t2d-core.mjs';
 import { ACT, SCENES, SR, cliInput } from './ref/tenebrae-scenes.js';
 
-const SLOT = 1, VOICES = 6, MIRROR_V = 130, MIRROR_N = 1 + VOICES * MIRROR_V;   // как MIRROR_* в core/worlds/tenebrae/world.hpp
+const SLOT = 1, VOICES = 6, MODEL_N = 387, SCOPE_V = 129, MIRROR_N = MODEL_N + VOICES * SCOPE_V;   // как MODEL_N, SCOPE_V, MIRROR_N в core/worlds/tenebrae/world.hpp
 
 for (const [name, sc] of Object.entries(SCENES)) {
   test(`Tenebrae [${name}]: ядро в wasm = нативное (1e-5), зеркало`, () => {
@@ -41,7 +41,7 @@ for (const [name, sc] of Object.entries(SCENES)) {
     assert.equal(mir.length, MIRROR_N);
     assert.equal(mir[0], VOICES);
     for (let i = 0; i < VOICES; i++) {
-      const v = mir.slice(1 + i * MIRROR_V, 1 + (i + 1) * MIRROR_V), pts = v.slice(2);
+      const v = mir.slice(MODEL_N + i * SCOPE_V, MODEL_N + (i + 1) * SCOPE_V), pts = v.slice(1);
       assert.equal(v[0], live[i] ? 1 : 0, `голос ${i}: live`);
       assert.equal(pts.length, 128);
       if (live[i]) assert.ok(pts.some((p) => p !== 0), `голос ${i}: контур есть`);
