@@ -154,6 +154,15 @@ async def sc_worlds(p):                            # карта, Cymatica в ч�
 
 
 
+async def sc_dice(p):                              # кубик на пустом поле — один планета, одно кольцо-вспышка (не два)
+    d = await p.js("()=>t2d.btnPos('dice')")
+    await p.js("()=>{t2d.rings.length=0; window.__rmax=0; const f=()=>{window.__rmax=Math.max(window.__rmax,t2d.rings.filter(r=>r.a>1.2).length); requestAnimationFrame(f)}; f()}")
+    await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(400)
+    n = await p.js('()=>window.__rmax'); v = await p.js('()=>t2d.voices.filter(v=>v.active&&v.pinned).length')
+    assert v == 1 and n == 1, f'dice on empty field: one pinned planet, one fresh ring: voices={v} rings={n}'
+    print('dice:', v, n)
+
+
 async def sc_sun(p):                               # планету тянут на солнце — солнце бьёт её лучами
     pid = await p.hold(160, 560, ms=60)
     await p.drag(pid, 160, 560, 30, H - 40, steps=14)
@@ -1911,7 +1920,7 @@ async def sc_nav(p):                               # стрелка у назв�
     assert await p.js('()=>t2d.nav.settings') is True, 'tap outside the mixer — back to concordia'
 
 
-SCENARIOS = {'firmsheet': sc_firmsheet, 'firmtop': sc_firmtop, 'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'arcadia-fixed': sc_arcadia_fixed, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'tenscale': sc_tenscale, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'hole': sc_hole}
+SCENARIOS = {'firmsheet': sc_firmsheet, 'firmtop': sc_firmtop, 'webmidi': sc_webmidi, 'midi': sc_midi, 'audiopanel': sc_audiopanel, 'dlc': sc_dlc, 'prisma': sc_prisma, 'vitrea': sc_vitrea, 'goetia': sc_goetia, 'nav': sc_nav, 'portus': sc_portus, 'arcadia': sc_arcadia, 'arcadia-fixed': sc_arcadia_fixed, 'audio': sc_audio, 'tria': sc_tria, 'triaenergy': sc_triaenergy, 'firmamentum': sc_firmamentum, 'horologium': sc_horologium, 'oceanus': sc_oceanus, 'monochord': sc_monochord, 'paradisus': sc_paradisus, 'inferno': sc_inferno, 'legenda': sc_legenda, 'startmap': sc_startmap, 'cymx': sc_cymx, 'natura': sc_natura, 'lab': sc_lab, 'sketches': sc_sketches, 'handpan': sc_handpan, 'ampoff': sc_ampoff, 'echo': sc_echo, 'scalepinch': sc_scalepinch, 'grid': sc_grid, 'relative': sc_relative, 'entry': sc_entry, 'twist': sc_twist, 'seq': sc_seq, 'orphan': sc_orphan, 'plate': sc_plate, 'hold': sc_hold, 'undo': sc_undo, 'solniger': sc_solniger, 'vol': sc_vol, 'planets': sc_planets, 'tenscale': sc_tenscale, 'ring': sc_ring, 'worlds': sc_worlds, 'sun': sc_sun, 'dice': sc_dice, 'hole': sc_hole}
 
 
 TRACE = os.environ.get('T2D_TRACE')              # папка: трасса действий клея слота 1 -> <папка>/<сценарий>.json (tools/trace-diff.py)

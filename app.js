@@ -513,7 +513,7 @@ function rollDice() {
     const R = Math.random;
     const pt = place(zoom * (0.08 + 0.75 * R()), 0.1 + 0.6 * R());
     const i = spawnAt(pt.x, pt.y);
-    if (i < 0) return;
+    if (i < 0) { full.push({ x: pt.x, y: pt.y, t: performance.now() }); return; }
     model.pin(i);
     model.dice();
   }
@@ -885,17 +885,18 @@ function openLink(f, dst, m) {
   f.menuWas = true;
   model.link(dst.i, m.src.i);               // тронутую хаос-связь пользователь забирает себе
   const setType = (t) => { if (m.type !== t) model.linkType(dst.i, m.src.i, t); };
+  let cutting = false;                      // «отрезать» — состояние вида, не модели
   const rc = ringCenter(c.x, c.y);
   f.menu = {
     cx: rc.cx, cy: rc.cy, gx: f.x, gy: f.y, sector: null, sectors: LINK_SECTORS, span: MENU_SPAN, link: m, dst, overPin: true,
-    get: (k) => (k === 'cut' ? (m.cutting ? 1 : 0) : m.type === k ? m.depth : 0),
+    get: (k) => (k === 'cut' ? (cutting ? 1 : 0) : m.type === k ? m.depth : 0),
     set: (k, t) => {
-      m.cutting = k === 'cut' && t > 0.35;
+      cutting = k === 'cut' && t > 0.35;
       if (k !== 'cut') { setType(k); model.linkDepth(dst.i, m.src.i, t); }
     },
-    text: (k) => (k === 'cut' ? (m.cutting ? 'release to cut' : 'pull further') : `${Math.round(m.depth * 100)}%`),
-    restore: () => { m.cutting = false; setType(orig.type); model.linkDepth(dst.i, m.src.i, orig.depth); },
-    commit: () => { if (m.cutting) model.unlink(dst.i, m.src.i); },
+    text: (k) => (k === 'cut' ? (cutting ? 'release to cut' : 'pull further') : `${Math.round(m.depth * 100)}%`),
+    restore: () => { cutting = false; setType(orig.type); model.linkDepth(dst.i, m.src.i, orig.depth); },
+    commit: () => { if (cutting) model.unlink(dst.i, m.src.i); },
   };
 }
 
@@ -927,7 +928,6 @@ function pinFrom(m) {
   if (m.voice) {
     setEditor({ kind: 'voice', v: m.voice, group: m.group, key: m.sector ? m.sector.key : null, cx: m.cx, cy: m.cy, sectors: SECTORS });
   } else {
-    m.link.cutting = false;
     setEditor({ kind: 'link', dst: m.dst, m: m.link, key: m.link.type, cx: m.cx, cy: m.cy, sectors: LINK_SECTORS, cutting: false });
   }
 }
@@ -1883,8 +1883,10 @@ function solTick(now, dt) {
   const evs = model.events();
   for (let k = 0; k < evs.length; k++) {
     const e = evs[k], v = V[e.i];
-    if (e.t === 'burst') burst(v);
-    else VW[v.i].strike = { t0: performance.now(), p: e.p, a: Math.atan2(vy(v) - geo.oy, vx(v) - geo.ox) };
+    if (e.t === 'burst') {
+      if (k > 0 && evs[k - 1].t === 'burst' && evs[k - 1].i === e.i) continue;   // pin + dice на пустом поле — одно кольцо, как раньше
+      burst(v);
+    } else if (e.t === 'strike') VW[v.i].strike = { t0: performance.now(), p: e.p, a: Math.atan2(vy(v) - geo.oy, vx(v) - geo.ox) };
   }
   if (editor && ((editor.kind === 'voice' && !editor.v.active) || (editor.kind === 'link' && !editor.dst.mods.includes(editor.m)))) setEditor(null);
   // экран держит общий сторож ниже — по всем мирам, не только по Tenebrae
@@ -2092,7 +2094,7 @@ window.t2d = {
   get nav() { return { ...nav }; }, get fxSheet() { return !!fxSheet; }, get audioPanel() { return !!audioPanel; }, panelGeo: () => panelGeo(), legenda: () => legenda && legGeo(), titleW: () => titleW, scopeY: () => scopeY, sheetGeo: () => sheetGeo(), fxGeo: () => fxGeo(), link, goMap: () => goMap(), mapTap: (x, y) => navDown({ x, y }), mapPanel: (w) => panel(w), mapSun: () => { const F = field(); return { x: F.sx, y: F.sy, lx: F.sx + 60, ly: F.sy }; }, mapCell: (c, r) => cellRect(c, r), mapPeek: () => nav.peek, get deck() { return deck; }, setDeck, mixRows: () => mixGeo().rows.map((r) => r.n), restartAudio: () => restartAudio(), get ctxId() { return ctx ? ctx.__id || (ctx.__id = Math.random()) : 0; }, sl: () => SL.map((e) => ({ id: e.id, key: e.key, base: e.base, ...e.spec })), slOpen: () => fxSheet && fxSheet.lfoKey, slAdd: (k) => { if (fxSheet && fxSheet.spec.lfo) { const e = slAdd(fxSheet.spec, k); e.spec.depth = 0.8; e.spec.rate = 1; return true; } return false; },   // сразу в мир, без касаний (тесты)
   get T2D_ok() { return typeof T2D.menuMove === 'function' && typeof T2D.send === 'function' && T2D.snapSemi(3.4) === 3.4; },
   hidden: [...HIDDEN], hist: (n) => (hists[n] || []).length, sounding: () => Object.values(worlds).some((w) => w.sounding()),
-  voices: V, voiceView: VW, fx, model, scl, freq, cutoff, applyFx: () => model.fx({}), place, unplace, semi,
+  voices: V, voiceView: VW, rings, fx, model, scl, freq, cutoff, applyFx: () => model.fx({}), place, unplace, semi,
   get ctx() { return ctx; }, get core() { return core && { ready: core.ready, sent: core.sent, node: !!core.node }; }, strikeSound: (p) => engine && engine.strike(p), holeAt, btnPos, get vol() { return vol; }, get zoom() { return zoomT; }, strain, linkMid, get editor() { return editor; }, ampStrip,
 };   // для отладки из консоли
 
