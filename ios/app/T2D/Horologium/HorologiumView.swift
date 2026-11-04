@@ -89,6 +89,11 @@ final class HorologiumView: World {
     return nil
   }
 
+  func ringHeld() -> Int? {                                // кольцо любого удержания: подпись инструмента
+    for t in holds.values where t.kind == .ring { return t.i }
+    return nil
+  }
+
   func tick(now: Double, dt: Double) {
     self.now = now
     pullMirror()

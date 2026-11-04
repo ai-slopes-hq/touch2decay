@@ -2,11 +2,12 @@ import Foundation
 
 // кольцо зеркала: n — номер (II…IX), on / under — звучит / унтертон, phi — фаза (доля оборота), lvl — громкость (core/worlds/horologium/world.hpp)
 struct HoroRing {
-  var n = 2, on = false, under = false, phi = 0.0, lvl = 0.0
+  var n = 2, on = false, under = false, phi = 0.0, lvl = 0.0, inst = 0
 }
 
 // константы и чистая математика Horologium (worlds/horologium/model.js, view.js): шкала скорости, имена нот, отношение колец
 enum Horo {
+  static let instNames = ["kick", "tom", "snare", "clap", "rim", "hat", "bell", "open hat"]   // inst 0…7, порядок Inst в ядре
   static let nr = 8, z = 4.0                       // кольца II…IX; спуск: четыре прохода маятника за оборот
   static let et = 0.0447, om0 = 2 * Double.pi * 0.8   // энергия маятника на темпе (размах 0.3 рад); его собственная частота
   static let flo = 0.05, fhi = 120.0               // шкала tempus: обороты в секунду, логарифмически

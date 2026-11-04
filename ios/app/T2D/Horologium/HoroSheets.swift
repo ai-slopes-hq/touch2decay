@@ -3,7 +3,7 @@ import Foundation
 // плашки Horologium: кольцо, ступица и веер FX (view.js:97-115, :251-256); значения — только из зеркала
 extension HorologiumView {
   static let fxKeys = ["aequalis", "materia", "concursus", "chance", "hall"]   // порядок Fx в ядре и код LFO
-  static let ringKeys = ["on", "under", "phi", "lvl"]                          // порядок RingKey в RING ядра
+  static let ringKeys = ["on", "under", "phi", "lvl", "inst"]                   // порядок RingKey в RING ядра
 
   private func pct(_ v: Double) -> String { "\(Int(Horo.jsRound(v * 100)))%" }
 
@@ -19,7 +19,7 @@ extension HorologiumView {
         let v = mirror.fx[idx(k)]
         switch k {
         case "aequalis": return v < 0.01 ? "pure" : v > 0.99 ? "equal" : "\(pct(v)) equal"
-        case "materia": return "\(v < 0.5 ? "lignum" : "metallum") \(pct(v))"
+        case "materia": return "\(v < 0.5 ? "corium" : "metallum") \(pct(v))"
         default: return pct(v)
         }
       },
@@ -29,8 +29,8 @@ extension HorologiumView {
   }
 
   func ringSpec(_ i: Int) -> SheetSpec {
-    let keys = HorologiumView.ringKeys, labels = ["sounds", "undertone", "phase", "level"]
-    let codes = [-1, -1, 5 + 2 * i, 6 + 2 * i]               // LFO: фаза и громкость; sounds / undertone — без LFO
+    let keys = HorologiumView.ringKeys, labels = ["sounds", "undertone", "phase", "level", "instrument"]
+    let codes = [-1, -1, 5 + 2 * i, 6 + 2 * i, -1]           // LFO: фаза и громкость; sounds / undertone / instrument — без LFO
     func k(_ key: String) -> Int { keys.firstIndex(of: key) ?? 0 }
     return SheetSpec(
       title: "circulus \(Horo.roman[i + 2])", hint: "ring — tap outside to close",
@@ -41,11 +41,12 @@ extension HorologiumView {
         case "on": return r.on ? 1 : 0
         case "under": return r.under ? 1 : 0
         case "phi": return r.phi
+        case "inst": return Double(r.inst) / 7
         default: return r.lvl
         }
       },
       set: { [unowned self] key, v in
-        let val = key == "on" || key == "under" ? (v >= 0.5 ? 1 : 0) : v
+        let val = key == "on" || key == "under" ? (v >= 0.5 ? 1 : 0) : key == "inst" ? (v * 7).rounded() : v
         core.action(Act.ring, i, [Double(k(key)), val], touchTime: 0)
       },
       text: { [unowned self] key in
@@ -54,11 +55,16 @@ extension HorologiumView {
         case "on": return r.on ? "yes" : "no"
         case "under": return r.under ? "1/\(r.n) · \(Horo.num2(12 / Double(r.n))) a turn" : "\(r.n) a turn"
         case "phi": return "\(Int(Horo.jsRound(r.phi * 360)))°"
+        case "inst": return Horo.instNames[r.inst]
         default: return pct(r.lvl)
         }
       },
       lfo: SheetLfo(obj: -1, keys: ["phi", "lvl"], shape: 0),
-      reset: nil, arc: nil)
+      reset: nil, arc: nil,
+      tap: { [unowned self] key in                           // тап по строке instrument — следующий по кругу; прочие строки не трогаем
+        guard key == "inst" else { return }
+        core.action(Act.ring, i, [4, Double((mirror.rings[i].inst + 1) % 8)], touchTime: 0)
+      })
   }
 
   func hubSpec() -> SheetSpec {

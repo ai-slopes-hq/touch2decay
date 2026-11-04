@@ -608,6 +608,23 @@ final class HostTests: XCTestCase {
   private func setSnaps(_ l: [LfoSnap]) { core.lfoSnaps = l; host.tick(now: 1, dt: 0.016) }
   private func lfoCalls() -> [String] { core.calls.filter { $0.hasPrefix("lfo") } }
 
+  func testSheetRowTapCallsTap() {
+    var tapped: [String] = []
+    var sp = fxSpec(); sp.tap = { tapped.append($0) }
+    world.fx = sp; tap(bar.pos(.rev).x, bar.pos(.rev).y)
+    tap(100, rowY("b"))
+    XCTAssertEqual(tapped, ["b"])
+  }
+
+  func testSheetRowDragNoTap() {
+    var tapped: [String] = []
+    var sp = fxSpec(); sp.tap = { tapped.append($0) }
+    world.fx = sp; tap(bar.pos(.rev).x, bar.pos(.rev).y)
+    let r = finger(0, 100, rowY("b"))
+    host.down(r); var m = r; m.x = 140; host.move(m); host.up(m)
+    XCTAssertTrue(tapped.isEmpty); XCTAssertFalse(world.sets.isEmpty)
+  }
+
   func testFxOpensAndClosesSheet() {
     world.fx = nil
     tap(bar.pos(.rev).x, bar.pos(.rev).y)

@@ -69,7 +69,7 @@ extension HorologiumView {
   }
 
   private func drawRings(_ d: Draw, _ now: Double, _ P: Double) {
-    let g = d.g, G = geo, fast = mirror.F > 4
+    let g = d.g, G = geo, fast = mirror.F > 4, held = ringHeld()
     for i in 0..<Horo.nr {
       let r = mirror.rings[i], rr = G.ringR(i), on = r.on, m = Horo.mOf(r, aequalis: mirror.fx[0])
       let hit = cl(1 - (now - ringHit[i]) / 0.26), cur = Int((P * m + r.phi).rounded(.down))
@@ -105,6 +105,11 @@ extension HorologiumView {
       let lab = r.under ? "1/\(Horo.roman[r.n])" : Horo.roman[r.n], w = d.mapTextWidth(lab, fs)
       g.setFillColor(theme.bg.cgColor); g.fill(CGRect(x: lx - w / 2 - 2, y: ly - 6, width: w + 4, height: 12))
       d.mapText(lab, lx, ly, fs, on ? 0.9 : 0.32, align: .center)
+      if i == held {                                      // название инструмента — только пока кольцо в руке
+        let nm = Horo.instNames[r.inst], nw = d.mapTextWidth(nm, 10.5)
+        g.setFillColor(theme.bg.cgColor); g.fill(CGRect(x: lx - nw / 2 - 2, y: ly + 7, width: nw + 4, height: 12))
+        d.mapText(nm, lx, ly + 13, 10.5, 0.85, align: .center)
+      }
     }
   }
 
@@ -211,13 +216,6 @@ extension HorologiumView {
     d.mapText(rt.a, G.cx, G.ty, 19, 0.95, align: .center)
     d.mapText(rt.b, G.cx, G.ty + 21, 12, 0.6, align: .center)
     let S = G.strip
-    var mSum = 0.0, mCnt = 0
-    for r in mirror.rings where r.on { mSum += Horo.mOf(r, aequalis: mirror.fx[0]); mCnt += 1 }
-    let mAvg = mCnt == 0 ? 4 : mSum / Double(mCnt)
-    let lim = G.stripX(20 / mAvg)                         // limen: где удары сливаются в тон
-    g.setLineWidth(1); g.setStrokeColor(d.ink(0.35)); g.setLineDash(phase: 0, lengths: [2, 3]); g.beginPath()
-    g.move(to: CGPoint(x: lim, y: S.y - 14)); g.addLine(to: CGPoint(x: lim, y: S.y + 14)); g.strokePath(); g.setLineDash(phase: 0, lengths: [])
-    d.mapText("limen", lim, S.y + 22, 10.5, 0.45, align: .center)
     if Fm > 0.01 {
       let mx = G.stripX(Fm)
       g.setFillColor(d.ink(0.95)); g.beginPath(); g.move(to: CGPoint(x: mx, y: S.y - 3)); g.addLine(to: CGPoint(x: mx - 5, y: S.y - 11)); g.addLine(to: CGPoint(x: mx + 5, y: S.y - 11)); g.closePath(); g.fillPath()

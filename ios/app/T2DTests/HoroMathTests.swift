@@ -68,11 +68,11 @@ final class HoroMathTests: XCTestCase {
   }
 
   func testMirrorParse() {
-    var b = [Double](repeating: 0, count: 47)
+    var b = [Double](repeating: 0, count: 55)
     for k in 0..<5 { b[k] = 0.1 * Double(k + 1) }
     b[5] = 1; b[6] = 1.5; b[7] = 0.5; b[8] = 100; b[9] = 1; b[10] = 1; b[11] = 0.25; b[12] = 2; b[13] = 7; b[14] = 1
-    b[15 + 12] = 1; b[15 + 13] = 1; b[15 + 14] = 0.5; b[15 + 15] = 0.7
-    let m = HoroMirror(b, n: 47)!
+    b[30] = 1; b[31] = 1; b[32] = 0.5; b[33] = 0.7
+    let m = HoroMirror(b, n: 55)!
     XCTAssertEqual(m.fx, [0.1, 0.2, 0.30000000000000004, 0.4, 0.5])
     XCTAssertTrue(m.run && m.strip && m.held && m.locked)
     XCTAssertEqual([m.u, m.uT, m.bpm, m.P, m.F, m.strikes], [1.5, 0.5, 100, 0.25, 2, 7])
@@ -82,7 +82,7 @@ final class HoroMathTests: XCTestCase {
     XCTAssertEqual(m.rings[3].phi, 0.5)
     XCTAssertEqual(m.rings[3].lvl, 0.7)
     XCTAssertFalse(m.rings[2].on)
-    XCTAssertNil(HoroMirror(Array(b.prefix(46)), n: 46))
+    XCTAssertNil(HoroMirror(Array(b.prefix(54)), n: 54))
     XCTAssertEqual(HoroMirror().rings.map { $0.n }, Array(2...9))
   }
 

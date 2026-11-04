@@ -20,11 +20,11 @@ final class HorologiumTests: XCTestCase {
 
   override func setUp() { view.openSheet = { [unowned self] s in self.opened.append(s) } }
 
-  // зеркало: fx 5, run, u, uT, bpm, strip, held, P, F, strikes, locked, затем 8 колец по 4 (on, under, phi, lvl)
+  // зеркало: fx 5, run, u, uT, bpm, strip, held, P, F, strikes, locked, затем 8 колец по 5 (on, under, phi, lvl, inst)
   private func setMirror(fx: [Double] = [0, 0.35, 0.4, 1, 0.35], run: Bool = false, u: Double = 0, uT: Double = 0, bpm: Double = 120,
-                         P: Double = 0, F: Double = 0, on: [Int] = [], under: [Int] = [], phi: Double = 0.25, lvl: Double = 0.8, now: Double = 1) {
+                         P: Double = 0, F: Double = 0, on: [Int] = [], under: [Int] = [], phi: Double = 0.25, lvl: Double = 0.8, inst: [Int] = Array(0..<8), now: Double = 1) {
     var b = fx + [run ? 1 : 0, u, uT, bpm, 0, 0, P, F, 0, 0]
-    for i in 0..<8 { b += [on.contains(i) ? 1 : 0, under.contains(i) ? 1 : 0, phi, lvl] }
+    for i in 0..<8 { b += [on.contains(i) ? 1 : 0, under.contains(i) ? 1 : 0, phi, lvl, Double(inst[i])] }
     mirrorBuf = b; view.tick(now: now, dt: 0.016)
   }
   private func finger(_ o: NSObject, _ p: CGPoint, t0: Double = 0, now: Double = 0, p0: CGPoint? = nil) -> Finger {
@@ -44,19 +44,19 @@ final class HorologiumTests: XCTestCase {
   // ---------- зеркало, heard, pVis ----------
   func testMirrorParse() {
     var b: [Double] = [0.1, 0.2, 0.3, 0.4, 0.5] + [1, 2, 3, 120, 1, 1, 4.5, 6, 7, 1]
-    for i in 0..<8 { b += [1, 0, Double(i) / 10, 0.9] }
-    let m = HoroMirror(b, n: 47)!
+    for i in 0..<8 { b += [1, 0, Double(i) / 10, 0.9, Double(7 - i)] }
+    let m = HoroMirror(b, n: 55)!
     XCTAssertEqual(m.fx, [0.1, 0.2, 0.3, 0.4, 0.5]); XCTAssertTrue(m.run); XCTAssertEqual([m.u, m.uT, m.bpm], [2, 3, 120])
     XCTAssertTrue(m.strip); XCTAssertTrue(m.held); XCTAssertEqual([m.P, m.F, m.strikes], [4.5, 6, 7]); XCTAssertTrue(m.locked)
-    XCTAssertEqual(m.rings[3].phi, 0.3); XCTAssertEqual(m.rings[7].lvl, 0.9); XCTAssertNil(HoroMirror(b, n: 46))
+    XCTAssertEqual(m.rings[3].phi, 0.3); XCTAssertEqual(m.rings[7].lvl, 0.9); XCTAssertEqual(m.rings[2].inst, 5); XCTAssertNil(HoroMirror(b, n: 54))
   }
 
   func testMirrorLoadInPlace() {
     var b: [Double] = [0.1, 0.2, 0.3, 0.4, 0.5] + [1, 2, 3, 120, 1, 1, 4.5, 6, 7, 1]
-    for i in 0..<8 { b += [1, 0, Double(i) / 10, 0.9] }
+    for i in 0..<8 { b += [1, 0, Double(i) / 10, 0.9, Double(7 - i)] }
     var m = HoroMirror()
-    XCTAssertTrue(m.load(b, n: 47)); XCTAssertEqual(m.fx, [0.1, 0.2, 0.3, 0.4, 0.5]); XCTAssertEqual(m.rings[3].phi, 0.3); XCTAssertEqual(m.rings[3].n, 5)
-    XCTAssertFalse(m.load(b, n: 46)); XCTAssertEqual(m.P, 4.5, "короткий буфер — прежнее состояние")
+    XCTAssertTrue(m.load(b, n: 55)); XCTAssertEqual(m.fx, [0.1, 0.2, 0.3, 0.4, 0.5]); XCTAssertEqual(m.rings[3].phi, 0.3); XCTAssertEqual(m.rings[3].n, 5)
+    XCTAssertFalse(m.load(b, n: 54)); XCTAssertEqual(m.P, 4.5, "короткий буфер — прежнее состояние")
   }
 
   func testHeardFlash() {
@@ -323,9 +323,9 @@ final class HorologiumTests: XCTestCase {
     setMirror(on: [2], phi: 0.25, lvl: 0.8)
     let s = view.ringSpec(2)
     XCTAssertEqual(s.title, "circulus IV")
-    XCTAssertEqual(s.rows.map(\.key), ["on", "under", "phi", "lvl"]); XCTAssertEqual(s.rows.map(\.label), ["sounds", "undertone", "phase", "level"])
-    XCTAssertEqual(s.rows.map(\.code), [-1, -1, 9, 10]); XCTAssertEqual(s.lfo?.obj, -1); XCTAssertEqual(s.lfo?.keys, ["phi", "lvl"]); XCTAssertEqual(s.lfo?.shape, 0)
-    XCTAssertEqual(["on", "under", "phi", "lvl"].map(s.text), ["yes", "4 a turn", "90°", "80%"])
+    XCTAssertEqual(s.rows.map(\.key), ["on", "under", "phi", "lvl", "inst"]); XCTAssertEqual(s.rows.map(\.label), ["sounds", "undertone", "phase", "level", "instrument"])
+    XCTAssertEqual(s.rows.map(\.code), [-1, -1, 9, 10, -1]); XCTAssertEqual(s.lfo?.obj, -1); XCTAssertEqual(s.lfo?.keys, ["phi", "lvl"]); XCTAssertEqual(s.lfo?.shape, 0)
+    XCTAssertEqual(["on", "under", "phi", "lvl", "inst"].map(s.text), ["yes", "4 a turn", "90°", "80%", "snare"])
     XCTAssertEqual(s.get("on"), 1); XCTAssertEqual(s.get("phi"), 0.25)
     s.set("under", 0.7)
     XCTAssertEqual([rec.acts[0].kind, rec.acts[0].i], [0, 2]); XCTAssertEqual(rec.acts[0].a, [1, 1])
@@ -333,8 +333,26 @@ final class HorologiumTests: XCTestCase {
     s.set("on", 0.2); XCTAssertEqual(rec.acts[2].a, [0, 0])
     setMirror(on: [2], under: [2], now: 2)
     XCTAssertEqual(view.ringSpec(2).text("under"), "1/4 · 3 a turn")
-    XCTAssertEqual(view.ringSpec(3).text("under"), "5 a turn"); XCTAssertEqual(view.ringSpec(0).rows.map(\.code), [-1, -1, 5, 6])
+    XCTAssertEqual(view.ringSpec(3).text("under"), "5 a turn"); XCTAssertEqual(view.ringSpec(0).rows.map(\.code), [-1, -1, 5, 6, -1])
   }
+
+  func testRingSheetInstrument() {
+    setMirror(on: [2], inst: [0, 1, 7, 3, 4, 5, 6, 7])
+    let s = view.ringSpec(2)
+    XCTAssertEqual(s.text("inst"), "open hat"); XCTAssertEqual(s.get("inst"), 1)
+    s.tap?("inst"); XCTAssertEqual(rec.acts.last?.a, [4, 0], "тап — следующий по кругу")
+    s.set("inst", 0.3); XCTAssertEqual(rec.acts.last?.a, [4, 2])
+    s.tap?("phi"); XCTAssertEqual(rec.acts.count, 2, "тап по другой строке — ничего")
+  }
+  func testInstCaptionOnlyWhileHeld() {                    // кольцо V (i = 3) — inst 3, clap
+    setMirror(on: [3])
+    XCTAssertFalse(said(now: 1).contains("clap"))
+    view.down(finger(f1, onRing(3, 0.3), t0: 1, now: 1))
+    XCTAssertTrue(said(now: 1.1).contains("clap"))
+    view.up(finger(f1, onRing(3, 0.3), t0: 1, now: 1.15))
+    XCTAssertFalse(said(now: 1.2).contains("clap"))
+  }
+  func testNoLimen() { setMirror(run: true, F: 2, on: [0, 1]); XCTAssertFalse(said(now: 1).contains("limen")) }
 
   func testHubSheet() {
     setMirror(bpm: 120)
@@ -351,7 +369,7 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(s.title, "aether"); XCTAssertEqual(s.rows.map(\.key), ["aequalis", "materia", "concursus", "chance", "hall"])
     XCTAssertEqual(s.rows.map(\.code), [0, 1, 2, 3, 4]); XCTAssertEqual(s.lfo?.obj, -1); XCTAssertEqual(s.lfo?.shape, 1)
     XCTAssertEqual(s.lfo?.keys, ["aequalis", "materia", "concursus", "chance", "hall"]); XCTAssertEqual(s.arc?(), 0.6)
-    XCTAssertEqual(s.text("aequalis"), "40% equal"); XCTAssertEqual(s.text("materia"), "lignum 35%"); XCTAssertEqual(s.text("concursus"), "40%")
+    XCTAssertEqual(s.text("aequalis"), "40% equal"); XCTAssertEqual(s.text("materia"), "corium 35%"); XCTAssertEqual(s.text("concursus"), "40%")
     setMirror(fx: [0, 0.6, 0.4, 1, 0.6], now: 2); XCTAssertEqual(s.text("aequalis"), "pure"); XCTAssertEqual(s.text("materia"), "metallum 60%")
     setMirror(fx: [1, 0.6, 0.4, 1, 0.6], now: 3); XCTAssertEqual(s.text("aequalis"), "equal")
     s.set("chance", 0.3); XCTAssertEqual(rec.acts[0].kind, 1); XCTAssertEqual(rec.acts[0].i, 3); XCTAssertEqual(rec.acts[0].a, [0.3])
@@ -386,6 +404,15 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(view.title, "Horologium"); XCTAssertEqual(view.sub, "numeri · horae")
   }
   // ---------- рисование ----------
+  private func said(now: Double) -> [String] {
+    let W = Int(view.geo.W), H = Int(view.geo.H)
+    let g = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: W * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    g.translateBy(x: 0, y: CGFloat(H)); g.scaleBy(x: 1, y: -1)
+    let d = Draw(g: g, W: CGFloat(W), H: CGFloat(H)); d.setTheme(view.theme); d.said = []
+    view.draw(d, now: now)
+    return d.said ?? []
+  }
   private func render(_ v: HorologiumView, now: Double) {
     let W = Int(v.geo.W), H = Int(v.geo.H)
     let g = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: W * 4, space: CGColorSpaceCreateDeviceRGB(),

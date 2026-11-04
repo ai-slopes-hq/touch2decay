@@ -10,6 +10,7 @@ enum Face { case map, read }   // host/fonts.js: .map — IM Fell English (по�
 final class Draw {
   var g: CGContext
   var W: CGFloat, H: CGFloat
+  var said: [String]? = nil                   // только для тестов: журнал выведенных строк
   var face: Face = .map                       // host/fonts.js:7
   private var theme = Theme.base
   private var bgColor = UIColor.black.cgColor
@@ -90,6 +91,7 @@ final class Draw {
     let attrs: [CFString: Any] = [kCTFontAttributeName: f, kCTForegroundColorFromContextAttributeName: true]
     let line = CTLineCreateWithAttributedString(CFAttributedStringCreate(nil, s as CFString, attrs as CFDictionary))
     let w = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+    said?.append(s)
     let ox: CGFloat = align == .left ? x : align == .center ? x - w / 2 : x - w
     fill(col ?? theme.ink, a)
     g.saveGState()

@@ -28,7 +28,7 @@ final class TempoTests: XCTestCase {
   private func monochord() -> MonochordView { MonochordView(core: rec, readMirror: reader, readHeard: noHeard) }
   private func horologium() -> HorologiumView { HorologiumView(core: rec, readMirror: reader, readHeard: noHeard) }
 
-  private let por = Por.mirrorN, nat = Nat.mirrorN, cym = Cym.mirrorN, mono = MonoMirror.size, horo = 47
+  private let por = Por.mirrorN, nat = Nat.mirrorN, cym = Cym.mirrorN, mono = MonoMirror.size, horo = HoroMirror.size
 
   func testWorldTempoIsExposedOnlyBySequencers() {
     XCTAssertNotNil(portus().tempo); XCTAssertNotNil(natura().tempo); XCTAssertNotNil(cymatica().tempo)
@@ -77,7 +77,7 @@ final class TempoTests: XCTestCase {
     buf = mirror(mono); let m = monochord(); m.refresh(now: 1); XCTAssertFalse(m.armed)
     buf = mirror(mono, [(9, 1)]); m.refresh(now: 2); XCTAssertFalse(m.armed)       // auto идёт — всё равно false
     buf = mirror(horo); let h = horologium(); h.refresh(now: 1); XCTAssertFalse(h.armed)
-    buf = mirror(horo, [(15 + 4 * 2, 1)]); h.refresh(now: 2); XCTAssertTrue(h.armed)
+    buf = mirror(horo, [(15 + 5 * 2, 1)]); h.refresh(now: 2); XCTAssertTrue(h.armed)
   }
 
   func testMonochordAndHorologiumReadFromMirror() {
