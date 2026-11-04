@@ -464,7 +464,7 @@ final class Host {
   private func sheetUp(_ h: SheetHit, _ f: Finger) {
     let pd = padDepth?.id == f.id ? padDepth?.d : nil
     if case .row(let k) = h, let r = rowF, r.id == f.id, r.key == k, let s = sheet, let tap = s.spec.tap,
-       hypot(f.x - f.x0, f.y - f.y0) <= Touch.tapMove, (f.touchTime - f.t0) * 1000 < Touch.tapMs { tap(k) }
+       !f.moved, hypot(f.x - f.x0, f.y - f.y0) < Touch.tapMove, (f.touchTime - f.t0) * 1000 < Touch.tapMs { tap(k) }
     releaseSheet(f)
     guard let s = sheet, h == .pad, let d = pd, d < 0.03, let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) else { return }
     core.lfoOff(slot: s.slot, obj: l.obj, key: c); pending[LfoKey(slot: s.slot, obj: l.obj, key: c)] = nil     // глубина в ноль — LFO снимается (sheet.js:81)

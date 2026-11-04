@@ -625,6 +625,15 @@ final class HostTests: XCTestCase {
     XCTAssertTrue(tapped.isEmpty); XCTAssertFalse(world.sets.isEmpty)
   }
 
+  func testSheetRowDragBackNoTap() {                      // ушёл на 40 pt и вернулся на место — всё равно не тап (moved липкий)
+    var tapped: [String] = []
+    var sp = fxSpec(); sp.tap = { tapped.append($0) }
+    world.fx = sp; tap(bar.pos(.rev).x, bar.pos(.rev).y)
+    let r = finger(0, 100, rowY("b"))
+    host.down(r); var m = r; m.x = 140; m.moved = true; host.move(m); m.x = 100; host.move(m); host.up(m)
+    XCTAssertTrue(tapped.isEmpty)
+  }
+
   func testFxOpensAndClosesSheet() {
     world.fx = nil
     tap(bar.pos(.rev).x, bar.pos(.rev).y)
