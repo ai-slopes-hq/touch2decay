@@ -128,4 +128,24 @@ final class MidiFollowTests: XCTestCase {
     m.events([LAUNCH, 0])
     XCTAssertFalse(a.playing)
   }
+
+  func testBeatsWithoutStartDoNotPlayAfterStop() {
+    let scr = FakeTempo(armed: true), was = FakeTempo(playing: true), hand = FakeTempo(armed: true)
+    let m = rig([scr, was, hand], here: scr)
+    hand.playing = true; m.scan(); hand.playing = false; m.scan()   // запускали руками
+    m.events([STOP, 0, STOP, 0, STOP, 0])
+    scr.calls = []; was.calls = []; hand.calls = []
+    m.events([BEAT, 120, TEMPO, 120, BEAT, 120])                    // часы идут, Start не было
+    XCTAssertEqual(scr.plays, []); XCTAssertEqual(was.plays, []); XCTAssertEqual(hand.plays, [])
+    XCTAssertFalse(scr.playing); XCTAssertFalse(was.playing); XCTAssertFalse(hand.playing)
+  }
+
+  func testLaunchAfterRepeatedStopStartsStoppedAndArmed() {
+    let scr = FakeTempo(armed: true), was = FakeTempo(playing: true), idle = FakeTempo(armed: true)
+    let m = rig([scr, was, idle], here: scr)
+    m.events([STOP, 0, STOP, 0]); m.events([BEAT, 120])
+    XCTAssertEqual(scr.plays, []); XCTAssertEqual(was.plays, ["play false"])
+    m.events([START, 0, BEAT, 120, LAUNCH, 0])
+    XCTAssertTrue(scr.playing); XCTAssertTrue(was.playing); XCTAssertFalse(idle.playing)
+  }
 }
