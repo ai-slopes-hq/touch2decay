@@ -35,7 +35,7 @@
 | VI | Paradisus — хор ангелов, форманты, собор | `worlds/paradisus/` | `docs/worlds/paradisus.md` |
 | VII | Monochordum — Карплус — Стронг, страм, ветер, автострам | `worlds/monochord/`, `monochord-worklet.js` | `docs/worlds/monochordum.md` |
 | VIII | Oceanus — сканирующий синтез, карта T-O, луна | `worlds/oceanus/`, `ocean-worklet.js` (обёртка), ядро C++ `core/worlds/oceanus` → `ocean.wasm` | `docs/worlds/oceanus.md` |
-| IX | Horologium (Nova) — волшебные числа: кольца II…IX, n ударов за оборот на n-й гармонике (Rhythmicon), унтертоны, фаза, маятник руками, ритм → аккорд за limen | `worlds/horologium/`, `horo-worklet.js` | `docs/worlds/horologium.md` |
+| IX | Horologium (Nova) — волшебные числа: кольца II…IX, n ударов за оборот на n-й гармонике (Rhythmicon), унтертоны, фаза, маятник руками, ритм → аккорд за limen (**план: ударные вместо резонаторов, см. заметки**) | `worlds/horologium/`, `horo-worklet.js` | `docs/worlds/horologium.md` |
 | X | Firmamentum — пульсарный синтез, свод (**образец model / engine / view**) | `worlds/firmamentum/` (model.js — фасад, engine.js — склейка), модель и звук — ядро SDK C++ `core/worlds/firmamentum` → `t2d.wasm` (слот 10 в `t2d-worklet.js`; Cymatica — слот 2) | `docs/worlds/firmamentum.md` |
 | XI | Tria corpora — задача трёх тел, FM по кругу | `worlds/tria/` | `docs/worlds/tria.md` |
 | XII | Arcadia — wave terrain, страна в псевдоперспективе, кубик — новая страна | `worlds/arcadia/`, `terrain-worklet.js` | `docs/worlds/arcadia.md` |
@@ -142,6 +142,7 @@
 - Cymatica: одна длина на ритм и мелодию (нота = место удара) — убило полиритм; ритм и мелодия-места снова раздельной длины.
 - Arcadia: рельеф изолиниями сверху, как топокарта, — «инфузория под микроскопом»; теперь гравюра в псевдоперспективе, как Natura. Portus: солнца ночью нет — луна в углу; острова по очереди (прогрессия по тактам) — «одни и те же ноты по кругу», потом 16 лучей от фонарей — «не понимаю»; теперь один фарватер, как река Natura; аккорд только у маяка, кораблик — нота.
 - Защита нагрузки по частоте кадров — путала энергосбережение (30 к/с) с перегрузкой, урезала голоса; убрана.
+- Ударные (04.11): отдельным миром не делаем — Coemeterium (кости) снят, доска Гальтона / Abacus / Cylindrus / Fabrica — только наброски; вместо этого **Horologium → ударные** (план в `docs/worlds/horologium.md`, кода нет): резонаторы уходят (звучали как Cymatica), кольца и руки остаются, инструмент кольца по номеру, тон из лада. Ударные «только кубик» — отвергнуто, руки нужны.
 
 ## Дальше
 
