@@ -2560,6 +2560,94 @@ static void tenebraeMirror() {
   CHECK(v0[0] == 1 && any);
 }
 
+// Model::pick (правило spawn эталона): модель отдельно от звука, env двигает tick
+static void tenebraeModelPick() {
+  using tenebrae::Model;
+  static Model m;
+  m.reset(1);
+  CHECK(m.pick() == 0);                                  // пусто — первый свободный
+  for (int i = 0; i < 3; i++) { m.spawn(i, 0.2 + 0.2 * i, 0.4, 0); m.grab(i); }
+  m.tick(2);
+  CHECK(m.pick() == -1);                                 // три временных, все held и звучат — мест нет
+  for (int i = 0; i < 3; i++) m.letGo(i, false);         // отпущены без затухания: envT ещё 1 — не уступают
+  CHECK(m.pick() == -1);
+  for (int i = 0; i < 3; i++) m.grab(i);
+  m.letGo(2, true); m.tick(0.5);                         // затухают по очереди: у 2 env меньше всех, у 0 больше всех
+  m.letGo(1, true); m.tick(0.5);
+  m.letGo(0, true); m.tick(0.1);
+  CHECK(m.voice(2).env < m.voice(1).env && m.voice(1).env < m.voice(0).env && m.voice(2).envT == 0);
+  CHECK(m.pick() == 2);                                  // уступает самый тихий затухающий
+  m.grab(2);                                             // удерживаемый не выбирается — следующий по тишине
+  CHECK(m.pick() == 1);
+  const int ids[1] = {1};
+  m.keep(ids, 1);                                        // и из kept тоже
+  CHECK(m.pick() == 0);
+  m.grab(0);
+  CHECK(m.pick() == -1);                                 // 2 held, 1 kept, 0 held
+  m.reset(1);                                            // три закреплённых + свободный индекс
+  for (int i = 0; i < 3; i++) { m.spawn(i, 0.2 + 0.2 * i, 0.4, 0); CHECK(m.pin(i) == 1); }
+  CHECK(m.pick() == 3);
+  for (int i = 3; i < 6; i++) { m.spawn(i, 0.5, 0.4, 0); m.grab(i); }   // плюс три удерживаемых временных
+  m.tick(1);
+  CHECK(m.pick() == -1);
+  m.letGo(5, true); m.tick(0.1);                         // затухающий временный уступает, закреплённые — никогда
+  CHECK(m.pick() == 5);
+}
+
+// Swift шлёт действия напрямую: NaN / inf в любом числе — действие отброшено, модель не тронута
+static void tenebraeActionNan() {
+  static Scale sc;
+  static tenebrae::World w(sc);
+  w.prepare(48000, 1);
+  static double m0[2048], m1[2048];
+  const double nan = std::nan(""), inf = HUGE_VAL;
+  const double bad3[3] = {nan, 0.5, 0}, bad3b[3] = {0.5, 0.5, nan};
+  w.action(tenebrae::SPAWN, 0, bad3, 3);
+  w.action(tenebrae::SPAWN, 0, bad3b, 3);
+  w.mirror(m1, 2048);
+  CHECK(m1[15] == 0);                                    // голос 0 не активен
+  const double ok[3] = {0.4, 0.5, 0}, ok1[3] = {0.7, 0.5, 0};
+  w.action(tenebrae::SPAWN, 0, ok, 3);
+  w.action(tenebrae::SPAWN, 1, ok1, 3);
+  const double lk[1] = {1}, lfo[4] = {2, 0, 1.2, 0.4};
+  w.action(tenebrae::LINK, 0, lk, 1);
+  w.action(tenebrae::SETLFO, 0, lfo, 4);
+  w.action(tenebrae::GRAB, 0, nullptr, 0);
+  tenebraeRender(w, 0.3);
+  const int N = tenebrae::MODEL_N;
+  CHECK(w.mirror(m0, 2048) >= N);
+  CHECK(m0[15] == 1);
+  struct Bad { int kind, i, n; double a[5]; };
+  const Bad bad[] = {
+    {tenebrae::SPAWN, 2, 3, {nan, 0.5, 0}},
+    {tenebrae::MOVE, 0, 3, {0.3, nan, 0}},
+    {tenebrae::MOVE, 0, 3, {inf, 0.3, 0}},
+    {tenebrae::SET, 0, 2, {1, nan}},
+    {tenebrae::SET, 0, 2, {nan, 0.5}},
+    {tenebrae::SETLFO, 0, 4, {2, 0, nan, 0.5}},
+    {tenebrae::SETLFO, 0, 4, {nan, 0, 1, 0.5}},
+    {tenebrae::LINKDEPTH, 0, 2, {1, nan}},
+    {tenebrae::LINKTYPE, 0, 2, {1, nan}},
+    {tenebrae::LINK, 0, 1, {nan}},
+    {tenebrae::UNLINK, 0, 1, {nan}},
+    {tenebrae::SUN, 0, 1, {inf}},
+    {tenebrae::SUN, 0, 1, {-inf}},
+    {tenebrae::SETFX, 0, 5, {0.5, nan, 0.5, 0.5, 0.5}},
+    {tenebrae::SETFX, 0, 5, {0.5, 0.5, 0.5, 0.5, inf}},
+    {tenebrae::LETGO, 0, 1, {nan}},
+    {tenebrae::RELEASE, 0, 1, {nan}},
+    {tenebrae::KEEP, 0, 2, {1, nan}},
+  };
+  for (const Bad& b : bad) {
+    w.action(b.kind, b.i, b.a, b.n);
+    w.mirror(m1, 2048);
+    CHECK(std::memcmp(m0, m1, N * sizeof(double)) == 0);   // зеркало модели до и после одинаково (время стоит — без process)
+  }
+  w.action(tenebrae::SPAWN, 2, ok1, 3);                  // конечное после плохого — работает
+  w.mirror(m1, 2048);
+  CHECK(m1[15 + 62 * 2] == 1 && m1[15 + 62 * 2 + 4] == 0.7);
+}
+
 static void tenebraeCycleSafe() {
   static Scale sc;
   static tenebrae::World w(sc);
@@ -3914,7 +4002,7 @@ int main(int argc, char** argv) {
   rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel(); naturaDice();
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
-  tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();
+  tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeModelPick(); tenebraeActionNan(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();

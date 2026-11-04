@@ -124,6 +124,7 @@ void World::setLinks(int i, const double* a, int n) {
 void World::action(int kind, int i, const double* a, int n) {
   retune();
   if (kind <= CLEAR) { cmd(kind, i, a, n); return; }
+  for (int k = 0; k < n; k++) if (!std::isfinite(a[k])) return;   // натив шлёт жесты напрямую: NaN / inf в модель не пускаем
   if (!okVoice(i) && kind != KEEP && kind != SETFX && kind != DICE && kind != WIPE && kind != RETUNE && kind != UNKEEP) return;
   switch (kind) {
     case SPAWN: if (n >= 3) model_.spawn(i, a[0], a[1], a[2]); break;
