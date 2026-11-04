@@ -158,9 +158,9 @@ void Engine::renderBlock(uint64_t host, int offset) {
   Midi m;                                                   // MIDI — до t2d_time: события часов этого блока видят сетку на его начало
   while (midi_.pop(m)) {
     double at = samplesDone_ / sr_;                         // нет метки — считаем, что пришло в начало блока
-    if (m.mach != 0 && host != 0) {
-      const double d = static_cast<double>(static_cast<int64_t>(m.mach - host)) / ticksPerSec_;
-      if (std::fabs(d) <= 1.0) at += d;                     // метка в пределах секунды от буфера — иначе часы не те, не верим
+    if (m.mach != 0 && host != 0) {                         // блок звучит на offset сэмплов позже начала буфера (host)
+      const double d = static_cast<double>(static_cast<int64_t>(m.mach - host)) / ticksPerSec_ - offset / sr_;
+      if (std::fabs(d) <= 1.0) at += d;                     // метка в пределах секунды от блока — иначе часы не те, не верим
     }
     t2d_midi_byte(m.src, m.status, at);
   }

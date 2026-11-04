@@ -2968,35 +2968,56 @@ static void appHeardAccumulates() {
 }
 
 // ---- MIDI в ядро приложения: кольцо CoreMIDI → блок, события и сетка назад ----
-struct MidiRun { double g[4]; std::vector<double> ev; };
-// 120 BPM: 0xFA и 0xF8 каждые 0.5/24 с; метки — нс от host0 (+ shiftNs); блоки по 128, host_time = нс начала блока
-static MidiRun appMidiRun(int64_t shiftNs, bool hostZero, bool machZero, int blocks, bool stop) {
+struct MidiRun { double g[4]; std::vector<double> ev; int blocks; };
+// 120 BPM: 0xFA и 0xF8 каждые 0.5/24 с; метки — нс от host0 (+ shiftNs); буферы по sizes (по кругу), host_time = нс начала буфера.
+// Байты кладутся перед render буфера, где их время раньше конца буфера. untilLaunch — стоп сразу после блока с LAUNCH.
+static MidiRun appMidiRun(int64_t shiftNs, bool hostZero, bool machZero, std::vector<int> sizes, int totalSamples, bool stop, bool untilLaunch = false) {
   const uint64_t host0 = 5000000000ull;
   t2d_app_init(48000, 1, 1e9, 0);
-  MidiRun r; std::vector<double> buf(512);
+  MidiRun r{{}, {}, 0}; std::vector<double> buf(512);
   auto mach = [&](double sec) -> uint64_t { return machZero ? 0 : static_cast<uint64_t>(static_cast<int64_t>(host0 + sec * 1e9) + shiftNs); };
   t2d_app_midi(0, 0xFA, mach(0));
-  double next = 0; float L[128], R[128];
-  for (int b = 0; b < blocks; b++) {
-    const double end = (b + 1) * 128.0 / 48000;
+  double next = 0; int pos = 0, k = 0;
+  std::vector<float> L(2048), R(2048);
+  while (pos < totalSamples) {
+    const int n = sizes[k++ % sizes.size()];
+    const double end = (pos + n) / 48000.0;
     while (next < end) { t2d_app_midi(0, 0xF8, mach(next)); next += 0.5 / 24; }
-    t2d_app_render(L, R, 128, hostZero ? 0 : host0 + static_cast<uint64_t>(b * 128.0 / 48000 * 1e9 + 0.5));
-    const int n = t2d_app_hevents(buf.data(), 512);
-    r.ev.insert(r.ev.end(), buf.begin(), buf.begin() + n);
+    t2d_app_render(L.data(), R.data(), n, hostZero ? 0 : host0 + static_cast<uint64_t>(pos / 48000.0 * 1e9 + 0.5));
+    pos += n;
+    const int m = t2d_app_hevents(buf.data(), 512);
+    bool launch = false;
+    for (int i = 0; i < m; i += 2) launch = launch || buf[i] == 5;
+    r.ev.insert(r.ev.end(), buf.begin(), buf.begin() + m);
+    if (untilLaunch && launch) break;
   }
+  r.blocks = (pos + 127) / 128;
   if (stop) {
-    t2d_app_midi(0, 0xFC, mach(blocks * 128.0 / 48000));
-    float l[128], rr[128]; t2d_app_render(l, rr, 128, hostZero ? 0 : host0 + static_cast<uint64_t>(blocks * 128.0 / 48000 * 1e9));
-    const int n = t2d_app_hevents(buf.data(), 512);
-    r.ev.insert(r.ev.end(), buf.begin(), buf.begin() + n);
+    t2d_app_midi(0, 0xFC, mach(pos / 48000.0));
+    t2d_app_render(L.data(), R.data(), 128, hostZero ? 0 : host0 + static_cast<uint64_t>(pos / 48000.0 * 1e9));
+    const int m = t2d_app_hevents(buf.data(), 512);
+    r.ev.insert(r.ev.end(), buf.begin(), buf.begin() + m);
   }
   CHECK(t2d_app_grid(r.g) == 4);
   return r;
 }
+// Эталон мимо слоя app: те же байты прямо в ядро. quant — время байта = начало 128-блока, где он вышел из кольца; иначе точное + shiftSec.
+static void appMidiRef(double shiftSec, bool quant, int blocks, double* g) {
+  t2d_init(48000, 1);
+  t2d_midi_byte(0, 0xFA, quant ? 0 : shiftSec);
+  double next = 0;
+  for (int b = 0; b < blocks; b++) {
+    const double start = b * 128.0 / 48000, end = (b + 1) * 128.0 / 48000;
+    while (next < end) { t2d_midi_byte(0, 0xF8, quant ? start : next + shiftSec); next += 0.5 / 24; }
+    t2d_time(start); t2d_process(128);
+  }
+  t2d_hmirror();
+  for (int i = 0; i < 4; i++) g[i] = t2d_mbuf()[i];
+}
 static int evCount(const MidiRun& r, int code) { int c = 0; for (size_t i = 0; i + 1 < r.ev.size(); i += 2) c += r.ev[i] == code; return c; }
 
 static void appMidiClock() {
-  MidiRun r = appMidiRun(0, false, false, 600, true);                     // 1.6 с ≈ 3 доли
+  MidiRun r = appMidiRun(0, false, false, {128}, 600 * 128, true);        // 1.6 с ≈ 3 доли
   CHECK(evCount(r, 1) == 1);
   CHECK(evCount(r, 5) == 1);
   CHECK(evCount(r, 4) >= 2);
@@ -3004,24 +3025,51 @@ static void appMidiClock() {
   bool bpmOk = true;
   for (size_t i = 0; i + 1 < r.ev.size(); i += 2) if (r.ev[i] == 4) bpmOk = bpmOk && std::fabs(r.ev[i + 1] - 120) < 0.5;
   CHECK(bpmOk);
-  MidiRun g = appMidiRun(0, false, false, 600, false);
+  MidiRun g = appMidiRun(0, false, false, {128}, 600 * 128, false);
   CHECK(g.g[0] == 1);
   NEAR(g.g[2], 0.5, 1e-3);
   CHECK(t2d_app_hevents(r.g, 0) == 0);                                    // cap 0 — ничего
 }
 
 static void appMidiTime() {
-  const MidiRun a = appMidiRun(0, false, false, 600, false);
-  const MidiRun b = appMidiRun(-10000000, false, false, 600, false);      // все метки на 10 мс раньше блока
+  const double TOL = 1.0 / 48000;
+  double ref[4];
+  // метки в тактах относительно host: буфер кратен 128, смещённый -10 мс — t0 ровно на 10 мс раньше
+  const MidiRun a = appMidiRun(0, false, false, {128}, 600 * 128, false);
+  const MidiRun b = appMidiRun(-10000000, false, false, {128}, 600 * 128, false);
   CHECK(a.g[0] == 1 && b.g[0] == 1);
-  NEAR(a.g[1] - b.g[1], 0.010, 1.0 / 48000);
-  // метка 0, host_time 0 и метка дальше секунды от блока — время начала блока; все три дают одно и то же
-  const MidiRun z = appMidiRun(0, false, true, 600, false);
-  const MidiRun h = appMidiRun(0, true, false, 600, false);
-  const MidiRun far = appMidiRun(5000000000ll, false, false, 600, false);
-  CHECK(z.g[0] == 1 && h.g[0] == 1 && far.g[0] == 1);
-  CHECK(z.g[1] == far.g[1] && z.g[2] == far.g[2]);
-  CHECK(h.g[1] == far.g[1] && h.g[2] == far.g[2]);
+  NEAR(a.g[1] - b.g[1], 0.010, TOL);
+  appMidiRef(0, false, a.blocks, ref);
+  NEAR(a.g[1], ref[1], TOL);                                              // и абсолютно: время ядра = секунды от начала
+  // буфер устройства не кратен 128: блок звучит позже начала буфера (offset), время байта должно это учесть
+  for (const std::vector<int> sizes : {std::vector<int>{512}, std::vector<int>{100, 333, 470, 1024}, std::vector<int>{441}}) {
+    const MidiRun c = appMidiRun(0, false, false, sizes, 600 * 128, false);
+    const MidiRun d = appMidiRun(-10000000, false, false, sizes, 600 * 128, false);
+    appMidiRef(0, false, c.blocks, ref);
+    CHECK(c.g[0] == 1 && d.g[0] == 1);
+    NEAR(c.g[1], ref[1], TOL);
+    NEAR(c.g[2], 0.5, 1e-3);
+    NEAR(c.g[1] - d.g[1], 0.010, TOL);
+  }
+  // без метки (0), без host_time (0), метка дальше секунды (обе стороны): время байта = начало блока, где он вышел из кольца
+  appMidiRef(0, true, a.blocks, ref);
+  const MidiRun z = appMidiRun(0, false, true, {128}, 600 * 128, false);
+  const MidiRun h = appMidiRun(0, true, false, {128}, 600 * 128, false);
+  const MidiRun farP = appMidiRun(1050000000ll, false, false, {128}, 600 * 128, false);
+  const MidiRun farM = appMidiRun(-1050000000ll, false, false, {128}, 600 * 128, false);
+  for (const MidiRun* q : {&z, &h, &farP, &farM}) { CHECK(q->g[0] == 1); CHECK(q->g[1] == ref[1] && q->g[2] == ref[2]); }
+  // граница: чуть меньше секунды — метка переводится в время ядра (останавливаемся на первой доле, пока часы не сочли пропавшими)
+  const MidiRun nearM = appMidiRun(-950000000ll, false, false, {128}, 2000 * 128, false, true);
+  const MidiRun farM2 = appMidiRun(-1050000000ll, false, false, {128}, 2000 * 128, false, true);
+  appMidiRef(-0.95, false, nearM.blocks, ref);
+  CHECK(nearM.g[0] == 1);
+  NEAR(nearM.g[1], ref[1], TOL);
+  appMidiRef(0, true, farM2.blocks, ref);
+  CHECK(farM2.g[0] == 1 && farM2.g[1] == ref[1]);
+  const MidiRun nearP = appMidiRun(950000000ll, false, false, {128}, 2000 * 128, false, true);
+  const MidiRun farP2 = appMidiRun(1050000000ll, false, false, {128}, 2000 * 128, false, true);
+  CHECK(nearP.g[0] == 0);                                                 // переведена в будущее: Follower сетку из будущего сразу гасит
+  CHECK(farP2.g[0] == 1);                                                 // не переведена: начало блока
 }
 
 static void appMidiOverflow() {
