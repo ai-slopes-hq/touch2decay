@@ -12,6 +12,7 @@ struct TenFinger {
   var v: Int?
   var ox = 0.0, oy = 0.0
   var caught = false, spawned = false, opened = false
+  var wasBridge = false                                      // палец был в мосте: его тап не считается
 }
 
 // пара пальцев щипка: d0, z0, t0 — на момент пары; d1 — расстояние, с которого пошёл зум
@@ -29,12 +30,12 @@ extension TenebraeView {
   // ---------- вспомогательное ----------
 
   // конечная точка события, вне экрана — к границе; NaN / inf — nil (событие бросаем)
-  private func pt(_ f: Finger) -> (x: Double, y: Double)? {
+  func pt(_ f: Finger) -> (x: Double, y: Double)? {
     let x = Double(f.x), y = Double(f.y)
     guard x.isFinite, y.isFinite else { return nil }
     return (min(big, max(-big, x)), min(big, max(-big, y)))
   }
-  private func holders(_ i: Int) -> Int { fingers.values.reduce(0) { $0 + ($1.v == i ? 1 : 0) } }
+  func holders(_ i: Int) -> Int { fingers.values.reduce(0) { $0 + ($1.v == i ? 1 : 0) } }
   private func dist(_ p: TenPinch) -> Double? {
     guard let a = fingers[p.a], let b = fingers[p.b] else { return nil }
     return hypot(a.x - b.x, a.y - b.y)
@@ -68,7 +69,7 @@ extension TenebraeView {
     send(Act.move, v, [q.p, q.c, geo.holeDepth(x, y)], touchTime: f.touchTime)
   }
 
-  private func newFinger(_ f: Finger, _ p: (x: Double, y: Double)) -> TenFinger {
+  func newFinger(_ f: Finger, _ p: (x: Double, y: Double)) -> TenFinger {
     var t = TenFinger(id: f.id, x0: p.x, y0: p.y, t0: f.t0)
     t.x = p.x; t.y = p.y; t.touchTime = f.touchTime
     return t
@@ -78,7 +79,7 @@ extension TenebraeView {
 
   func down(_ f: Finger) {
     guard let p = pt(f) else { return }
-    if linkDown(f) || sheetDown(f) { return }                // призрак, булавка, плашка, кольцо, ручка нити — их задачи
+    if ringPinDown(f) || sheetDown(f) || linkDown(f) { return }   // призрак и булавка на весу → плашка → закреплённое кольцо, ручка (спека, решение 9)
     var t = newFinger(f, p)
     var v = hit(p.x, p.y)
     if let h = v {
@@ -115,10 +116,12 @@ extension TenebraeView {
   }
 
   func move(_ f: Finger) {
+    if ring?.finger == f.id { linkMove(f); return }
     guard var t = fingers[f.id], let p = pt(f) else { return }
     t.x = p.x; t.y = p.y; t.touchTime = f.touchTime
     if !t.moved && hypot(t.x - t.x0, t.y - t.y0) > Ten.holeMoved { t.moved = true }
     fingers[f.id] = t
+    if let br = bridge, f.id == br.fa || f.id == br.fb { bridgeMove(br); return }
     if var z = pinch {
       if !z.zooming, now - z.t0 < Ten.pinchTime, let d = dist(z), abs(d - z.d0) > Ten.pinchDelta { startZoom(&z) }
       if z.zooming {
@@ -152,11 +155,13 @@ extension TenebraeView {
   }
 
   func up(_ f: Finger) {
+    if ring?.finger == f.id { linkUp(f); return }
     guard let t0 = fingers[f.id] else { return }
     var t = t0
     if let p = pt(f) { t.x = p.x; t.y = p.y }
     fingers[f.id] = nil
     if hold?.id == f.id { hold = nil }
+    if let br = bridge, f.id == br.fa || f.id == br.fb { endBridge(br) }
     if let z = pinch, z.a == f.id || z.b == f.id {
       pinch = nil
       if z.zooming { return }
@@ -164,7 +169,7 @@ extension TenebraeView {
     guard let v = t.v, voice(v).active else { return }
     if t.opened { send(Act.letGo, v, [0]); return }          // плашка открыта удержанием: планета в KEEP, хвост не нужен
     let tap = now - t.t0 < Ten.tap && hypot(t.x - t.x0, t.y - t.y0) < Ten.tapMove
-    if tap && holders(v) == 0 {                              // держал её только этот палец
+    if tap && !t.wasBridge && holders(v) == 0 {                              // держал её только этот палец
       if let lt = lastTap, lt.v == v, now - lt.t < Ten.dtap {
         lastTap = nil
         send(Act.letGo, v, [0])                              // хвост отпускания не нужен: закрепить / открепить решает pin
@@ -178,9 +183,11 @@ extension TenebraeView {
   }
 
   func cancel(_ f: Finger) {
+    if ring?.finger == f.id { linkCancel(f); return }
     guard let t = fingers[f.id] else { return }
     fingers[f.id] = nil
     if hold?.id == f.id { hold = nil }
+    if let br = bridge, f.id == br.fa || f.id == br.fb { endBridge(br) }
     if let z = pinch, z.a == f.id || z.b == f.id { pinch = nil }
     if let v = t.v, voice(v).active { send(Act.letGo, v, [t.opened ? 0 : 1]) }
   }
@@ -189,6 +196,7 @@ extension TenebraeView {
 
   func touchTick(now: Double) {
     for id in Array(fingers.keys) { _ = alive(id) }
+    linkTick(now: now)
     // удержание пойманной планеты одним пальцем — плашка (solTick :1861)
     var h: TenFinger?
     if fingers.count == 1, pinch == nil, let f = fingers.values.first, f.caught, !f.moved, !f.opened, let v = f.v, holders(v) == 1 { h = f }
@@ -213,5 +221,6 @@ extension TenebraeView {
 
   func touchReset() {                                        // restored: пальцы, пара, тап, отказ, удержание забыты
     fingers = [:]; pinch = nil; lastTap = nil; refuse = nil; hold = nil
+    linkReset()
   }
 }

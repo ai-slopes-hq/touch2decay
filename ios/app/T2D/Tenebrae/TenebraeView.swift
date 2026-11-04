@@ -71,6 +71,9 @@ final class TenebraeView: World {
   var lastTap: (v: Int?, t: Double, x: Double, y: Double)? = nil   // последний тап по планете — для двойного
   var refuse: (x: Double, y: Double, t0: Double)? = nil       // отказ «нет голоса» / «закреплённых три» (0.6 с, рисует план (б))
   var hold: (id: ObjectIdentifier, t0: Double)? = nil         // палец, чьё удержание идёт к плашке (кольцо прогресса — план (б))
+  var bridge: TenBridge? = nil                                // мост двух пальцев (TenLink.swift)
+  var ring: TenRing? = nil                                    // кольцо связи: на весу у пальца или закреплённое
+  var ghost: (ring: TenRing, until: Double)? = nil            // погасшее кольцо: 1.6 с можно тапнуть булавку
   var sclPcs: [Int]? = nil, sclRoot = 0                       // лад: ноты по модулю 12 от A; nil — выключен
   var slideUntil = 0.0                                        // после смены лада кружки плавно съезжают к нотам
   private var sized: (Double, Double, Double, Double)?
