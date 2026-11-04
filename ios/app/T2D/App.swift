@@ -14,7 +14,8 @@ import SwiftUI
 //   inferno | inferno-held | inferno-sheet | inferno-fx | inferno-storm | inferno-fan — go(5), см. shotInferno;
 //   natura | natura-play | natura-fx | natura-res | natura-skiff | natura-ducks-away | natura-sheet | natura-menu — go(4), см. shotNatura;
 //   portus | portus-empty | portus-play | portus-echo | portus-star | portus-bloodmoon | portus-sheet — go(13), см. shotPortus;
-//   cymatica | cym-empty | cym-play | cym-pinch | cym-steprec | cym-chance | cym-drift | cym-luna — go(2), см. shotCymatica.
+//   cymatica | cym-empty | cym-play | cym-pinch | cym-steprec | cym-chance | cym-drift | cym-luna — go(2), см. shotCymatica;
+//   tenebrae | ten-empty | ten-sun | ten-hole | ten-hold | ten-lfo | ten-ring | ten-zoom | ten-scale — go(1), см. shotTenebrae.
 @main
 struct T2DApp: App {
   // -shot firmamentum: зерно 7 (init ядра — до запуска движка, в Audio.start) и сцена для снимка
@@ -36,6 +37,7 @@ struct T2DApp: App {
   @State private var nat: NaturaView                 // нужен только -shot natura*; Host держит миры сам
   @State private var por: PortusView                 // нужен только -shot portus*; Host держит миры сам
   @State private var cym: CymaticaView               // нужен только -shot cym*; Host держит миры сам
+  @State private var ten: TenebraeView               // нужен только -shot ten*; Host держит миры сам
   @State private var host: Host
 
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
@@ -67,7 +69,7 @@ struct T2DApp: App {
     a.onInit = { h.reapply() }
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _nat = State(initialValue: views.compactMap { $0 as? NaturaView }[0]); _por = State(initialValue: views.compactMap { $0 as? PortusView }[0]); _cym = State(initialValue: views.compactMap { $0 as? CymaticaView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _nat = State(initialValue: views.compactMap { $0 as? NaturaView }[0]); _por = State(initialValue: views.compactMap { $0 as? PortusView }[0]); _cym = State(initialValue: views.compactMap { $0 as? CymaticaView }[0]); _ten = State(initialValue: views.compactMap { $0 as? TenebraeView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -101,6 +103,7 @@ struct T2DApp: App {
     case "natura", "natura-play", "natura-fx", "natura-res", "natura-skiff", "natura-ducks-away", "natura-sheet", "natura-menu": shotNatura(T2DApp.shotName); return
     case "portus", "portus-empty", "portus-play", "portus-echo", "portus-star", "portus-bloodmoon", "portus-sheet": shotPortus(T2DApp.shotName); return
     case "cymatica", "cym-empty", "cym-play", "cym-pinch", "cym-steprec", "cym-chance", "cym-drift", "cym-luna": shotCymatica(T2DApp.shotName); return
+    case "tenebrae", "ten-empty", "ten-sun", "ten-hole", "ten-hold", "ten-lfo", "ten-ring", "ten-zoom", "ten-scale": shotTenebrae(T2DApp.shotName); return
     default: break
     }
     host.go(FirmamentumView.slotN)                          // прежние сцены — в мире, как до карты
@@ -401,6 +404,86 @@ struct T2DApp: App {
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(cym.driftSpec) }
     case "cymatica": cym.dice()
     default: break
+    }
+  }
+
+  // Tenebrae: tenebrae — три закреплённые (пара веба planets); -empty — пустое поле, призрак первого касания;
+  // -sun — палец ведёт планету к солнцу, не отпущен; -hole — закреплённую тянут в дыру; -hold — удержание, плашка, amp 0;
+  // -lfo — плашка, cut +0.25, тап по «~»; -ring — две закреплённые, связь, закреплённое кольцо; -zoom — зум 0.5 с подписями;
+  // -scale — лад включён. Пальцы и места — как у веба (экран 390x844); всё после первого тика (0.5 с): до него нет геометрии
+  private func shotTenebrae(_ name: String) {
+    host.go(TenebraeView.slotN)
+    if name != "ten-empty" { ten.touchedOnce = true }
+    let q = DispatchQueue.main, fid = NSObject()
+    func later(_ t: Double, _ f: @escaping () -> Void) { q.asyncAfter(deadline: .now() + t, execute: f) }
+    func finger(_ x: Double, _ y: Double, _ x0: Double, _ y0: Double) -> Finger {
+      Finger(id: ObjectIdentifier(fid), x: CGFloat(x), y: CGFloat(y), x0: CGFloat(x0), y0: CGFloat(y0), t0: ten.now, moved: false, touchTime: ten.now)
+    }
+    // закреплённая планета: как кубик (SPAWN, PIN, отпустить); nil — мест нет
+    @discardableResult func pin(_ x: Double, _ y: Double) -> Int? {
+      guard let s = ten.spawnAt(x, y) else { return nil }
+      ten.send(Act.pin, s.i); ten.send(Act.letGo, s.i, [0])
+      return s.i
+    }
+    // палец идёт по прямой за n шагов с шагом 0.05 с, начиная с t
+    func drag(from a: (x: Double, y: Double), to b: (x: Double, y: Double), steps n: Int, at t: Double) {
+      for k in 1...n {
+        later(t + 0.05 * Double(k)) {
+          let u = Double(k) / Double(n)
+          var f = finger(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, a.x, a.y)
+          f.moved = true
+          ten.move(f)
+        }
+      }
+    }
+    func three() { pin(110, 640); pin(250, 560); pin(120, 380) }
+    switch name {
+    case "tenebrae": later(0.5) { three() }
+    case "ten-sun":
+      later(0.5) { ten.down(finger(160, 560, 160, 560)) }
+      drag(from: (160, 560), to: (30, 804), steps: 14, at: 0.6)
+    case "ten-hole":
+      later(0.5) { pin(200, 420) }
+      later(1.0) { ten.down(finger(200, 420, 200, 420)) }
+      later(1.05) {
+        let h = ten.geo.holeAt                              // дыра — после первого тика
+        drag(from: (200, 420), to: (h.x + 30, h.y + 10), steps: 16, at: 0)
+      }
+    case "ten-hold":
+      later(0.5) { pin(200, 300) }
+      later(1.0) { ten.down(finger(200, 300, 200, 300)) }
+      later(1.8) { if let i = ten.sheetVoice { ten.send(Act.set, i, [Double(Row.amp.rawValue), 0]) } }
+    case "ten-lfo":
+      later(0.5) {
+        guard let i = pin(200, 300) else { return }
+        later(0.3) {
+          ten.openPlanetSheet(i)
+          ten.send(Act.set, i, [Double(Row.cut.rawValue), min(1, ten.voice(i).cut + 0.25)])
+          later(0.3) {
+            let s = ten.sheetGeo
+            let f = finger(s.lfoX, s.rowY(0) + 10, s.lfoX, s.rowY(0) + 10)
+            _ = ten.sheetDown(f); ten.sheetUp(f)
+          }
+        }
+      }
+    case "ten-ring":
+      later(0.5) {
+        guard let a = pin(120, 560), let b = pin(260, 420) else { return }
+        later(0.4) {
+          ten.send(Act.link, a, [Double(b)])
+          later(0.4) {
+            let m = ten.linkMid(dst: a, src: b)
+            let f = finger(m.x, m.y, m.x, m.y)
+            ten.down(f); ten.up(f)
+          }
+        }
+      }
+    case "ten-zoom":
+      later(0.5) { three(); ten.zoomT = 0.5; ten.zoomShow = ten.now + 60 }
+    case "ten-scale":
+      later(0.5) { pin(150, 560) }
+      host.shotState(scl: Scl(on: true, idx: 2, root: 3))
+    default: break                                          // ten-empty: пустое поле
     }
   }
 

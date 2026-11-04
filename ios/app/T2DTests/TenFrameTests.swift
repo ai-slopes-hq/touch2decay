@@ -202,4 +202,10 @@ final class TenFrameTests: XCTestCase {
     view.fingers[id] = TenFinger(id: id, x0: p.x, y0: p.y, t0: now, x: p.x, y: p.y, v: 0, caught: true)
     _ = frame()
   }
+
+  // мир I включён на карте: нативный вид есть, карточка не рубашка
+  func testTenebraeOnMap() {
+    XCTAssertEqual(Worlds.info(1)?.view, true)
+    XCTAssertEqual(Worlds.all.filter { $0.view }.first?.slot, 1)
+  }
 }
