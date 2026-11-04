@@ -9,6 +9,8 @@
 //   levels()  ←── levelSnap_ (Triple)      ←──────┘
 //   heard()   ←── heard_[слот] (Spsc)      ←────── block(): записи «услышано» каждого блока
 //   snapTake()←── snapText_ (Spsc)         ←────── действие SNAP слота хоста
+//   midi()    ──→ midi_ (Spsc, поток CoreMIDI) ──→ renderBlock(): t2d_midi_byte до t2d_time; после process: t2d_hevents → hev_
+//   hevents() ←── hev_ (Spsc)              ←──────┘      grid() ←── gridSnap_ (Triple) ←── publishSnapshots(): t2d_hmirror
 //   stats()   ←── атомарные счётчики       ←────── render (нагрузка), block (задержка касание → блок), SNAP (время снимка)
 //
 // render(n): ядро считает только по 128 сэмплов, буфер устройства — любой (iPhone: 256, 512, 441 …). Сначала отдаётся остаток
@@ -60,6 +62,9 @@ class Engine {
   int levels(float* out, int n);                            // UI: RMS слотов до фейдера (индекс = слот); 1 — снимок новее прошлого чтения
   int lfo(double* buf, int cap);                            // UI: снимок LFO (по 10 чисел), длина
   int heard(int slot, double* buf, int cap);                // UI: забрать записи подряд, пока влезают; длина
+  bool midi(int src, int status, uint64_t mach);            // поток CoreMIDI (один!): байт реального времени в кольцо; false — полно (midi_lost)
+  int hevents(double* buf, int cap);                        // UI: события часов подряд — пары (код, bpm), пока влезают; число double
+  int grid(double* out4);                                   // UI: последний снимок t2d_hmirror (on, t0, p, время блока); 4
   void stats(t2d_app_stats_t* out);                         // UI: снимает окно (суммы и максимумы обнуляются)
 
  private:
@@ -69,6 +74,9 @@ class Engine {
   struct LfoTable { int len; double d[LFO_N]; };
   struct Levels { float rms[SLOTS]; };
   struct HeardRec { int len; double d[HEARD_REC]; };
+  struct Midi { int src, status; uint64_t mach; };          // байт MIDI реального времени с меткой прихода (такты mach)
+  struct HEv { double code, bpm; };                         // событие часов хоста (sdk::Follower::Ev)
+  struct Grid { double d[4]; };                             // t2d_hmirror: on, t0, p, время блока
   // мастер, который сглаживаем: частота LPF — в логарифме (ровный ход по слуху), порог компрессора в дБ, ratio, потолок в дБ
   enum { LPF_LOG, THRESHOLD_DB, RATIO, CEIL_DB, MASTER_N };
 
@@ -97,11 +105,15 @@ class Engine {
   // Σ моно² сухого выхода слота за последний и предыдущий блок: RMS по 256 сэмплам, как fftSize анализатора веба
   float energyNow_[SLOTS] = {}, energyPrev_[SLOTS] = {};
   Spsc<HeardRec, HEARD_RECS> heard_[SLOTS];
+  Spsc<Midi, 512> midi_;                                    // CoreMIDI → аудио; свой писатель — поток CoreMIDI, не UI
+  Spsc<HEv, 128> hev_;                                      // аудио → UI: события часов (= 256 чисел); полно — теряются (hevLost_)
+  Triple<Grid> gridSnap_;                                   // сетка хоста для UI
+  Grid gridRead_{};
   Spsc<Text, 2> restoreText_, snapText_;                    // строки UI → аудио (restore) и аудио → UI (снимки)
 
   // Статистика окна (между вызовами stats): суммы в целых — нс и доли ×1e9, чтобы снимать атомарным exchange.
   std::atomic<uint64_t> loadSum_{0}, loadMax_{0}, loadN_{0}, latSum_{0}, latMax_{0}, latN_{0}, snapSum_{0}, snapMax_{0}, snapN_{0};
   std::atomic<int> frames_{0};                              // размер последнего буфера устройства
   // счётчики за всё время с init; lfoLost_ — копия счётчика хоста, чтобы UI не трогал ядро
-  std::atomic<unsigned> dropped_{0}, heardLost_{0}, snapLost_{0}, lfoLost_{0};
+  std::atomic<unsigned> dropped_{0}, heardLost_{0}, snapLost_{0}, lfoLost_{0}, midiLost_{0}, hevLost_{0};
 };

@@ -2967,6 +2967,82 @@ static void appHeardAccumulates() {
   CHECK(st.heard_lost > 0);
 }
 
+// ---- MIDI в ядро приложения: кольцо CoreMIDI → блок, события и сетка назад ----
+struct MidiRun { double g[4]; std::vector<double> ev; };
+// 120 BPM: 0xFA и 0xF8 каждые 0.5/24 с; метки — нс от host0 (+ shiftNs); блоки по 128, host_time = нс начала блока
+static MidiRun appMidiRun(int64_t shiftNs, bool hostZero, bool machZero, int blocks, bool stop) {
+  const uint64_t host0 = 5000000000ull;
+  t2d_app_init(48000, 1, 1e9, 0);
+  MidiRun r; std::vector<double> buf(512);
+  auto mach = [&](double sec) -> uint64_t { return machZero ? 0 : static_cast<uint64_t>(static_cast<int64_t>(host0 + sec * 1e9) + shiftNs); };
+  t2d_app_midi(0, 0xFA, mach(0));
+  double next = 0; float L[128], R[128];
+  for (int b = 0; b < blocks; b++) {
+    const double end = (b + 1) * 128.0 / 48000;
+    while (next < end) { t2d_app_midi(0, 0xF8, mach(next)); next += 0.5 / 24; }
+    t2d_app_render(L, R, 128, hostZero ? 0 : host0 + static_cast<uint64_t>(b * 128.0 / 48000 * 1e9 + 0.5));
+    const int n = t2d_app_hevents(buf.data(), 512);
+    r.ev.insert(r.ev.end(), buf.begin(), buf.begin() + n);
+  }
+  if (stop) {
+    t2d_app_midi(0, 0xFC, mach(blocks * 128.0 / 48000));
+    float l[128], rr[128]; t2d_app_render(l, rr, 128, hostZero ? 0 : host0 + static_cast<uint64_t>(blocks * 128.0 / 48000 * 1e9));
+    const int n = t2d_app_hevents(buf.data(), 512);
+    r.ev.insert(r.ev.end(), buf.begin(), buf.begin() + n);
+  }
+  CHECK(t2d_app_grid(r.g) == 4);
+  return r;
+}
+static int evCount(const MidiRun& r, int code) { int c = 0; for (size_t i = 0; i + 1 < r.ev.size(); i += 2) c += r.ev[i] == code; return c; }
+
+static void appMidiClock() {
+  MidiRun r = appMidiRun(0, false, false, 600, true);                     // 1.6 с ≈ 3 доли
+  CHECK(evCount(r, 1) == 1);
+  CHECK(evCount(r, 5) == 1);
+  CHECK(evCount(r, 4) >= 2);
+  CHECK(evCount(r, 2) == 1);
+  bool bpmOk = true;
+  for (size_t i = 0; i + 1 < r.ev.size(); i += 2) if (r.ev[i] == 4) bpmOk = bpmOk && std::fabs(r.ev[i + 1] - 120) < 0.5;
+  CHECK(bpmOk);
+  MidiRun g = appMidiRun(0, false, false, 600, false);
+  CHECK(g.g[0] == 1);
+  NEAR(g.g[2], 0.5, 1e-3);
+  CHECK(t2d_app_hevents(r.g, 0) == 0);                                    // cap 0 — ничего
+}
+
+static void appMidiTime() {
+  const MidiRun a = appMidiRun(0, false, false, 600, false);
+  const MidiRun b = appMidiRun(-10000000, false, false, 600, false);      // все метки на 10 мс раньше блока
+  CHECK(a.g[0] == 1 && b.g[0] == 1);
+  NEAR(a.g[1] - b.g[1], 0.010, 1.0 / 48000);
+  // метка 0, host_time 0 и метка дальше секунды от блока — время начала блока; все три дают одно и то же
+  const MidiRun z = appMidiRun(0, false, true, 600, false);
+  const MidiRun h = appMidiRun(0, true, false, 600, false);
+  const MidiRun far = appMidiRun(5000000000ll, false, false, 600, false);
+  CHECK(z.g[0] == 1 && h.g[0] == 1 && far.g[0] == 1);
+  CHECK(z.g[1] == far.g[1] && z.g[2] == far.g[2]);
+  CHECK(h.g[1] == far.g[1] && h.g[2] == far.g[2]);
+}
+
+static void appMidiOverflow() {
+  t2d_app_init(48000, 1, 1e9, 0);
+  int ok = 0;
+  for (int i = 0; i < 513; i++) ok += t2d_app_midi(0, 0xF8, 1000);
+  t2d_app_stats_t st; t2d_app_stats(&st);
+  CHECK(ok == 512);
+  CHECK(st.midi_lost == 1);
+  t2d_app_midi(0, 0xFA, 1000);                                            // кольцо полно: теряем, но init его чистит
+  float L[128], R[128];
+  t2d_app_init(48000, 1, 1e9, 0);
+  t2d_app_render(L, R, 128, 0);
+  double buf[16], g[4];
+  CHECK(t2d_app_hevents(buf, 16) == 0);                                   // ничего не доехало до ядра
+  t2d_app_grid(g);
+  CHECK(g[0] == 0);
+  t2d_app_stats(&st);
+  CHECK(st.midi_lost == 0);
+}
+
 // 300 действий без render при ёмкости 256 → 44 отброшено
 static void appOverflow() {
   t2d_app_init(48000, 1, 1e9, 1u << 10);
@@ -4004,7 +4080,7 @@ int main(int argc, char** argv) {
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
   tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeModelPick(); tenebraeActionNan(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
-  appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appOverflow(); appLatency(); appReinitRate();
+  appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appMidiClock(); appMidiTime(); appMidiOverflow(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
   lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);

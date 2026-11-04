@@ -14,12 +14,13 @@ void Engine::init(double sr, unsigned seed, double ticksPerSec, unsigned watch) 
   sr_ = sr; ticksPerSec_ = ticksPerSec; watch_ = watch;
   samplesDone_ = 0; restOff_ = restN_ = 0;
   actions_.clear(); restoreText_.clear(); snapText_.clear();
+  midi_.clear(); hev_.clear(); gridSnap_.clear(); gridRead_ = Grid{};
   lfoSnap_.clear(); lfoRead_.len = 0;
   levelSnap_.clear(); levelRead_ = Levels{};
   for (int s = 0; s < SLOTS; s++) energyNow_[s] = energyPrev_[s] = 0;
   for (int s = 0; s < SLOTS; s++) { mirrors_[s].clear(); mirrorRead_[s].len = 0; heard_[s].clear(); }
   loadSum_ = loadMax_ = loadN_ = latSum_ = latMax_ = latN_ = snapSum_ = snapMax_ = snapN_ = 0;
-  frames_ = 0; dropped_ = 0; heardLost_ = 0; snapLost_ = 0; lfoLost_ = 0;
+  frames_ = 0; dropped_ = 0; heardLost_ = 0; snapLost_ = 0; lfoLost_ = 0; midiLost_ = 0; hevLost_ = 0;
   for (int s = 0; s < SLOTS; s++) faderTarget_[s] = faderNow_[s] = 1.0;
   masterTarget_[LPF_LOG] = masterNow_[LPF_LOG] = std::log(22000.0);
   masterTarget_[THRESHOLD_DB] = masterNow_[THRESHOLD_DB] = -10;
@@ -154,11 +155,26 @@ void Engine::renderBlock(uint64_t host, int offset) {
       addMax(latMax_, ns);
     }
   }
+  Midi m;                                                   // MIDI — до t2d_time: события часов этого блока видят сетку на его начало
+  while (midi_.pop(m)) {
+    double at = samplesDone_ / sr_;                         // нет метки — считаем, что пришло в начало блока
+    if (m.mach != 0 && host != 0) {
+      const double d = static_cast<double>(static_cast<int64_t>(m.mach - host)) / ticksPerSec_;
+      if (std::fabs(d) <= 1.0) at += d;                     // метка в пределах секунды от буфера — иначе часы не те, не верим
+    }
+    t2d_midi_byte(m.src, m.status, at);
+  }
   stepSmooth();                                             // после кольца: цели от действий этого блока, до process
   t2d_time(samplesDone_ / sr_);
   t2d_lfo_tick(BLOCK / sr_);                                // LFO строк: после кольца, до process (раз в блок; веб шлёт ~30/с — звучит глаже)
   t2d_process(BLOCK);
   samplesDone_ += BLOCK;
+  {                                                         // t2d_hevents пишет в общий mbuf — копируем сразу, до следующего вызова ядра
+    const int n = t2d_hevents();
+    const double* e = t2d_mbuf();
+    for (int k = 0; k + 1 < n; k += 2)
+      if (!hev_.push(HEv{e[k], e[k + 1]})) hevLost_.fetch_add(1, std::memory_order_relaxed);
+  }
   // уровень слота — сухой выход до фейдера и без trim, как chans[n].in в вебе; для всех слотов, независимо от watch
   for (int s = 0; s < SLOTS; s++) {
     const float* l = t2d_dry(s, 0);
@@ -206,6 +222,8 @@ void Engine::publishSnapshots() {
   for (int s = 0; s < SLOTS; s++) v.rms[s] = std::sqrt((energyNow_[s] + energyPrev_[s]) / 256.f);
   levelSnap_.publish();
   lfoLost_.store(t2d_lfo_lost(), std::memory_order_relaxed);
+  Grid& g = gridSnap_.write();
+  if (t2d_hmirror() >= 4) { std::memcpy(g.d, t2d_mbuf(), sizeof g.d); gridSnap_.publish(); }
 }
 
 void Engine::render(float* L, float* R, int n, uint64_t host) {
@@ -272,6 +290,29 @@ int Engine::heard(int slot, double* buf, int cap) {
   return total;
 }
 
+bool Engine::midi(int src, int status, uint64_t mach) {
+  if (!midi_.push(Midi{src, status, mach})) { midiLost_.fetch_add(1, std::memory_order_relaxed); return false; }
+  return true;
+}
+
+int Engine::hevents(double* buf, int cap) {
+  if (!buf) return 0;
+  int total = 0;
+  while (total + 2 <= cap) {
+    const HEv* e = hev_.peek();
+    if (!e) break;
+    buf[total++] = e->code; buf[total++] = e->bpm;
+    hev_.drop();
+  }
+  return total;
+}
+
+int Engine::grid(double* out4) {
+  gridSnap_.read(gridRead_);
+  if (out4) std::memcpy(out4, gridRead_.d, sizeof gridRead_.d);
+  return 4;
+}
+
 void Engine::stats(t2d_app_stats_t* out) {
   const uint64_t ls = loadSum_.exchange(0), lm = loadMax_.exchange(0), ln = loadN_.exchange(0);
   const uint64_t ts = latSum_.exchange(0), tm = latMax_.exchange(0), tn = latN_.exchange(0);
@@ -289,4 +330,5 @@ void Engine::stats(t2d_app_stats_t* out) {
   out->snap_lost = snapLost_.load(std::memory_order_relaxed);
   out->lfo_lost = lfoLost_.load(std::memory_order_relaxed);
   out->heard_lost = heardLost_.load(std::memory_order_relaxed);
+  out->midi_lost = midiLost_.load(std::memory_order_relaxed);
 }

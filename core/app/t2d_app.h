@@ -4,7 +4,8 @@
 //
 // Кто что зовёт:
 //   аудиопоток (блок рендера AVAudioSourceNode) — только t2d_app_render;
-//   поток UI (один!) — action, restore, mirror, heard, snap_take, levels, lfo, stats;
+//   поток CoreMIDI (один!) — только t2d_app_midi;
+//   поток UI (один!) — action, restore, mirror, heard, snap_take, levels, lfo, hevents, grid, stats;
 //   любой поток — scale_steps, arc_* (чистые); lfo_sample — тоже, но не во время init (читает таблицы хоста, init их пересобирает);
 //   init — пока аудио стоит (см. ниже).
 // Ядро (t2d_*) из Swift напрямую не звать: его трогает только аудиопоток, всё — через кольца этого слоя.
@@ -25,6 +26,7 @@ typedef struct {
   int snap_n;                 // снимков за окно
   unsigned snap_lost;         // снимков потеряно (кольцо полно, не влез в буфер, мир не ответил), всего
   unsigned lfo_lost;          // LFO не влезло в таблицу (64), всего
+  unsigned midi_lost;         // байтов MIDI не влезло в кольцо (512), всего
 } t2d_app_stats_t;
 
 // Слот хоста: действия не мира, а ядра хоста — в том же кольце, так что порядок относительно касаний сохраняется.
@@ -52,6 +54,9 @@ int  t2d_app_restore(int slot, const char* s, int len, uint64_t touch_time); // 
 int  t2d_app_snap_take(int* id, int* slot, char* buf, int cap);  // UI: забрать готовый снимок; длина, 0 — нет (не влез в cap — потерян, считается)
 void t2d_app_stats(t2d_app_stats_t* out);             // снять окно (avg/max обнуляются)
 
+int  t2d_app_midi(int src, int status, uint64_t host_time);  // поток CoreMIDI: байт реального времени (≥ 0xF8) src с меткой mach (0 — нет); 1 — принят, 0 — кольцо полно (midi_lost)
+int  t2d_app_hevents(double* buf, int cap);           // UI: события часов подряд — пары (код, bpm): 1 START, 2 STOP, 3 TEMPO, 4 BEAT, 5 LAUNCH; число double (чётное)
+int  t2d_app_grid(double* out4);                      // UI: последний снимок t2d_hmirror — on, t0, p, время блока; 4
 int  t2d_app_levels(float* out, int n);               // UI: RMS (моно, окно 256 сэмплов) сухого выхода слотов до фейдера, индекс = слот; копирует min(n, 16); 1 — снимок новее прошлого чтения, 0 — тот же
 int  t2d_app_lfo(double* buf, int cap);               // UI: последний снимок LFO (как зеркало): по 10 чисел (slot, obj, key, base, morph, rate, depth, u, shape, seed); длина
 double t2d_app_lfo_sample(int shape, double morph, double u, int seed);   // форма LFO для картинки: −1…1, по тем же таблицам, что звук
