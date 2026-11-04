@@ -35,7 +35,7 @@ extension TenebraeView {
       d.g.endTransparencyLayer(); d.g.restoreGState()
     }
     if let r = ring, !r.pinned { drawRingHung(p, d, r) }
-    // плашка планеты — TenSheetDraw (задача 5)
+    if sheetVoice != nil, let i = sheetVoice, voice(i).active { drawSheet(p, d, nowMs: nowMs); return }   // плашка открыта — после неё ничего (:1975)
     if pinned && sheetVoice == nil { drawCloseChip(d) }
   }
 

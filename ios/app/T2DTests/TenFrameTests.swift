@@ -101,7 +101,11 @@ final class TenFrameTests: XCTestCase {
     XCTAssertGreaterThan(lit(w, over: 5), 0, "окружность R2 (альфа 0.08, штрих делится на два пикселя)")
     XCTAssertGreaterThan(lit(chipW), before)
     view.sheetVoice = 0
-    XCTAssertEqual(lit(chipW), before, "при плашке чипа нет")
+    let withRing = frame()                                   // плашка рисует свой «close» поверх: чип кольца виден, только если кадры различаются
+    let sheetRing = view.ring
+    view.ring = nil
+    XCTAssertEqual(tenLit(withRing, chipW), lit(chipW), "при плашке чипа кольца нет (в этом месте плашка)")
+    view.ring = sheetRing
   }
 
   func testRingHung() {
