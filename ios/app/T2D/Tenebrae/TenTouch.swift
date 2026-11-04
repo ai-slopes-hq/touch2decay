@@ -116,6 +116,7 @@ extension TenebraeView {
   }
 
   func move(_ f: Finger) {
+    if sheetFingers[f.id] != nil { sheetMove(f); return }
     if ring?.finger == f.id { linkMove(f); return }
     guard var t = fingers[f.id], let p = pt(f) else { return }
     t.x = p.x; t.y = p.y; t.touchTime = f.touchTime
@@ -155,6 +156,7 @@ extension TenebraeView {
   }
 
   func up(_ f: Finger) {
+    if sheetFingers[f.id] != nil { sheetUp(f); return }
     if ring?.finger == f.id { linkUp(f); return }
     guard let t0 = fingers[f.id] else { return }
     var t = t0
@@ -183,6 +185,7 @@ extension TenebraeView {
   }
 
   func cancel(_ f: Finger) {
+    if sheetFingers[f.id] != nil { sheetUp(f); return }
     if ring?.finger == f.id { linkCancel(f); return }
     guard let t = fingers[f.id] else { return }
     fingers[f.id] = nil
@@ -197,6 +200,7 @@ extension TenebraeView {
   func touchTick(now: Double) {
     for id in Array(fingers.keys) { _ = alive(id) }
     linkTick(now: now)
+    if let sv = sheetVoice, !voice(sv).active { closePlanetSheet() }   // планету погасило — плашка уходит с ней
     // удержание пойманной планеты одним пальцем — плашка (solTick :1861)
     var h: TenFinger?
     if fingers.count == 1, pinch == nil, let f = fingers.values.first, f.caught, !f.moved, !f.opened, let v = f.v, holders(v) == 1 { h = f }
@@ -222,5 +226,6 @@ extension TenebraeView {
   func touchReset() {                                        // restored: пальцы, пара, тап, отказ, удержание забыты
     fingers = [:]; pinch = nil; lastTap = nil; refuse = nil; hold = nil
     linkReset()
+    sheetReset()
   }
 }

@@ -65,7 +65,10 @@ final class TenebraeView: World {
   var full: [(x: Double, y: Double, t: Double)] = []         // отказ «нет голоса» для картинки
   var sunLevel = 0.0
   var sunT = [Double](repeating: -1, count: Ten.voices)      // кеш последнего посланного SUN; −1 — не слали
-  var sheetVoice: Int? = nil                                  // планета с открытой плашкой (задача 6)
+  var sheetVoice: Int? = nil                                  // планета с открытой плашкой
+  var sheetLfo: LfoKey? = nil                                 // у какой строки (или pitch) открыта панель LFO; nil — свёрнута
+  var sheetFingers: [ObjectIdentifier: TenSheetFinger] = [:]  // пальцы на плашке: строка, полоса волн, полоса форм / пад LFO
+  var lastRowTap: (row: Row, t: Double)? = nil                // последний быстрый тап по строке — для двойного (сброс к умолчанию)
   var fingers: [ObjectIdentifier: TenFinger] = [:]            // пальцы на поле (TenTouch.swift); restored и cancel их забывают
   var pinch: TenPinch? = nil                                  // пара пальцев щипка зума: договорились (zooming — зум пошёл)
   var lastTap: (v: Int?, t: Double, x: Double, y: Double)? = nil   // последний тап по планете — для двойного
@@ -165,7 +168,6 @@ final class TenebraeView: World {
 
   func restored() {                                          // undo / корзина: пальцы, плашка, свои значения сброшены; вид — из зеркала
     touchReset()
-    sheetVoice = nil
     state.reset()
     sunT = [Double](repeating: -1, count: Ten.voices)
     let n = min(max(0, readMirror(&mbuf)), mbuf.count)

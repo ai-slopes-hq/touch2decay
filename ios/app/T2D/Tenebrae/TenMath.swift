@@ -185,14 +185,16 @@ func tenAmpText(_ amp: Double) -> String {
   let db = 20 * log10(amp)
   return abs(db) < 0.05 ? "0 dB" : "\(db > 0 ? "+" : "−")\(String(format: "%.1f", abs(db))) dB"
 }
+// Double → Int без падения: NaN — 0, огромное — в ±1e9
+func tenInt(_ d: Double) -> Int { d.isFinite ? Int(max(-1e9, min(1e9, d))) : 0 }
 // подпись значения строки; v — значение модели (beat в Гц, amp множителем); cut — по tenCutoff(v) без оси Y и FM
 func tenValueText(_ r: Row, _ v: Double) -> String {
   switch r {
   case .wave: return Waves.morphName(v)
   case .cut:
     let c = tenCutoff(v)
-    return c >= 1000 ? String(format: "%.1f", c / 1000) + " kHz" : "\(Int(Horo.jsRound(c))) Hz"
-  case .res, .fm: return "\(Int(Horo.jsRound(v * 100)))%"
+    return c >= 1000 ? String(format: "%.1f", c / 1000) + " kHz" : "\(tenInt(Horo.jsRound(c))) Hz"
+  case .res, .fm: return "\(tenInt(Horo.jsRound(v * 100)))%"
   case .beat: return String(format: v < 10 ? "%.2f" : "%.1f", v) + " Hz"
   case .shift:
     let h = tenShiftHz(v)
