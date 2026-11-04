@@ -333,8 +333,7 @@ final class TenebraeView: World {
 
   // touchTick / touchReset — TenTouch.swift
 
-  func draw(_ d: Draw, now: Double) {}                        // картинка — план (б)
-  func drawShot(_ d: Draw, now: Double) {}
+  // draw / drawShot / drawFrame — TenFrame.swift
 }
 
 // ---------- веер FX «aether» (host/sheet.js:18, app.js:87-93, 830-840) ----------
