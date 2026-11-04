@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Иконка Universum: солнце из host/draw.js (sunGlyph) — двойной диск, 28 лучей, прямые и волнистые через один.
 Белое на чёрном, 1024×1024, без прозрачности и скруглений (маску ставит iOS).
-python3 ios/icon/make-icon.py  →  icon.svg, AppIcon-1024.png (нужен playwright с chromium)."""
+python3 ios/icon/make-icon.py  →  icon.svg, T2D/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png (нужен playwright с chromium)."""
 import math, pathlib, sys
 
 OUT = pathlib.Path(__file__).parent
+PNG = OUT.parent / 'app/T2D/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png'
 S = 7.6                      # масштаб от размеров в приложении (диск 14 → 106 px, луч 50 → 380 px)
 C = 512
 N = 28
@@ -49,5 +50,5 @@ if '--no-png' not in sys.argv:
         b = p.chromium.launch()
         pg = b.new_page(viewport={'width': 1024, 'height': 1024})
         pg.set_content(f'<body style="margin:0;background:#000">{svg}</body>')
-        pg.screenshot(path=str(OUT / 'AppIcon-1024.png'), omit_background=False)
+        pg.screenshot(path=str(PNG), omit_background=False)
         b.close()
