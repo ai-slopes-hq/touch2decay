@@ -62,24 +62,26 @@ async def sc_planets(p):
     print('planets:', await p.js("()=>t2d.voices.filter(v=>v.active).map(v=>[v.i,v.pinned,Math.round(t2d.freq(v))])"))
 
 
-async def sc_tenscale(p):                          # лад в Tenebrae: в ядро — раньше голосов того же кадра (их VOICE уже по новому ладу)
+async def sc_tenscale(p):                          # лад в Tenebrae: каждое переключение доходит до ядра; VOICE нет — ядро само перестраивает частоты (World::retune)
     await p.pin(150, 560); await p.pg.wait_for_timeout(800)
-    await p.js("""()=>{ const key = () => `${t2d.scl.on}|${t2d.scl.idx}|${t2d.scl.root}`;
-      window.__ten = { core: key(), voice: 0, stale: 0, scale: 0 }; const o = MessagePort.prototype.postMessage;
+    await p.js("""()=>{ window.__ten = { core: '', voice: 0, scale: 0 }; const o = MessagePort.prototype.postMessage;
       MessagePort.prototype.postMessage = function (m, ...r) {
         const T = window.__ten;
         if (m && m.t === 'scale') { T.core = `${m.on}|${m.idx}|${m.root}`; T.scale++; }
-        if (m && m.t === 'action' && m.slot === 1 && m.kind === 0) { T.voice++; if (T.core !== key()) T.stale++; }   // VOICE, пока у ядра старый лад
+        if (m && m.t === 'action' && m.slot === 1 && m.kind === 0) T.voice++;   // старый VOICE (до v217) — не должен вернуться
         return o.call(this, m, ...r); }; }""")
+    key = "()=>`${t2d.scl.on}|${t2d.scl.idx}|${t2d.scl.root}`"
     s = await p.js("()=>t2d.btnPos('scl')")
-    for _ in range(2):                                 # вкл и выкл
+    for n in (1, 2):                                   # вкл и выкл
         on0 = await p.js('()=>t2d.scl.on')
         await p.tap(s['x'], s['y']); await p.pg.wait_for_timeout(300)
         T = await p.js('()=>window.__ten')
         print('  scale', on0, '->', await p.js('()=>t2d.scl.on'), T)
         assert await p.js('()=>t2d.scl.on') != on0, 'tap the scale button — scale toggles'
-    assert T['scale'] == 2 and T['voice'] > 0, f'scale and voices reach the core: {T}'
-    assert T['stale'] == 0, f'no VOICE is sent while the core has the old scale: {T}'
+        assert T['scale'] == n and T['core'] == await p.js(key), f'each toggle reaches the core: {T}'
+    assert T['voice'] == 0, f'no VOICE messages — the core model retunes itself: {T}'
+    env = await p.js('()=>t2d.voices.find(v=>v.pinned).env')
+    assert env > 0, f'the pinned planet still sounds after the toggles (env from the core mirror): {env}'
     await p.shot('tenscale')
 
 
