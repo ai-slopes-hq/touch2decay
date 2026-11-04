@@ -33,7 +33,11 @@ final class TenFrameTests: XCTestCase {
 
   func testFrameBeforeTick() {
     _ = frame()                                              // свежий вид, зеркала нет
-    rig.tick(1)                                              // зеркало без живых
+    rig.tick(1)                                              // зеркала всё ещё нет (буфер пуст)
+    _ = frame()
+    rig.mirror { _ in }                                      // зеркало есть, живых голосов нет
+    rig.tick(1.1)
+    XCTAssertEqual(view.objs, 0)
     _ = frame()
     _ = tenShot(view) { d in self.view.drawFrame(d, now: 0) }
   }
@@ -58,16 +62,18 @@ final class TenFrameTests: XCTestCase {
     view.up(Finger(id: ObjectIdentifier(fid), x: 30, y: 250, x0: 30, y0: 250, t0: now, moved: false, touchTime: now + 0.05))
     XCTAssertTrue(view.touchedOnce)
     XCTAssertGreaterThan(before, lit(w, over: 12), "после касания призрака нет")
-    XCTAssertEqual(lit(win(x + 146, y, 8), over: 24), lit(win(x + 146, y, 8), over: 24))
   }
 
   func testZoomCaption() {
     view.touchedOnce = true
     let w = CGRect(x: 195 - 40, y: view.geo.top + 76 - 10, width: 80, height: 20)
+    // орбиты при зуме ярче (boost), но их яркость в окне < 120; текст подписи (альфа 0.9) выше
     view.zoomShow = now - 1
-    let off = lit(w)                                         // фон (орбиты, звёзды) в окне свой — сравниваем с ним
+    let off = lit(w, over: 120)
     view.zoomShow = now + 1
-    XCTAssertGreaterThan(lit(w), off)
+    XCTAssertGreaterThan(lit(w, over: 120), off, "подпись зума")
+    view.zoomShow = now - 1
+    XCTAssertEqual(lit(w, over: 120), off)
   }
 
   func testLinkDiamond() {
