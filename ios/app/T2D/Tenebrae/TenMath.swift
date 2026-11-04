@@ -87,7 +87,8 @@ struct TenGeo {
   }
 
   func pOfR(_ rad: Double) -> Double {               // радиус → доля площади
-    let x = (rad - r[0]) / step, i = Int(floor(x))
+    guard rad.isFinite else { return rad > 0 ? 1 : 0 }
+    let x = min(1e9, max(-1e9, (rad - r[0]) / step)), i = Int(floor(x))     // Int(Double) вне Int падает
     if i < 0 { return 0 }
     if i >= a.count - 1 { return 1 }
     return a[i] + (a[i + 1] - a[i]) * (x - Double(i))

@@ -66,6 +66,11 @@ final class TenebraeView: World {
   var sunLevel = 0.0
   var sunT = [Double](repeating: -1, count: Ten.voices)      // кеш последнего посланного SUN; −1 — не слали
   var sheetVoice: Int? = nil                                  // планета с открытой плашкой (задача 6)
+  var fingers: [ObjectIdentifier: TenFinger] = [:]            // пальцы на поле (TenTouch.swift); restored и cancel их забывают
+  var pinch: TenPinch? = nil                                  // пара пальцев щипка зума: договорились (zooming — зум пошёл)
+  var lastTap: (v: Int?, t: Double, x: Double, y: Double)? = nil   // последний тап по планете — для двойного
+  var refuse: (x: Double, y: Double, t0: Double)? = nil       // отказ «нет голоса» / «закреплённых три» (0.6 с, рисует план (б))
+  var hold: (id: ObjectIdentifier, t0: Double)? = nil         // палец, чьё удержание идёт к плашке (кольцо прогресса — план (б))
   var sclPcs: [Int]? = nil, sclRoot = 0                       // лад: ноты по модулю 12 от A; nil — выключен
   var slideUntil = 0.0                                        // после смены лада кружки плавно съезжают к нотам
   private var sized: (Double, Double, Double, Double)?
@@ -132,6 +137,8 @@ final class TenebraeView: World {
     let i = state.pick(mirror: mirror, now: now)
     if i < 0 { return nil }
     send(Act.spawn, i, [q.p, q.c, h], touchTime: touchTime)
+    if lastTap?.v == i { lastTap = nil }                       // индекс занят заново — прежний тап к нему не относится
+    for k in fingers.keys where fingers[k]?.v == i { fingers[k]?.v = nil }
     vw[i].dx = q.p; vw[i].hole = h; emit[i] = 1e9
     return (i, sp.x - x, sp.y - y)
   }
