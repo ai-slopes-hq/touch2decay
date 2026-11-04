@@ -3739,28 +3739,49 @@ static void horoCeiling() {                               // IX (m = 9), F = 8: 
     CHECK(pk <= std::tanh(0.81));
   }
 }
-static void horoKitPeak() {                               // восемь колец, lvl 1, concursus 1 — пик до tanh ≤ 0.9
-  for (double Ft : {100.0 / 240, 4 * 100.0 / 240, 16 * 100.0 / 240}) {
-    horologium::Sound s; s.prepare(48000, 2);
-    horologium::Sound::R r[8];
-    for (int i = 0; i < 8; i++) { r[i].on = true; r[i].lvl = 1; r[i].inst = i; r[i].hz = horologium::tonal(i) ? horologium::pitchRange(i).lo * 1.2 : 0; }
-    double pk = 0; horoSoundRun(s, r, Ft, 6, 48000, &pk);
-    CHECK(pk <= std::tanh(0.81));
-  }
+static double horoKitWorst = 0;
+static void horoKitPeak() {                               // восемь колец, lvl 1, concursus 1 — пик до tanh ≤ 0.81; развёртка по materia, tint, высоте
+  for (double Ft : {100.0 / 240, 4 * 100.0 / 240, 16 * 100.0 / 240})
+    for (double mat : {0.0, 0.35, 1.0})
+      for (double tint : {std::pow(2, -6 / 12.0), 1.0, std::pow(2, 6 / 12.0)})
+        for (double top : {0.0, 1.0}) {                   // 0 — lo·1.2, 1 — hi·0.97
+          horologium::Sound s; s.prepare(48000, 2);
+          horologium::Sound::R r[8];
+          for (int i = 0; i < 8; i++) {
+            auto pr = horologium::pitchRange(i);
+            r[i].on = true; r[i].lvl = 1; r[i].inst = i; r[i].hz = horologium::tonal(i) ? (top ? pr.hi * 0.97 : pr.lo * 1.2) : 0;
+          }
+          double pk = 0; float L[128], R[128];
+          for (int b = 0; b < 6 * 48000 / 128; b++) {
+            s.set(r, Ft, mat, 1, 1, 0, tint); s.process(L, R, 128, b * 128 / 48000.0);
+            for (int k = 0; k < 128; k++) pk = std::fmax(pk, std::fmax(std::fabs(L[k]), std::fabs(R[k])));
+          }
+          horoKitWorst = std::fmax(horoKitWorst, pk);
+          CHECK(pk <= std::tanh(0.81));
+        }
 }
-static constexpr double HORO_KIT_RMS = 0.0063;             // достигнутый RMS кита в той же сцене (замер при KIT 0.15 и GAIN)
+static constexpr double HORO_KIT_RMS = 0.0054;             // достигнутый RMS кита в той же сцене (замер при KIT 0.128 и GAIN)
 static void horoKitRms() {                                // страж регрессии: уровень кита не уплывает больше чем на ±3 дБ
-  // Достигнуто около −19 дБ к HORO_OLD_RMS. RMS коротких ударных не равен громкости долгих резонаторов под потолком пика на 8 колец;
+  // Достигнуто около −21 дБ к HORO_OLD_RMS. RMS коротких ударных не равен громкости долгих резонаторов под потолком пика на 8 колец;
   // громкость подбирается на слух, а не по RMS.
   const double rms = horoTickRms();
+  CHECK(rms < HORO_OLD_RMS);
   CHECK(rms > HORO_KIT_RMS * std::pow(10, -3 / 20.0) && rms < HORO_KIT_RMS * std::pow(10, 3 / 20.0));
 }
 static void horoTailOff() {                               // кольцо выключили — хвост доигрывает, затем тишина-короткий путь
   horologium::Sound s; s.prepare(48000, 1);
   horologium::Sound::R r[8]; r[2].on = true; r[2].inst = 7;
-  horoSoundRun(s, r, 0.5, 1, 48000, nullptr);
+  float L[128], R[128]; long a0 = s.attacks(); int b = 0;
+  for (; b < 3 * 48000 / 128; b++) {                      // до свежего удара: выключаем сразу после него
+    s.set(r, 0.5, 0.35, 1, 1, 0, 1); s.process(L, R, 128, b * 128 / 48000.0);
+    if (s.attacks() > a0 + 1) break;
+  }
+  CHECK(s.attacks() > a0 + 1);
   r[2].on = false;
-  float L[128], R[128]; s.set(r, 0.5, 0.35, 1, 1, 0, 1); s.process(L, R, 128, 1);
+  s.set(r, 0.5, 0.35, 1, 1, 0, 1); s.process(L, R, 128, ++b * 128 / 48000.0);
+  CHECK(s.voice(2).active());                             // хвост не обрезан
+  double e = 0; for (int k = 0; k < 128; k++) e += L[k] * L[k] + R[k] * R[k];
+  CHECK(e > 0);
   horoSoundRun(s, r, 0.5, 2, 48000, nullptr);
   s.set(r, 0.5, 0.35, 1, 1, 0, 1); s.process(L, R, 128, 3);
   for (int k = 0; k < 128; k++) CHECK(L[k] == 0 && R[k] == 0);

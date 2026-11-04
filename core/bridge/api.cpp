@@ -46,7 +46,7 @@ static sdk::World* worlds[Host::SLOTS] = {};            // слот → мир (
 static constexpr int ARGS_CAP = 256;                    // узор Cymatica — 117 чисел
 static double args[ARGS_CAP];
 static constexpr int MBUF = 2048;
-static double mbuf[MBUF];                               // зеркало: Tenebrae — до 1161 числа, Firmamentum — до 101, Oceanus — до 135, Goetia — до 59, Monochordum — 52, Horologium — 47, Tria — 47, Arcadia — 65
+static double mbuf[MBUF];                               // зеркало: Tenebrae — до 1161 числа, Firmamentum — до 101, Oceanus — до 135, Goetia — до 59, Monochordum — 52, Horologium — 55, Tria — 47, Arcadia — 65
 static constexpr int STR_CAP = 1 << 16;
 static char str[STR_CAP];                               // JSON снимка: snapshot пишет, restore читает
 
