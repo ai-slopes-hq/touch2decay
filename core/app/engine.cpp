@@ -14,7 +14,8 @@ void Engine::init(double sr, unsigned seed, double ticksPerSec, unsigned watch) 
   sr_ = sr; ticksPerSec_ = ticksPerSec; watch_ = watch;
   samplesDone_ = 0; restOff_ = restN_ = 0;
   actions_.clear(); restoreText_.clear(); snapText_.clear();
-  midi_.clear(); hev_.clear(); gridSnap_.clear(); gridRead_ = Grid{};
+  { Midi m; while (midi_.pop(m)) {} }                       // не clear(): писатель CoreMIDI жив и при re-init — сдвигаем только хвост читателя (рендер стоит)
+  hev_.clear(); gridSnap_.clear(); gridRead_ = Grid{};
   lfoSnap_.clear(); lfoRead_.len = 0;
   levelSnap_.clear(); levelRead_ = Levels{};
   for (int s = 0; s < SLOTS; s++) energyNow_[s] = energyPrev_[s] = 0;

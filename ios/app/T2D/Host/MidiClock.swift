@@ -33,6 +33,7 @@ final class MidiClock {
     set {
       if newValue == (timer != nil) { return }
       if newValue {
+        _ = core.hevents()                                // накопленное, пока часы были выкл. (Stop, launch), не проигрываем
         let t = DispatchSource.makeTimerSource(queue: .main)
         t.schedule(deadline: .now() + Self.period, repeating: Self.period)
         t.setEventHandler { [weak self] in self?.step(now: CACurrentMediaTime()) }

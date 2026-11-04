@@ -56,6 +56,15 @@ final class MidiClockTests: XCTestCase {
     XCTAssertTrue(b.playing)
   }
 
+  func testOnDropsStaleEvents() {
+    let a = ClkWorld(); let c = rig([a], here: a)
+    core.ev = [1, 0, 4, 120, 5, 0]                           // Start + launch накопились, пока часы были выкл.
+    c.on = true
+    c.step(now: 1)
+    XCTAssertFalse(a.playing, "старые события не запускают мир при включении часов")
+    c.on = false
+  }
+
   func testForgetGridResendsLock() {
     let a = ClkWorld(); let c = rig([a], here: a)
     core.gridV = MidiGrid(t0: 1, p: 1); c.step(now: 1)

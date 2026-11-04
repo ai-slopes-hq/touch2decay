@@ -70,14 +70,15 @@ final class Midi {
     }
   }
 
+  private static let wordsOffset = MemoryLayout<MIDIEventPacket>.offset(of: \MIDIEventPacket.words)!
+
   private func receive(_ list: UnsafePointer<MIDIEventList>, src: Int) {
     for packet in list.unsafeSequence() {
       let n = Int(packet.pointee.wordCount)
       let mach = packet.pointee.timeStamp == 0 ? mach_absolute_time() : packet.pointee.timeStamp
-      withUnsafeBytes(of: packet.pointee.words) { raw in
-        let words = UnsafeBufferPointer(start: raw.baseAddress!.assumingMemoryBound(to: UInt32.self), count: min(n, 64))
-        for status in umpRealtime(words) { feed(src, status, mach) }
-      }
+      // Только wordCount слов на месте: копия кортежа words (64 слова) читала бы за концом короткого пакета в списке.
+      let base = (UnsafeRawPointer(packet) + Self.wordsOffset).assumingMemoryBound(to: UInt32.self)
+      for status in umpRealtime(UnsafeBufferPointer(start: base, count: min(n, 64))) { feed(src, status, mach) }
     }
   }
 }
