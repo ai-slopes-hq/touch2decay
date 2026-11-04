@@ -294,7 +294,8 @@ extension TenebraeView {
           let d = fxValues[1]
           return String(format: d < 10 ? "%.1f" : "%.0f", d) + " s"
         }
-        return "\(Int(Horo.jsRound(fanGet(k) * 100)))%"
+        let pct = Horo.jsRound(max(-1e6, min(1e6, fanGet(k) * 100)))      // конечное, но огромное — в диапазон: Int(Double) вне Int падает
+        return "\(Int(pct))%"
       },
       lfo: nil, reset: nil, arc: { [unowned self] in fxValues[0] })
   }

@@ -85,6 +85,26 @@ final class TenebraeTests: XCTestCase {
     XCTAssertEqual(f.text("decay"), "2.9 s")
   }
 
+  func testFanTextHugeFx() throws {                          // конечное, но огромное значение fx из зеркала: подпись не падает
+    load { b in b[3] = 1e18; b[4] = 1e300; b[6] = -1e18; b[7] = 3e9 }
+    view.tick(now: 1, dt: 0.016)
+    let f = try XCTUnwrap(view.fx)
+    for k in ["hall", "decay", "delay", "chaos", "drive"] { _ = f.text(k); _ = f.get(k) }
+    XCTAssertEqual(f.text("hall"), "1000000%")
+  }
+
+  func testRestoredShowsMirror() {                           // своё значение висит, зеркало ушло: после restored видно зеркало, и следующая правка тоже
+    load { self.set(&$0, 1, x: 0.3) }
+    view.tick(now: 1, dt: 0.016)
+    view.send(Act.move, 1, [0.5, 0.5, 0], touchTime: 0)
+    load { self.set(&$0, 1, x: 0.8) }
+    view.restored()
+    XCTAssertEqual(view.voice(1).x, 0.8)
+    load { self.set(&$0, 1, x: 0.9) }
+    view.tick(now: 1.05, dt: 0.016)
+    XCTAssertEqual(view.voice(1).x, 0.9)
+  }
+
   func testHeardTick() {
     heardQ = [[1, 2, 1, 2, 2, 4, 0.8]]
     view.tick(now: 2, dt: 0.016)
