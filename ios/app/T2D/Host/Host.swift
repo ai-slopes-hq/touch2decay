@@ -233,7 +233,7 @@ final class Host {
     audioPanel.toggle()
   }
 
-  // легенда → плашка → список ладов → верхняя строка → левый край (свайп на карту) → предмет-угол (на карту) → мир
+  // легенда → плашка → список ладов → верхняя строка → предмет-угол (на карту) → левый край (свайп на карту) → мир
   private func route(_ f: Finger) -> Route {
     guard let w = world else { return .eat }
     if audioPanel {                                          // панель открыта — первая: строка, закрыть, громкость как всегда
@@ -255,8 +255,9 @@ final class Host {
     case .btn(let b): return .btn(b)
     case nil: break
     }
+    if w.cornerHit(f.x, f.y) { return .corner }              // предмет-угол раньше левой полосы — порядок headHit веба (ui-top.js:41-46): солнце Tenebrae у самого края
     if f.x < Host.edgeW && f.y > top + 44 { return .edge }   // левая полоса под строкой — как headHit в вебе (EDGE_W = 14)
-    return w.cornerHit(f.x, f.y) ? .corner : .world(w.slot)
+    return .world(w.slot)
   }
 
   func move(_ f: Finger) {

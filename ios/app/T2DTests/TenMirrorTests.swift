@@ -119,5 +119,7 @@ final class TenMirrorTests: XCTestCase {
     tenHeard([1, 2], n: 99, into: &out); XCTAssertEqual(out, [.flash(2)])             // n больше буфера
     tenHeard([1, 2], n: 0, into: &out); XCTAssertEqual(out, [])
     tenHeard([1, -1, 1, 6], n: 4, into: &out); XCTAssertEqual(out, [])
+    tenHeard([1, 5.7], n: 2, into: &out); XCTAssertEqual(out, [])                      // 5.7 округляется до 6 — вне 0…5
+    tenHeard([1, 5.4], n: 2, into: &out); XCTAssertEqual(out, [.flash(5)])
   }
 }

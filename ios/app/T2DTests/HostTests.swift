@@ -57,7 +57,8 @@ private final class HWorld: World {
   var sets: [(String, Double)] = []
   var downs = 0, moves = 0, ups = 0, cancels = 0, dices = 0, clears = 0, restoredN = 0
   func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat) {}
-  func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool { x >= 300 && y >= 700 }
+  var corner: ((CGFloat, CGFloat) -> Bool)?
+  func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool { corner?(x, y) ?? (x >= 300 && y >= 700) }
   func dice() { dices += 1 }
   func clear() { onClear?(); clears += 1 }
   func restored() { restoredN += 1 }
@@ -455,6 +456,26 @@ final class HostTests: XCTestCase {
     var n = g; n.x = 90; n.y = 405; host.move(n)
     XCTAssertEqual(host.nav.view, .world(10), "старт x 20 — не край")
     XCTAssertEqual(world.moves, 1)
+    host.up(n)
+  }
+
+  // предмет-угол у левого края (солнце Tenebrae): круг r 46 в (0, bot) раньше полосы свайпа — как headHit веба
+  func testCornerBeforeEdge() {
+    let bot: CGFloat = 806
+    world.corner = { x, y in hypot(x, y - bot) < 46 }
+    let f = finger(0, 8, bot - 10)
+    host.down(f)
+    var m = f; m.x = 75; m.y = bot - 5
+    host.move(m)
+    XCTAssertEqual(host.nav.view, .world(10), "в круге солнца свайпа от края нет")
+    host.up(f)
+    XCTAssertEqual(host.nav.view, .map, "тап по солнцу у края — карта")
+    host = makeHost(inWorld: true)
+    let g = finger(0, 8, 300)
+    host.down(g)
+    var n = g; n.x = 75; n.y = 305
+    host.move(n)
+    XCTAssertEqual(host.nav.view, .map, "вне круга — край как был")
     host.up(n)
   }
 

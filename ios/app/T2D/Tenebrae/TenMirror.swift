@@ -82,7 +82,11 @@ enum TenHeard: Equatable { case flash(Int), strike(Int, Double) }
 func tenHeard(_ b: [Double], n: Int, into out: inout [TenHeard]) {
   out.removeAll(keepingCapacity: true)
   let n = min(n, b.count)
-  func idx(_ x: Double) -> Int? { x.isFinite && x >= 0 && x < Double(Ten.voices) ? Int(Horo.jsRound(x)) : nil }
+  func idx(_ x: Double) -> Int? {                      // проверка после округления: 5.7 → 6 — вне 0…5
+    guard x.isFinite else { return nil }
+    let r = Horo.jsRound(x)
+    return r >= 0 && r < Double(Ten.voices) ? Int(r) : nil
+  }
   var k = 0
   while k < n {
     guard b[k].isFinite else { return }

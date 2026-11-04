@@ -41,6 +41,7 @@ struct T2DApp: App {
   // миры с нативным видом — по реестру; шрифты в Info.plist (UIAppFonts) подхвачены до первого кадра, раньше первой карты
   private static func makeView(_ slot: Int) -> World? {
     switch slot {
+    case TenebraeView.slotN: return TenebraeView(core: AppCore(slot: slot))
     case FirmamentumView.slotN: return FirmamentumView(core: AppCore(slot: slot), geo: Geo(W: 390, H: 844, topY: 59, safeBot: 34))
     case OceanusView.slotN:
       return OceanusView(core: AppCore(slot: slot), geo: OceanGeo(W: 390, H: 844, topY: 59, safeBot: 34),
