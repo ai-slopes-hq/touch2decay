@@ -47,6 +47,7 @@
 #include "../worlds/natura/world.hpp"
 #include "../worlds/inferno/world.hpp"
 #include "../worlds/horologium/drums.hpp"
+#include "../worlds/horologium/model.hpp"
 #include "../worlds/tenebrae/tone.hpp"
 #include "../worlds/tenebrae/waves.hpp"
 #include "../worlds/tenebrae/shifter.hpp"
@@ -3629,6 +3630,43 @@ static double drumRun(int inst, double mat, double sr, double secs, double* peak
   }
   return t60;
 }
+static void horoModelInst() {
+  Scale sc; horologium::Model m(sc);
+  for (int i = 0; i < 8; i++) CHECK(m.ring(i).inst == i);
+  m.setRing(2, horologium::INST, 6); CHECK(m.ring(2).inst == 6);
+  m.setRing(2, horologium::INST, 9); CHECK(m.ring(2).inst == 7);
+  m.setRing(2, horologium::INST, -1); CHECK(m.ring(2).inst == 0);
+  m.setRing(2, horologium::INST, 2.6); CHECK(m.ring(2).inst == 3);
+  m.setRing(2, horologium::INST, NAN); CHECK(m.ring(2).inst == 3);
+  m.setRing(5, horologium::INST, 1);
+  m.dice(); CHECK(m.ring(2).inst == 3 && m.ring(5).inst == 1);          // кубик кит не трогает
+  const std::string js = m.snapshot();
+  CHECK(js.find("\"inst\":3") != std::string::npos);
+  horologium::Model b(sc); b.restore(js);
+  for (int i = 0; i < 8; i++) CHECK(b.ring(i).inst == m.ring(i).inst);
+  b.restore(R"({"r":[{"on":true,"under":false,"phi":0,"lvl":0.8},{"on":true,"under":false,"phi":0,"lvl":0.8}],"fx":{},"bpm":120,"run":true})");
+  CHECK(b.ring(0).inst == 0 && b.ring(1).inst == 1 && b.ring(2).inst == 3);  // старая сцена: кольца из JSON — умолчание, прочие не тронуты
+  m.clear(); for (int i = 0; i < 8; i++) CHECK(m.ring(i).inst == i);   // корзина — кит по умолчанию
+}
+static void horoModelPitch() {
+  const int tonalI[5] = {horologium::KICK, horologium::TOM, horologium::SNARE, horologium::RIM, horologium::BELL};
+  for (int pass = 0; pass < 3; pass++) {
+    Scale sc; if (pass == 2) { sc.on = true; sc.idx = 1; sc.root = 9; }
+    horologium::Model m(sc);
+    if (pass == 1) m.setFx(horologium::AEQUALIS, 1);
+    for (int i = 0; i < 8; i++) for (int under = 0; under < 2; under++) for (int t : tonalI) {
+      m.setRing(i, horologium::UNDER, under); m.setRing(i, horologium::INST, t);
+      const double f = m.pitch(i); const horologium::Range rg = horologium::pitchRange(t);
+      CHECK(f >= rg.lo && f < rg.hi);
+      if (pass < 2) { const double o = std::log2(f / (m.baseB() * m.mOf(m.ring(i)))); NEAR(o, std::round(o), 1e-9); }   // гармоника, сдвинутая октавами
+      else { const double s = 12 * std::log2(f / 55); NEAR(s, std::round(s), 1e-9); CHECK(sc.inScale(static_cast<int>(std::lround(s)))); }
+    }
+    for (int i = 0; i < 8; i++) { m.setRing(i, horologium::INST, horologium::HAT); CHECK(m.pitch(i) == 0); }
+  }
+  Scale sc; horologium::Model m(sc); NEAR(m.tint(), 1, 1e-12);
+  sc.on = true; sc.root = 3; NEAR(m.tint(), std::pow(2.0, 3 / 12.0), 1e-12);
+  sc.root = 9; NEAR(m.tint(), std::pow(2.0, -3 / 12.0), 1e-12);
+}
 static void drumVoices() {
   for (double sr : {44100.0, 48000.0})
     for (int inst = 0; inst < horologium::NINST; inst++) {
@@ -4164,7 +4202,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appMidiClock(); appMidiTime(); appMidiOverflow(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); drumVoices(); drumHatMateria(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelPitch(); drumVoices(); drumHatMateria(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

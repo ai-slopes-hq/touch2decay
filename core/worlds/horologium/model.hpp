@@ -1,7 +1,7 @@
 // Horologium — модель в ядре: кольца II…IX, fx, ход часов. Порт tools/ref/horologium-model.js (worlds/horologium/model.js до SDK D2)
 // без маятника: где груз, бросок и проход через низ — касание и картинка, они в фасаде веба; сюда приходят итоги (пуск, u, «в руке»,
 // спуск). Ход успокаивается здесь, каждый блок (tick) — и в фоне без кадров. Скорость колеса F = bpm/240 · 2^u (0 — стоит или в руке),
-// тоника B — 55 Гц × лад хоста. Кубик (dice) — на ГСЧ ядра (зерно мира), только для нативной стороны: веб бросает его сам, в фасаде.
+// тоника B — 55 Гц × лад хоста. Кольцо играет ударным голосом inst (кит по умолчанию — inst = номер кольца; кубик кит не трогает). Кубик (dice) — на ГСЧ ядра (зерно мира), только для нативной стороны: веб бросает его сам, в фасаде.
 #pragma once
 #include <string>
 #include "../../host/scale.hpp"
@@ -11,11 +11,11 @@ namespace horologium {
 
 constexpr int NR = 8;                                   // кольца II…IX
 enum Fx { AEQUALIS, MATERIA, CONCURSUS, CHANCE, HALL, NFX };   // порядок — fx в model.js
-enum RingKey { ON, UNDER, PHI, LVL, NRK };
+enum RingKey { ON, UNDER, PHI, LVL, INST, NRK };
 extern const char* const FX_NAMES[NFX];
 extern const double FX_DEF[NFX];
 
-struct Ring { int n = 2; bool on = false, under = false; double phi = 0, lvl = 0.8; };
+struct Ring { int n = 2; bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0; };   // inst — голос кольца (Inst из drums.hpp), по умолчанию — номер кольца
 struct Clock { bool run = false, strip = false, held = false; double u = 0, uT = 0, bpm = 100; };
 
 class Model {
@@ -27,6 +27,8 @@ class Model {
   double Fnow() const;
   double mOf(const Ring& r) const;                      // ударов за оборот: обертон n, унтертон 12/n; aequalis тянет к полутону
   double baseB() const;
+  double pitch(int i) const;                            // Гц тонального голоса кольца i: гармоника тоники, по ладу хоста, октавами в диапазон inst; нетональный — 0
+  double tint() const;                                  // множитель центров шумовых фильтров: 1 без лада, иначе 2^(тоника/12), тоника в −5…+6
 
   void setRing(int i, int key, double v);
   void setFx(int k, double v) { if (k >= 0 && k < NFX) fx_[k] = v; }
@@ -34,11 +36,11 @@ class Model {
   void setHeld(bool on) { clock_.held = on; }
   void setBpm(double bpm) { clock_.bpm = bpm; }
   void setSpeed(double u, double uT, bool strip) { clock_.u = u; clock_.uT = uT; clock_.strip = strip; }
-  void clear() { for (Ring& r : r_) r.on = false; clock_.run = false; }
+  void clear();                                         // всё в тишину; кит — по умолчанию (inst = номер кольца)
   void dice();                                          // волшебное отношение, иногда унтертонами; фаза — у одного кольца; часы идут (как dice в model.js)
   void tick(double dt);                                 // ход успокаивается к uT: сверху τ 6 с, снизу τ 1.5 с; палец на шкале — стоит
 
-  std::string snapshot() const;                         // тот же JSON, что у model.js: {r: [{on, under, phi, lvl}], fx, bpm, run, u, uT}
+  std::string snapshot() const;                         // тот же JSON, что у model.js: {r: [{on, under, phi, lvl, inst}], fx, bpm, run, u, uT}
   void restore(const std::string& js);
   bool sounding() const;
 

@@ -1,6 +1,8 @@
 // Horologium — модель в ядре, см. model.hpp.
 #include "model.hpp"
+#include "drums.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include "../../sdk/json.hpp"
 
@@ -12,11 +14,11 @@ const double FX_DEF[NFX] = {0, 0.35, 0.4, 1, 0.35};
 static const int MAGIC[][5] = {{2, 3}, {3, 4}, {4, 5, 6}, {3, 4, 5}, {2, 3, 5}, {4, 5, 6, 7}, {5, 7, 9}, {6, 7, 8, 9}, {8, 9}, {2, 3, 4, 5, 6}, {5, 6}, {4, 5}};
 static const int MAGIC_N[] = {2, 2, 3, 3, 3, 4, 3, 4, 2, 5, 2, 2};
 static const int NMAGIC = 12;
-static const char* const RING_KEYS[NRK] = {"on", "under", "phi", "lvl"};
+static const char* const RING_KEYS[NRK] = {"on", "under", "phi", "lvl", "inst"};
 
 void Model::reset(uint32_t seed) {
   rng_ = sdk::Rng(seed);
-  for (int i = 0; i < NR; i++) { r_[i] = Ring{}; r_[i].n = i + 2; r_[i].on = (i + 2 >= 4 && i + 2 <= 6); }
+  for (int i = 0; i < NR; i++) { r_[i] = Ring{}; r_[i].n = i + 2; r_[i].inst = i; r_[i].on = (i + 2 >= 4 && i + 2 <= 6); }
   for (int k = 0; k < NFX; k++) fx_[k] = FX_DEF[k];
   clock_ = Clock{};
 }
@@ -32,6 +34,28 @@ double Model::mOf(const Ring& r) const {
 
 double Model::baseB() const { return 55 * std::pow(2.0, (scale_.on ? scale_.root : 0) / 12.0); }
 
+double Model::pitch(int i) const {
+  if (i < 0 || i >= NR || !tonal(r_[i].inst)) return 0;
+  const Range rg = pitchRange(r_[i].inst);
+  double s = 12 * std::log2(baseB() * mOf(r_[i]) / 55);
+  if (scale_.on) s = scale_.snapSemi(std::round(s));
+  double f = 55 * std::pow(2.0, s / 12);
+  while (f >= rg.hi) f /= 2;
+  while (f < rg.lo) f *= 2;
+  return f;
+}
+
+double Model::tint() const {
+  if (!scale_.on) return 1;
+  const int r = scale_.root <= 6 ? scale_.root : scale_.root - 12;
+  return std::pow(2.0, r / 12.0);
+}
+
+void Model::clear() {
+  for (int i = 0; i < NR; i++) { r_[i].on = false; r_[i].inst = i; }
+  clock_.run = false;
+}
+
 void Model::setRing(int i, int key, double v) {
   if (i < 0 || i >= NR) return;
   Ring& r = r_[i];
@@ -40,6 +64,7 @@ void Model::setRing(int i, int key, double v) {
     case UNDER: r.under = v >= 0.5; break;
     case PHI: r.phi = v; break;
     case LVL: r.lvl = v; break;
+    case INST: if (std::isfinite(v)) r.inst = std::clamp(static_cast<int>(std::lround(v)), 0, NINST - 1); break;
     default: break;
   }
 }
@@ -81,7 +106,7 @@ std::string Model::snapshot() const {
   Json st = Json::object(), arr = Json::array(), fx = Json::object();
   for (const Ring& r : r_) {
     Json o = Json::object();
-    o.set("on", Json::boolean(r.on)); o.set("under", Json::boolean(r.under)); o.set("phi", Json::num(r.phi)); o.set("lvl", Json::num(r.lvl));
+    o.set("on", Json::boolean(r.on)); o.set("under", Json::boolean(r.under)); o.set("phi", Json::num(r.phi)); o.set("lvl", Json::num(r.lvl)); o.set("inst", Json::num(r.inst));
     arr.push(std::move(o));
   }
   for (int k = 0; k < NFX; k++) fx.set(FX_NAMES[k], Json::num(fx_[k]));
@@ -102,6 +127,8 @@ void Model::restore(const std::string& js) {
   for (int i = 0; i < NR && i < static_cast<int>(arr->a.size()); i++) {
     const Json& q = arr->a[i];
     if (q.type != Json::Obj) continue;
+    r_[i].inst = i;                                     // старая сцена без inst — кит по умолчанию
+    if (const Json* x = q.get(RING_KEYS[INST]); x && x->type == Json::Num && std::isfinite(x->n)) setRing(i, INST, x->n);
     flag(q, RING_KEYS[ON], r_[i].on); flag(q, RING_KEYS[UNDER], r_[i].under); num(q, RING_KEYS[PHI], r_[i].phi); num(q, RING_KEYS[LVL], r_[i].lvl);
   }
   if (const Json* fx = st.get("fx"); fx && fx->type == Json::Obj) for (int k = 0; k < NFX; k++) num(*fx, FX_NAMES[k], fx_[k]);
