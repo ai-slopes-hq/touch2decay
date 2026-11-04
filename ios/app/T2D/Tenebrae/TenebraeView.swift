@@ -55,6 +55,7 @@ final class TenebraeView: World {
   private var evs: [TenHeard] = []
   var area: (W: Double, H: Double, topY: Double, safeBot: Double) = (390, 844, 59, 34)
   private(set) var now = 0.0
+  let layers = TenLayers()                                    // кеши фона и орбит (TenScene.swift)
 
   // зум: zoomT — цель, zoom — сглаженный (τ 0.06 с); zoomShow — до какого времени видна подпись
   var zoom: Double, zoomT: Double
