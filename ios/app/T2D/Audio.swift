@@ -65,7 +65,7 @@ final class Audio {
     guard !started else { return }
     started = true
     do {
-      try session.setCategory(.playback)
+      try session.setCategory(Audio.category, options: Audio.options)
       try session.setPreferredIOBufferDuration((stable ? 1024.0 : 256.0) / 48000.0)
       try session.setActive(true)
     } catch { log.add("audio", "session error \(error)") }
@@ -110,6 +110,7 @@ final class Audio {
     log.add("audio", String(format: "engine %@ (%@): rate %.0f, frames %d, outputLatency %.5f s", engine == nil ? "failed" : "running", why, sr, frames, session.outputLatency))
   }
 
+  // со смешиваемой сессией (Audio.options) старт в фоне не даёт '!int'; движок поднимает .becameActive
   private func observe() {
     let nc = NotificationCenter.default
     nc.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
@@ -126,7 +127,7 @@ final class Audio {
     nc.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
       guard let self else { return }
       self.log.add("audio", "media services reset")
-      try? self.session.setCategory(.playback)
+      try? self.session.setCategory(Audio.category, options: Audio.options)
       try? self.session.setActive(true)
       self.handle(.mediaServicesReset, "media services reset")
     }
@@ -144,4 +145,10 @@ final class Audio {
       self.handle(.becameActive, "became active")
     }
   }
+}
+
+extension Audio {
+  // сессия со смешиванием: чужой звук и фон не глушатся; старт в фоне не даёт '!int' (с mixWithOthers сессия не уходит в эксклюзив)
+  static let category: AVAudioSession.Category = .playback
+  static let options: AVAudioSession.CategoryOptions = [.mixWithOthers]
 }

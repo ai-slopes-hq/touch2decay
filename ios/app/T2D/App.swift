@@ -75,8 +75,9 @@ struct T2DApp: App {
   var body: some Scene {
     WindowGroup {
       StageView(host: host, audio: audio).ignoresSafeArea().background(Color.black)
-        .onAppear { audio.start(); if T2DApp.shot { shotScene() } }
+        .onAppear { audio.start(); UIApplication.shared.isIdleTimerDisabled = true; if T2DApp.shot { shotScene() } }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in host.background() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in UIApplication.shared.isIdleTimerDisabled = true }
     }
   }
 

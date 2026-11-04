@@ -30,6 +30,12 @@ final class AudioPlanTests: XCTestCase {
     XCTAssertEqual(plan(.becameActive, rate: 44100, running: false), AudioPlan(rebuild: true, reinit: true))
   }
 
+  func testSessionMixesWithOthers() {                  // фон и чужой звук не глушатся; старт в фоне не даёт '!int' со смешиваемой сессией
+    XCTAssertEqual(Audio.category, .playback)
+    XCTAssertTrue(Audio.options.contains(.mixWithOthers))
+    XCTAssertFalse(Audio.options.contains(.duckOthers))
+  }
+
   func testRouteChangeOnlyOnDeviceChange() {
     for r in [AVAudioSession.RouteChangeReason.categoryChange, .override, .wakeFromSleep, .routeConfigurationChange, .unknown] {
       XCTAssertEqual(plan(.route(r), rate: 44100, running: false), AudioPlan(rebuild: false, reinit: false), "\(r)")
