@@ -3,6 +3,7 @@
 // спуск). Ход успокаивается здесь, каждый блок (tick) — и в фоне без кадров. Скорость колеса F = bpm/240 · 2^u (0 — стоит или в руке),
 // тоника B — 55 Гц × лад хоста. Кольцо играет ударным голосом inst (кит по умолчанию — inst = номер кольца; кубик кит не трогает). Кубик (dice) — на ГСЧ ядра (зерно мира), только для нативной стороны: веб бросает его сам, в фасаде.
 #pragma once
+#include <cmath>
 #include <string>
 #include "../../host/scale.hpp"
 #include "../../sdk/rng.hpp"
@@ -31,7 +32,7 @@ class Model {
   double tint() const;                                  // множитель центров шумовых фильтров: 1 без лада, иначе 2^(тоника/12), тоника в −5…+6
 
   void setRing(int i, int key, double v);
-  void setFx(int k, double v) { if (k >= 0 && k < NFX) fx_[k] = v; }
+  void setFx(int k, double v) { if (k >= 0 && k < NFX && !std::isnan(v)) fx_[k] = v < 0 ? 0 : v > 1 ? 1 : v; }   // все fx — 0…1; NaN игнорируется, ±inf зажимается
   void setRun(bool on, double u) { clock_.run = on; clock_.u = u; }
   void setHeld(bool on) { clock_.held = on; }
   void setBpm(double bpm) { clock_.bpm = bpm; }

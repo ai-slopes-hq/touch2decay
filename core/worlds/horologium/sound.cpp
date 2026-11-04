@@ -18,13 +18,14 @@ void Sound::prepare(double sr, uint32_t seed) {
 }
 
 void Sound::set(const R* rings, double Ft, double mat, double conc, double chance, double aeq, double tint) {
+  const auto unit = [](double v, double d) { return std::isnan(v) ? d : v < 0 ? 0 : v > 1 ? 1 : v; };   // второй заслон: голос не терпит NaN и бесконечного хвоста
   for (int i = 0; i < NR; i++) {
     O& o = r_[i];
-    o.on = rings[i].on; o.under = rings[i].under; o.phi = rings[i].phi; o.lvl = rings[i].lvl;
+    o.on = rings[i].on; o.under = rings[i].under; o.phi = rings[i].phi; o.lvl = unit(rings[i].lvl, 0.8);
     o.inst = rings[i].inst >= 0 && rings[i].inst < NINST ? rings[i].inst : i;   // голос не терпит мусора: чужой номер — кит по умолчанию
     o.hz = std::isfinite(rings[i].hz) ? rings[i].hz : 0;
   }
-  Ft_ = Ft; mat_ = mat; conc_ = conc; chance_ = chance; aeq_ = aeq;
+  Ft_ = Ft; mat_ = unit(mat, 0.35); conc_ = unit(conc, 0.4); chance_ = unit(chance, 1); aeq_ = unit(aeq, 0);
   tint_ = std::isfinite(tint) && tint > 0 ? tint : 1;
 }
 

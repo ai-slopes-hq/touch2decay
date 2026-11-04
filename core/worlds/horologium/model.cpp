@@ -67,7 +67,7 @@ void Model::setRing(int i, int key, double v) {
     case UNDER: r.under = v >= 0.5; break;
     case PHI: r.phi = v; break;
     case LVL: r.lvl = v; break;
-    case INST: if (std::isfinite(v)) r.inst = std::clamp(static_cast<int>(std::lround(v)), 0, NINST - 1); break;
+    case INST: if (std::isfinite(v)) r.inst = static_cast<int>(std::lround(std::clamp(v, 0.0, NINST - 1.0))); break;
     default: break;
   }
 }
@@ -127,14 +127,14 @@ void Model::restore(const std::string& js) {
   if (!arr || arr->type != Json::Arr) return;           // снимок старого Horologium — не наш
   const auto num = [](const Json& o, const char* k, double& v) { const Json* x = o.get(k); if (x && x->type == Json::Num) v = x->n; };
   const auto flag = [](const Json& o, const char* k, bool& v) { const Json* x = o.get(k); if (x && x->type == Json::Bool) v = x->b; };
+  for (int i = 0; i < NR; i++) r_[i].inst = i;          // старая сцена без inst, короткий массив, null — кит по умолчанию
   for (int i = 0; i < NR && i < static_cast<int>(arr->a.size()); i++) {
     const Json& q = arr->a[i];
     if (q.type != Json::Obj) continue;
-    r_[i].inst = i;                                     // старая сцена без inst — кит по умолчанию
     if (const Json* x = q.get(RING_KEYS[INST]); x && x->type == Json::Num && std::isfinite(x->n)) setRing(i, INST, x->n);
     flag(q, RING_KEYS[ON], r_[i].on); flag(q, RING_KEYS[UNDER], r_[i].under); num(q, RING_KEYS[PHI], r_[i].phi); num(q, RING_KEYS[LVL], r_[i].lvl);
   }
-  if (const Json* fx = st.get("fx"); fx && fx->type == Json::Obj) for (int k = 0; k < NFX; k++) num(*fx, FX_NAMES[k], fx_[k]);
+  if (const Json* fx = st.get("fx"); fx && fx->type == Json::Obj) for (int k = 0; k < NFX; k++) { double v = fx_[k]; num(*fx, FX_NAMES[k], v); setFx(k, v); }
   num(st, "bpm", clock_.bpm); flag(st, "run", clock_.run);
   clock_.u = 0; clock_.uT = 0;
   num(st, "u", clock_.u); num(st, "uT", clock_.uT);

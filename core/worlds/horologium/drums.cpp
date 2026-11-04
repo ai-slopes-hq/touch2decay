@@ -27,7 +27,7 @@ Range pitchRange(int inst) {
 void Drum::prepare(double sr) { sr_ = sr; on_ = false; f_.reset(); }
 
 void Drum::hit(int inst, double hz, double tint, double mat, double amp) {
-  inst_ = inst; mat_ = mat; amp_ = amp; hz_ = hz;
+  inst_ = inst; amp_ = amp; hz_ = hz;
   const double skin = 0.7 + 0.6 * mat, metal = 0.6 + 1.4 * mat, fm = 0.5 + mat;
   const double fc = (0.8 + 0.4 * mat) * tint;
   e1_ = e2_ = 1; p_ = 1; t_ = 0; burst_ = 1;

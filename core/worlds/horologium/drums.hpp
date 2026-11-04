@@ -43,7 +43,7 @@ class Drum {
   double sr_ = 48000;
   bool on_ = false;
   int inst_ = KICK;
-  double amp_ = 0, mat_ = 0.5, idx_ = 1, hz_ = 0;
+  double amp_ = 0, idx_ = 1, hz_ = 0;
   double e1_ = 0, e2_ = 0, g1_ = 1, g2_ = 1;     // огибающие и множители спада на сэмпл
   double p_ = 0, gp_ = 1;                        // питч-огибающая (kick, tom)
   double ph_[4] = {0, 0, 0, 0}, fr_[4] = {0, 0, 0, 0};
