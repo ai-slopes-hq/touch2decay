@@ -1,25 +1,20 @@
 // Сверка ядра Horologium (core/worlds/horologium → t2d.wasm, слот 9) с эталоном — прежней JS-моделью и прежним worklet колеса
-// (tools/ref, ГСЧ с зерном): сухой выход по сэмплам (1e-6), колесо (P, F), ход часов u каждый блок, снимок. Плюс замок к такту MIDI.
+// (tools/ref, ГСЧ с зерном): колесо (P, F), ход часов u каждый блок, снимок (без inst). Звук — ударные, у него эталона нет:
+// его проверяет core/tests/sdk_test.cpp. Плюс замок к такту MIDI и раскладка зеркала.
 //   core/build.sh && node --test tools/test-horo-core.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ACTS, DECAY, refPath, corePath, SLOT, ACT, M } from './horo-scenarios.mjs';
 import { loadT2d } from './t2d-core.mjs';
 
-const EPS = 1e-6, SR = 48000;
-const rms = (a) => Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length);
-function same(a, b, what) {
-  assert.equal(a.length, b.length, `${what}: length`);
-  for (let k = 0; k < a.length; k++) if (!(Math.abs(a[k] - b[k]) <= EPS)) assert.fail(`${what}: sample ${k} (block ${Math.floor(k / 128)}): ${a[k]} vs ${b[k]}`);
-}
+const SR = 48000;
+const strip = (js) => { const o = JSON.parse(js); o.r.forEach((q) => delete q.inst); return o; };   // эталон inst не знает
 
 for (const name of Object.keys(ACTS)) {
-  test(`sdk: Horologium dry output matches the reference: ${name}`, () => {
+  test(`sdk: Horologium wheel and snapshot match the reference: ${name}`, () => {
     const r = refPath(ACTS[name]), c = corePath(ACTS[name]);
-    if (name !== 'still') assert.ok(rms(r.L) + rms(r.R) > 1e-3, `${name}: reference is silent`);
-    same(c.L, r.L, `${name} L`); same(c.R, r.R, `${name} R`);
     r.wheel.forEach(([P, F], b) => { assert.ok(Math.abs(c.wheel[b][0] - P) < 1e-9 && Math.abs(c.wheel[b][1] - F) < 1e-9, `${name}: wheel block ${b}: ${c.wheel[b]} vs ${[P, F]}`); });
-    assert.deepEqual(JSON.parse(c.snapshot), JSON.parse(r.snapshot), `${name}: snapshot`);
+    assert.deepEqual(strip(c.snapshot), strip(r.snapshot), `${name}: snapshot`);
   });
 }
 
@@ -77,9 +72,10 @@ test('lock: a phase error over 0.1 revolution snaps, small ones are pulled by ±
 test('mirror: head layout', () => {
   const c = loadT2d(); c.init(SR, 1);
   const m = c.mirror(SLOT);
-  assert.equal(m.length, 15 + 8 * 4);
+  assert.equal(m.length, 15 + 8 * 5);
   assert.equal(m[M.bpm], 100);
-  assert.deepEqual([2, 3, 4].map((i) => m[15 + i * 4]), [1, 1, 1], 'IV, V, VI on');
+  assert.deepEqual([2, 3, 4].map((i) => m[15 + i * 5]), [1, 1, 1], 'IV, V, VI on');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[15 + i * 5 + 4]), [0, 1, 2, 3, 4, 5, 6, 7], 'default kit: inst = ring');
 });
 
 test('speed: reference path vs t2d.wasm, scenario all (~10 s)', () => {

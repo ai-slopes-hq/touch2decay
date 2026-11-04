@@ -1,4 +1,5 @@
-// Horologium — мир SDK: модель хода и колец (model.hpp) + колесо и кольца (sound.hpp) + шина. Каждый блок: ход успокаивается (tick),
+// Horologium — мир SDK: модель хода и колец (model.hpp) + колесо и ударные голоса (sound.hpp, drums.hpp) + шина. Высота и окраска
+// голосов — из модели каждый блок (pitch, tint). Каждый блок: ход успокаивается (tick),
 // колесу — скорость Fnow, тоника, кольца и fx; замок к такту MIDI — по сетке хоста, пока часы идут, u = 0 и маятник не в руке
 // (оборот = 4 доли). Шина (как прежний engine.js): выход ×2.4; посыл hall²·1.4 (сглаженный, 0.05 с) ×2.4 в hall.
 // Маятник (где груз, бросок, проход через низ) — в фасаде веба: сюда — пуск / стоп и u, «в руке», спуск, шкала tempus.
@@ -11,13 +12,13 @@
 namespace horologium {
 
 // action(kind, i, a, n):
-//   RING i, a = [key (RingKey: on, under, phi, lvl), v];  FX i = key (Fx), a = [v]
+//   RING i, a = [key (RingKey: on, under, phi, lvl, inst), v];  FX i = key (Fx), a = [v]
 //   RUN a = [on, u?] (u нет — uT);  HELD a = [on];  STEP a = [d];  BPM a = [bpm];  SPEED a = [u, uT, strip];  CLEAR;  DICE
 //   ACT_LFO (i == -1) a = [key, v]: key 0…4 — Fx, 5…20 — кольцо (key − 5) / 2: нечётный — phi, чётный — lvl
 enum Act { RING, FX, RUN, HELD, STEP, BPM, SPEED, CLEAR, DICE };
 
-// зеркало: fx [NFX], run, u, uT, bpm, strip, held, P, F, ударов всего, замок, затем на кольцо RING_M: on, under, phi, lvl
-constexpr int RING_M = 4, MIRROR_HEAD = NFX + 10, MIRROR_N = MIRROR_HEAD + NR * RING_M;
+// зеркало: fx [NFX], run, u, uT, bpm, strip, held, P, F, ударов всего, замок, затем на кольцо RING_M: on, under, phi, lvl, inst
+constexpr int RING_M = 5, MIRROR_HEAD = NFX + 10, MIRROR_N = MIRROR_HEAD + NR * RING_M;
 constexpr double OUT = 2.4, HALL_K = 1.4;
 
 class World : public sdk::World {

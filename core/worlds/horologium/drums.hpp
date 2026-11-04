@@ -22,8 +22,10 @@ struct Range { double lo, hi; };
 Range pitchRange(int inst);
 inline bool tonal(int inst) { return pitchRange(inst).hi > 0; }
 
-// Нормировка кита: во столько раз умножается сумма голосов (стартовое значение, Sound подбирает на слух).
-constexpr double KIT = 0.25;
+// Нормировка кита: во столько раз Sound умножает сумму голосов. Подобрана по пику: восемь колец, lvl 1, concursus 1, 100…1600 BPM —
+// пик суммы до tanh 0.883·0.9 ≤ 0.9 (при 0.25 было 1.03). Громкость сцены «IV, V, VI, 100 BPM» (horoTickRms) при этом RMS 0.0058
+// против 0.0582 у прежнего резонаторного мира (−20 дБ; нижняя граница теста −4 дБ = 0.0367): ударные редки и пиковы, одним KIT пик и RMS не сводятся.
+constexpr double KIT = 0.215;
 
 class Drum {
  public:
