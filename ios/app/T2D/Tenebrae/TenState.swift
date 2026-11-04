@@ -139,7 +139,7 @@ struct TenState {
       guard ok(i), a.count >= 3, eff(i, m, now).active else { return }
       o[i].x.set(a[0], now); o[i].y.set(a[1], now); o[i].holeT.set(a[2], now)
     case Act.set:
-      guard ok(i), a.count >= 2, let r = Row(rawValue: Int(a[0].isFinite ? a[0] : -1)), eff(i, m, now).active else { return }
+      guard ok(i), a.count >= 2, let k = idx(a[0], Row.allCases.count), let r = Row(rawValue: k), eff(i, m, now).active else { return }
       o[i].rows[r.rawValue].set(a[1], now)
     case Act.pin:
       guard ok(i) else { return }
@@ -165,8 +165,7 @@ struct TenState {
       o[i].mods.set(md, now)
     case Act.linkType:
       guard ok(i), let s = srcOf(a), a.count >= 2, a[1].isFinite else { return }
-      let t = Int(a[1])
-      guard (0..<Ten.linkTypes.count).contains(t) else { return }
+      guard let t = idx(a[1], Ten.linkTypes.count) else { return }
       var md = eff(i, m, now).mods
       guard let k = md.firstIndex(where: { $0.src == s }) else { return }
       md[k].type = t
@@ -179,9 +178,9 @@ struct TenState {
       o[i].mods.set(md, now)
     case Act.setLfo:
       guard ok(i), a.count >= 4, a.allSatisfy({ $0.isFinite }), eff(i, m, now).active,
-            (0..<8).contains(Int(a[0])) else { return }
+            let k = idx(a[0], 8) else { return }
       var l = eff(i, m, now).lfo
-      l[Int(a[0])] = a[3] < 0 ? nil : TenLfo(morph: a[1], rate: a[2], depth: a[3])
+      l[k] = a[3] < 0 ? nil : TenLfo(morph: a[1], rate: a[2], depth: a[3])
       o[i].lfo.set(l, now)
     case Act.setFx:
       guard a.count >= 5, a.allSatisfy({ $0.isFinite }) else { return }
@@ -193,6 +192,8 @@ struct TenState {
   // ---------- внутреннее ----------
 
   private func ok(_ i: Int) -> Bool { i >= 0 && i < Ten.voices }
+  // целый индекс 0..<n из числа действия; вне диапазона, не конечное или дробное за пределами — nil (Int(Double) вне Int падает)
+  private func idx(_ x: Double, _ n: Int) -> Int? { x.isFinite && x >= 0 && x < Double(n) ? Int(x) : nil }
   private func srcOf(_ a: [Double]) -> Int? {
     guard let s = a.first, s.isFinite, s >= 0, s < Double(Ten.voices) else { return nil }
     return Int(s)

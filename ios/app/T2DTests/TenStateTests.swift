@@ -196,4 +196,19 @@ final class TenStateTests: XCTestCase {
     s.reset()
     XCTAssertEqual(s.voice(2, mirror: m, now: 0).x, 0.1)
   }
+
+  func testOwnHugeArgs() {
+    var s = TenState()
+    let m = mirror { $0.v[3].active = true; $0.v[0].active = true; $0.v[0].mods = [TenMod(src: 3, type: 1, depth: 0.5, auto: false)] }
+    for h in [1e30, -1e30, Double.greatestFiniteMagnitude] {
+      s.own(Act.set, 3, [h, 0.5], mirror: m, now: 0)
+      s.own(Act.linkType, 0, [3, h], mirror: m, now: 0)
+      s.own(Act.setLfo, 3, [h, 0, 1, 0.3], mirror: m, now: 0)
+      s.own(Act.link, 0, [h], mirror: m, now: 0)
+      s.own(Act.keep, 0, [h], mirror: m, now: 0)
+    }
+    XCTAssertEqual(s.voice(3, mirror: m, now: 0), m.v[3])
+    XCTAssertEqual(s.voice(0, mirror: m, now: 0), m.v[0])
+    XCTAssertEqual(s.kept(mirror: m, now: 0), [])
+  }
 }
