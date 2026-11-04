@@ -452,6 +452,7 @@ struct T2DApp: App {
     case "ten-hold":
       later(0.5) { pin(200, 300) }
       later(1.0) { ten.down(finger(200, 300, 200, 300)) }
+      later(1.7) { ten.up(finger(200, 300, 200, 300)) }          // как веб: плашка открыта, палец отпущен (тоньше контур)
       later(1.8) { if let i = ten.sheetVoice { ten.send(Act.set, i, [Double(Row.amp.rawValue), 0]) } }
     case "ten-lfo":
       later(0.5) {
