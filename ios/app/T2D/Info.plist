@@ -27,8 +27,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_apple-midi._udp</string>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Log to your computer over the network</string>
+	<string>Logs to the developer Mac and network MIDI clock</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>eb-garamond-latin-400-italic.ttf</string>
