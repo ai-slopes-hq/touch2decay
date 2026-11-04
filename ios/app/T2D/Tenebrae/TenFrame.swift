@@ -3,16 +3,16 @@ import UIKit
 // Tenebrae: кадр целиком в порядке веба (solDraw, app.js:1906-1979; решение 16): фон одним блитом, поле, волны, призрак, нити,
 // планеты, удержание, отказ, мост, кольцо связи, чип close. Кадр состояния не меняет: всё накопленное считает tick
 
-private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { x.isNaN ? a : min(b, max(a, x)) }
-private func invLog(_ lo: Double, _ hi: Double, _ v: Double) -> Double { log(max(v, lo) / lo) / log(hi / lo) }
 
 extension TenebraeView {
   func draw(_ d: Draw, now: Double) { drawFrame(d, now: now) }
-  func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now) }
 
   func drawFrame(_ d: Draw, now: Double) {
     let nowMs = now * 1000
     let p = NatPen(g: d.g, inkC: theme.ink, papC: theme.paper)
+    frameVoices = (0..<Ten.voices).map { state.voice($0, mirror: mirror, now: self.now) }
+    frameFx = state.fx(mirror: mirror, now: self.now)
+    defer { frameVoices = nil; frameFx = nil }                  // срез живёт ровно кадр; состояния кадр не меняет
     layers.update(self, dpr: Draw.scale, now: now)
     d.blit(layers.bg)
     drawField(p, d, now: now)
@@ -20,16 +20,16 @@ extension TenebraeView {
     if !touchedOnce { drawGhostCircle(d, nowMs: nowMs) }
     drawLinks(p, d, nowMs: nowMs)
     for i in 0..<Ten.voices where voice(i).active {
-      if let br = bridge, br.a == i || br.b == i { continue }
+      if let br = bridgeDrawn?.br, br.a == i || br.b == i { continue }
       drawVoice(p, d, i, nowMs: nowMs)
     }
     drawHold(p, now: now)
     drawRefusals(d, now: now)
-    if bridge != nil { drawBridge(p, d, nowMs: nowMs) }
+    if bridgeDrawn != nil { drawBridge(p, d, nowMs: nowMs) }
     let pinned = ring?.pinned ?? false
     if let r = ring, r.pinned, sheetVoice == nil { drawRingPinned(p, d, r) }
     if let g = ghost, now <= g.until, !pinned {                // погасшее кольцо: один слой с общей альфой, булавку ещё можно тапнуть
-      let a = 0.85 * pow(clamp((g.until - now) / Ten.ghost), 0.6)
+      let a = 0.85 * pow(tenClamp((g.until - now) / Ten.ghost), 0.6)
       d.g.saveGState(); d.g.setAlpha(CGFloat(a)); d.g.beginTransparencyLayer(auxiliaryInfo: nil)
       drawRingHung(p, d, g.ring)
       d.g.endTransparencyLayer(); d.g.restoreGState()
@@ -47,7 +47,7 @@ extension TenebraeView {
       if let v = f.v, !f.wasBridge, !f.opened, (0..<Ten.voices).contains(v), voice(v).active, !held.contains(v) { held.append(v) }
     }
     let drag = !held.isEmpty
-    let zk = clamp((zoomShow - now) / 0.4)                       // зум: 1 — пока щиплешь, дальше тает
+    let zk = tenClamp((zoomShow - now) / 0.4)                       // зум: 1 — пока щиплешь, дальше тает
     let heldS = held.map { tenSemi(soundX(voice($0))) }
     let needCols = drag || zk > 0
     let cols = needCols ? fieldCols() : []
@@ -57,7 +57,7 @@ extension TenebraeView {
     g.clip(to: CGRect(x: 0, y: G.top, width: G.W, height: G.bot - G.top))
     drawSun(p, d, nowMs: nowMs)
     drawHole(p, nowMs: nowMs)
-    let chaos = clamp(fxValues[3])
+    let chaos = tenClamp(fxValues[3])
     if chaos > 0.02 && !layers.stars.isEmpty {                   // chaos — звёзды мерцают
       let n = tenInt((chaos * 14).rounded()), cnt = layers.stars.count
       for k in 0..<n {
@@ -113,7 +113,7 @@ extension TenebraeView {
     }
     for t in tgt where inScale(t.n) {                            // в ладу — имя ноты рядом с кружком, снаружи по радиусу
       let pt = G.place(tenXOf(Double(t.n)), voice(t.v).y, zoom: zoom), a = atan2(pt.y - G.oy, pt.x - G.ox)
-      d.mapText(tenNoteName(t.n), clamp(pt.x + cos(a) * 54, 18, G.W - 18), clamp(pt.y + sin(a) * 54, G.top + 12, G.bot - 12), 17, 1, align: .center)
+      d.mapText(tenNoteName(t.n), tenClamp(pt.x + cos(a) * 54, 18, G.W - 18), tenClamp(pt.y + sin(a) * 54, G.top + 12, G.bot - 12), 17, 1, align: .center)
     }
   }
 
@@ -122,7 +122,7 @@ extension TenebraeView {
   // ---------- волны (:1911-1936): шаг и рождение — в tick ----------
   private func drawWaves(_ d: Draw) {
     let f = fxValues
-    let rmax = hypot(area.W, area.H) * (0.3 + 0.35 * clamp(f[0]) + 0.35 * clamp(invLog(0.6, 14, f[1])))
+    let rmax = hypot(area.W, area.H) * (0.3 + 0.35 * tenClamp(f[0]) + 0.35 * tenClamp(tenInvLog(0.6, 14, f[1])))
     if !(rmax > 0) { return }
     for w in waves where w.wait <= 0 {
       let al = min(1, w.a * 0.28 * pow(max(0, 1 - w.r / rmax), 1.6))
@@ -175,11 +175,11 @@ extension TenebraeView {
         guard (0..<Ten.voices).contains(m.src), (0..<Ten.linkTypes.count).contains(m.type) else { continue }
         let s = voice(m.src)
         if !s.active { continue }
-        if let br = bridge, br.a == dst, br.b == m.src { continue }
-        let depth = clamp(m.depth), k = m.auto ? 0.45 : 1.0
+        if let br = bridgeDrawn?.br, br.a == dst, br.b == m.src { continue }
+        let depth = tenClamp(m.depth), k = m.auto ? 0.45 : 1.0
         let ed = ring.map { $0.pinned && $0.dst == dst && $0.src == m.src } ?? false
         let cutting = ed && (ring?.cutting ?? false)
-        let a = (0.15 + 0.55 * min(1, clamp(s.env, 0, 10) * 1.2)) * (0.4 + 0.6 * depth) * k
+        let a = (0.15 + 0.55 * min(1, tenClamp(s.env, 0, 10) * 1.2)) * (0.4 + 0.6 * depth) * k
         let c = linkCurve(dst: dst, src: m.src)
         let pat = Ten.linkDash[m.type], per = pat.reduce(0, +)
         let ph = per > 0 ? CGFloat(((-nowMs * 0.02).truncatingRemainder(dividingBy: Double(per)) + Double(per)).truncatingRemainder(dividingBy: Double(per))) : 0
@@ -205,11 +205,17 @@ extension TenebraeView {
   }
 
   // ---------- мост (:1179): двойная спираль между пальцами ----------
-  func drawBridge(_ p: NatPen, _ d: Draw, nowMs: Double) {
+  // мост, который кадр действительно нарисует: оба пальца есть, связь жива. Один предикат на планеты, нить и сам мост —
+  // иначе при потерянном пальце пропали бы и кружки моста, и связь
+  var bridgeDrawn: (br: TenBridge, fa: TenFinger, fb: TenFinger, bm: TenMod)? {
     guard let br = bridge, let fa = fingers[br.fa], let fb = fingers[br.fb], let bm = linkMod(br.a, br.b),
-          (0..<Ten.linkTypes.count).contains(bm.type) else { return }
+          (0..<Ten.linkTypes.count).contains(bm.type) else { return nil }
+    return (br, fa, fb, bm)
+  }
+  func drawBridge(_ p: NatPen, _ d: Draw, nowMs: Double) {
+    guard let (br, fa, fb, bm) = bridgeDrawn else { return }
     let dx = fb.x - fa.x, dy = fb.y - fa.y, L = max(hypot(dx, dy), 1e-9)
-    let nx = -dy / L, ny = dx / L, depth = clamp(bm.depth)
+    let nx = -dy / L, ny = dx / L, depth = tenClamp(bm.depth)
     let amp = 3 + depth * 16, waves = 1.5 + L / 70
     let ph = nowMs / 1000 * (1.5 + tenFreq(soundX(voice(br.b))) / 120) * 2 * .pi
     let N = 120

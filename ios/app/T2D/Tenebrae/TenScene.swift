@@ -10,18 +10,20 @@ final class TenLayers {
   private(set) var scanBuilds = 0, orbitBuilds = 0
   private(set) var stars: [(x: Double, y: Double)] = []        // яркие звёзды: мерцание chaos
   // ключи — поля, без String в кадре
-  private var sKey: [Double] = []
-  private var oKey: [Double] = []
+  private struct SKey: Equatable { var w = 0.0, h = 0.0, d = 0.0, top = 0.0, bot = 0.0 }
+  private struct OKey: Equatable { var z = 0, root = 0, w = 0.0, h = 0.0, d = 0.0, top = 0.0, bot = 0.0 }
+  private var sKey: SKey? = nil
+  private var oKey: OKey? = nil
   private var oPcs: [Int]? = nil
   private var lastOrbit = -1.0
   static let orbitStep = 1.0 / 15                                  // не чаще 15 пересборок орбит в секунду при щипке
 
   func update(_ v: TenebraeView, dpr: CGFloat, now: Double) {
     let dpr = min(dpr, 2), G = v.geo, d = Double(dpr)
-    let sk = [G.W, G.H, d, G.top, G.bot]
+    let sk = SKey(w: G.W, h: G.H, d: d, top: G.top, bot: G.bot)
     var force = false
     if sk != sKey { sKey = sk; buildScan(v, dpr); scanBuilds += 1; force = true }
-    let ok = [Double(tenInt(v.zoom * 1e4)), Double(v.sclRoot), G.W, G.H, d, G.top, G.bot]
+    let ok = OKey(z: tenInt(v.zoom * 1e4), root: v.sclRoot, w: G.W, h: G.H, d: d, top: G.top, bot: G.bot)
     if force || orbits == nil || ok != oKey || v.sclPcs != oPcs {
       if !force && orbits != nil && now - lastOrbit < TenLayers.orbitStep && now >= lastOrbit { return }   // грязно: соберём позже
       oKey = ok; oPcs = v.sclPcs; lastOrbit = now

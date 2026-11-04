@@ -2,12 +2,11 @@ import UIKit
 
 // Tenebrae: хвост кометы и спутники-LFO планеты (app.js:1121-1130, 1161-1175)
 
-private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { x.isNaN ? a : min(b, max(a, x)) }
 
 extension TenebraeView {
   // временная планета — комета: хвост от солнца, длиннее, пока гаснет; тает двумя ступенями
   func drawTail(_ p: NatPen, _ x: Double, _ y: Double, R: Double, a: Double, fade: Double) {
-    let ang = atan2(y - geo.oy, x - geo.ox), len = 26 + 70 * clamp(fade)
+    let ang = atan2(y - geo.oy, x - geo.ox), len = 26 + 70 * tenClamp(fade)
     for k in [-0.12, 0, 0.12] {
       let x0 = x + cos(ang + k) * (R - 4), y0 = y + sin(ang + k) * (R - 4)
       let ex = cos(ang + k * 1.6) * len, ey = sin(ang + k * 1.6) * len
@@ -23,7 +22,7 @@ extension TenebraeView {
     let v = voice(i)
     for key in 0..<8 {
       guard let l = v.lfo[key] else { continue }
-      let r = Ten.moonR[key], ph = vw[i].vph[key], depth = clamp(l.depth, 0, 1)
+      let r = Ten.moonR[key], ph = vw[i].vph[key], depth = tenClamp(l.depth, 0, 1)
       p.line(a * 0.07, 1)
       p.begin(); p.arc(x, y, r, 0, 2 * .pi); p.stroke()
       p.line(a * 0.3, 1); p.g.setLineJoin(.round)

@@ -23,7 +23,6 @@ struct TenPinch {
   var d1 = 0.0
 }
 
-private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { x.isNaN ? a : min(b, max(a, x)) }
 private let big = 1e6                                        // координаты событий в пределах экрана с запасом: дальше Int(Double) падает
 
 extension TenebraeView {
@@ -152,7 +151,7 @@ extension TenebraeView {
 
   private func setZoom(_ z: Double) {
     guard z.isFinite else { return }
-    zoomT = clamp(z, Ten.zoomMin, 1)
+    zoomT = tenClamp(z, Ten.zoomMin, 1)
     zoomShow = now + 1.2                                     // подписи диапазонов видны во время зума и ещё секунду после
   }
 
@@ -215,13 +214,23 @@ extension TenebraeView {
     var depth = [Double](repeating: 0, count: Ten.voices), tt = [Double](repeating: 0, count: Ten.voices)
     for f in fingers.values {
       guard let v = f.v, f.moved, !f.opened else { continue }
-      let t = clamp((Ten.sunR + 24 - hypot(f.x + f.ox - geo.ox, f.y + f.oy - geo.oy)) / 70)
+      let t = tenClamp((Ten.sunR + 24 - hypot(f.x + f.ox - geo.ox, f.y + f.oy - geo.oy)) / 70)
       if t > depth[v] { depth[v] = t; tt[v] = f.touchTime }
     }
     for i in 0..<Ten.voices {                                 // всем шести: без пальца — 0, прежняя глубина не залипает
       if depth[i] == 0 && sunT[i] < 0 && voice(i).sunT == 0 { sunT[i] = 0; continue }   // кеш пуст, а ядро и так на нуле — слать нечего
       sendSun(i, depth[i], touchTime: tt[i])
     }
+  }
+
+  // отпустить в ядре всё, что держат пальцы, плашка и мост; состояние касаний не трогает (его забудет touchReset)
+  func releaseTouches() {
+    if let br = bridge { endBridge(br) }
+    for (_, t) in fingers {
+      if let v = t.v, activeEff(v) { send(Act.letGo, v, [kept.contains(v) ? 0 : 1]) }
+    }
+    fingers = [:]
+    if sheetVoice != nil { closePlanetSheet() }
   }
 
   func touchReset() {                                        // restored: пальцы, пара, тап, отказ, удержание забыты

@@ -3,9 +3,10 @@ import Foundation
 // Tenebrae (мир I): константы, поле планет в полярных координатах от солнца, формулы звука для вида (tone.js),
 // нормы строк плашки и их подписи. Порт app.js:31-232, :553-561, :1252 и worlds/tenebrae/tone.js
 
-private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { x.isNaN ? a : min(b, max(a, x)) }
+// общие для картинки и логики: NaN — нижняя граница; invLog с зажимом снизу (log неположительного не берём)
+func tenClamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { x.isNaN ? a : min(b, max(a, x)) }
+func tenInvLog(_ lo: Double, _ hi: Double, _ v: Double) -> Double { log(max(v, lo) / lo) / log(hi / lo) }
 private func lerpLog(_ lo: Double, _ hi: Double, _ t: Double) -> Double { lo * pow(hi / lo, t) }
-private func invLog(_ lo: Double, _ hi: Double, _ v: Double) -> Double { log(v / lo) / log(hi / lo) }
 
 enum Ten {
   static let slot = 1
@@ -109,7 +110,7 @@ struct TenGeo {
 
   func place(_ p: Double, _ c: Double, zoom: Double) -> (x: Double, y: Double) {
     let rad = rOfP(min(1, p / zoom)), sp = arcSpan(rad) ?? (Double.pi / 4, Double.pi / 4)
-    let th = sp.lo + clamp(c) * (sp.hi - sp.lo)
+    let th = sp.lo + tenClamp(c) * (sp.hi - sp.lo)
     return (ox + rad * cos(th), oy - rad * sin(th))
   }
 
@@ -118,7 +119,7 @@ struct TenGeo {
     let q = pOfR(hypot(dx, dy))
     let th = atan2(dy, dx)
     guard let sp = arcSpan(rOfP(q)) else { return (q * zoom, 0.5) }
-    return (q * zoom, clamp((th - sp.lo) / (sp.hi - sp.lo)))
+    return (q * zoom, tenClamp((th - sp.lo) / (sp.hi - sp.lo)))
   }
 
   // чёрная дыра — угол поля под строкой кнопок
@@ -126,9 +127,9 @@ struct TenGeo {
 
   // глубина дыры: ядро 0…1 и краешек вдоль всего шумного края (слабо съедает тон на любой высоте)
   func holeDepth(_ x: Double, _ y: Double) -> Double {
-    let c = holeAt, core = clamp((Ten.holeR - hypot(x - c.x, y - c.y)) / (Ten.holeR * 0.6))
+    let c = holeAt, core = tenClamp((Ten.holeR - hypot(x - c.x, y - c.y)) / (Ten.holeR * 0.6))
     let edge = min(x - Ten.edge, y - (top + Ten.edgeT))
-    return max(core, 0.35 * clamp((16 - edge) / 32))
+    return max(core, 0.35 * tenClamp((16 - edge) / 32))
   }
 
   func outOfHole(_ x: Double, _ y: Double) -> (x: Double, y: Double) {      // точку внутри горизонта — наружу, в сторону поля
@@ -140,18 +141,18 @@ struct TenGeo {
   }
 
   // зум по умолчанию: на экране больше телефона видно больше (та же доля площади); iPad — все пять октав
-  var zoomDef: Double { clamp(Ten.zoomDef * (W * (bot - top)) / Ten.phoneField, Ten.zoomDef, 1) }
+  var zoomDef: Double { tenClamp(Ten.zoomDef * (W * (bot - top)) / Ten.phoneField, Ten.zoomDef, 1) }
 
   // радиус кольца свойств: на узком экране меньше, чтобы лучи с подписями помещались
   var menuSpan: Double { max(90, min(150, min(W, H) / 2 - Ten.menuDead - 34)) }
 }
 
 // ---------- звук вида (worlds/tenebrae/tone.js) ----------
-func tenSemi(_ dx: Double) -> Double { Ten.semis * pow(clamp(dx), Ten.warp) }
-func tenXOf(_ semi: Double) -> Double { pow(clamp(semi, 0, Ten.semis) / Ten.semis, 1 / Ten.warp) }
+func tenSemi(_ dx: Double) -> Double { Ten.semis * pow(tenClamp(dx), Ten.warp) }
+func tenXOf(_ semi: Double) -> Double { pow(tenClamp(semi, 0, Ten.semis) / Ten.semis, 1 / Ten.warp) }
 func tenFreq(_ dx: Double) -> Double { Ten.fLo * pow(2, tenSemi(dx) / 12) }                // без лада: с ладом x сначала через tenQuantX
 func tenCutoff(_ v: Double, y: Double = 0.5, fmOpen: Double = 0) -> Double {
-  clamp(lerpLog(Ten.cutLo, Ten.cutHi, v) * pow(2, (y - 0.5) * 4.5) * pow(2, 1.5 * fmOpen), 20, 20000)
+  tenClamp(lerpLog(Ten.cutLo, Ten.cutHi, v) * pow(2, (y - 0.5) * 4.5) * pow(2, 1.5 * fmOpen), 20, 20000)
 }
 func tenShiftHz(_ v: Double) -> Double {                 // середина луча — ноль, дальше вверх, ближе к центру — вниз
   let u = 2 * v - 1, a = abs(u)
@@ -174,8 +175,8 @@ func tenQuantX(_ dx: Double, pcs: [Int]?, root: Int) -> Double {
 // значение строки в долях 0…1 (для бегунка)
 func tenNorm(_ r: Row, _ v: Double) -> Double {
   switch r {
-  case .beat: return invLog(Ten.beatMin, Ten.beatMax, v)
-  case .amp: return v > 0 ? invLog(Ten.ampMin, Ten.ampMax, v) : 0
+  case .beat: return tenInvLog(Ten.beatMin, Ten.beatMax, v)
+  case .amp: return v > 0 ? tenInvLog(Ten.ampMin, Ten.ampMax, v) : 0
   default: return v
   }
 }
@@ -185,7 +186,7 @@ func tenSetNorm(_ r: Row, _ t: Double) -> Double {
   case .beat: return lerpLog(Ten.beatMin, Ten.beatMax, t)
   case .shift: return abs(t - 0.5) < 0.02 ? 0.5 : t
   case .amp:
-    let amp = lerpLog(Ten.ampMin, Ten.ampMax, clamp(t))
+    let amp = lerpLog(Ten.ampMin, Ten.ampMax, tenClamp(t))
     return t <= 0.005 ? 0 : abs(20 * log10(amp)) < 0.6 ? 1 : amp
   default: return t
   }
@@ -221,7 +222,7 @@ func tenNoteName(_ n: Int) -> String {
 }
 func tenSemiOf(_ hz: Double) -> Double { 12 * log2(hz / Ten.fLo) }
 // радиус планеты: громче — крупнее
-func tenPlanetR(_ amp: Double) -> Double { 34 * (0.55 + 0.45 * clamp(amp, 0, Ten.ampMax)) }
+func tenPlanetR(_ amp: Double) -> Double { 34 * (0.55 + 0.45 * tenClamp(amp, 0, Ten.ampMax)) }
 
 // детерминированный шум 0…1 вместо Math.random картинки: одна пара — одно число
 func tenHash(_ a: Double, _ b: Double) -> Double {

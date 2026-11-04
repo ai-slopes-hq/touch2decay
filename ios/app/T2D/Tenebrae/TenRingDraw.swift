@@ -2,7 +2,6 @@ import UIKit
 
 // Tenebrae: кольцо связи как прибор, булавка, призрак, чип close (app.js:1262-1343, 1364-1404)
 
-private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { x.isNaN ? a : min(max(b, a), max(a, x)) }
 private let ringLabels = Ten.linkTypes + ["cut"]
 
 extension TenebraeView {
@@ -30,12 +29,12 @@ extension TenebraeView {
   }
 
   private func readoutAt(_ cx: Double, _ cy: Double) -> (x: Double, y: Double) {
-    (clamp(cx, 90, area.W - 90), max(geo.top + 12 + 56, cy - Ten.menuDead - geo.menuSpan - 48))   // scopeY веба — geo.top + 12 (решение 8)
+    (tenClamp(cx, 90, area.W - 90), max(geo.top + 12 + 56, cy - Ten.menuDead - geo.menuSpan - 48))   // scopeY веба — geo.top + 12 (решение 8)
   }
 
   // луч k, значение: cut — флаг «режем»; остальные — глубина связи, если тип совпал
   private func ringVal(_ r: TenRing, _ m: TenMod, _ k: Int) -> Double {
-    k == 4 ? (r.cutting ? 1 : 0) : (m.type == k ? clamp(m.depth) : 0)
+    k == 4 ? (r.cutting ? 1 : 0) : (m.type == k ? tenClamp(m.depth) : 0)
   }
 
   // кольцо как прибор (:1273): тонкие лучи со шкалой, значение — поперечная риска, подпись на конце луча
@@ -66,7 +65,7 @@ extension TenebraeView {
         p.line(al, on ? 2.5 : 1.6)
         p.begin(); p.move(cx + c * rr - px * l, cy + s * rr - py * l); p.to(cx + c * rr + px * l, cy + s * rr + py * l); p.stroke()
       }
-      let lx = clamp(cx + c * (R2 + 22), 30, W - 30), ly = clamp(cy + s * (R2 + 22), 14, H - 14)
+      let lx = tenClamp(cx + c * (R2 + 22), 30, W - 30), ly = tenClamp(cy + s * (R2 + 22), 14, H - 14)
       d.text(ringLabels[sc.key], lx, ly, 12, al, align: .center)
     }
     if let q = pointer {
@@ -74,11 +73,11 @@ extension TenebraeView {
       d.dot(q.x, q.y, 3, 1)
     }
     let readout: String
-    if r.pinned { readout = r.cutting ? "release to cut" : "\(Ten.linkTypes[m.type]) · \(tenInt(Horo.jsRound(clamp(m.depth) * 100)))%" }
+    if r.pinned { readout = r.cutting ? "release to cut" : "\(Ten.linkTypes[m.type]) · \(tenInt(Horo.jsRound(tenClamp(m.depth) * 100)))%" }
     else if let k = r.key {
-      let t = k == 4 ? (r.cutting ? "release to cut" : "pull further") : "\(tenInt(Horo.jsRound(clamp(m.depth) * 100)))%"
+      let t = k == 4 ? (r.cutting ? "release to cut" : "pull further") : "\(tenInt(Horo.jsRound(tenClamp(m.depth) * 100)))%"
       readout = ringLabels[k] + " · " + t
-    } else { readout = "\(Ten.linkTypes[m.type]) · \(tenInt(Horo.jsRound(clamp(m.depth) * 100)))%" }
+    } else { readout = "\(Ten.linkTypes[m.type]) · \(tenInt(Horo.jsRound(tenClamp(m.depth) * 100)))%" }
     let at = readoutAt(cx, cy)
     d.text(readout, at.x, at.y, 15, 1, align: .center)
   }

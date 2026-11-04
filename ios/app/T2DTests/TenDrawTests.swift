@@ -33,6 +33,22 @@ final class TenDrawTests: XCTestCase {
     XCTAssertEqual(tenLit(img, win(G.ox - 28, G.oy + 28, 10)), 0, "вне видимой четверти")
   }
 
+  func testHoleIgnoresOpenedFinger() {
+    // палец плашки (opened) возле дыры горизонт не зажигает (веб: f.menu пропущен); обычный палец — зажигает
+    setup()
+    let c = view.geo.holeAt, key = ObjectIdentifier(self)
+    func hole() -> CGImage { tenShot(view) { d in self.view.drawHole(self.pen(d), nowMs: 1000) } }
+    let base = hole()
+    var f = TenFinger(id: key, x0: c.x + 30, y0: c.y + 30, t0: 1)
+    f.x = c.x + 30; f.y = c.y + 30; f.moved = true; f.v = 0
+    view.fingers[key] = f
+    let near = hole()
+    XCTAssertNotEqual(near.dataProvider?.data as Data?, base.dataProvider?.data as Data?, "обычный палец у дыры — горизонт ярче")
+    view.fingers[key]?.opened = true
+    XCTAssertEqual(hole().dataProvider?.data as Data?, base.dataProvider?.data as Data?, "палец плашки — как без пальца")
+    view.fingers[key] = nil
+  }
+
   func testLightning() {
     setup()
     let G = view.geo, p = view.screenPos(0)

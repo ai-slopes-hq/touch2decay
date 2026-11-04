@@ -73,6 +73,15 @@ final class TenLinkTests: XCTestCase {
     return m
   }
 
+  func testBridgeDrawnPredicate() {
+    // мост без второго пальца кадр не рисует — значит, и планеты моста кадр не должен пропускать
+    _ = bridgeUp()
+    XCTAssertNotNil(view.bridgeDrawn)
+    view.fingers[ObjectIdentifier(b)] = nil
+    XCTAssertNotNil(view.bridge)
+    XCTAssertNil(view.bridgeDrawn)
+  }
+
   func testBridge() {
     let (pa, pb) = bridgeUp()
     XCTAssertEqual(log.map(\.kind), [Act.attack, Act.grab, Act.link])

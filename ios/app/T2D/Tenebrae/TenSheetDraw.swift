@@ -3,8 +3,6 @@ import UIKit
 // Плашка планеты и панель LFO модели Tenebrae (порт app.js: drawSheet0 :1982-2024, liveRange :212-228, drawLfoPanel0 :1429-1502).
 // Текст — внутри d.reading (EB Garamond, прямой). Кадр состояние не меняет
 
-private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { x.isNaN ? a : min(b, max(a, x)) }
-private func invLog(_ lo: Double, _ hi: Double, _ v: Double) -> Double { log(max(v, lo) / lo) / log(hi / lo) }
 
 private let tenRowLabels = ["cutoff", "res", "detune", "fm", "shift", "amp"]
 private let tenLfoLabels = ["pitch", "wave", "cutoff", "res", "detune", "shift", "amp", "fm"]   // LFO_TARGET_LABEL по LfoKey
@@ -13,16 +11,16 @@ private let tenLfoLabels = ["pitch", "wave", "cutoff", "res", "detune", "shift",
 private func tenShiftT(_ hz: Double) -> Double {
   let a = abs(hz)
   if a < 1e-3 { return 0.5 }
-  return clamp(0.5 + (hz < 0 ? -1 : 1) * (0.04 + 0.96 * log2(a * 2047 / Ten.shiftMax + 1) / 11) / 2)
+  return tenClamp(0.5 + (hz < 0 ? -1 : 1) * (0.04 + 0.96 * log2(a * 2047 / Ten.shiftMax + 1) / 11) / 2)
 }
 private func tenNormAt(_ v: TenVoiceM, _ r: Row, _ lfo: Double) -> Double {
   switch r {
-  case .wave: return clamp(v.wave + lfo)
-  case .cut: return clamp(v.cut + lfo * 4 / log2(Ten.cutHi / Ten.cutLo))
-  case .res: return clamp(v.res + lfo * 20 / 24)
-  case .beat: return invLog(Ten.beatMin, Ten.beatMax, clamp(v.beat + lfo * 16, Ten.beatMin, Ten.beatMax))
+  case .wave: return tenClamp(v.wave + lfo)
+  case .cut: return tenClamp(v.cut + lfo * 4 / log2(Ten.cutHi / Ten.cutLo))
+  case .res: return tenClamp(v.res + lfo * 20 / 24)
+  case .beat: return tenInvLog(Ten.beatMin, Ten.beatMax, tenClamp(v.beat + lfo * 16, Ten.beatMin, Ten.beatMax))
   case .shift: return tenShiftT(tenShiftHz(v.shift) + lfo * 300)
-  default: return clamp(v.fm + lfo)
+  default: return tenClamp(v.fm + lfo)
   }
 }
 
@@ -30,7 +28,7 @@ extension TenebraeView {
   // для луча с LFO: где значение сейчас и в каких пределах гуляет; LFO нет — nil
   func liveRange(_ i: Int, _ r: Row) -> (lo: Double, hi: Double, now: Double)? {
     guard let k = tenSheetRows.first(where: { $0.row == r })?.lfo, let l = voice(i).lfo[k.rawValue] else { return nil }
-    let cur = Waves.morph(clamp(l.morph), vw[i].ph[k.rawValue]) * l.depth
+    let cur = Waves.morph(tenClamp(l.morph), vw[i].ph[k.rawValue]) * l.depth
     let a = tenNormAt(voice(i), r, -l.depth), b = tenNormAt(voice(i), r, l.depth)
     return (min(a, b), max(a, b), tenNormAt(voice(i), r, cur))
   }
@@ -60,9 +58,9 @@ extension TenebraeView {
     // полоса волн: таблицы по местам, рамка — где сейчас морфинг
     d.hairBox(s.x, s.waveY, s.w, 40, 0.3)
     for j in 0..<Waves.count {
-      d.drawCurve({ Waves.morph(Double(j) / 8, $0) }, s.x + 18 + Double(j) / 8 * (s.w - 36), s.waveY + 20, 22, 14, 0.4, cycles: 1, lw: 1)
+      d.drawCurve({ Waves.morph(Double(j) / Double(Waves.count - 1), $0) }, s.x + 18 + Double(j) / Double(Waves.count - 1) * (s.w - 36), s.waveY + 20, 22, 14, 0.4, cycles: 1, lw: 1)
     }
-    let wp = clamp(v.wave + vw[i].wv), wx = s.x + 18 + wp * (s.w - 36)
+    let wp = tenClamp(v.wave + vw[i].wv), wx = s.x + 18 + wp * (s.w - 36)
     d.hairBox(wx - 15, s.waveY + 3, 30, 34, 0.95)
     d.drawCurve({ Waves.morph(wp, $0) }, wx, s.waveY + 20, 22, 14, 1, cycles: 1, lw: 1.4)
     for (n, r) in tenSheetRows.enumerated() {                             // строка: имя, нить с бегунком, полоса размаха LFO, значение, «~»
@@ -71,7 +69,7 @@ extension TenebraeView {
       d.text(tenRowLabels[n], s.x, cy, 14, rf || sel ? 1 : 0.75)
       g.setStrokeColor(d.ink(0.45)); g.setLineWidth(1)
       g.beginPath(); g.move(to: CGPoint(x: s.tx0, y: cy + 0.5)); g.addLine(to: CGPoint(x: s.tx1, y: cy + 0.5)); g.strokePath()
-      func T(_ t: Double) -> Double { s.tx0 + clamp(t) * (s.tx1 - s.tx0) }
+      func T(_ t: Double) -> Double { s.tx0 + tenClamp(t) * (s.tx1 - s.tx0) }
       if r.row == .shift {
         g.beginPath(); g.move(to: CGPoint(x: T(0.5) + 0.5, y: cy - 5)); g.addLine(to: CGPoint(x: T(0.5) + 0.5, y: cy + 5)); g.strokePath()
       }
@@ -125,10 +123,10 @@ extension TenebraeView {
     // форма: таблицы по местам, рамка — текущая
     d.hairBox(pn.x, sh.y, pn.w, sh.h, strip == 0 ? 0.8 : 0.3)
     for j in 0..<Waves.count {
-      d.drawCurve({ Waves.morph(Double(j) / 8, $0) }, pn.x + 22 + CGFloat(j) / 8 * (pn.w - 44), sh.y + sh.h / 2, 24, 16, 0.3, cycles: 1, lw: 1.1)
+      d.drawCurve({ Waves.morph(Double(j) / Double(Waves.count - 1), $0) }, pn.x + 22 + CGFloat(j) / CGFloat(Waves.count - 1) * (pn.w - 44), sh.y + sh.h / 2, 24, 16, 0.3, cycles: 1, lw: 1.1)
     }
     if let spec {
-      let m = clamp(spec.morph), mx = pn.x + 22 + CGFloat(m) * (pn.w - 44)
+      let m = tenClamp(spec.morph), mx = pn.x + 22 + CGFloat(m) * (pn.w - 44)
       d.hairBox(mx - 24, sh.y + 4, 48, sh.h - 8, 0.9)
       d.drawCurve({ Waves.morph(m, $0) }, mx, sh.y + sh.h / 2, 38, 22, 1, cycles: 1.5, lw: 1.6)
     }
@@ -162,7 +160,7 @@ extension TenebraeView {
 
     // сама LFO-волна: окно в 2 с, правый край — «сейчас»; размах — глубина
     let cx = Pad.rateX(pn, spec.rate), cy = Pad.depthY(pn, spec.depth), mid = pd.y + pd.h / 2
-    let amp = CGFloat(spec.depth) * (pd.h / 2 - PAD_IN), span = 2 * spec.rate, m = clamp(spec.morph)
+    let amp = CGFloat(spec.depth) * (pd.h / 2 - PAD_IN), span = 2 * spec.rate, m = tenClamp(spec.morph)
     let ph0 = vw[i].ph[k.rawValue]
     g.saveGState()
     g.clip(to: CGRect(x: pn.x + 1, y: pd.y + 1, width: pn.w - 2, height: pd.h - 2))

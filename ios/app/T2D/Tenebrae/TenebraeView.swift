@@ -15,7 +15,6 @@ struct TenVW {
 }
 
 private func lerpLog(_ lo: Double, _ hi: Double, _ t: Double) -> Double { lo * pow(hi / lo, t) }
-private func invLog(_ lo: Double, _ hi: Double, _ v: Double) -> Double { log(v / lo) / log(hi / lo) }
 
 final class TenebraeView: World {
   static let slotN = 1
@@ -80,6 +79,7 @@ final class TenebraeView: World {
   var ring: TenRing? = nil                                    // кольцо связи: на весу у пальца или закреплённое
   var ghost: (ring: TenRing, until: Double)? = nil            // погасшее кольцо: 1.6 с можно тапнуть булавку
   var touchedOnce = false                                      // был хоть один палец (down) — подсказка гаснет
+  var frameVoices: [TenVoiceM]? = nil, frameFx: [Double]? = nil   // срез на время одного кадра (drawFrame): voice(i) и fx не пересобираются на каждом обращении
   var sclPcs: [Int]? = nil, sclRoot = 0                       // лад: ноты по модулю 12 от A; nil — выключен
   var slideUntil = 0.0                                        // после смены лада кружки плавно съезжают к нотам
   private var sized: (Double, Double, Double, Double)?
@@ -117,13 +117,14 @@ final class TenebraeView: World {
   // ---------- значения для картинки, касаний и тестов: свои, пока зеркало не догнало ----------
   func voice(_ i: Int) -> TenVoiceM {
     guard (0..<Ten.voices).contains(i) else { return TenVoiceM() }
+    if let c = frameVoices { return c[i] }
     return state.voice(i, mirror: mirror, now: now)
   }
   func activeEff(_ i: Int) -> Bool {
     guard (0..<Ten.voices).contains(i) else { return false }
     return state.activeEff(i, mirror: mirror, now: now)
   }
-  var fxValues: [Double] { state.fx(mirror: mirror, now: now) }
+  var fxValues: [Double] { frameFx ?? state.fx(mirror: mirror, now: now) }
   var kept: [Int] { state.kept(mirror: mirror, now: now) }
   var sclOn: Bool { sclPcs != nil }
   // x, по которому планета звучит: с ладом — ближайшая нота (soundX веба)
@@ -171,7 +172,13 @@ final class TenebraeView: World {
     sclPcs = pcs; sclRoot = pcs == nil ? 0 : root
     slideUntil = now + 0.5                                    // dx → soundX плавно; RETUNE не шлём
   }
-  func enter() { touchReset(); sunT = [Double](repeating: -1, count: Ten.voices) }   // вход в мир: прежние пальцы не живут
+  // вход в мир: прежние пальцы не живут. Ядро живёт отдельно, поэтому сперва отпускаем всё, что мы держали (как cancel / closePlanetSheet),
+  // и только потом забываем: иначе удерживаемая или KEEP-планета звучала бы вечно
+  func enter() {
+    releaseTouches()
+    touchReset()
+    sunT = [Double](repeating: -1, count: Ten.voices)
+  }
 
   func restored() {                                          // undo / корзина: пальцы, плашка, свои значения сброшены; вид — из зеркала
     touchReset()
@@ -233,11 +240,13 @@ final class TenebraeView: World {
   // то, что веб копит в draw: пик контура (pk, app.js:1071) и фаза двойной звезды (bph, :1153)
   private func stepPicture(_ dt: Double) {
     for i in 0..<Ten.voices {
-      if let sc = mirror.scope?[i] {
+      let drawn = voice(i).active                               // веб считает pk и bph в draw, а он рисует только живые планеты
+      if drawn, mirror.scopeLive[i], let sc = mirror.scope?[i] {   // и pk — только когда model.scope(i) не null
         var pk = 0.0
         for x in sc { pk = max(pk, Double(abs(x))) }
         vw[i].pk = max(pk, vw[i].pk * 0.92, 0.02)
       }
+      if !drawn { continue }
       let b = voice(i).beat
       vw[i].bph = b.isFinite ? (vw[i].bph + dt * b).truncatingRemainder(dividingBy: 1) : 0
     }
@@ -260,7 +269,7 @@ final class TenebraeView: World {
       let first = ((sclRoot % 12) + 12) % 12
       if first > 0 { raw.append((0, Double(first), "", 0)) }
       var n = first
-      while n < Int(semis) { raw.append((Double(n), min(semis, Double(n + 12)), tenNoteName(n), 0)); n += 12 }
+      while n < tenInt(semis) { raw.append((Double(n), min(semis, Double(n + 12)), tenNoteName(n), 0)); n += 12 }
     } else {
       for (i, b) in Ten.bands.enumerated() {
         let s1 = i + 1 < Ten.bands.count ? tenSemiOf(Ten.bands[i + 1].hz) : semis
@@ -278,7 +287,7 @@ final class TenebraeView: World {
   // волны живых планет в ритме биений и их ход; радиус гашения растёт от hall и decay
   private func stepWaves(_ dt: Double) {
     let f = fxValues
-    let rmax = hypot(area.W, area.H) * (0.3 + 0.35 * f[0] + 0.35 * invLog(0.6, 14, f[1]))
+    let rmax = hypot(area.W, area.H) * (0.3 + 0.35 * f[0] + 0.35 * tenInvLog(0.6, 14, f[1]))
     var k = waves.count - 1
     while k >= 0 {
       if waves[k].wait > 0 { waves[k].wait -= dt }
@@ -343,7 +352,7 @@ extension TenebraeView {
   private func fanIdx(_ k: String) -> Int { TenebraeView.fanKeys.firstIndex(of: k) ?? 0 }
   private func fanGet(_ k: String) -> Double {
     let v = fxValues[fanIdx(k)]
-    return k == "decay" ? invLog(0.6, 14, v) : v
+    return k == "decay" ? tenInvLog(0.6, 14, v) : v
   }
 
   var fanSpec: SheetSpec {

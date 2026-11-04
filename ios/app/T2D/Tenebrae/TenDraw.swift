@@ -3,13 +3,11 @@ import UIKit
 // Tenebrae: солнце, чёрная дыра, планеты (app.js:1066-1176, 1555-1655). Кадр состояния не меняет:
 // pk, bph и угол удара считает tick; случайность картинки — tenHash от времени кадра
 
-private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { x.isNaN ? a : min(b, max(a, x)) }
-private func invLog(_ lo: Double, _ hi: Double, _ v: Double) -> Double { log(max(v, lo) / lo) / log(hi / lo) }
 
 extension TenebraeView {
   // ---------- солнце (:1607) ----------
   func drawSun(_ p: NatPen, _ d: Draw, nowMs: Double) {
-    let ox = geo.ox, oy = geo.oy, L = clamp(sunLevel), D = clamp(fxValues[4])
+    let ox = geo.ox, oy = geo.oy, L = tenClamp(sunLevel), D = tenClamp(fxValues[4])
     let rot = nowMs * 0.00004
     d.glowAt(ox, oy, 90 + 50 * L + 60 * D, 0.16 + 0.2 * L + 0.2 * D)
     let N = 28
@@ -47,7 +45,7 @@ extension TenebraeView {
       let pos = screenPos(i), kk = kick(i)
       let px = pos.x + kk.x, py = pos.y + kk.y, dist = hypot(px - ox, py - oy)
       if dist < 1 { continue }
-      let R = tenPlanetR(voice(i).amp), t = clamp(st.p)
+      let R = tenPlanetR(voice(i).amp), t = tenClamp(st.p)
       let n = 1 + tenInt((2 * t).rounded())
       for b in 0..<n {
         let a = st.a + (tenHash(Double(200 + 10 * i + b), nowMs) - 0.5) * R / dist
@@ -76,10 +74,10 @@ extension TenebraeView {
     p.g.clip(to: CGRect(x: c.x, y: c.y, width: geo.W + 2 * R, height: area.H))   // видна четверть
     var feed = 0.0, near = 0.0
     for i in 0..<Ten.voices where voice(i).active { feed = max(feed, vw[i].hole * voice(i).env) }
-    feed = clamp(feed)
+    feed = tenClamp(feed)
     for f in fingers.values {
-      guard let i = f.v, f.moved, !f.wasBridge, (0..<Ten.voices).contains(i) else { continue }
-      near = max(near, clamp((R * 1.7 - hypot(f.x + f.ox - c.x, f.y + f.oy - c.y)) / (R * 0.7)))
+      guard let i = f.v, f.moved, !f.wasBridge, !f.opened, (0..<Ten.voices).contains(i) else { continue }
+      near = max(near, tenClamp((R * 1.7 - hypot(f.x + f.ox - c.x, f.y + f.oy - c.y)) / (R * 0.7)))
     }
     let spin = nowMs * (0.004 + 0.02 * feed), tilt = -0.5, S = R * 0.46
     func disk(_ front: Bool) {
@@ -112,11 +110,11 @@ extension TenebraeView {
 
   // ---------- планета над дырой (:1102) ----------
   func drawVoice(_ p: NatPen, _ d: Draw, _ i: Int, nowMs: Double) {
-    let h = clamp(vw[i].hole)
+    let h = tenClamp(vw[i].hole)
     let pos = screenPos(i)
     if h < 0.005 { drawPlanet(p, d, i, x: pos.x, y: pos.y, m: 1, nowMs: nowMs); return }
     let c = geo.holeAt, x = pos.x, y = pos.y, a = atan2(y - c.y, x - c.x)
-    let e = pow(clamp((h - 0.3) / 0.7), 1.5), s = 1 - 0.8 * e         // e — насколько уже съедена
+    let e = pow(tenClamp((h - 0.3) / 0.7), 1.5), s = 1 - 0.8 * e         // e — насколько уже съедена
     let px = x + (c.x - x) * e, py = y + (c.y - y) * e
     p.g.saveGState()
     p.g.translateBy(x: px, y: py); p.g.rotate(by: a)
@@ -131,17 +129,17 @@ extension TenebraeView {
     let v = voice(i)
     p.g.setLineJoin(.round)
     var halo = glow ? 1.0 : 0
-    let dirt = clamp(fxValues[4])
+    let dirt = tenClamp(fxValues[4])
     if !glow && dirt > 0.25 { halo = (dirt - 0.25) * 1.6 }
     let sc: [Float]? = (mirror.scopeLive.indices.contains(i) && mirror.scopeLive[i]) ? mirror.scope?[i] : nil
-    let k = (10 / max(vw[i].pk, 0.02)) * min(1, clamp(v.env, 0, 10) * 1.4)
+    let k = (10 / max(vw[i].pk, 0.02)) * min(1, tenClamp(v.env, 0, 10) * 1.4)
     func path() {
       p.begin()
       if let b = sc, !b.isEmpty {
         let N = b.count
         for j in 0..<N {
           let th = Double(j) / Double(N) * 2 * .pi - .pi / 2
-          let rr = R + clamp(Double(b[j]) * k, -12, 12)
+          let rr = R + tenClamp(Double(b[j]) * k, -12, 12)
           let X = x + cos(th) * rr, Y = y + sin(th) * rr
           if j > 0 { p.to(X, Y) } else { p.move(X, Y) }
         }
@@ -165,12 +163,12 @@ extension TenebraeView {
     let editing = sheetVoice == i || ring.map { $0.dst == i || $0.src == i } ?? false
     let R = tenPlanetR(v.amp)
     let far = vw[i].dx + vw[i].wob > zoom * 1.0001                    // за горизонтом зума — у края, бледно
-    let env = clamp(v.env, 0, 10)
+    let env = tenClamp(v.env, 0, 10)
     let a = min(1, 1.3 * env) * (far ? 0.4 : 1)
     let f = fxValues
     if !v.pinned { drawTail(p, x, y, R: R, a: a * m, fade: v.envT == 0 ? 1 - env : 0) }
     if f[0] > 0.03 {                                                  // hall: туманность вокруг планеты, decay — её размер
-      d.glowAt(x, y, 48 + 80 * invLog(0.6, 14, f[1]), 0.12 * f[0] * a * m)
+      d.glowAt(x, y, 48 + 80 * tenInvLog(0.6, 14, f[1]), 0.12 * f[0] * a * m)
     }
     p.fillPap(0.82 * m)                                               // планета закрывает орбиты за собой
     p.g.fillEllipse(in: CGRect(x: x - (R - 3), y: y - (R - 3), width: 2 * (R - 3), height: 2 * (R - 3)))

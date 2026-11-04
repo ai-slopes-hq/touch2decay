@@ -24,7 +24,6 @@ struct TenRing {
   var finger: ObjectIdentifier?
 }
 
-private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { x.isNaN ? a : min(b, max(a, x)) }
 private let cutKey = 4
 let sectors: [(key: Int, ang: Double)] = [(0, -90), (1, -18), (2, 54), (3, 126), (4, 198)].map { ($0.0, $0.1 * .pi / 180) }
 
@@ -55,7 +54,7 @@ extension TenebraeView {
     var nx = -(p2.y - p1.y) / len, ny = (p2.x - p1.x) / len
     if nx * (geo.ox - mx) + ny * (geo.oy - my) < 0 { nx = -nx; ny = -ny }
     let depth = linkMod(dst, src)?.depth ?? 0
-    let bend = min(0.3 * L, 64) * (0.5 + 0.5 * clamp(depth))
+    let bend = min(0.3 * L, 64) * (0.5 + 0.5 * tenClamp(depth))
     return (p1.x, p1.y, mx + nx * bend, my + ny * bend, p2.x, p2.y)
   }
 
@@ -66,7 +65,7 @@ extension TenebraeView {
   func ringCenter(_ x: Double, _ y: Double) -> (x: Double, y: Double) {
     let R = Ten.menuDead + geo.menuSpan + 26
     let x0 = R, x1 = area.W - R, y0 = area.topY + 12 + R, y1 = area.H - area.safeBot - 24 - R
-    return (x0 < x1 ? clamp(x, x0, x1) : area.W / 2, y0 < y1 ? clamp(y, y0, y1) : (y0 + y1) / 2)
+    return (x0 < x1 ? tenClamp(x, x0, x1) : area.W / 2, y0 < y1 ? tenClamp(y, y0, y1) : (y0 + y1) / 2)
   }
 
   private func sector(_ a: Double) -> Int? {
@@ -121,7 +120,7 @@ extension TenebraeView {
       r.finger = f.id; r.key = nil; r.cutting = false
       if d >= Ten.menuDead { r.key = sector(atan2(dy, dx)) }
       ring = r
-      if let k = r.key { ringSet(k, clamp((d - Ten.menuDead) / geo.menuSpan)) }
+      if let k = r.key { ringSet(k, tenClamp((d - Ten.menuDead) / geo.menuSpan)) }
       return true
     }
     for dst in 0..<Ten.voices where voice(dst).active {       // ручка на середине нити: не auto, источник активен
@@ -144,7 +143,7 @@ extension TenebraeView {
     guard var r = ring, r.finger == f.id, let p = pt(f) else { return }
     if r.pinned {                                             // ringTouch: луч выбран на касании, значение — от центра
       guard let k = r.key else { return }
-      ringSet(k, clamp((hypot(p.x - r.cx, p.y - r.cy) - Ten.menuDead) / geo.menuSpan))
+      ringSet(k, tenClamp((hypot(p.x - r.cx, p.y - r.cy) - Ten.menuDead) / geo.menuSpan))
       return
     }
     let dx = p.x - r.gx, dy = p.y - r.gy, d = hypot(dx, dy)   // menuMove: от точки, где лежал палец
@@ -152,7 +151,7 @@ extension TenebraeView {
     r.overPin = false
     if r.key == nil && d > Ten.menuDead + 16 { r.key = sector(atan2(dy, dx)) }
     ring = r
-    if let k = r.key { ringSet(k, clamp((d - Ten.menuDead) / geo.menuSpan)) }
+    if let k = r.key { ringSet(k, tenClamp((d - Ten.menuDead) / geo.menuSpan)) }
   }
 
   func linkUp(_ f: Finger) {
@@ -195,7 +194,7 @@ extension TenebraeView {
 
   func bridgeMove(_ br: TenBridge) {
     guard let fa = fingers[br.fa], let fb = fingers[br.fb], voice(br.a).active, voice(br.b).active else { return }
-    let depth = clamp(br.depth0 + hypot(fa.x - fb.x, fa.y - fb.y) / br.d0 - 1)
+    let depth = tenClamp(br.depth0 + hypot(fa.x - fb.x, fa.y - fb.y) / br.d0 - 1)
     bridge?.depth = depth
     send(Act.linkDepth, br.a, [Double(br.b), depth])
   }

@@ -426,6 +426,19 @@ final class TenebraeTests: XCTestCase {
     XCTAssertEqual(view.vw[0].pk, 0.46 * 0.92, accuracy: 1e-6, "контура нет — pk как был")
   }
 
+  func testPkOnlyWhenLive() {
+    // контур не «живой» (флаг 0) или планета не нарисована — pk не трогаем (веб: v.pk только при model.scope(i) != null в draw)
+    loadFull { self.set(&$0, 0); self.set(&$0, 1, active: false); self.scope(&$0, 0, peak: 0.5); self.scope(&$0, 1, peak: 0.5)
+      $0[Ten.mirrorN + Ten.scopeN * 0] = 0 }
+    view.tick(now: 1, dt: 0.02)
+    XCTAssertEqual(view.vw[0].pk, 0.02, accuracy: 1e-9, "scopeLive = 0")
+    XCTAssertEqual(view.vw[1].pk, 0.02, accuracy: 1e-9, "планета не активна")
+    XCTAssertEqual(view.vw[1].bph, 0, "двойная звезда неактивной не крутится")
+    loadFull { self.set(&$0, 0); self.scope(&$0, 0, peak: 0.5) }
+    view.tick(now: 1.02, dt: 0.02)
+    XCTAssertEqual(view.vw[0].pk, 0.5, accuracy: 1e-6)
+  }
+
   func testRefuseExpires() {
     view.tick(now: 1, dt: 0.016)
     view.refuse = (10, 10, 1)

@@ -173,6 +173,29 @@ final class TenTouchTests: XCTestCase {
     XCTAssertEqual(after.count, 2); XCTAssertEqual(after[1].a, [0])
   }
 
+  func testEnterReleasesCore() {
+    // вход в мир (Host.go / goWorld / перезапуск аудио) отпускает в ядре то, что держали палец и плашка
+    load { self.put(&$0, 0); self.put(&$0, 1, x: 0.7, y: 0.3) }
+    tick(1)
+    view.down(fing(a, pos(0).x, pos(0).y, t0: 1.0))
+    rec.acts.removeAll()
+    view.enter()
+    XCTAssertTrue(log.contains { $0.kind == Act.letGo && $0.i == 0 }, "палец держал планету — LETGO")
+    XCTAssertTrue(view.fingers.isEmpty)
+    tick(1.1)
+    view.down(fing(b, pos(1).x, pos(1).y, t0: 1.1))
+    tick(1.4); tick(1.6)
+    XCTAssertEqual(view.sheetVoice, 1)
+    rec.acts.removeAll()
+    view.enter()
+    XCTAssertTrue(has(Act.unkeep), "плашка была открыта — UNKEEP")
+    XCTAssertTrue(log.contains { $0.kind == Act.letGo && $0.i == 1 })
+    XCTAssertNil(view.sheetVoice); XCTAssertTrue(view.fingers.isEmpty)
+    rec.acts.removeAll()
+    view.enter()
+    XCTAssertTrue(log.isEmpty, "ничего не держали — ничего не шлём")
+  }
+
   func testHold() {
     load { self.put(&$0, 0) }
     tick(1)
