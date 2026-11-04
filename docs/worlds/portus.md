@@ -46,4 +46,4 @@
 
 **Сцены** `ios/app/shot.sh portus | portus-empty | portus-play | portus-echo | portus-star | portus-bloodmoon | portus-sheet`; веб-пары — `python3 tools/shot.py portus` (те же имена).
 
-**Проверить на iPhone:** кеш стены порта и размер луны; луч и блик маяка (яркость по формуле веба); жесты лодок и фарватера одной рукой; не проверено ни зрение, ни жесты, ни звук.
+**iPhone:** натив принят автором 04.11 («отлично»).

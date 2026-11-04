@@ -29,4 +29,4 @@
 
 **Сцены** `ios/app/shot.sh cymatica | cym-empty | cym-play | cym-pinch | cym-steprec | cym-chance | cym-drift | cym-luna`; веб-пары — `python3 tools/shot.py worlds seq handpan cymx` (`cymatica`, `astrolabe`, `handpan-held`, `cym-steprec`, `cym-chance`, `cym-drift`, `cym-luna`).
 
-**Проверить на iPhone:** щипок и поворот двумя пальцами одной рукой; попадание по бусинам и ударам астролябии; резонатор под углом панели замеров; не проверено ни зрение, ни жесты, ни звук.
+**iPhone:** натив принят автором 04.11 («отлично»).
