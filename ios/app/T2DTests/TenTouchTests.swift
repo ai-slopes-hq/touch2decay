@@ -191,6 +191,32 @@ final class TenTouchTests: XCTestCase {
     XCTAssertFalse(has(Act.pin)); XCTAssertFalse(log.contains { $0.kind == Act.letGo && $0.a == [1] })
   }
 
+  func testFreshSpawnKeepsFinger() {
+    view.down(fing(a, empty.x, empty.y, t0: 1.0))            // зеркало ещё не показало планету: active 0
+    rec.acts.removeAll()
+    tick(0.6)                                                // в пределах ttl своего SPAWN (now вида — с прошлого тика)
+    view.move(fing(a, empty.x + 30, empty.y, t0: 1.0, x0: empty.x, y0: empty.y))
+    XCTAssertTrue(has(Act.move, 0), "свежая планета не теряет палец")
+    rec.acts.removeAll()
+    view.up(fing(a, empty.x + 30, empty.y, t0: 1.0, x0: empty.x, y0: empty.y))
+    XCTAssertEqual(log.filter { $0.kind == Act.letGo }.map(\.a), [[1]])
+  }
+
+  func testOpenedPlanetFadesWhenSheetClosedByOtherFinger() {
+    load { self.put(&$0, 0) }
+    tick(1)
+    let p = pos(0)
+    view.down(fing(a, p.x, p.y, t0: 1.0))
+    tick(1.3); tick(1.43)
+    XCTAssertEqual(view.sheetVoice, 0)
+    view.down(fing(b, 200, 100, t0: 1.44))                   // второй палец над плашкой: UNKEEP
+    XCTAssertTrue(has(Act.unkeep)); XCTAssertNil(view.sheetVoice)
+    rec.acts.removeAll()
+    view.up(fing(a, p.x, p.y, t0: 1.0))
+    XCTAssertEqual(log.filter { $0.kind == Act.letGo }.map(\.a), [[1]])
+    XCTAssertTrue(log.contains { $0.kind == Act.letGo && $0.i == 0 })
+  }
+
   func testHoldMoved() {
     load { self.put(&$0, 0) }
     tick(1)

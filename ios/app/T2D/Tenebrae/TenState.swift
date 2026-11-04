@@ -48,6 +48,8 @@ struct TenState {
     e.active = z.active; e.live = z.live; e.env = z.env; e.envT = z.envT; e.sunT = z.sunT
     return e
   }
+  // active с учётом своего SPAWN (ttl): только для пальца, чтобы свежая планета не терялась до первого кадра зеркала
+  func activeEff(_ i: Int, mirror m: TenMirror, now: Double) -> Bool { eff(i, m, now).active }
   func kept(mirror m: TenMirror, now: Double) -> [Int] { keptOv.get(m.kept, now) }
   func fx(mirror m: TenMirror, now: Double) -> [Double] { fxOv.get(m.fx, now) }
 

@@ -56,7 +56,7 @@ extension TenebraeView {
   // голос пропал (ядро погасило, зеркало показало active 0): палец его забывает и ничего больше не шлёт
   private func alive(_ id: ObjectIdentifier) -> Int? {
     guard let v = fingers[id]?.v else { return nil }
-    if voice(v).active { return v }
+    if activeEff(v) { return v }
     fingers[id]?.v = nil
     return nil
   }
@@ -168,8 +168,8 @@ extension TenebraeView {
       pinch = nil
       if z.zooming { return }
     }
-    guard let v = t.v, voice(v).active else { return }
-    if t.opened { send(Act.letGo, v, [0]); return }          // плашка открыта удержанием: планета в KEEP, хвост не нужен
+    guard let v = t.v, activeEff(v) else { return }
+    if t.opened { send(Act.letGo, v, [kept.contains(v) ? 0 : 1]); return }          // плашка открыта удержанием: планета в KEEP, хвост не нужен
     let tap = now - t.t0 < Ten.tap && hypot(t.x - t.x0, t.y - t.y0) < Ten.tapMove
     if tap && !t.wasBridge && holders(v) == 0 {                              // держал её только этот палец
       if let lt = lastTap, lt.v == v, now - lt.t < Ten.dtap {
@@ -192,7 +192,7 @@ extension TenebraeView {
     if hold?.id == f.id { hold = nil }
     if let br = bridge, f.id == br.fa || f.id == br.fb { endBridge(br) }
     if let z = pinch, z.a == f.id || z.b == f.id { pinch = nil }
-    if let v = t.v, voice(v).active { send(Act.letGo, v, [t.opened ? 0 : 1]) }
+    if let v = t.v, activeEff(v) { send(Act.letGo, v, [kept.contains(v) ? 0 : 1]) }
   }
 
   // ---------- тик: удержание и удары солнца ----------

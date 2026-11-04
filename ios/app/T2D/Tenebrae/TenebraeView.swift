@@ -116,6 +116,10 @@ final class TenebraeView: World {
     guard (0..<Ten.voices).contains(i) else { return TenVoiceM() }
     return state.voice(i, mirror: mirror, now: now)
   }
+  func activeEff(_ i: Int) -> Bool {
+    guard (0..<Ten.voices).contains(i) else { return false }
+    return state.activeEff(i, mirror: mirror, now: now)
+  }
   var fxValues: [Double] { state.fx(mirror: mirror, now: now) }
   var kept: [Int] { state.kept(mirror: mirror, now: now) }
   var sclOn: Bool { sclPcs != nil }
