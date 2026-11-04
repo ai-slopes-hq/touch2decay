@@ -562,6 +562,13 @@ final class Host {
   }
 
   // ---------- рисование ----------
+  // снимок мира в переходе — для слоя Stage.snapLayer; nil — слой скрыт (первый вход: снимка ещё нет, карточки тают сами)
+  func transitionSnap(now: Double) -> (image: CGImage, rect: CGRect, alpha: CGFloat)? {
+    guard onMap, let slot = nav.anim?.slot, let im = snaps[slot],
+          let f = MapDraw.snapFrame(nav: nav, field: field, W: W, H: H, now: now) else { return nil }
+    return (im, f.rect, f.alpha)
+  }
+
   private func barState(_ w: World) -> TopBar.State {
     TopBar.State(title: w.title, vol: vol, volHeld: volF != nil, scl: scl, sclOpen: sclOpen,
                  canUndo: undo.depth(slot: w.slot) > 0, fxArc: w.fx?.arc?(), fxHeld: fxHeld,
@@ -573,7 +580,7 @@ final class Host {
     if onMap {
       // только -shot: peek с замороженным k — время кадра подменяем (иначе он кончится за 420 мс)
       let t = nav.anim == nil ? nav.peek.flatMap { p in nav.freeze.map { p.t0 + $0 * Nav.peekDur } } ?? now : now
-      MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, snap: nav.anim.flatMap { snaps[$0.slot] }, settings: settings != .off, now: t)
+      MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, settings: settings != .off, now: t)
       if settings == .concordia && !nav.busy(now) {
         Concordia.draw(d, cBox, link: link, stable: audioPref.stable, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
       }

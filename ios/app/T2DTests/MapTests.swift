@@ -91,6 +91,23 @@ final class MapTests: XCTestCase {
     XCTAssertEqual(n.k(5), 0.25)
   }
 
+  // снимок перехода — слой Stage: от экрана (out 0) к клетке мира (out 1), прозрачность 1 − out; вне перехода и на самой карте — нет
+  func testSnapFrame() {
+    let W: CGFloat = 390, H: CGFloat = 844, f = MapGeo.field(W: W, H: H, top: 47, safeBot: 34), cell = f.rect(col: 3, row: 1)
+    var n = Nav()
+    XCTAssertNil(MapDraw.snapFrame(nav: n, field: f, W: W, H: H, now: 0), "без перехода")
+    n.view = .world(10); n.anim = (0, true, 10)
+    let a = MapDraw.snapFrame(nav: n, field: f, W: W, H: H, now: 0)!
+    XCTAssertEqual(a.rect, CGRect(x: 0, y: 0, width: W, height: H)); XCTAssertEqual(a.alpha, 1, accuracy: 1e-9)
+    let m = MapDraw.snapFrame(nav: n, field: f, W: W, H: H, now: 0.26)!
+    XCTAssertEqual(m.alpha, 0.5, accuracy: 1e-9)
+    XCTAssertEqual(m.rect.minX, cell.minX / 2, accuracy: 1e-9); XCTAssertEqual(m.rect.minY, cell.minY / 2, accuracy: 1e-9)
+    XCTAssertEqual(m.rect.width, (W + cell.width) / 2, accuracy: 1e-9); XCTAssertEqual(m.rect.height, (H + cell.height) / 2, accuracy: 1e-9)
+    XCTAssertNil(MapDraw.snapFrame(nav: n, field: f, W: W, H: H, now: 0.52), "out = 1 — снимка уже не видно")
+    n.anim = (0, false, 5)
+    XCTAssertEqual(MapDraw.snapFrame(nav: n, field: f, W: W, H: H, now: 0.26)!.rect.minX, f.rect(col: 2, row: 0).minX / 2, accuracy: 1e-9, "клетка — мира перехода")
+  }
+
   func testPeek() {
     var n = Nav()
     n.peek = (0, 1, 0)

@@ -123,7 +123,7 @@ final class DrawTests: XCTestCase {
       let c = flipped2(W, H)
       let d = Draw(g: c, W: CGFloat(W), H: CGFloat(H))
       var lv = [Float](repeating: 0, count: 16); lv[10] = l
-      MapDraw.draw(d, nav: Nav(), field: f, lv: lv, snap: nil, now: 1)
+      MapDraw.draw(d, nav: Nav(), field: f, lv: lv, now: 1)
       return c
     }
     func px(_ c: CGContext, _ x: Int, _ y: Int) -> [UInt8] {

@@ -10,6 +10,11 @@ final class Stage: UIView {
   private var link: CADisplayLink?
   private var last = 0.0
   let meter = Meter()
+  private let bench: Bench? = Bench.on ? Bench() : nil
+  // снимок мира в переходе карта ↔ мир: кадр и прозрачность составляет Core Animation, холст его не рисует
+  private let snapLayer = CALayer()
+  private var snapImage: CGImage?
+  private var gap = 0.0
   private let audio: Audio?
   private var panelLine = ""
   private var statsAt = 0.0, frameStart = 0.0
@@ -25,6 +30,9 @@ final class Stage: UIView {
     contentScaleFactor = Draw.scale                        // плотность рисования не больше 2×
     isOpaque = true; isMultipleTouchEnabled = true
     backgroundColor = host.theme.bg
+    snapLayer.contentsGravity = .resize; snapLayer.isHidden = true
+    snapLayer.actions = ["position": NSNull(), "bounds": NSNull(), "opacity": NSNull(), "contents": NSNull(), "hidden": NSNull()]
+    layer.addSublayer(snapLayer)
   }
   required init?(coder: NSCoder) { fatalError() }
 
@@ -49,10 +57,15 @@ final class Stage: UIView {
 
   @objc private func frame(_ l: CADisplayLink) {
     let now = CACurrentMediaTime(), dt = now - last
-    last = now; frameStart = now
+    last = now; frameStart = now; gap = dt
+    bench?.step(now: now, host: host)
     updateGeo()
     cornerTick(now: now)
     host.tick(now: now, dt: dt)
+    if let t = host.transitionSnap(now: now) {
+      if snapImage !== t.image { snapImage = t.image; snapLayer.contents = t.image }
+      snapLayer.frame = t.rect; snapLayer.opacity = Float(t.alpha); snapLayer.isHidden = false
+    } else if !snapLayer.isHidden { snapLayer.isHidden = true; snapLayer.contents = nil; snapImage = nil }
     if now - statsAt >= 1 { statsAt = now; second() }
     setNeedsDisplay()
   }
@@ -91,7 +104,11 @@ final class Stage: UIView {
         d.text(Meter.buildLabel(Bundle.main.infoDictionary), bounds.width / 2, bounds.height - max(geoBot, 0) - 28, 11, 0.6, align: .center)
       }
     }
-    if frameStart > 0 { meter.frame(start: frameStart, end: CACurrentMediaTime(), missed: 0) }
+    if frameStart > 0 {
+      let end = CACurrentMediaTime()
+      meter.frame(start: frameStart, end: end, missed: 0)
+      bench?.frame(draw: end - frameStart, gap: gap, host: host)
+    }
   }
 
   // ---------- касания ----------

@@ -9,29 +9,35 @@ enum MapDraw {
     let w = d.mapTextWidth("concordia", 12) + 14; cW = w; return w
   }
 
-  // now — секунды; в формулах веба — мс. snap — снимок мира, участвующего в переходе (nil — рисуем только карточки)
-  static func draw(_ d: Draw, nav: Nav, field F: Field, lv: [Float], snap: CGImage?, settings: Bool = false, now: Double) {
+  // прямоугольник и прозрачность снимка мира в переходе: от клетки до экрана. Снимок — не в кадре холста, а слоем Core Animation
+  // (Stage.snapLayer): полноэкранная картинка с масштабом и альфой в draw(_:) роняла кадры перехода
+  static func snapFrame(nav: Nav, field F: Field, W: CGFloat, H: CGFloat, now: Double) -> (rect: CGRect, alpha: CGFloat)? {
+    guard let slot = nav.anim?.slot, let w = Worlds.info(slot) else { return nil }
+    let out = CGFloat(nav.out(now))
+    guard out < 1 else { return nil }
+    let p = F.rect(col: w.col, row: w.row)
+    return (CGRect(x: p.minX * out, y: p.minY * out, width: W + (p.width - W) * out, height: H + (p.height - H) * out), 1 - out)
+  }
+
+  // now — секунды; в формулах веба — мс. Снимок мира в переходе рисует не холст, а слой (snapFrame)
+  static func draw(_ d: Draw, nav: Nav, field F: Field, lv: [Float], settings: Bool = false, now: Double) {
     let g = d.g, ms = now * 1000
     d.setTheme(.base)                                   // карта — чёрная, как Tenebrae
     g.setAlpha(1)
     g.setFillColor(Theme.base.bg.cgColor); g.fill(CGRect(x: 0, y: 0, width: d.W, height: d.H))
-    let out = CGFloat(nav.out(now)), focus = nav.anim?.slot
+    let out = CGFloat(nav.out(now))
     let pk = nav.peek.flatMap { now - $0.t0 < Nav.peekDur ? $0 : nil }
     // рубашки — неоткрытые миры; тронутая вздрагивает: сжатие по x и «nondum»
     for (c, r) in Worlds.backs {
       let p = F.rect(col: c, row: r)
       card(d, Emblems.back(w: p.width, h: p.height), p, out: out, peek: pk.flatMap { $0.col == c && $0.row == r ? q(pk!, now) : nil })
     }
-    // лицом вверх — открытые миры; мир, в который летим или из которого вышли, — его снимок, тает
+    // лицом вверх — открытые миры
     for w in Worlds.all {
       let p = F.rect(col: w.col, row: w.row)
       card(d, Emblems.face(w.slot, w: p.width, h: p.height), p, out: out, peek: pk.flatMap { $0.col == w.col && $0.row == w.row ? q(pk!, now) : nil })
       let l = lv.indices.contains(w.slot) ? lv[w.slot] : 0
       if l > 0.0025 && out > 0.5 { rays(d, p, CGFloat(l), out: out, ms: ms) }
-      if w.slot == focus, let shot = snap, out < 1 {   // прямоугольник перехода: от клетки до экрана
-        let r = CGRect(x: p.minX * out, y: p.minY * out, width: d.W + (p.width - d.W) * out, height: d.H + (p.height - d.H) * out)
-        g.setAlpha(1 - out); image(g, shot, r); g.setAlpha(1)
-      }
     }
     if out > 0.02 { chrome(d, F, al: out, settings: settings, ms: ms) }
   }
