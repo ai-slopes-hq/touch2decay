@@ -103,7 +103,7 @@ test(`Horologium [${name}]: кольца — тап, двойной тап, фа
   m.setBpm(133); m.setRun(true, 1.5); m.state.clock.uT = 0.5;
   const js = m.snapshot(), o = JSON.parse(js);
   assert.deepEqual(Object.keys(o), ['r', 'fx', 'bpm', 'run', 'u', 'uT']);
-  assert.deepEqual(Object.keys(o.r[0]), ['on', 'under', 'phi', 'lvl']);
+  assert.deepEqual(Object.keys(o.r[0]).filter((k) => k !== 'inst'), ['on', 'under', 'phi', 'lvl']);   // inst — только у фасада
   const q = createModel(), qe = events(q);
   q.restore(js); assert.equal(q.snapshot(), js);
   assert.deepEqual(qe.map((e) => e.t), ['fx', 'all']);
@@ -133,3 +133,15 @@ test(`Horologium [${name}]: после броска u доходит до uT т�
   assert.equal(clock.u, clock.uT);
 });
 }
+
+test('Horologium facade: inst — default kit, mirror 55, snapshot, old scene, clear', () => {
+  const m = facade.createModel();
+  assert.deepEqual(m.state.rings.map((r) => r.inst), [0, 1, 2, 3, 4, 5, 6, 7]);
+  const js = JSON.parse(m.snapshot()); assert.equal(js.r[3].inst, 3);
+  m.state.rings[3].inst = 6;
+  m.restore(JSON.stringify({ ...js, r: js.r.map(({ inst, ...q }) => q) }));
+  assert.equal(m.state.rings[3].inst, 3, 'старая сцена без inst — умолчание');
+  const mir = new Array(55).fill(0); mir[15 + 5 * 2 + 4] = 7;   // кольцо IV — open hat
+  m.sync(mir, 1e9); assert.equal(m.state.rings[2].inst, 7);
+  m.clear(); assert.equal(m.state.rings[2].inst, 2);
+});
