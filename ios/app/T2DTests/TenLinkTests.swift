@@ -215,7 +215,7 @@ final class TenLinkTests: XCTestCase {
     tick(3.7)                                                // 1.7 с спустя
     view.down(fing(a, rc.x, rc.y + 28, t0: 3.7))
     XCTAssertNil(view.ghost); XCTAssertNil(view.ring)
-    XCTAssertTrue(has(Act.grab), "касание пошло в поле (новая или поймана планета)")
+    XCTAssertEqual(view.fingers.count, 1, "касание пошло в поле (голосов нет — отказ, но палец поля)")
   }
 
   func testGhostEaten() {                                    // любое касание гасит призрак
