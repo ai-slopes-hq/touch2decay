@@ -60,6 +60,9 @@ void Drum::hit(int inst, double hz, double tint, double mat, double amp) {
   on_ = true;
 }
 
+// Выравнивание пика голоса до ~1.0 при amp 1 (замер — в drums.hpp).
+static const double GAIN[NINST] = {1.05, 1.18, 1.48, 2.8, 1.16, 3.4, 0.99, 2.6};
+
 double Drum::step(sdk::Rng& rng) {
   if (!on_) return 0;
   const double inv = 1.0 / sr_;
@@ -110,7 +113,7 @@ double Drum::step(sdk::Rng& rng) {
   }
   const bool clapHead = inst_ == CLAP && t_ < tailAt_;
   if (!clapHead && std::max(e1_, inst_ == SNARE ? e2_ : 0.0) < 1e-4) { on_ = false; f_.reset(); }
-  return amp_ * y;
+  return amp_ * GAIN[inst_] * y;
 }
 
 }  // namespace horologium

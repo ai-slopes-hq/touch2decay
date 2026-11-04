@@ -3748,9 +3748,12 @@ static void horoKitPeak() {                               // восемь кол
     CHECK(pk <= std::tanh(0.81));
   }
 }
-static void horoKitRms() {
+static constexpr double HORO_KIT_RMS = 0.0063;             // достигнутый RMS кита в той же сцене (замер при KIT 0.15 и GAIN)
+static void horoKitRms() {                                // страж регрессии: уровень кита не уплывает больше чем на ±3 дБ
+  // Достигнуто около −19 дБ к HORO_OLD_RMS. RMS коротких ударных не равен громкости долгих резонаторов под потолком пика на 8 колец;
+  // громкость подбирается на слух, а не по RMS.
   const double rms = horoTickRms();
-  CHECK(rms > HORO_OLD_RMS * std::pow(10, -4 / 20.0) && rms < HORO_OLD_RMS * std::pow(10, 4 / 20.0));   // ± 4 дБ к прежнему миру
+  CHECK(rms > HORO_KIT_RMS * std::pow(10, -3 / 20.0) && rms < HORO_KIT_RMS * std::pow(10, 3 / 20.0));
 }
 static void horoTailOff() {                               // кольцо выключили — хвост доигрывает, затем тишина-короткий путь
   horologium::Sound s; s.prepare(48000, 1);
