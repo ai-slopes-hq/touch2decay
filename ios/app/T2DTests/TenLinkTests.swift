@@ -378,4 +378,28 @@ final class TenLinkTests: XCTestCase {
     view.move(fing(b, pb.x + 30, pb.y, t0: 1.1)); view.up(fing(b, pb.x, pb.y, t0: 1.1)); view.up(fing(a, pa.x, pa.y, t0: 1))
     XCTAssertTrue(rec.acts.isEmpty)
   }
+
+  func testLinkCurve() {
+    linked(); tick(1)
+    let c = view.linkCurve(dst: 0, src: 3), acc = 1e-6
+    XCTAssertEqual(c.x0, 207.06251178146383, accuracy: acc); XCTAssertEqual(c.y0, 303.5156772388611, accuracy: acc)
+    XCTAssertEqual(c.cx, 200.28071192018612, accuracy: acc); XCTAssertEqual(c.cy, 486.64568116971293, accuracy: acc)
+    XCTAssertEqual(c.x1, 287.0143622391961, accuracy: acc); XCTAssertEqual(c.y1, 648.0763630471428, accuracy: acc)
+    let m = view.linkMid(dst: 0, src: 3), b = tenBez(c, 0.5)
+    XCTAssertEqual(m.x, b.x, accuracy: 1e-9); XCTAssertEqual(m.y, b.y, accuracy: 1e-9)
+    XCTAssertEqual(b.x, 223.65957446525803, accuracy: acc); XCTAssertEqual(b.y, 481.22085065635747, accuracy: acc)
+    let t = tenBez(c, 0.3)
+    XCTAssertEqual(t.x, 211.40982238092306, accuracy: acc); XCTAssertEqual(t.y, 411.4407406125642, accuracy: acc)
+    let chord = (x: 247.03843701032997, y: 475.7960201430019)       // середина отрезка; контрольная точка — ближе к солнцу (0, 806)
+    XCTAssertLessThan(hypot(c.cx, c.cy - 806), hypot(chord.x, chord.y - 806))
+    let t0 = tenBez(c, 0), t1 = tenBez(c, 1)
+    XCTAssertEqual(t0.x, c.x0, accuracy: 1e-9); XCTAssertEqual(t1.y, c.y1, accuracy: 1e-9)
+  }
+
+  func testLinkCurveHuge() {
+    load { self.put(&$0, 0, x: 0.25, y: 0.3, links: [(3, 1, 1e300, 0)]); self.put(&$0, 3, x: 0.6, y: 0.5) }
+    tick(1)
+    let c = view.linkCurve(dst: 0, src: 3)
+    XCTAssertTrue(c.cx.isFinite && c.cy.isFinite)
+  }
 }

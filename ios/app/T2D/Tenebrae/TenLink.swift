@@ -26,7 +26,13 @@ struct TenRing {
 
 private func clamp(_ x: Double, _ a: Double = 0, _ b: Double = 1) -> Double { x.isNaN ? a : min(b, max(a, x)) }
 private let cutKey = 4
-private let sectors: [(key: Int, ang: Double)] = [(0, -90), (1, -18), (2, 54), (3, 126), (4, 198)].map { ($0.0, $0.1 * .pi / 180) }
+let sectors: [(key: Int, ang: Double)] = [(0, -90), (1, -18), (2, 54), (3, 126), (4, 198)].map { ($0.0, $0.1 * .pi / 180) }
+
+// точка квадратичной кривой нити при t = 0…1 (bez, app.js:536)
+func tenBez(_ c: (x0: Double, y0: Double, cx: Double, cy: Double, x1: Double, y1: Double), _ t: Double) -> (x: Double, y: Double) {
+  let u = 1 - t
+  return (u * u * c.x0 + 2 * u * t * c.cx + t * t * c.x1, u * u * c.y0 + 2 * u * t * c.cy + t * t * c.y1)
+}
 
 extension TenebraeView {
   // ---------- вспомогательное ----------
@@ -37,11 +43,11 @@ extension TenebraeView {
   }
   private func linkAlive(_ r: TenRing) -> Bool { linkMod(r.dst, r.src) != nil }
 
-  private var ringR: Double { Ten.menuDead + geo.menuSpan + 34 }
-  private var closeChip: (x: Double, y: Double, w: Double, h: Double) { (area.W - 80, area.H - area.safeBot - 320, 64, 26) }
+  var ringR: Double { Ten.menuDead + geo.menuSpan + 34 }
+  var closeChip: (x: Double, y: Double, w: Double, h: Double) { (area.W - 80, area.H - area.safeBot - 320, 64, 26) }
 
-  // середина нити (linkCurve + bez(0.5), app.js:525): квадратичная кривая src → dst, прогнутая к солнцу
-  func linkMid(dst: Int, src: Int) -> (x: Double, y: Double) {
+  // нить связи (linkCurve, app.js:527): квадратичная кривая src → dst, прогнутая к солнцу; глубже связь — сильнее прогиб
+  func linkCurve(dst: Int, src: Int) -> (x0: Double, y0: Double, cx: Double, cy: Double, x1: Double, y1: Double) {
     let p1 = screenPos(src), p2 = screenPos(dst)
     let mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2
     let L = hypot(p2.x - p1.x, p2.y - p1.y)
@@ -50,9 +56,11 @@ extension TenebraeView {
     if nx * (geo.ox - mx) + ny * (geo.oy - my) < 0 { nx = -nx; ny = -ny }
     let depth = linkMod(dst, src)?.depth ?? 0
     let bend = min(0.3 * L, 64) * (0.5 + 0.5 * clamp(depth))
-    let cx = mx + nx * bend, cy = my + ny * bend
-    return (0.25 * p1.x + 0.5 * cx + 0.25 * p2.x, 0.25 * p1.y + 0.5 * cy + 0.25 * p2.y)
+    return (p1.x, p1.y, mx + nx * bend, my + ny * bend, p2.x, p2.y)
   }
+
+  // середина нити — ручка (app.js:539)
+  func linkMid(dst: Int, src: Int) -> (x: Double, y: Double) { tenBez(linkCurve(dst: dst, src: src), 0.5) }
 
   // кольцо целиком на экране: у края открывается ближе к середине (app.js:854)
   func ringCenter(_ x: Double, _ y: Double) -> (x: Double, y: Double) {

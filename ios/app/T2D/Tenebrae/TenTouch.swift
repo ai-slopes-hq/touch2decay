@@ -78,6 +78,7 @@ extension TenebraeView {
   // ---------- касание ----------
 
   func down(_ f: Finger) {
+    touchedOnce = true                                        // любой палец, дошедший до мира: подсказка «touch» больше не нужна
     guard let p = pt(f) else { return }
     if ringPinDown(f) || sheetDown(f) || linkDown(f) { return }   // призрак и булавка на весу → плашка → закреплённое кольцо, ручка (спека, решение 9)
     var t = newFinger(f, p)

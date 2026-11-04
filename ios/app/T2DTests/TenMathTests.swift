@@ -135,4 +135,48 @@ final class TenMathTests: XCTestCase {
     XCTAssertEqual(LfoKey.fm.rawValue, 7); XCTAssertEqual(LfoKey.pitch.rawValue, 0)
     XCTAssertEqual(Ten.head + Ten.voiceN * Ten.voices, Ten.mirrorN); XCTAssertEqual(Ten.mirrorN + Ten.scopeN * Ten.voices, Ten.mirrorFull)
   }
+
+  func testNoteName() {
+    XCTAssertEqual(tenNoteName(0), "A1"); XCTAssertEqual(tenNoteName(3), "C2"); XCTAssertEqual(tenNoteName(12), "A2"); XCTAssertEqual(tenNoteName(-5), "A1")
+    XCTAssertEqual(tenNoteName(59), "G#6")
+  }
+
+  func testSemiOf() { XCTAssertEqual(tenSemiOf(110), 12, accuracy: 1e-9); XCTAssertEqual(tenSemiOf(55), 0, accuracy: 1e-9) }
+
+  func testPlanetR() {
+    XCTAssertEqual(tenPlanetR(1), 34, accuracy: 1e-12)
+    XCTAssertEqual(tenPlanetR(1e300), tenPlanetR(Ten.ampMax))
+    XCTAssertEqual(tenPlanetR(-3), 34 * 0.55, accuracy: 1e-12)
+    XCTAssertEqual(tenPlanetR(.nan), 34 * 0.55, accuracy: 1e-12)
+  }
+
+  func testConstTables() {
+    XCTAssertEqual(Ten.moonR, [50, 56, 62, 68, 74, 86, 92, 80])
+    XCTAssertEqual(Ten.moonR[LfoKey.fm.rawValue], 80); XCTAssertEqual(Ten.moonR[LfoKey.shift.rawValue], 86)
+    XCTAssertEqual(Ten.linkDash, [[3, 6], [1, 3], [10, 6], [2, 2, 8, 2]])
+    XCTAssertEqual(Ten.bands.map(\.hz), [55, 90, 250, 500, 1000]); XCTAssertEqual(Ten.bands.map(\.label), ["sub", "bass", "low-mid", "mid", "upper"])
+  }
+
+  // 200 — чистый конец у низа, 500 — правый край, 800 — выше высоты поля (шумный конец уходит вправо)
+  func testArcEnds() {
+    let e1 = phone.arcEnds(200), e2 = phone.arcEnds(500), e3 = phone.arcEnds(800)
+    XCTAssertEqual(e1.clean.x, 200, accuracy: acc); XCTAssertEqual(e1.clean.y, 806, accuracy: acc)
+    XCTAssertEqual(e1.noisy.x, 0, accuracy: acc); XCTAssertEqual(e1.noisy.y, 606, accuracy: acc)
+    XCTAssertEqual(e2.clean.x, 390, accuracy: acc); XCTAssertEqual(e2.clean.y, 493.1102430567597, accuracy: acc)
+    XCTAssertEqual(e2.noisy.x, 0, accuracy: acc); XCTAssertEqual(e2.noisy.y, 306, accuracy: acc)
+    XCTAssertEqual(e3.clean.x, 390, accuracy: acc); XCTAssertEqual(e3.clean.y, 107.50161059598713, accuracy: acc)
+    XCTAssertEqual(e3.noisy.x, 389.1002441530974, accuracy: acc); XCTAssertEqual(e3.noisy.y, 107, accuracy: acc)
+  }
+
+  func testHash() {
+    for i in 0..<1000 {
+      let a = Double(i) * 1.37 - 200, b = Double(i * i % 997) * 0.91
+      let h = tenHash(a, b)
+      XCTAssertTrue(h >= 0 && h < 1, "\(h)")
+      XCTAssertEqual(h, tenHash(a, b))
+    }
+    XCTAssertEqual(tenHash(.nan, 1), 0); XCTAssertEqual(tenHash(1, .infinity), 0); XCTAssertEqual(tenHash(-.infinity, 2), 0)
+    XCTAssertTrue((0..<1).contains(tenHash(1e300, -1e300)))
+    XCTAssertNotEqual(tenHash(1, 2), tenHash(2, 1))
+  }
 }

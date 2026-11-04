@@ -10,6 +10,7 @@ struct TenWave { var x, y, r, a, sp: Double; var dash: Bool; var wait = 0.0 }
 // вид голоса (VW веба, app.js:77): где планету видно и что качает LFO
 struct TenVW {
   var dx = 0.0, wob = 0.0, wv = 0.0, hole = 0.0
+  var pk = 0.02, bph = 0.0                                    // пик контура (медленно спадает) и фаза двойной звезды (app.js:1071, 1153)
   var ph = [Double](repeating: 0, count: 8), vph = [Double](repeating: 0, count: 8)   // фазы LFO по LfoKey: ph — как звучит, vph — как рисуем (≤ 2.5 Гц)
 }
 
@@ -61,7 +62,7 @@ final class TenebraeView: World {
   var vw = [TenVW](repeating: TenVW(), count: Ten.voices)
   var emit = [Double](repeating: 0, count: Ten.voices)       // таймер импульса волн голоса; 1e9 — сразу (рождение)
   var waves: [TenWave] = []                                   // ≤ 60 (вспышка burst — сверх)
-  var strikes: [(i: Int, t0: Double, p: Double)] = []        // удары солнца: молния 110 мс, отдача 700 мс
+  var strikes: [(i: Int, t0: Double, p: Double, a: Double)] = []   // удары солнца: молния 110 мс, отдача 700 мс; a — угол планеты от солнца в момент удара
   var full: [(x: Double, y: Double, t: Double)] = []         // отказ «нет голоса» для картинки
   var sunLevel = 0.0
   var sunT = [Double](repeating: -1, count: Ten.voices)      // кеш последнего посланного SUN; −1 — не слали
@@ -77,6 +78,7 @@ final class TenebraeView: World {
   var bridge: TenBridge? = nil                                // мост двух пальцев (TenLink.swift)
   var ring: TenRing? = nil                                    // кольцо связи: на весу у пальца или закреплённое
   var ghost: (ring: TenRing, until: Double)? = nil            // погасшее кольцо: 1.6 с можно тапнуть булавку
+  var touchedOnce = false                                      // был хоть один палец (down) — подсказка гаснет
   var sclPcs: [Int]? = nil, sclRoot = 0                       // лад: ноты по модулю 12 от A; nil — выключен
   var slideUntil = 0.0                                        // после смены лада кружки плавно съезжают к нотам
   private var sized: (Double, Double, Double, Double)?
@@ -168,7 +170,7 @@ final class TenebraeView: World {
     sclPcs = pcs; sclRoot = pcs == nil ? 0 : root
     slideUntil = now + 0.5                                    // dx → soundX плавно; RETUNE не шлём
   }
-  func enter() { sunT = [Double](repeating: -1, count: Ten.voices) }
+  func enter() { touchReset(); sunT = [Double](repeating: -1, count: Ten.voices) }   // вход в мир: прежние пальцы не живут
 
   func restored() {                                          // undo / корзина: пальцы, плашка, свои значения сброшены; вид — из зеркала
     touchReset()
@@ -195,11 +197,14 @@ final class TenebraeView: World {
     if abs(zoomT - zoom) < 1e-4 { zoom = zoomT }
 
     stepVoices(dt)
+    stepPicture(dt)
     stepWaves(dt)
     readEvents()
 
     sunLevel += (min(1, max(0, readLevel()) * 2.2) - sunLevel) * 0.08
     strikes.removeAll { now - $0.t0 > 0.8 }
+    if let r = refuse, now - r.t0 > 0.6 { refuse = nil }
+    full.removeAll { now - $0.t > 0.6 }
     if strikes.count > 24 { strikes.removeFirst(strikes.count - 24) }
     touchTick(now: now)
   }
@@ -221,6 +226,51 @@ final class TenebraeView: World {
         else if k == LfoKey.wave.rawValue { vw[i].wv = val }
       }
       vw[i].hole += (v.holeT - vw[i].hole) * (1 - exp(-dt / 0.15))
+    }
+  }
+
+  // то, что веб копит в draw: пик контура (pk, app.js:1071) и фаза двойной звезды (bph, :1153)
+  private func stepPicture(_ dt: Double) {
+    for i in 0..<Ten.voices {
+      if let sc = mirror.scope?[i] {
+        var pk = 0.0
+        for x in sc { pk = max(pk, Double(abs(x))) }
+        vw[i].pk = max(pk, vw[i].pk * 0.92, 0.02)
+      }
+      let b = voice(i).beat
+      vw[i].bph = b.isFinite ? (vw[i].bph + dt * b).truncatingRemainder(dividingBy: 1) : 0
+    }
+  }
+
+  // удар солнца отбрасывает планету от солнца, она возвращается (kick, app.js:1600); нет удара или старше 700 мс — (0, 0)
+  func kick(_ i: Int) -> (x: Double, y: Double) {
+    guard let st = strikes.last(where: { $0.i == i }) else { return (0, 0) }
+    let age = (now - st.t0) * 1000
+    if !(age <= 700) { return (0, 0) }
+    let m = (6 + 16 * st.p) * (1 - exp(-age / 14)) * exp(-age / 130)
+    return (cos(st.a) * m, sin(st.a) * m)
+  }
+
+  // колонки поля: границы диапазонов и радиусы орбит при текущем зуме (fieldCols, app.js:1534)
+  func fieldCols() -> [TenCol] {
+    let semis = Ten.semis
+    var raw: [(s0: Double, s1: Double, label: String, hz: Double)] = []
+    if sclOn {
+      let first = ((sclRoot % 12) + 12) % 12
+      if first > 0 { raw.append((0, Double(first), "", 0)) }
+      var n = first
+      while n < Int(semis) { raw.append((Double(n), min(semis, Double(n + 12)), tenNoteName(n), 0)); n += 12 }
+    } else {
+      for (i, b) in Ten.bands.enumerated() {
+        let s1 = i + 1 < Ten.bands.count ? tenSemiOf(Ten.bands[i + 1].hz) : semis
+        raw.append((tenSemiOf(b.hz), s1, b.label, i > 0 ? b.hz : 0))
+      }
+    }
+    let far = hypot(geo.W, geo.bot - geo.top) + 8
+    return raw.enumerated().map { i, c in
+      let r0 = i > 0 ? min(far, geo.rAt(tenXOf(c.s0), zoom: zoom)) : 0
+      let r1 = c.s1 >= semis ? far : min(far, geo.rAt(tenXOf(c.s1), zoom: zoom))
+      return TenCol(s0: c.s0, s1: c.s1, label: c.label, hz: c.hz, r0: r0, r1: r1)
     }
   }
 
@@ -271,7 +321,8 @@ final class TenebraeView: World {
           waves.append(TenWave(x: p.x, y: p.y, r: 36, a: 1.6, sp: 420, dash: false))
         case .strike(let i, let p):
           prev = -1
-          strikes.append((i, now, p))
+          let sp = screenPos(i)
+          strikes.append((i, now, p, atan2(sp.y - geo.oy, sp.x - geo.ox)))
         }
       }
       if hn + 3 > hbuf.count { continue }

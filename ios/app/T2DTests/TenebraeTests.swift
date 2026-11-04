@@ -350,4 +350,107 @@ final class TenebraeTests: XCTestCase {
   func testVoiceOutOfRangeSafe() {
     XCTAssertEqual(view.voice(-1), TenVoiceM()); XCTAssertEqual(view.voice(9), TenVoiceM())
   }
+
+  // ---------- состояние картинки (план (б), задача 1) ----------
+  private func loadFull(_ edit: (inout [Double]) -> Void) {   // зеркало с контурами: 1161
+    var b = mirror(); b += [Double](repeating: 0, count: Ten.mirrorFull - Ten.mirrorN); edit(&b); mbuf = b
+  }
+  private func scope(_ b: inout [Double], _ i: Int, peak: Double) {
+    let o = Ten.mirrorN + Ten.scopeN * i
+    b[o] = 1
+    for k in 0..<Ten.scopePts { b[o + 1 + k] = k == 7 ? -peak : 0.1 * peak }
+  }
+
+  func testFieldCols() {
+    let acc = 1e-6
+    var cols = view.fieldCols()
+    XCTAssertEqual(cols.map(\.label), ["sub", "bass", "low-mid", "mid", "upper"])
+    let r0 = [0, 333.3347727110266, 519.1660009163982, 637.4530370240727, 861.335221352078]
+    let r1 = [333.3347727110266, 519.1660009163982, 637.4530370240727, 861.335221352078, 861.335221352078]
+    for k in 0..<5 { XCTAssertEqual(cols[k].r0, r0[k], accuracy: acc); XCTAssertEqual(cols[k].r1, r1[k], accuracy: acc) }
+    XCTAssertEqual(cols[1].hz, 90); XCTAssertEqual(cols[4].hz, 1000)
+    XCTAssertEqual(cols[1].s0, tenSemiOf(90), accuracy: 1e-9); XCTAssertEqual(cols[4].s1, 60)
+    view.zoom = 0.5; view.zoomT = 0.5
+    cols = view.fieldCols()
+    XCTAssertEqual(cols[0].r1, 439.86610726431564, accuracy: acc); XCTAssertEqual(cols[1].r1, 861.335221352078, accuracy: acc)
+    view.zoom = view.geo.zoomDef; view.zoomT = view.zoom
+    view.scale(pcs: [0, 2, 3, 5, 7, 8, 10], root: 3)
+    cols = view.fieldCols()
+    XCTAssertEqual(cols.count, 6); XCTAssertEqual(cols.map(\.label), ["", "C2", "C3", "C4", "C5", "C6"])
+    XCTAssertEqual(cols[0].r1, 247.83243927596357, accuracy: acc); XCTAssertEqual(cols[1].r0, 247.83243927596357, accuracy: acc)
+    XCTAssertEqual(cols[1].r1, 400.9643361783778, accuracy: acc); XCTAssertEqual(cols[5].r1, 861.335221352078, accuracy: acc)
+    view.zoom = 0.5; view.zoomT = 0.5
+    XCTAssertEqual(view.fieldCols()[1].r1, 585.0333691196414, accuracy: acc)
+  }
+
+  func testStrikeAngle() {
+    load { self.set(&$0, 0) }
+    view.tick(now: 1, dt: 0.016)
+    heardQ = [[2, 0, 0.8]]
+    view.tick(now: 2, dt: 0.016)
+    let p = view.screenPos(0)
+    XCTAssertEqual(view.strikes.last!.a, atan2(p.y - bot, p.x - 0), accuracy: 1e-9)
+    XCTAssertEqual(view.strikes.last!.a, -0.9939950587794426, accuracy: 1e-6)
+  }
+
+  func testKick() {
+    load { self.set(&$0, 0) }
+    view.tick(now: 1, dt: 0.016)
+    XCTAssertEqual(view.kick(0).x, 0); XCTAssertEqual(view.kick(0).y, 0, "без удара")
+    heardQ = [[2, 0, 0.8]]
+    view.tick(now: 2, dt: 0.016)
+    let a = view.strikes.last!.a
+    view.tick(now: 2.014, dt: 0.014)
+    let k = view.kick(0), m = (6 + 16 * 0.8) * (1 - exp(-1.0)) * exp(-14.0 / 130)
+    XCTAssertEqual(hypot(k.x, k.y), m, accuracy: 1e-6)
+    XCTAssertEqual(k.x, cos(a) * m, accuracy: 1e-6); XCTAssertEqual(k.y, sin(a) * m, accuracy: 1e-6)
+    XCTAssertEqual(view.kick(1).x, 0)
+    view.tick(now: 2.75, dt: 0.05)
+    XCTAssertEqual(view.kick(0).x, 0); XCTAssertEqual(view.kick(0).y, 0)
+    XCTAssertEqual(view.kick(-1).x, 0); XCTAssertEqual(view.kick(99).y, 0)
+  }
+
+  func testPkBph() {
+    loadFull { self.set(&$0, 0, beat: 0.5); self.scope(&$0, 0, peak: 0.5) }
+    view.tick(now: 1, dt: 0.02)
+    XCTAssertEqual(view.vw[0].pk, 0.5, accuracy: 1e-6)
+    XCTAssertEqual(view.vw[0].bph, 0.01, accuracy: 1e-9)
+    loadFull { self.set(&$0, 0, beat: 0.5); self.scope(&$0, 0, peak: 0.1) }
+    view.tick(now: 1.02, dt: 0.02)
+    XCTAssertEqual(view.vw[0].pk, 0.46, accuracy: 1e-6)
+    loadFull { self.set(&$0, 0, beat: 1e300); self.scope(&$0, 0, peak: 0.1) }
+    view.tick(now: 1.04, dt: 0.02)
+    XCTAssertTrue(view.vw[0].bph.isFinite); XCTAssertTrue((0..<1).contains(view.vw[0].bph))
+    load { self.set(&$0, 0, beat: .nan) }                       // зеркало без контуров (n = 387): pk не трогаем
+    view.tick(now: 1.06, dt: 0.02)
+    XCTAssertEqual(view.vw[0].pk, 0.46 * 0.92, accuracy: 1e-6, "контура нет — pk как был")
+  }
+
+  func testRefuseExpires() {
+    view.tick(now: 1, dt: 0.016)
+    view.refuse = (10, 10, 1)
+    view.full.append((x: 5, y: 5, t: 1))
+    view.tick(now: 1.5, dt: 0.016)
+    XCTAssertNotNil(view.refuse); XCTAssertEqual(view.full.count, 1)
+    view.tick(now: 1.7, dt: 0.016)
+    XCTAssertNil(view.refuse); XCTAssertTrue(view.full.isEmpty)
+  }
+
+  func testEnterResetsTouch() {
+    load { self.set(&$0, 0) }
+    view.tick(now: 1, dt: 0.016)
+    let p = view.screenPos(0)
+    let o = NSObject()
+    view.down(Finger(id: ObjectIdentifier(o), x: CGFloat(p.x), y: CGFloat(p.y), x0: CGFloat(p.x), y0: CGFloat(p.y), t0: 1, moved: false, touchTime: 1))
+    XCTAssertFalse(view.fingers.isEmpty)
+    view.enter()
+    XCTAssertTrue(view.fingers.isEmpty)
+  }
+
+  func testTouchedOnce() {
+    XCTAssertFalse(view.touchedOnce)
+    let o = NSObject()
+    view.down(Finger(id: ObjectIdentifier(o), x: 200, y: 400, x0: 200, y0: 400, t0: 1, moved: false, touchTime: 1))
+    XCTAssertTrue(view.touchedOnce)
+  }
 }

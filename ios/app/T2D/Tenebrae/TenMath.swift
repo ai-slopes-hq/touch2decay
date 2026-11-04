@@ -33,6 +33,16 @@ enum Ten {
   static let linkTypes = ["fm", "tzfm", "am", "rm"]
 }
 
+// орбиты спутников LFO по LfoKey.rawValue (app.js:1095), штрихи нитей по типу связи (app.js:1218), полосы поля без лада (app.js:1531)
+extension Ten {
+  static let moonR: [Double] = [50, 56, 62, 68, 74, 86, 92, 80]
+  static let linkDash: [[CGFloat]] = [[3, 6], [1, 3], [10, 6], [2, 2, 8, 2]]
+  static let bands: [(hz: Double, label: String)] = [(55, "sub"), (90, "bass"), (250, "low-mid"), (500, "mid"), (1000, "upper")]
+}
+
+// колонка поля между границами диапазонов: полутоны s0…s1, подпись, радиусы орбит r0…r1 (app.js:1534)
+struct TenCol { let s0, s1: Double; let label: String; let hz: Double; let r0, r1: Double }
+
 // коды действий ядра (core/worlds/tenebrae/world.hpp)
 enum Act {
   static let spawn = 16, grab = 17, letGo = 18, keep = 19, unkeep = 20, move = 21, sun = 22, set = 23, pin = 24
@@ -200,5 +210,34 @@ func tenValueText(_ r: Row, _ v: Double) -> String {
     let h = tenShiftHz(v)
     return h == 0 ? "off" : (h > 0 ? "+" : "−") + String(format: abs(h) < 10 ? "%.1f" : "%.0f", abs(h)) + " Hz"
   case .amp: return tenAmpText(v)
+  }
+}
+
+// ---------- помощники картинки (app.js:1531-1533, 1095, 1674) ----------
+// имя ноты по полутонам от A1 (A1 = 55 Гц, MIDI 33); отрицательное — как 0
+func tenNoteName(_ n: Int) -> String {
+  let n = max(0, n), m = 33 + n
+  return Scales.notes[n % 12] + String(m / 12 - 1)
+}
+func tenSemiOf(_ hz: Double) -> Double { 12 * log2(hz / Ten.fLo) }
+// радиус планеты: громче — крупнее
+func tenPlanetR(_ amp: Double) -> Double { 34 * (0.55 + 0.45 * clamp(amp, 0, Ten.ampMax)) }
+
+// детерминированный шум 0…1 вместо Math.random картинки: одна пара — одно число
+func tenHash(_ a: Double, _ b: Double) -> Double {
+  guard a.isFinite, b.isFinite else { return 0 }
+  let x = sin(a * 12.9898 + b * 78.233) * 43758.5453
+  guard x.isFinite else { return 0 }
+  let f = x - floor(x)
+  return f >= 1 ? 0 : f
+}
+
+extension TenGeo {
+  // где дуга радиуса r пересекает край поля: чистый конец (низ или правый край) и шумный (левый или верхний)
+  func arcEnds(_ r: Double) -> (clean: (x: Double, y: Double), noisy: (x: Double, y: Double)) {
+    let h = oy - top - Ten.edgeT + 4                       // верх — под строкой кнопок
+    let clean = r < W - 4 ? (x: r, y: bot) : (x: W, y: oy - max(0, r * r - W * W).squareRoot())
+    let noisy = r < h ? (x: 0.0, y: oy - r) : (x: max(0, r * r - h * h).squareRoot(), y: oy - h)
+    return (clean, noisy)
   }
 }
