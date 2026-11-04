@@ -46,6 +46,7 @@
 #include "../worlds/arcadia/model.hpp"
 #include "../worlds/natura/world.hpp"
 #include "../worlds/inferno/world.hpp"
+#include "../worlds/horologium/drums.hpp"
 #include "../worlds/tenebrae/tone.hpp"
 #include "../worlds/tenebrae/waves.hpp"
 #include "../worlds/tenebrae/shifter.hpp"
@@ -3613,6 +3614,39 @@ static int horoMirror(double* m, int cap) {
   t2d_app_render(L, R, 128, 0);
   return t2d_app_mirror(9, m, cap);
 }
+static double drumRun(int inst, double mat, double sr, double secs, double* peak, double* tail, int* activeN) {
+  horologium::Drum d; d.prepare(sr); sdk::Rng rng(3);
+  d.hit(inst, horologium::tonal(inst) ? horologium::pitchRange(inst).lo * 1.3 : 0, 1, mat, 2.2);   // 2.2 — concursus 1, lvl 1
+  const int n = static_cast<int>(secs * sr), t0 = static_cast<int>((secs - 0.1) * sr);
+  *peak = *tail = 0; *activeN = 0; double t60 = -1;
+  for (int k = 0; k < n; k++) {
+    const double x = d.step(rng);
+    CHECK(std::isfinite(x));
+    *peak = std::fmax(*peak, std::fabs(x));
+    if (k >= t0) *tail = std::fmax(*tail, std::fabs(x));
+    if (d.active()) (*activeN)++;
+    if (std::fabs(x) > 1e-3 * *peak) t60 = k / sr;      // последний сэмпл выше −60 дБ от пика
+  }
+  return t60;
+}
+static void drumVoices() {
+  for (double sr : {44100.0, 48000.0})
+    for (int inst = 0; inst < horologium::NINST; inst++) {
+      double peak, tail; int act;
+      drumRun(inst, 0.5, sr, 2, &peak, &tail, &act);
+      CHECK(peak > 1e-3);                                 // звучит
+      CHECK(peak * horologium::KIT <= 0.9);               // пик до tanh
+      CHECK(tail < 1e-4 * peak);                          // за 2 с — ниже −80 дБ
+      CHECK(act < static_cast<int>(2 * sr));              // голос сам гаснет
+    }
+}
+static void drumHatMateria() {
+  double p, t; int a;
+  const double soft = drumRun(horologium::HAT, 0, 48000, 2, &p, &t, &a), hard = drumRun(horologium::HAT, 1, 48000, 2, &p, &t, &a);
+  CHECK(hard > 1.5 * soft);                               // metallum — хвост hat длиннее
+  const double o0 = drumRun(horologium::OHAT, 0, 48000, 2, &p, &t, &a), h0 = drumRun(horologium::HAT, 0, 48000, 2, &p, &t, &a);
+  CHECK(o0 > 3 * h0);                                     // open hat — длиннее hat
+}
 static void horoLfo() {
   t2d_app_init(48000, 7, 1e9, 1u << 9);
   const double a[4][2] = {{1, 0.7}, {4, 0.2}, {5 + 2 * 3, 0.25}, {6 + 2 * 7, 0.3}};
@@ -4130,7 +4164,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appMidiClock(); appMidiTime(); appMidiOverflow(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); drumVoices(); drumHatMateria(); horoLfoIgnores(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
