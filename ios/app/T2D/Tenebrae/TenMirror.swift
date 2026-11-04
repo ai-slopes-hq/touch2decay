@@ -28,14 +28,15 @@ struct TenMirror: Equatable {
     guard n >= Ten.mirrorN, b[0] == Double(Ten.voices) else { return false }
     func num(_ x: Double, _ f: inout Double) { if x.isFinite { f = x } }
     func flag(_ x: Double, _ f: inout Bool) { if x.isFinite { f = x > 0.5 } }
+    func int(_ x: Double) -> Int { Int(Horo.jsRound(max(-1e6, min(1e6, x)))) }        // конечное, но огромное — в диапазон: Int(Double) вне Int падает
     if b[1].isFinite { time = b[1] }
-    if b[2].isFinite, abs(b[2]) < 1e9 { strikes = Int(Horo.jsRound(b[2])) }
+    if b[2].isFinite { strikes = int(b[2]) }
     for k in 0..<5 { num(b[3 + k], &fx[k]) }
     if b[8].isFinite {
       kept.removeAll(keepingCapacity: true)
-      for k in 0..<min(6, max(0, Int(Horo.jsRound(min(b[8], 6))))) {
+      for k in 0..<min(6, max(0, int(b[8]))) {
         let e = b[9 + k]
-        if e.isFinite, e >= 0, e < Double(Ten.voices) { kept.append(Int(Horo.jsRound(e))) }
+        if e.isFinite, e >= 0, e < Double(Ten.voices) { kept.append(int(e)) }
       }
     }
     for i in 0..<Ten.voices {
@@ -46,10 +47,10 @@ struct TenMirror: Equatable {
       num(b[o + 13], &v[i].holeT); num(b[o + 14], &v[i].sunT); num(b[o + 15], &v[i].env); num(b[o + 16], &v[i].envT)
       if b[o + 17].isFinite {                          // число связей не конечное — связи прежние
         v[i].mods.removeAll(keepingCapacity: true)
-        for k in 0..<min(5, max(0, Int(Horo.jsRound(min(b[o + 17], 5))))) {
+        for k in 0..<min(5, max(0, int(b[o + 17]))) {
           let q = o + 18 + 4 * k
           guard b[q].isFinite, b[q + 1].isFinite, b[q + 2].isFinite, b[q + 3].isFinite else { continue }
-          let src = Int(Horo.jsRound(b[q])), type = Int(Horo.jsRound(b[q + 1]))
+          let src = int(b[q]), type = int(b[q + 1])
           guard (0..<Ten.voices).contains(src), (0..<Ten.linkTypes.count).contains(type) else { continue }
           v[i].mods.append(TenMod(src: src, type: type, depth: b[q + 2], auto: b[q + 3] > 0.5))
         }

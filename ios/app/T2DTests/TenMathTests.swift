@@ -103,30 +103,30 @@ final class TenMathTests: XCTestCase {
   }
 
   func testNorms() {
-    for r in Row.allCases where r != .shift {
+    for r in Row.allCases where r != Row.shift {
       for t in [0.2, 0.7, 0.95] { XCTAssertEqual(tenNorm(r, tenSetNorm(r, t)), t, accuracy: acc, "\(r) \(t)") }
     }
-    for t in [0.2, 0.7, 0.95] { XCTAssertEqual(tenNorm(.shift, tenSetNorm(.shift, t)), t, accuracy: acc) }
-    XCTAssertEqual(tenSetNorm(.shift, 0.51), 0.5); XCTAssertEqual(tenSetNorm(.shift, 0.4801), 0.5); XCTAssertEqual(tenSetNorm(.shift, 0.53), 0.53)
-    XCTAssertEqual(tenSetNorm(.beat, 0), 0.05, accuracy: acc); XCTAssertEqual(tenSetNorm(.beat, 1), 24, accuracy: acc)
-    for (v, t) in zip([0.05, 0.35, 24], [0, 0.3151891102650066, 1]) { XCTAssertEqual(tenNorm(.beat, v), t, accuracy: acc) }
-    XCTAssertEqual(tenSetNorm(.amp, 0.004), 0); XCTAssertEqual(tenSetNorm(.amp, 0.005), 0)
+    for t in [0.2, 0.7, 0.95] { XCTAssertEqual(tenNorm(Row.shift, tenSetNorm(Row.shift, t)), t, accuracy: acc) }
+    XCTAssertEqual(tenSetNorm(Row.shift, 0.51), 0.5); XCTAssertEqual(tenSetNorm(Row.shift, 0.4801), 0.5); XCTAssertEqual(tenSetNorm(Row.shift, 0.53), 0.53)
+    XCTAssertEqual(tenSetNorm(Row.beat, 0), 0.05, accuracy: acc); XCTAssertEqual(tenSetNorm(Row.beat, 1), 24, accuracy: acc)
+    for (v, t) in zip([0.05, 0.35, 24], [0, 0.3151891102650066, 1]) { XCTAssertEqual(tenNorm(Row.beat, v), t, accuracy: acc) }
+    XCTAssertEqual(tenSetNorm(Row.amp, 0.004), 0); XCTAssertEqual(tenSetNorm(Row.amp, 0.005), 0)
     let t04 = log(pow(10, -0.4 / 20) / 0.05) / log(1.8 / 0.05)                         // −0.4 дБ — защёлка на 1
-    XCTAssertEqual(tenSetNorm(.amp, t04), 1)
-    XCTAssertNotEqual(tenSetNorm(.amp, 0.5), 1)
-    for (v, t) in zip([0.05, 0.5, 1, 1.8], [0, 0.6425486044692345, 0.8359750080865052, 1]) { XCTAssertEqual(tenNorm(.amp, v), t, accuracy: acc) }
-    XCTAssertEqual(tenNorm(.amp, 0), 0)
-    XCTAssertEqual(Ten.rowDef[.cut], 0.68); XCTAssertEqual(Ten.rowDef[.amp], 1); XCTAssertEqual(Ten.rowDef.count, 7)
+    XCTAssertEqual(tenSetNorm(Row.amp, t04), 1)
+    XCTAssertNotEqual(tenSetNorm(Row.amp, 0.5), 1)
+    for (v, t) in zip([0.05, 0.5, 1, 1.8], [0, 0.6425486044692345, 0.8359750080865052, 1]) { XCTAssertEqual(tenNorm(Row.amp, v), t, accuracy: acc) }
+    XCTAssertEqual(tenNorm(Row.amp, 0), 0)
+    XCTAssertEqual(Ten.rowDef[Row.cut], 0.68); XCTAssertEqual(Ten.rowDef[Row.amp], 1); XCTAssertEqual(Ten.rowDef.count, 7)
     XCTAssertEqual(Row.allCases.map(\.rawValue), [0, 1, 2, 3, 4, 5, 6])
   }
 
   func testValueText() {
-    for (v, s) in zip([0.0, 0.125, 0.0625, 1, 0.5], ["triangle", "sharp", "triangle → sharp", "grain", "fold"]) { XCTAssertEqual(tenValueText(.wave, v), s) }
-    for (v, s) in zip([0.0, 0.68, 1], ["40 Hz", "2.5 kHz", "18.0 kHz"]) { XCTAssertEqual(tenValueText(.cut, v), s) }
-    for (v, s) in zip([0.0, 0.21, 1], ["0%", "21%", "100%"]) { XCTAssertEqual(tenValueText(.res, v), s); XCTAssertEqual(tenValueText(.fm, v), s) }
-    for (v, s) in zip([0.05, 0.35, 3.7, 12.34], ["0.05 Hz", "0.35 Hz", "3.70 Hz", "12.3 Hz"]) { XCTAssertEqual(tenValueText(.beat, v), s) }
-    for (v, s) in zip([0.5, 0.2, 0.9, 0.52], ["off", "−62 Hz", "+306 Hz", "+0.0 Hz"]) { XCTAssertEqual(tenValueText(.shift, v), s) }
-    for (v, s) in zip([0.0, 1, 0.5, 1.8, 0.05, 1.05], ["off", "0 dB", "−6.0 dB", "+5.1 dB", "−26.0 dB", "+0.4 dB"]) { XCTAssertEqual(tenValueText(.amp, v), s) }
+    for (v, s) in zip([0.0, 0.125, 0.0625, 1, 0.5], ["triangle", "sharp", "triangle → sharp", "grain", "fold"]) { XCTAssertEqual(tenValueText(Row.wave, v), s) }
+    for (v, s) in zip([0.0, 0.68, 1], ["40 Hz", "2.5 kHz", "18.0 kHz"]) { XCTAssertEqual(tenValueText(Row.cut, v), s) }
+    for (v, s) in zip([0.0, 0.21, 1], ["0%", "21%", "100%"]) { XCTAssertEqual(tenValueText(Row.res, v), s); XCTAssertEqual(tenValueText(Row.fm, v), s) }
+    for (v, s) in zip([0.05, 0.35, 3.7, 12.34], ["0.05 Hz", "0.35 Hz", "3.70 Hz", "12.3 Hz"]) { XCTAssertEqual(tenValueText(Row.beat, v), s) }
+    for (v, s) in zip([0.5, 0.2, 0.9, 0.52], ["off", "−62 Hz", "+306 Hz", "+0.0 Hz"]) { XCTAssertEqual(tenValueText(Row.shift, v), s) }
+    for (v, s) in zip([0.0, 1, 0.5, 1.8, 0.05, 1.05], ["off", "0 dB", "−6.0 dB", "+5.1 dB", "−26.0 dB", "+0.4 dB"]) { XCTAssertEqual(tenValueText(Row.amp, v), s) }
   }
 
   func testCodes() {

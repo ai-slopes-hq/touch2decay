@@ -83,6 +83,23 @@ final class TenMirrorTests: XCTestCase {
     XCTAssertTrue(m.load(b, n: 1161))
   }
 
+  // конечные, но огромные значения не роняют разбор (Int(Double) падает вне диапазона)
+  func testMirrorHuge() {
+    let good = buf(), o = 15 + 62 * 3
+    for huge in [-1e300, 1e300] {
+      var m = TenMirror()
+      var b = good; b[2] = huge; b[8] = huge; b[9] = huge; b[o + 17] = huge
+      XCTAssertTrue(m.load(b, n: 1161))
+      b = good; b[o + 18] = huge; b[o + 23] = huge
+      XCTAssertTrue(m.load(b, n: 1161)); XCTAssertEqual(m.v[3].mods, [])
+      b = good; b[o + 17] = huge
+      XCTAssertTrue(m.load(b, n: 1161))
+      var out: [TenHeard] = []
+      tenHeard([1, huge, 1, 3, huge, 1], n: 6, into: &out); XCTAssertEqual(out, [.flash(3)])
+      tenHeard([2, huge, 0.5, 2, 1, huge], n: 6, into: &out); XCTAssertEqual(out, [.strike(1, huge)])   // индекс огромный — запись пропущена, сила огромная — годна
+    }
+  }
+
   func testHeard() {
     var out: [TenHeard] = []
     tenHeard([1, 2, 2, 4, 0.7], n: 5, into: &out)
