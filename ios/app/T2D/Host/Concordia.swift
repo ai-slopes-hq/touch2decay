@@ -39,7 +39,7 @@ enum Concordia {
   }
 
   // restartK — 1 сразу после перезапуска, до 0 за 0.9 с
-  static func draw(_ d: Draw, _ b: Box, link: Link, stable: Bool, restartK: CGFloat) {
+  static func draw(_ d: Draw, _ b: Box, link: Link, stable: Bool, midi: Bool = false, restartK: CGFloat) {
     d.reading {
       let g = d.g
       g.setFillColor(d.paper(0.94)); g.fill(CGRect(x: b.x, y: b.y, width: b.w, height: b.h))
@@ -62,7 +62,8 @@ enum Concordia {
           restartArrow(d, bx, r.y, k)
         default:
           let on = r.key == .stable ? stable : (r.key == .clock ? link.clock : link.scale)
-          d.mapText(r.label, b.x + 16, r.y - 6, 15, on ? 0.95 : 0.6); d.mapText(r.sub, b.x + 16, r.y + 10, 11, 0.45)
+          d.mapText(r.label, b.x + 16, r.y - 6, 15, on ? 0.95 : 0.6)
+          d.mapText(r.key == .clock && midi ? "midi clock" : r.sub, b.x + 16, r.y + 10, 11, 0.45)
           d.ring(bx, r.y, 9, on ? 0.9 : 0.45, 1.1)
           if on { d.dot(bx, r.y, 4.5, 0.9) }
         }

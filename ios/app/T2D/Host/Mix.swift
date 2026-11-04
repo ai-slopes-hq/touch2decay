@@ -85,5 +85,14 @@ enum MixM: CaseIterable {
 
 // связь с внешними часами и ладом (в настройках; UI — позже)
 struct Link: Codable, Equatable { var clock = false; var scale = true }
-// настройки звука: stable — буфер 1024 вместо 256
-struct AudioPref: Codable, Equatable { var stable = false }
+// настройки звука: stable — буфер 1024 вместо 256; midi — слушать MIDI-часы (старый prefs.json без поля — выключено)
+struct AudioPref: Codable, Equatable {
+  var stable = false
+  var midi = false
+  init(stable: Bool = false, midi: Bool = false) { self.stable = stable; self.midi = midi }
+  init(from d: Decoder) throws {
+    let c = try d.container(keyedBy: CodingKeys.self)
+    stable = try c.decodeIfPresent(Bool.self, forKey: .stable) ?? false
+    midi = try c.decodeIfPresent(Bool.self, forKey: .midi) ?? false
+  }
+}

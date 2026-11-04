@@ -37,6 +37,8 @@ private final class HCore: HostCore {
   var levelReads = 0
   func levels(_ out: inout [Float]) -> Bool { levelReads += 1; for i in out.indices { out[i] = 0 }; return true }
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { sin(2 * .pi * u) }
+  func hevents() -> [Double] { [] }
+  func grid() -> MidiGrid? { nil }
 }
 
 // поддельный мир: считает касания и действия; "угол с картой" — прямоугольник x ≥ 300, y ≥ 700
@@ -1105,6 +1107,30 @@ final class HostTests: XCTestCase {
     p = panelRow(.stable); tap(p.x, p.y)
     XCTAssertEqual(got, [true]); XCTAssertTrue(host.audioPref.stable)
     XCTAssertEqual(store.loadPrefs()?.audio?.stable, true, "stable — сразу на диск")
+  }
+
+  func testMidiRowTogglesAndPersists() {
+    openPanel()
+    var got: [Bool] = []
+    host.onMidi = { got.append($0) }
+    var p = panelRow(.midi); tap(p.x, p.y)
+    XCTAssertEqual(got, [true]); XCTAssertTrue(host.audioPref.midi); XCTAssertTrue(host.midiClock.on)
+    XCTAssertEqual(store.loadPrefs()?.audio?.midi, true, "midi — сразу на диск")
+    p = panelRow(.midi); tap(p.x, p.y)
+    XCTAssertEqual(got, [true, false]); XCTAssertFalse(host.midiClock.on)
+    XCTAssertEqual(store.loadPrefs()?.audio?.midi, false)
+  }
+
+  func testOldPrefsWithoutMidiDecodeAsOff() throws {
+    let a = try JSONDecoder().decode(AudioPref.self, from: Data(#"{"stable":true}"#.utf8))
+    XCTAssertEqual(a, AudioPref(stable: true, midi: false))
+  }
+
+  func testReapplyKeepsMidiClockOn() {
+    host = makeHost(); host.toggleMidi()
+    defer { host.toggleMidi() }
+    host.reapply()                                           // повторный вызов (смена частоты) не роняет и не выключает часы
+    XCTAssertTrue(host.midiClock.on)
   }
 
   func testPanelTempoInert() {

@@ -58,6 +58,8 @@
 
 **5. Системное (Mac).** `AVAudioSession .playback` и `UIBackgroundModes: audio`; CoreMIDI ведомый (порт `ios/shell/Midi.swift` на `Transport` ядра; Continue / Song Position — вместе с этим); `idleTimerDisabled` вместо Wake Lock; `MPNowPlayingInfoCenter` вместо `mediaSession`; прерывания и смена маршрута (аналог `restartAudio`); многоканальный выход (S-4) — позже.
 
+**Статус (04.11, задачи 1–6):** сделаны сессия `.playback` с микшированием и экран не гаснет; CoreMIDI-вход в кольцо ядра (`Midi`); адаптеры `WorldTempo` у секвенсерных миров; политика часов `MidiFollow` (порт `host/midi.js`); строка `midi clock` в панели audio (кружок, сохраняется в `prefs.json`, по умолчанию выключена), таймер `MidiClock` 25 мс (обновление зеркал → сетка мирам → события ядра → `scan`), в concordia подпись `midi clock`, пока сетка идёт. Ждёт проверки на iPhone и в AUM; прерывания, смена маршрута, `MPNowPlayingInfoCenter`, многоканальный выход — не сделаны.
+
 **6. AUv3.** Расширение с тем же ядром и нативным view; контекст хоста (темп, доля), пресеты = `snapshot`.
 
 **7. Релиз.** Платный Apple Developer (AUv3 в чужих хостах и TestFlight), ~~иконки~~ (готова, `ios/icon/`), скриншоты и тексты для App Store (`docs/app-store.md`), экран лицензий (если берём MIT-блоки), TestFlight, App Store.

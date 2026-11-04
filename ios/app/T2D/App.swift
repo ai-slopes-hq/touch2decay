@@ -66,9 +66,11 @@ struct T2DApp: App {
     let a = Audio(log: .shared, seed: T2DApp.shot ? 7 : 1, watch: watch)
     a.probe = T2DApp.shot && T2DApp.shotName == "lfo"
     let h = Host(views: views, core: AppHostCore(), store: Store(dir: T2DApp.storeDir(), log: { Log.shared.add("store", $0) }))
-    a.onInit = { h.reapply() }
+    let midi = Midi()                                       // CoreMIDI → кольцо ядра; часы разбирает ядро, политику ведёт Host.midiClock
+    a.onInit = { h.reapply(); midi.on = h.audioPref.midi }   // после t2d_app_init: до него кольцо ядра не готово
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
+    h.onMidi = { midi.on = $0 }
     _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _nat = State(initialValue: views.compactMap { $0 as? NaturaView }[0]); _por = State(initialValue: views.compactMap { $0 as? PortusView }[0]); _cym = State(initialValue: views.compactMap { $0 as? CymaticaView }[0]); _ten = State(initialValue: views.compactMap { $0 as? TenebraeView }[0]); _host = State(initialValue: h)
   }
 

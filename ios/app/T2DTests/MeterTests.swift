@@ -24,6 +24,8 @@ private final class NullHostCore: HostCore {
   func lfoSnap() -> [LfoSnap] { [] }
   func levels(_ out: inout [Float]) -> Bool { false }
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { 0 }
+  func hevents() -> [Double] { [] }
+  func grid() -> MidiGrid? { nil }
 }
 
 final class MeterTests: XCTestCase {

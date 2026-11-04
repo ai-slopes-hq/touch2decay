@@ -25,6 +25,8 @@ final class Host {
   private(set) var restartAt = -Double.infinity            // когда последний раз перезапускали звук (с): вспышка «audio restarted» 0.9 с
   var onRestart: (() -> Void)?                             // ставит App: Audio.restart
   var onStable: ((Bool) -> Void)?                          // ставит App: Audio.stable
+  var onMidi: ((Bool) -> Void)?                            // ставит App: Midi.on
+  private(set) lazy var midiClock = MidiClock(core: core, follow: MidiFollow(worlds: { [unowned self] in self.views.values.compactMap(\.tempo) }, here: { [unowned self] in self.world?.tempo }), worlds: { [unowned self] in self.views.values.compactMap(\.tempo) })
   private var perScl: [Int: Scl] = [:]                     // свой лад у каждого мира, когда лад не общий (в памяти, как perScl веба)
   private var lastSlot: Int?                               // мир, в котором были последним
   private var prefsDirtyAt: Double?                        // настройки изменились; запись — через autosave секунд
@@ -207,6 +209,12 @@ final class Host {
     restartAt = now                                         // как в вебе: смена буфера перезапускает звук — вспышка «audio restarted»
     onStable?(audioPref.stable)
   }
+  // midi clock: слушать часы системы (CoreMIDI → ядро → MidiClock → миры)
+  func toggleMidi() {
+    audioPref.midi.toggle(); markPrefs(); savePrefs()
+    midiClock.on = audioPref.midi
+    onMidi?(audioPref.midi)
+  }
   private func restartAudio() { restartAt = now; onRestart?() }
 
   // настройки (общие темп и лад, stable) изменились — запись через autosave секунд (tick) или в фон
@@ -222,6 +230,7 @@ final class Host {
     case .stop: press(.clr)                                  // без часов — заглушить мир, как корзина (отмена вернёт)
     case .restart: restartAudio()
     case .stable: toggleStable()
+    case .midi: toggleMidi()
     case .tempo: break
     }
   }
@@ -559,6 +568,7 @@ final class Host {
       undo.base(slot: slot, w: nil, scl: s); undo.commit(slot: slot, scl: s)
     }
     if let c = curSlot { views[c]?.enter() }                 // init ядра сбросил «проснулся» (веб: restartAudio → enter)
+    if audioPref.midi { midiClock.on = true; midiClock.forgetGrid() }   // init стёр LOCK Cymatica в ядре, адаптер помнит отправленное — слать заново
   }
 
   // ---------- рисование ----------
@@ -582,7 +592,7 @@ final class Host {
       let t = nav.anim == nil ? nav.peek.flatMap { p in nav.freeze.map { p.t0 + $0 * Nav.peekDur } } ?? now : now
       MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, settings: settings != .off, now: t)
       if settings == .concordia && !nav.busy(now) {
-        Concordia.draw(d, cBox, link: link, stable: audioPref.stable, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
+        Concordia.draw(d, cBox, link: link, stable: audioPref.stable, midi: core.grid() != nil, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
       }
       if settings == .mixer && !nav.busy(now) { Mixer.draw(d, mixGeo, mix: mix, lv: levels.lv) }
       return
@@ -599,7 +609,7 @@ final class Host {
     if audioPanel {
       var held: AudioPanel.Key?
       for r in routes.values { if case .panel(let k) = r { held = k } }
-      AudioPanel.draw(d, apGeo, stable: audioPref.stable, sounding: levels.lv[w.slot] > 0.0025, held: held,
+      AudioPanel.draw(d, apGeo, stable: audioPref.stable, midi: audioPref.midi, sounding: levels.lv[w.slot] > 0.0025, held: held,
                       restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
     }
     if legendOpen { Legend.draw(d, title: "L E G E N D A", rows: w.legend, W: W, H: H, top: top, safeBot: safeBot) }

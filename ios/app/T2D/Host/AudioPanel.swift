@@ -1,9 +1,9 @@
 import UIKit
 
-// панель «audio» в мире (тап по кнопке громкости; тянуть — по-прежнему громкость): порт host/audio-panel.js без строки midi.
+// панель «audio» в мире (тап по кнопке громкости; тянуть — по-прежнему громкость): порт host/audio-panel.js.
 // Состояние (открыта ли, stable, restartAt) держит Host; здесь только геометрия, попадания и картинка.
 enum AudioPanel {
-  enum Key { case tempo, stop, restart, stable }
+  enum Key { case tempo, stop, restart, stable, midi }
   struct Geo {
     var x: CGFloat, w: CGFloat, top: CGFloat, h: CGFloat
     var rows: [(key: Key, label: String, y: CGFloat)]
@@ -12,7 +12,7 @@ enum AudioPanel {
   enum Hit: Equatable { case row(Key), close, none, vol }
 
   static let rowH: CGFloat = 44
-  private static let labels: [(Key, String)] = [(.tempo, "tempo"), (.stop, "stop"), (.restart, "restart audio"), (.stable, "stable audio")]
+  private static let labels: [(Key, String)] = [(.tempo, "tempo"), (.stop, "stop"), (.restart, "restart audio"), (.stable, "stable audio"), (.midi, "midi clock")]
 
   // panelGeo: под кнопкой громкости, строки с шагом 44
   static func geo(bar: TopBar, W: CGFloat) -> Geo {
@@ -33,7 +33,7 @@ enum AudioPanel {
 
   // sounding — мир звучит (stop живой); held — строка под пальцем; restartK — 1 сразу после перезапуска, до 0 за 0.9 с.
   // Часов у миров в iOS нет: tempo приглушён с «—», stop — «заглушить мир»
-  static func draw(_ d: Draw, _ p: Geo, stable: Bool, sounding: Bool, held: Key?, restartK: CGFloat) {
+  static func draw(_ d: Draw, _ p: Geo, stable: Bool, midi: Bool, sounding: Bool, held: Key?, restartK: CGFloat) {
     d.reading {
       let g = d.g
       g.setFillColor(d.paper(0.95)); g.fill(CGRect(x: p.x, y: p.top, width: p.w, height: p.h))
@@ -61,6 +61,10 @@ enum AudioPanel {
           d.text(r.label, p.x + 16, r.y, 14, stable ? 0.95 : 0.75)
           d.ring(bx, r.y, 9, stable ? 0.9 : 0.45, 1.1)
           if stable { d.dot(bx, r.y, 4.5, 0.9) }
+        case .midi:
+          d.text(r.label, p.x + 16, r.y, 14, midi ? 0.95 : 0.75)
+          d.ring(bx, r.y, 9, midi ? 0.9 : 0.45, 1.1)
+          if midi { d.dot(bx, r.y, 4.5, 0.9) }
         }
       }
     }

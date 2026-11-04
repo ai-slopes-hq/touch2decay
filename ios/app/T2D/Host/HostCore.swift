@@ -26,6 +26,8 @@ protocol HostCore: AnyObject {
   func lfoSnap() -> [LfoSnap]                                         // последний снимок ядра
   @discardableResult func levels(_ out: inout [Float]) -> Bool        // RMS слотов до фейдера (16); true — снимок новее прошлого чтения (иначе в out прошлый)
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double
+  func hevents() -> [Double]                                          // события MIDI-часов ядра: пары (код, bpm), забираются
+  func grid() -> MidiGrid?                                            // сетка часов; nil — часы не идут
 }
 
 // строка снимка LFO ядра (по 10 чисел, см. t2d_app_lfo)
@@ -84,6 +86,18 @@ final class AppHostCore: HostCore {
 
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double {
     t2d_app_lfo_sample(Int32(shape), morph, u, Int32(seed))
+  }
+
+  private var evBuf = [Double](repeating: 0, count: 256)              // буфер hevents — выделен раз (за 25 мс событий единицы)
+  func hevents() -> [Double] {
+    let n = Int(t2d_app_hevents(&evBuf, Int32(evBuf.count)))
+    return n > 1 ? Array(evBuf[0..<(n - n % 2)]) : []
+  }
+
+  func grid() -> MidiGrid? {
+    var g = [Double](repeating: 0, count: 4)
+    guard t2d_app_grid(&g) == 4, g[0] != 0 else { return nil }
+    return MidiGrid(t0: g[1], p: g[2])
   }
 
   func restore(slot: Int, _ w: String) -> Bool {
