@@ -54,10 +54,10 @@ final class MapTests: XCTestCase {
   }
 
   func testRegistry() {
-    XCTAssertEqual(Worlds.all.count, 12)
-    XCTAssertEqual(Set(Worlds.all.map { $0.slot }), [1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 15])
+    XCTAssertEqual(Worlds.all.count, 11)
+    XCTAssertEqual(Set(Worlds.all.map { $0.slot }), [1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13])   // XV Goetia выключен 04.11
     let cells = Worlds.all.map { "\($0.col),\($0.row)" }
-    XCTAssertEqual(Set(cells).count, 12)
+    XCTAssertEqual(Set(cells).count, 11)
     for b in Worlds.backs { XCTAssertFalse(cells.contains("\(b.col),\(b.row)")) }
     XCTAssertEqual(Worlds.all.filter { $0.view }.map { $0.slot }, [1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13])
     XCTAssertEqual(Worlds.info(10)?.title, "Firmamentum")
