@@ -37,9 +37,12 @@ double Model::baseB() const { return 55 * std::pow(2.0, (scale_.on ? scale_.root
 double Model::pitch(int i) const {
   if (i < 0 || i >= NR || !tonal(r_[i].inst)) return 0;
   const Range rg = pitchRange(r_[i].inst);
-  double s = 12 * std::log2(baseB() * mOf(r_[i]) / 55);
+  const double f0 = baseB() * mOf(r_[i]);
+  if (!std::isfinite(f0) || f0 <= 0) return rg.lo;          // мусорный aequalis: pow ушёл в inf или 0 — иначе циклы октав не кончатся
+  double s = 12 * std::log2(f0 / 55);
   if (scale_.on) s = scale_.snapSemi(std::round(s));
   double f = 55 * std::pow(2.0, s / 12);
+  if (!std::isfinite(f) || f <= 0) return rg.lo;
   while (f >= rg.hi) f /= 2;
   while (f < rg.lo) f *= 2;
   return f;
