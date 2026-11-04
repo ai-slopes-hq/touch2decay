@@ -34,7 +34,7 @@ targets:
     info:
       path: T2D/Info.plist
       properties:
-        CFBundleDisplayName: touch2decay
+        CFBundleDisplayName: Universum
         UIBackgroundModes: [audio]
         NSLocalNetworkUsageDescription: Log to your computer over the network
         NSAppTransportSecurity: { NSAllowsLocalNetworking: true }
