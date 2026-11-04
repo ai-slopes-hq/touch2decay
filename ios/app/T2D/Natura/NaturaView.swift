@@ -108,9 +108,7 @@ final class NaturaView: World {
 
   // ---------- тик ----------
   func tick(now: Double, dt: Double) {
-    self.now = now
-    let n = min(max(0, readMirror(&mbuf)), mbuf.count)
-    if mirror.load(mbuf, n: n) { mAt = now }
+    pullMirror(now: now)
     for _ in 0..<4 {                                         // записей может быть больше буфера — читаем до пустого, но не бесконечно
       let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
       if hn == 0 { break }
@@ -193,4 +191,18 @@ final class NaturaView: World {
 
   func draw(_ d: Draw, now: Double) { drawFrame(d, now: now) }   // картинка — NatFrame.swift
   func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now, sun: false) }   // карта рисует своё солнце в углу
+}
+
+extension NaturaView: WorldTempo {
+  var tempo: WorldTempo? { self }
+  // то же, что кадр делает с зеркалом: вне кадра (фон) своё протухает по now
+  fileprivate func pullMirror(now: Double) {
+    self.now = now
+    let n = min(max(0, readMirror(&mbuf)), mbuf.count)
+    if mirror.load(mbuf, n: n) { mAt = now }
+  }
+  func refresh(now: Double) { pullMirror(now: now) }
+  func setBpm(_ bpm: Double) { send(Act.setbpm, 0, [bpm]) }
+  func play(_ on: Bool) { send(Act.play, 0, [on ? 1 : 0]) }
+  var armed: Bool { (0..<Nat.npad).contains { pad($0).on } }
 }

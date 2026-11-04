@@ -83,8 +83,7 @@ final class MonochordView: World {
 
   func tick(now: Double, dt: Double) {
     self.now = now
-    let len = min(max(0, readMirror(&mbuf)), mbuf.count)
-    mirror.load(mbuf, n: len)
+    pullMirror()
     let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
     if hn > 0 && hbuf[0] > 0 { hitAt = now }
     for (k, var t) in holds where !t.sheet {
@@ -214,4 +213,19 @@ final class MonochordView: World {
     guard let t = holds.removeValue(forKey: f.id) else { return }
     if t.kind == .string && (t.bowing || mirror.str[t.i].bow > 0) { core.action(Act.bow, t.i, [0], touchTime: f.touchTime) }
   }
+}
+
+extension MonochordView: WorldTempo {
+  var tempo: WorldTempo? { self }
+  // то же, что кадр делает с зеркалом; своих значений у мира нет — now не нужен
+  func pullMirror() {
+    let len = min(max(0, readMirror(&mbuf)), mbuf.count)
+    mirror.load(mbuf, n: len)
+  }
+  func refresh(now: Double) { self.now = now; pullMirror() }
+  var bpm: Double { mirror.auto[1] }
+  func setBpm(_ bpm: Double) { core.action(Act.autopar, 1, [bpm], touchTime: 0) }
+  func play(_ on: Bool) { core.action(Act.auto, 0, [on ? 1 : 0], touchTime: 0) }
+  var playing: Bool { mirror.auto[0] != 0 }
+  var armed: Bool { false }
 }

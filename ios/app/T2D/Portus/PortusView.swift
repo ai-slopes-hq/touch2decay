@@ -108,9 +108,7 @@ final class PortusView: World {
 
   // ---------- тик ----------
   func tick(now: Double, dt: Double) {
-    self.now = now
-    let n = min(max(0, readMirror(&mbuf)), mbuf.count)
-    _ = mirror.load(mbuf, n: n)
+    pullMirror(now: now)
     let sec = 60 / bpm / 4                                    // stepSec, model.js:45
     for _ in 0..<4 {                                         // записей может быть больше буфера — читаем до пустого, но не бесконечно
       let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
@@ -133,4 +131,18 @@ final class PortusView: World {
 
   func draw(_ d: Draw, now: Double) { drawFrame(d, now: now) }   // картинка — PorFrame.swift
   func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now, sun: false) }   // карта рисует свою луну в углу
+}
+
+extension PortusView: WorldTempo {
+  var tempo: WorldTempo? { self }
+  // то же, что кадр делает с зеркалом: вне кадра (фон) своё протухает по now
+  fileprivate func pullMirror(now: Double) {
+    self.now = now
+    let n = min(max(0, readMirror(&mbuf)), mbuf.count)
+    _ = mirror.load(mbuf, n: n)
+  }
+  func refresh(now: Double) { pullMirror(now: now) }
+  func setBpm(_ bpm: Double) { send(Act.bpm, 0, [bpm]) }
+  func play(_ on: Bool) { send(Act.play, 0, [on ? 1 : 0]) }
+  var armed: Bool { (0..<Por.nstep).contains { isle($0).on } }
 }

@@ -91,8 +91,7 @@ final class HorologiumView: World {
 
   func tick(now: Double, dt: Double) {
     self.now = now
-    let len = min(max(0, readMirror(&mbuf)), mbuf.count)
-    if mirror.load(mbuf, n: len) { mirrorAt = now }
+    pullMirror()
     for _ in 0..<4 {                                       // на большой скорости записей больше буфера — читаем до пустого, но не бесконечно
       let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
       if hn == 0 { break }
@@ -223,4 +222,19 @@ final class HorologiumView: World {
 
   func draw(_ d: Draw, now: Double) { frame(d, now, sun: true) }          // рисование — HoroDraw.swift
   func drawShot(_ d: Draw, now: Double) { frame(d, now, sun: false) }
+}
+
+extension HorologiumView: WorldTempo {
+  var tempo: WorldTempo? { self }
+  // то же, что кадр делает с зеркалом (mirrorAt — по now, который выставил вызывающий)
+  func pullMirror() {
+    let len = min(max(0, readMirror(&mbuf)), mbuf.count)
+    if mirror.load(mbuf, n: len) { mirrorAt = now }
+  }
+  func refresh(now: Double) { self.now = now; pullMirror() }
+  var bpm: Double { mirror.bpm }
+  func setBpm(_ bpm: Double) { core.action(Act.bpm, 0, [bpm], touchTime: 0) }
+  func play(_ on: Bool) { core.action(Act.run, 0, [on ? 1 : 0, mirror.u], touchTime: 0) }   // стоп — как model.stop() веба: RUN [0, u]
+  var playing: Bool { mirror.run }
+  var armed: Bool { mirror.rings.contains { $0.on } }
 }

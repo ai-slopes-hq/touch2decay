@@ -19,6 +19,23 @@ protocol UndoCommitting: AnyObject {
   var commitUndo: (() -> Void)? { get set }              // ставит хост: снять undo-снимок мира сейчас
 }
 
+// сетка MIDI-часов в секундах ядра (Cymatica получает её как LOCK)
+struct MidiGrid: Equatable { var t0, p: Double }
+
+// темп и пуск мира-секвенсера для системы (MIDI-часы, фон): только действия, которые у мира уже есть
+protocol WorldTempo: AnyObject {
+  func refresh(now: Double)                              // вне кадра: свежее зеркало мира и его now (в фоне кадров нет)
+  var bpm: Double { get }
+  func setBpm(_ bpm: Double)
+  func play(_ on: Bool)
+  var playing: Bool { get }
+  var armed: Bool { get }                                // есть что играть (остров, пад, шаг, кольцо)
+  func grid(_ g: MidiGrid?)                              // сетка часов; нужна только Cymatica
+}
+extension WorldTempo {
+  func grid(_ g: MidiGrid?) {}
+}
+
 protocol World: AnyObject {
   var slot: Int { get }
   var theme: Theme { get }
@@ -47,6 +64,7 @@ protocol World: AnyObject {
   func move(_ f: Finger)
   func up(_ f: Finger)
   func cancel(_ f: Finger)                               // система отняла касание: бросить палец без действий тапа и удержания
+  var tempo: WorldTempo? { get }                         // миры-секвенсеры; прочим nil
 }
 
 extension World {
@@ -55,6 +73,7 @@ extension World {
   var lfoBase: ((Int, Int) -> Double?)? { get { nil } set {} }
   func drawShot(_ d: Draw, now: Double) { draw(d, now: now) }
   var objs: Int { 0 }
+  var tempo: WorldTempo? { nil }
   func enter() {}
   func scale(pcs: [Int]?, root: Int) {}
   func idle() {}                                         // карта: мир не тикает — слить то, что копится в ядре (кольцо heard)

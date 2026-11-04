@@ -17,7 +17,7 @@ enum Cym {
 
   // коды action ядра — core/worlds/cymatica/world.hpp
   enum Act {
-    static let strike = 2, strikeAt = 7, play = 8, rec = 9, stepRec = 10, skip = 11, cursor = 12, grid = 13, bpm = 14, len = 15
+    static let strike = 2, lock = 4, strikeAt = 7, play = 8, rec = 9, stepRec = 10, skip = 11, cursor = 12, grid = 13, bpm = 14, len = 15
     static let chanceAt = 16, beat = 17, nudge = 18, moveMark = 19, dropMark = 20, comb = 21, turn = 22, driftToggle = 23, driftSet = 24
     static let setF0 = 25, stepScale = 26, setFx = 27, dice = 29, clear = 30
   }

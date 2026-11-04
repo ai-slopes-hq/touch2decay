@@ -46,6 +46,7 @@ final class CymaticaView: World {
   private var evs: [CymHeard] = []
   var area: (W: Double, H: Double, topY: Double, safeBot: Double) = (390, 844, 59, 34)
   private(set) var now = 0.0
+  private var lockSent: MidiGrid?                          // какая сетка ушла в ядро: шлём только при смене (syncLock, engine.js)
   var fingers: [ObjectIdentifier: CymFinger] = [:]           // пальцы мира; touchReset (undo) забывает их все
   var pair: CymPair?                                         // два пальца: поворот или щипок
   var ringTurn = [0.0, 0.0], ringOrn = [0.0, 0.0]            // для картинки: остаток поворота кольца (°) и накопленный поворот узора; 0 ритм, 1 мелодия
@@ -132,9 +133,7 @@ final class CymaticaView: World {
 
   // ---------- тик ----------
   func tick(now: Double, dt: Double) {
-    self.now = now
-    let n = min(max(0, readMirror(&mbuf)), mbuf.count)
-    _ = mirror.load(mbuf, n: n)
+    pullMirror(now: now)
     state.diff(mirror, b: base(), n: scl.degPerOct, list: noteList, now: now)
     for _ in 0..<4 {                                         // записей может быть больше буфера — читаем, пока он полный, но не бесконечно
       let hn = min(max(0, readHeard(&hbuf)), hbuf.count)
@@ -156,4 +155,24 @@ final class CymaticaView: World {
 
   func draw(_ d: Draw, now: Double) { drawFrame(d, now: now) }   // картинка — CymScene / CymDraw / CymAstro / CymFrame
   func drawShot(_ d: Draw, now: Double) { drawFrame(d, now: now) }   // у веба нет mapShot: снимок карты — тот же кадр
+}
+
+extension CymaticaView: WorldTempo {
+  var tempo: WorldTempo? { self }
+  // то же, что кадр делает с зеркалом: вне кадра (фон) своё протухает по now
+  fileprivate func pullMirror(now: Double) {
+    self.now = now
+    let n = min(max(0, readMirror(&mbuf)), mbuf.count)
+    _ = mirror.load(mbuf, n: n)
+  }
+  func refresh(now: Double) { pullMirror(now: now) }
+  func setBpm(_ bpm: Double) { send(Cym.Act.bpm, 0, [bpm]) }
+  func play(_ on: Bool) { if on != playing { send(Cym.Act.play, 0, [on ? 1 : 0]) } }   // как tempo.play веба
+  var armed: Bool { (0..<rlen).contains { step($0).on } }
+  func grid(_ g: MidiGrid?) {
+    let g = g.flatMap { $0.p > 0 ? $0 : nil }                // сетка с p ≤ 0 — не сетка
+    if g == lockSent { return }
+    lockSent = g
+    send(Cym.Act.lock, 0, g.map { [0, $0.t0, $0.p] } ?? [1, 0, 0])
+  }
 }
