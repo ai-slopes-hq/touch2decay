@@ -329,8 +329,9 @@ final class Host {
   // нет базы хотя бы у одного — ничего не очищаем, иначе отмена потеряла бы мир
   @discardableResult func recycleAll() -> Bool {
     for b in undo.pollAll() { setScene(b.slot, b.w, b.scl) }
-    var stash: [(slot: Int, w: String, scl: Scl)] = []
-    for slot in slots {
+    // на карте миры не правятся, поэтому миры из прежнего запаса остаются очищенными — их состояние до очистки не затираем
+    var stash = recycleStash ?? []
+    for slot in slots where !stash.contains(where: { $0.slot == slot }) {
       guard let b = undo.last(slot: slot) else { return false }
       stash.append((slot, b.w, b.scl))
     }

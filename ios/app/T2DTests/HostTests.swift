@@ -1221,14 +1221,14 @@ final class HostTests: XCTestCase {
     XCTAssertFalse(host.mapBarState().enabled.contains(.undo), "один шаг")
   }
 
-  func testRecycleTwiceUndoRestoresOnlyLast() {
+  func testRecycleTwiceUndoRestoresOriginals() {
     host = mapHost()
     tapBtn(.recycle)
     for sn in core.snaps.suffix(2) { core.queue.append((sn.id, sn.slot, "cleared\(sn.slot)")) }   // ответы на снимки после очистки
     host.tick(now: 2, dt: 0.016)
     tapBtn(.recycle, at: 2)
     tapBtn(.undo, at: 3)
-    XCTAssertEqual(core.restores.last { $0.slot == 10 }?.w, "cleared10")
+    XCTAssertNotEqual(core.restores.last { $0.slot == 10 }?.w, "cleared10")   // второй recycle не затирает запас пустыми мирами
   }
 
   func testRecycleRefusedWithoutBases() {
