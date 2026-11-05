@@ -23,6 +23,14 @@ export const FX_KEYS = ['aequalis', 'materia', 'concursus', 'chance', 'hall'], R
 export const HEAD = FX_KEYS.length + 10, M = { run: 5, u: 6, uT: 7, bpm: 8, strip: 9, held: 10, P: 11, F: 12, strikes: 13, locked: 14 };
 
 const lenOf = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(clamp(v, 1, 16)) : 16);   // мусор → 16, иначе 1…16
+export const euclid = (j, k, L) => (j * k) % L < k;        // k ударов на L гнёзд (Эвклид): гнездо j бьёт?
+export const rotOf = (phi, L) => (typeof phi === 'number' && Number.isFinite(phi) ? (((Math.floor(phi * L + 0.5) % L) + L) % L) : 0);   // фаза → сдвиг рисунка в шагах
+export const stepsOf = (r) => (r.under ? 8 : 16);          // шагов на оборот: шестнадцатая, унтертон — восьмая
+export const slotOf = (r, P) => {                          // текущее гнездо кольца, 0…L−1
+  const L = lenOf(r.len);
+  if (typeof P !== 'number' || !Number.isFinite(P)) return 0;
+  return (((Math.floor(P * stepsOf(r)) + rotOf(r.phi, L)) % L) + L) % L;
+};
 
 export function createModel({ scale = { on: false, root: 0 }, rng = Math.random, send = () => 0 } = {}) {
   const rings = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: i < 3, under: false, phi: 0, lvl: 0.8, len: 16, inst: i }));

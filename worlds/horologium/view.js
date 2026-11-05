@@ -1,6 +1,6 @@
 // Horologium — картинка и касания: астрономические часы — колесо-«единица» со стрелкой-солнцем, кольца II…IX, шкала tempus, маятник.
 // Касание → действие модели (звук не трогает); положение и скорость колеса — метры engine (из ядра); что услышано (heard) — удары колец.
-import { ROMAN, NR, Z, eOfU } from './model.js';
+import { ROMAN, NR, Z, eOfU, euclid, rotOf, slotOf } from './model.js';
 
 const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
@@ -77,7 +77,7 @@ export function createView(T, model, engine) {
     }
     if (t.kind === 'ring' && t.moved) {                   // вдоль кольца — фаза
       const a = Math.atan2(f.x - G.cx, -(f.y - G.cy)); let d = a - t.a0; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU;
-      const r = rings[t.i], m = mOf(r); model.setPhase(t.i, ((t.phi0 - (d / TAU) * m) % 1 + 1) % 1); t.a0 = a; t.phi0 = r.phi; t.ph = true;
+      model.setPhase(t.i, ((t.phi0 - d / TAU) % 1 + 1) % 1); t.a0 = a; t.phi0 = r.phi; t.ph = true;
     }
   }
   function up(f) {
@@ -102,7 +102,7 @@ export function createView(T, model, engine) {
       lfo: { id: `horo-r${i}`, keys: ['phi', 'lvl'], shapes: 'classic' },
       get: (k) => (k === 'on' || k === 'under' ? (r[k] ? 1 : 0) : r[k]),
       set: (k, v) => model.setRing(i, k, v),
-      text: (k) => (k === 'on' ? (r.on ? 'yes' : 'no') : k === 'under' ? (r.under ? `1/${r.n} · ${+(12 / r.n).toFixed(2)} a turn` : `${r.n} a turn`) : k === 'phi' ? `${Math.round(r.phi * 360)}°` : `${Math.round(r.lvl * 100)}%`),
+      text: (k) => (k === 'on' ? (r.on ? 'yes' : 'no') : k === 'under' ? (r.under ? `1/${r.n} · ${+(12 / r.n).toFixed(2)} a turn` : `${r.n} a turn`) : k === 'phi' ? `${rotOf(r.phi, r.len)} / ${r.len}` : `${Math.round(r.lvl * 100)}%`),
     });
   }
   function hubSheet() {
@@ -149,28 +149,28 @@ export function createView(T, model, engine) {
     x.fillStyle = ink(0.7); x.beginPath(); x.arc(G.piv.x, G.piv.y, 3, 0, TAU); x.fill();
     return wallC;
   }
-  function marksOf(r, P) {                                // удары этого оборота: углы
-    const m = mOf(r), P0 = Math.floor(P), out = [];
-    for (let k = Math.ceil(P0 * m + r.phi); k < (P0 + 1) * m + r.phi; k++) out.push({ k, a: ((k - r.phi) / m - P0) * TAU });
-    return out;
-  }
   function drawRings(c, G, now, P) {
     const Fm = engine.F, fast = Fm > 4;
     rings.forEach((r, i) => {
-      const rr = ringR(G, i), on = r.on, m = mOf(r), hit = clamp(1 - (now - ringHit[i]) / 260), cur = Math.floor(P * m + r.phi);
+      const rr = ringR(G, i), on = r.on, L = r.len, k = Math.min(r.n, L), hit = clamp(1 - (now - ringHit[i]) / 260), cur = slotOf(r, P);
       c.lineWidth = 1; c.strokeStyle = ink(on ? 0.5 + 0.2 * r.lvl : 0.13); c.setLineDash(on ? [] : [2, 4]); c.beginPath(); c.arc(G.cx, G.cy, rr, 0, TAU); c.stroke(); c.setLineDash([]);
       if (on && r.under) { c.strokeStyle = ink(0.3); c.beginPath(); c.arc(G.cx, G.cy, rr - 3, 0, TAU); c.stroke(); }   // унтертон — двойной обвод
-      for (const q of marksOf(r, P)) {
-        const x = G.cx + Math.sin(q.a) * rr, y = G.cy - Math.cos(q.a) * rr;
+      const hits = [];                                    // углы гнёзд с ударом — для места под число
+      for (let j = 0; j < L; j++) {
+        const a = (j / L) * TAU, sn = Math.sin(a), cs = Math.cos(a), x = G.cx + sn * rr, y = G.cy - cs * rr;
+        if (!euclid(j, k, L)) {      // пустое гнездо — короткая засечка; бегунок на нём ярче
+          c.strokeStyle = ink(j === cur ? 0.45 : on ? 0.12 : 0.06); c.beginPath(); c.moveTo(x - sn * 1.5, y + cs * 1.5); c.lineTo(x + sn * 1.5, y - cs * 1.5); c.stroke(); continue;
+        }
+        hits.push(a);
         if (!on) { c.strokeStyle = ink(0.22); c.beginPath(); c.arc(x, y, 1.8, 0, TAU); c.stroke(); continue; }
-        const g = fast ? 0.35 + 0.4 * r.lvl : q.k === cur ? hit : 0;
+        const g = fast ? 0.35 + 0.4 * r.lvl : j === cur ? hit : 0;
         if (g > 0.05) T.glowAt(x, y, 10 + 8 * g, 0.35 * g);
         c.fillStyle = ink(Math.min(1, 0.55 + 0.45 * g));
         if (r.under) { c.beginPath(); c.moveTo(x, y - 3.6); c.lineTo(x + 3, y); c.lineTo(x, y + 3.6); c.lineTo(x - 3, y); c.closePath(); c.fill(); }
         else { c.beginPath(); c.arc(x, y, 3.1, 0, TAU); c.fill(); }
       }
-      let la = Math.PI + 0.35;                            // число кольца — внизу слева, в просвете между метками
-      const ms = marksOf(r, P).map((q) => ((q.a % TAU) + TAU) % TAU).sort((x, y) => x - y);
+      let la = Math.PI + 0.35;                            // число кольца — внизу слева, в просвете между гнёздами с ударом
+      const ms = hits.sort((p, q) => p - q);
       if (ms.length) { let best = la, bd = 9; for (let j = 0; j < ms.length; j++) { const a0 = ms[j], a1 = j + 1 < ms.length ? ms[j + 1] : ms[0] + TAU, mid = (a0 + a1) / 2, d = Math.abs(((mid - la + Math.PI) % TAU + TAU) % TAU - Math.PI); if (d < bd) { bd = d; best = mid; } } la = best; }
       const lx = G.cx + Math.sin(la) * rr, ly = G.cy - Math.cos(la) * rr;
       c.font = `italic ${on ? 11 : 9.5}px ${T.MAP}`; c.textAlign = 'center'; c.textBaseline = 'middle';
@@ -242,7 +242,7 @@ export function createView(T, model, engine) {
     T.mapText('limen', lim, S.y + 22, 10.5, 0.45, 'center');
     if (Fm > 0.01) { const mx = stripX(S, Fm); c.fillStyle = ink(0.95); c.beginPath(); c.moveTo(mx, S.y - 3); c.lineTo(mx - 5, S.y - 11); c.lineTo(mx + 5, S.y - 11); c.closePath(); c.fill(); T.mapText(`${Fm < 10 ? Fm.toFixed(2) : Math.round(Fm)} / s`, mx, S.y - 20, 11, 0.75, 'center'); }
     drawPendulum(c, G);
-    for (const t of touches.values()) if (t.kind === 'ring' && t.ph) { const r = rings[t.i]; T.mapText(`${ROMAN[r.n]} · ${Math.round(r.phi * 360)}°`, G.cx, G.cy + G.R + 14, 12, 0.85, 'center'); }
+    for (const t of touches.values()) if (t.kind === 'ring' && t.ph) { const r = rings[t.i]; T.mapText(`${ROMAN[r.n]} · ${rotOf(r.phi, r.len)} / ${r.len}`, G.cx, G.cy + G.R + 14, 12, 0.85, 'center'); }
     if (!noSun) T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, -1, now, INK, BGC);
   }
 

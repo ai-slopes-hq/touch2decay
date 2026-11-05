@@ -169,3 +169,19 @@ test('Horologium facade: inst — default kit, mirror 63, snapshot, old scene, c
   m.clear(); assert.equal(m.state.rings[2].inst, 2); assert.equal(m.state.rings[2].len, 16);
   assert.equal(facade.RING_KEYS.length, 6); assert.equal(facade.RING_KEYS[5], 'len');
 });
+
+test('Horologium facade: Euclid helpers', () => {
+  for (let L = 1; L <= 16; L++) for (let k = 1; k <= 9; k++) {
+    let c = 0; for (let j = 0; j < L; j++) if (facade.euclid(j, k, L)) c++;
+    assert.equal(c, Math.min(k, L), `k${k} L${L}`);
+  }
+  assert.equal(facade.euclid(0, 3, 8), true);
+  for (const [phi, L, want] of [[0, 16, 0], [3 / 16, 16, 3], [0.5, 12, 6], [-0.25, 16, 12], [1, 16, 0], [0.99, 16, 0], [NaN, 16, 0], [1e300, 16, 0], [undefined, 8, 0]]) assert.equal(facade.rotOf(phi, L), want, `rot ${phi} ${L}`);
+  assert.equal(facade.stepsOf({ under: false }), 16); assert.equal(facade.stepsOf({ under: true }), 8);
+  assert.equal(facade.slotOf({ n: 2, under: false, phi: 0, len: 16 }, 0.5), 8);
+  assert.equal(facade.slotOf({ n: 2, under: false, phi: 0, len: 12 }, 1), 4);
+  assert.equal(facade.slotOf({ n: 2, under: true, phi: 0, len: 16 }, 0.5), 4);
+  assert.equal(facade.slotOf({ n: 2, under: false, phi: 3 / 16, len: 16 }, 0), 3);
+  assert.equal(facade.slotOf({ n: 2, under: false, phi: 0, len: 16 }, -0.01), 15);
+  assert.equal(facade.slotOf({ n: 2, under: false, phi: 0, len: 16 }, NaN), 0);
+});
