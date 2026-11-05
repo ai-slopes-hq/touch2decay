@@ -4,94 +4,53 @@ import CoreText
 // верхняя строка хоста — порт host/ui-top.js: раскладка, попадания, список ладов, рисование.
 // top — safeAreaInsets.top (scopeY веба), W — ширина экрана в пунктах. Без теней, жирного и градиентов.
 
-enum Btn: CaseIterable { case back, play, vol, undo, dice, recycle, fx }
+enum Btn: CaseIterable { case back, play, transport, vol, fx }
 enum Hit: Equatable { case btn(Btn), title }
-enum SclPick: Equatable { case off, scale(Int), root(Int), outside }
 
 struct TopBar {
   var W: CGFloat
   var top: CGFloat
+  var H: CGFloat = 0
+  var safeBot: CGFloat = 0
 
-  // ui-top.js:11-12
-  static let btnR: CGFloat = 20, itemH: CGFloat = 46, clrR: CGFloat = 17
+  static let btnR: CGFloat = 20, clrR: CGFloat = 17
   static let titleX: CGFloat = 46
-  private static let listW: CGFloat = 150, tonW: CGFloat = 40
+  static let barH: CGFloat = 52          // нижний бар; мирам и плашке хост отдаёт safeBot + barH
 
   struct State {
     var title: String
-    var vol: Double                 // позиция фейдера 0…1
-    var volHeld: Bool
-    var scl: Scl
-    var sclOpen: Bool               // открыт список ладов (тап по кнопке, тап по строке)
-    var canUndo: Bool
-    var fxArc: Double?              // дуга на кнопке FX; nil — у мира нет веера
-    var fxHeld: Bool
-    var backHeld = false            // палец лёг на стрелку / кубик: кольцо и знак ярче (ui-top.js:107-111, 128)
-    var diceHeld = false
-    var diceAt: Double              // мс, момент броска; кость крутится 400 мс
-    var playing = false             // часы идут: на кнопке пауза, иначе треугольник
-    var bpmShown: Double?           // тянут play вбок — число bpm под кнопкой
-    var volDef = Vol.def            // метка «ноль» на шкале vol
-    var volScale = (lo: Vol.lo, hi: Vol.hi)   // дБ на концах шкалы (мастер −48…+6, канал мира −36…+6)
-    var volText: (Double) -> String = Vol.text
-    var enabled = Set(Btn.allCases) // неактивные кнопки притушены и не ловят касания
+    var held: Set<Btn> = []             // палец на кнопке: кольцо и знак ярче
+    var playing = false                 // часы идут: на кнопке пауза, иначе треугольник
+    var enabled = Set(Btn.allCases)     // неактивные кнопки притушены и не ловят касания
   }
 
-  // шесть кнопок справа налево: fx, recycle, dice, undo, vol, play; шаг 38 у малых (зазор 4), стрелка и заголовок слева
+  // пять кнопок на нижней строке: back слева; fx, vol, transport, play справа налево, шаг 38 у малых
   func pos(_ b: Btn) -> (x: CGFloat, y: CGFloat, r: CGFloat) {
-    let y = top + 20
+    let y = H - safeBot - TopBar.barH / 2
     switch b {
-    case .back: return (26, y, 13)
+    case .back: return (26, y, TopBar.clrR)
     case .fx: return (W - 27, y, TopBar.btnR)
-    case .recycle: return (W - 68, y, TopBar.clrR)
-    case .dice: return (W - 106, y, TopBar.clrR)
-    case .undo: return (W - 144, y, TopBar.clrR)
-    case .vol: return (W - 182, y, TopBar.clrR)
-    case .play: return (W - 220, y, TopBar.clrR)
+    case .vol: return (W - 68, y, TopBar.clrR)
+    case .transport: return (W - 106, y, TopBar.clrR)
+    case .play: return (W - 144, y, TopBar.clrR)
     }
   }
 
-  // правый край заголовка: до play с зазором; на узком экране может быть ≤ 0
-  var titleMax: CGFloat { pos(.play).x - TopBar.clrR - 8 - TopBar.titleX }
+  // правый край заголовка сверху: до правого поля
+  var titleMax: CGFloat { W - TopBar.titleX - 16 }
 
-  // ui-top.js:24-30
-  struct SclList { var b: (x: CGFloat, y: CGFloat), rows: Int, top: CGFloat, bx: CGFloat, rx: CGFloat, cw: CGFloat, ch: CGFloat }
-  var sclList: SclList {
-    let b = pos(.fx), rows = Scales.labels.count + 1, t = b.y + 40
-    let cw = TopBar.tonW, bx = W - 12 - (2 * cw + 8) - TopBar.listW, rx = bx + TopBar.listW + 8
-    return SclList(b: (b.x, b.y), rows: rows, top: t, bx: bx, rx: rx, cw: cw, ch: CGFloat(rows) * TopBar.itemH / 6)
-  }
-
-  // ui-top.js:35-38 — -1 мимо; иначе номер тоники: колонка * 6 + ряд
-  private func rootAt(_ L: SclList, _ x: CGFloat, _ y: CGFloat) -> Int {
-    if x < L.rx || x > L.rx + 2 * L.cw || y < L.top || y > L.top + CGFloat(L.rows) * TopBar.itemH { return -1 }
-    let col = min(max(Int(floor((x - L.rx) / L.cw)), 0), 1), row = min(max(Int(floor((y - L.top) / L.ch)), 0), 5)
-    return col * 6 + row
-  }
-
-  // стрелка и заголовок, затем кнопки справа; побеждает ближайший центр (зоны соседей перекрываются на 4 пт).
-  // Неактивные кнопки не ловят касание. Угол 44×44 знает Stage, левую полосу — Host.route
+  // нижний бар и заголовок: побеждает ближайший центр (зоны соседей перекрываются на 4 пт).
+  // Неактивные кнопки не ловят касание. Заголовок — вход в легенду. Угол 44×44 знает Stage, левую полосу — Host.route
   func hit(_ x: CGFloat, _ y: CGFloat, titleW: CGFloat, enabled: Set<Btn> = Set(Btn.allCases)) -> Hit? {
     let B = pos(.back)
     if enabled.contains(.back) && hypot(x - B.x, y - B.y) < B.r + 10 { return .btn(.back) }
     if y < top + 38 && x > TopBar.titleX - 4 && x < TopBar.titleX + titleW + 10 { return .title }
     var best: (Btn, CGFloat)?
-    for k in [Btn.fx, .recycle, .dice, .undo, .vol, .play] where enabled.contains(k) {
+    for k in [Btn.fx, .vol, .transport, .play] where enabled.contains(k) {
       let b = pos(k), dd = hypot(x - b.x, y - b.y)
       if dd < (k == .fx ? TopBar.btnR + 6 : TopBar.clrR + 4) && dd < (best?.1 ?? .infinity) { best = (k, dd) }
     }
     return best.map { .btn($0.0) }
-  }
-
-  // app.js:897-909 — что под пальцем у открытого списка (без задержки на смену строки: её держит роутер)
-  func sclPick(_ x: CGFloat, _ y: CGFloat) -> SclPick {
-    let L = sclList
-    if y < L.b.y + 40 { return .outside }
-    let r = rootAt(L, x, y)
-    if r >= 0 { return .root(r) }
-    guard x > L.bx - 12 && x < L.rx - 2 else { return .outside }
-    let row = min(max(Int(floor((y - L.top) / TopBar.itemH)), 0), Scales.labels.count)
-    return row == 0 ? .off : .scale(row - 1)
   }
 
   // ---------- рисование ----------
@@ -115,158 +74,71 @@ struct TopBar {
     return (cut.isEmpty ? 0 : titleWidth(cut + "…", sz), sz, cut.isEmpty ? "" : cut + "…")
   }
 
-  // ui-top.js:59-85
-  private func drawVol(_ d: Draw, _ s: State) {
-    let g = d.g, b = pos(.vol), h: CGFloat = 18, y0 = b.y - h / 2
-    func ly(_ t: Double) -> CGFloat { y0 + CGFloat(1 - t) * h }
-    let held = s.volHeld, a: CGFloat = s.sclOpen ? 0.15 : 1
-    g.setFillColor(d.paper(0.88)); g.fillEllipse(in: CGRect(x: b.x - TopBar.clrR - 1, y: b.y - TopBar.clrR - 1, width: 2 * TopBar.clrR + 2, height: 2 * TopBar.clrR + 2))
-    d.ring(b.x, b.y, TopBar.clrR, (held ? 1 : 0.45) * a, 1.2)
-    let z = ly(s.volDef)
-    g.setStrokeColor(d.ink(0.35 * a)); g.setLineWidth(1)
-    g.beginPath()
-    g.move(to: CGPoint(x: b.x - 1.5, y: y0)); g.addLine(to: CGPoint(x: b.x - 1.5, y: y0 + h))
-    g.move(to: CGPoint(x: b.x + 1.5, y: y0)); g.addLine(to: CGPoint(x: b.x + 1.5, y: y0 + h))
-    g.strokePath()
-    g.beginPath()
-    g.move(to: CGPoint(x: b.x - 5, y: z)); g.addLine(to: CGPoint(x: b.x - 2.5, y: z))
-    g.move(to: CGPoint(x: b.x + 2.5, y: z)); g.addLine(to: CGPoint(x: b.x + 5, y: z))
-    g.strokePath()
-    g.setStrokeColor(d.ink((held ? 1 : 0.8) * a)); g.setLineWidth(1.6)
-    g.beginPath(); g.move(to: CGPoint(x: b.x - 5.5, y: ly(s.vol))); g.addLine(to: CGPoint(x: b.x + 5.5, y: ly(s.vol))); g.strokePath()
-    if !held { return }
-    // зажат — длинная шкала вниз с подписью
-    let t0 = b.y + 34, L = Vol.travel
-    func sy(_ t: Double) -> CGFloat { t0 + CGFloat(1 - t) * L }
-    g.setFillColor(d.paper(0.9)); g.fill(CGRect(x: b.x - 22, y: t0 - 14, width: 92, height: L + 28))
-    d.hairBox(b.x - 22, t0 - 14, 92, L + 28, 0.3)
-    g.setStrokeColor(d.ink(0.4)); g.setLineWidth(1)
-    g.beginPath()
-    g.move(to: CGPoint(x: b.x - 1.5, y: t0)); g.addLine(to: CGPoint(x: b.x - 1.5, y: t0 + L))
-    g.move(to: CGPoint(x: b.x + 1.5, y: t0)); g.addLine(to: CGPoint(x: b.x + 1.5, y: t0 + L))
-    g.strokePath()
-    g.beginPath()
-    var db = s.volScale.lo
-    while db <= s.volScale.hi {   // засечки через 6 дБ, у нуля длиннее
-      let y = sy((db - s.volScale.lo) / (s.volScale.hi - s.volScale.lo)), l: CGFloat = db == 0 ? 9 : 5
-      g.move(to: CGPoint(x: b.x - 2.5 - l, y: y)); g.addLine(to: CGPoint(x: b.x - 2.5, y: y))
-      db += 6
-    }
-    g.strokePath()
-    g.setStrokeColor(d.ink(1)); g.setLineWidth(2)
-    g.beginPath(); g.move(to: CGPoint(x: b.x - 9, y: sy(s.vol))); g.addLine(to: CGPoint(x: b.x + 9, y: sy(s.vol))); g.strokePath()
-    d.text(s.volText(s.vol), b.x + 14, sy(s.vol), 14, 0.95)
-  }
-
-  // ui-top.js:92-191; возвращает ширину заголовка — её отдают в hit(titleW:)
+  // нижняя строка и заголовок сверху; возвращает ширину заголовка — её отдают в hit(titleW:)
   @discardableResult
   func draw(_ d: Draw, _ s: State, now: Double) -> CGFloat {
-    let g = d.g, dimT = s.sclOpen
-    // верхняя строка: тёмная подложка (в вебе градиент — в кадре без градиентов, ровная)
-    g.setFillColor(d.paper(0.55)); g.fill(CGRect(x: 0, y: 0, width: W, height: top + 44))
-    // заголовок — имя мира; не влез — мельче
+    let g = d.g
+    // заголовок — имя мира, лёгкая подпись без подложки; тонкая черта: заголовок — легенда
     let (tw, tsz, ttext) = TopBar.fit(s.title, max: titleMax)
-    d.mapText(ttext, TopBar.titleX, top + 20, tsz, dimT ? 0.12 : 0.85)
-    if !dimT {   // тонкая черта: заголовок — легенда
-      g.setStrokeColor(d.ink(0.18)); g.setLineWidth(1)
-      g.beginPath(); g.move(to: CGPoint(x: TopBar.titleX, y: top + 33.5)); g.addLine(to: CGPoint(x: TopBar.titleX + tw, y: top + 33.5)); g.strokePath()
-    }
-    // стрелка назад — на карту; нажатая — ярче; при открытом списке ладов — в тени, как заголовок
-    let B = pos(.back), bk: CGFloat = dimT ? 0.3 : 1
-    g.setFillColor(d.paper(0.88)); g.fillEllipse(in: CGRect(x: B.x - B.r - 1, y: B.y - B.r - 1, width: 2 * B.r + 2, height: 2 * B.r + 2))
-    d.ring(B.x, B.y, B.r, (s.backHeld ? 1 : 0.45) * bk, 1.1)
-    g.setStrokeColor(d.ink((s.backHeld ? 1 : 0.8) * bk)); g.setLineWidth(1.4); g.setLineCap(.round)
+    d.mapText(ttext, TopBar.titleX, top + 20, tsz, 0.85)
+    g.setStrokeColor(d.ink(0.18)); g.setLineWidth(1)
+    g.beginPath(); g.move(to: CGPoint(x: TopBar.titleX, y: top + 33.5)); g.addLine(to: CGPoint(x: TopBar.titleX + tw, y: top + 33.5)); g.strokePath()
+
+    // нижняя строка: ровная подложка с тонкой чертой сверху
+    let y0 = H - safeBot - TopBar.barH
+    g.setFillColor(d.paper(0.9)); g.fill(CGRect(x: 0, y: y0, width: W, height: H - y0))
+    g.setStrokeColor(d.ink(0.22)); g.setLineWidth(1)
+    g.beginPath(); g.move(to: CGPoint(x: 0, y: y0 + 0.5)); g.addLine(to: CGPoint(x: W, y: y0 + 0.5)); g.strokePath()
+
+    func dim(_ b: Btn) -> CGFloat { s.enabled.contains(b) ? 1 : 0.35 }
+    func ringOf(_ b: Btn) { let p = pos(b); d.ring(p.x, p.y, p.r, (s.held.contains(b) ? 1 : 0.45) * dim(b), 1.2) }
+
+    // стрелка назад — на карту
+    let B = pos(.back), bk = dim(.back), hb: CGFloat = s.held.contains(.back) ? 1 : 0.8
+    ringOf(.back)
+    g.setStrokeColor(d.ink(hb * bk)); g.setLineWidth(1.4); g.setLineCap(.round)
     g.beginPath(); g.move(to: CGPoint(x: B.x + 2.5, y: B.y - 5.5)); g.addLine(to: CGPoint(x: B.x - 3, y: B.y)); g.addLine(to: CGPoint(x: B.x + 2.5, y: B.y + 5.5)); g.strokePath()
     g.setLineCap(.butt)
 
-    drawVol(d, s)
-    // кнопки лежат поверх карты — у каждой тёмная подложка
-    for k in [Btn.fx, .undo, .recycle, .dice, .play] {
-      let p = pos(k), rr = p.r + 1
-      g.setFillColor(d.paper(0.88)); g.fillEllipse(in: CGRect(x: p.x - rr, y: p.y - rr, width: 2 * rr, height: 2 * rr))
-    }
-    // FX: три кольца; с веером — дуга по кольцу (ui-top.js:116-123)
-    let r = pos(.fx), dimFx: CGFloat = s.enabled.contains(.fx) ? 1 : 0.35
-    d.ring(r.x, r.y, TopBar.btnR, (s.fxHeld ? 1 : 0.45) * dimFx, 1.2)
-    for (rr, a) in [(CGFloat(6), CGFloat(0.9)), (11, 0.55), (16, 0.3)] { d.ring(r.x, r.y, rr, a * (s.fxHeld ? 1 : 0.8) * dimFx, 1) }
-    if let arc = s.fxArc {
-      g.setStrokeColor(d.ink(0.9)); g.setLineWidth(2)
-      g.beginPath(); g.addArc(center: CGPoint(x: r.x, y: r.y), radius: TopBar.btnR + 5, startAngle: -.pi / 2, endAngle: -.pi / 2 + CGFloat(arc) * .pi * 2, clockwise: false); g.strokePath()
-    }
+    // FX: три кольца, статичные
+    let r = pos(.fx), dimFx = dim(.fx), hf: CGFloat = s.held.contains(.fx) ? 1 : 0.8
+    ringOf(.fx)
+    for (rr, a) in [(CGFloat(6), CGFloat(0.9)), (11, 0.55), (16, 0.3)] { d.ring(r.x, r.y, rr, a * hf * dimFx, 1) }
 
-    // кубик: кружок с костью; после броска кость крутится
-    let dq = pos(.dice), since = now - s.diceAt
-    let dd: CGFloat = s.enabled.contains(.dice) ? 1 : 0.35
-    d.ring(dq.x, dq.y, TopBar.clrR, (s.diceHeld ? 1 : 0.45) * dd, 1.2)
-    g.saveGState(); g.translateBy(x: dq.x, y: dq.y); g.rotate(by: 0.18 + (since < 400 ? CGFloat(since / 60) : 0))
-    g.setStrokeColor(d.ink(0.8 * dd)); g.setLineWidth(1.2)
-    g.addPath(CGPath(roundedRect: CGRect(x: -7, y: -7, width: 14, height: 14), cornerWidth: 2.5, cornerHeight: 2.5, transform: nil)); g.strokePath()
-    for (px, py) in [(-3.2, -3.2), (3.2, -3.2), (0, 0), (-3.2, 3.2), (3.2, 3.2)] as [(CGFloat, CGFloat)] { d.dot(px, py, 1.1, 0.85 * dd) }
-    g.restoreGState()
-
-    // отмена: стрелка по дуге; пустая история — тусклая
-    let u = pos(.undo), can = s.canUndo && s.enabled.contains(.undo)
-    d.ring(u.x, u.y, TopBar.clrR, can ? 0.45 : 0.18, 1.2)
-    g.setStrokeColor(d.ink(can ? 0.8 : 0.25)); g.setLineWidth(1.4); g.setLineCap(.round)
-    g.beginPath(); g.addArc(center: CGPoint(x: u.x + 1, y: u.y + 1), radius: 6, startAngle: .pi * 1.05, endAngle: .pi * 2.35, clockwise: false); g.strokePath()
-    g.beginPath(); g.move(to: CGPoint(x: u.x - 8.5, y: u.y - 3.5)); g.addLine(to: CGPoint(x: u.x - 5, y: u.y + 1.5)); g.addLine(to: CGPoint(x: u.x - 1, y: u.y - 2)); g.strokePath()
-    g.setLineCap(.butt)
-
-    // убрать всё: корзина (не крестик — его легко принять за «закрыть»)
-    let c = pos(.recycle), rc: CGFloat = s.enabled.contains(.recycle) ? 1 : 0.35
-    d.ring(c.x, c.y, TopBar.clrR, 0.45 * rc, 1.2)
-    g.setStrokeColor(d.ink(0.75 * rc)); g.setLineWidth(1.2)
+    // vol: две вертикальные черты разной высоты — «фейдер»
+    let v = pos(.vol), dv = dim(.vol), hv: CGFloat = s.held.contains(.vol) ? 1 : 0.8
+    ringOf(.vol)
+    g.setStrokeColor(d.ink(0.8 * hv * dv)); g.setLineWidth(1.2)
     g.beginPath()
-    g.move(to: CGPoint(x: c.x - 7, y: c.y - 4.5)); g.addLine(to: CGPoint(x: c.x + 7, y: c.y - 4.5))      // крышка
-    g.move(to: CGPoint(x: c.x - 2.5, y: c.y - 7)); g.addLine(to: CGPoint(x: c.x + 2.5, y: c.y - 7))      // ручка
-    g.move(to: CGPoint(x: c.x - 5.5, y: c.y - 4.5)); g.addLine(to: CGPoint(x: c.x - 4.3, y: c.y + 7))
-    g.addLine(to: CGPoint(x: c.x + 4.3, y: c.y + 7)); g.addLine(to: CGPoint(x: c.x + 5.5, y: c.y - 4.5))
-    g.move(to: CGPoint(x: c.x - 1.6, y: c.y - 1.5)); g.addLine(to: CGPoint(x: c.x - 1.4, y: c.y + 4.5))
-    g.move(to: CGPoint(x: c.x + 1.6, y: c.y - 1.5)); g.addLine(to: CGPoint(x: c.x + 1.4, y: c.y + 4.5))
+    g.move(to: CGPoint(x: v.x - 3, y: v.y - 7)); g.addLine(to: CGPoint(x: v.x - 3, y: v.y + 7))
+    g.move(to: CGPoint(x: v.x + 3, y: v.y - 7)); g.addLine(to: CGPoint(x: v.x + 3, y: v.y + 7))
+    g.strokePath()
+    g.setLineWidth(1.8)
+    g.beginPath()
+    g.move(to: CGPoint(x: v.x - 6, y: v.y - 2)); g.addLine(to: CGPoint(x: v.x, y: v.y - 2))
+    g.move(to: CGPoint(x: v.x, y: v.y + 3)); g.addLine(to: CGPoint(x: v.x + 6, y: v.y + 3))
     g.strokePath()
 
-    // лад: лесенка; зажата — список ладов и тоники
-    let L = sclList, scl = s.scl
-    if s.sclOpen {
-      d.reading {
-        let rows = ["off"] + Scales.labels, h = CGFloat(L.rows) * TopBar.itemH + 16
-        g.setFillColor(d.paper(0.9)); g.fill(CGRect(x: L.bx, y: L.top - 8, width: TopBar.listW, height: h))
-        d.hairBox(L.bx, L.top - 8, TopBar.listW, h, 0.3)
-        for (i, label) in rows.enumerated() {
-          let y = L.top + TopBar.itemH * (CGFloat(i) + 0.5), on = i == 0 ? !scl.on : scl.on && i - 1 == scl.idx
-          d.text(label, L.bx + 22, y, 15, on ? 1 : 0.45)   // выбранная — ярче, не жирнее
-          if on { d.dot(L.bx + 12, y, 3, 1) }
-          if i > 0 {
-            let ly = (y + TopBar.itemH / 2 + 0.5).rounded(.down) + 0.5
-            g.setStrokeColor(d.ink(0.1)); g.setLineWidth(1)
-            g.beginPath(); g.move(to: CGPoint(x: L.bx + 8, y: ly)); g.addLine(to: CGPoint(x: L.bx + TopBar.listW - 8, y: ly)); g.strokePath()
-          }
-        }
-        // тоники: две колонки по шесть справа от списка
-        g.setFillColor(d.paper(0.9)); g.fill(CGRect(x: L.rx - 4, y: L.top - 8, width: 2 * L.cw + 8, height: h))
-        d.hairBox(L.rx - 4, L.top - 8, 2 * L.cw + 8, h, 0.3)
-        for (i, nm) in Scales.notes.enumerated() {
-          let col = CGFloat(i / 6), row = CGFloat(i % 6), on = i == scl.root
-          let x = L.rx + L.cw * (col + 0.5), y = L.top + L.ch * (row + 0.5)
-          if on { d.hairBox(L.rx + L.cw * col + 4, L.top + L.ch * row + 4, L.cw - 8, L.ch - 8, 0.9) }
-          d.text(nm, x, y, 13, on ? 1 : 0.5, align: .center)
-        }
-      }
-    } else if scl.on {   // лад включён — его имя под заголовком
-      d.text("\(Scales.notes[scl.root]) \(Scales.labels[scl.idx])", 18, top + 46, 11, 0.5)
+    // transport: три черты с точкой
+    let t = pos(.transport), dt = dim(.transport), ht: CGFloat = s.held.contains(.transport) ? 1 : 0.8
+    ringOf(.transport)
+    g.setStrokeColor(d.ink(0.8 * ht * dt)); g.setLineWidth(1.2)
+    g.beginPath()
+    for (i, dx) in [(-1, CGFloat(-2)), (0, 2), (1, -2)] as [(Int, CGFloat)] {
+      let yy = t.y + CGFloat(i) * 5
+      g.move(to: CGPoint(x: t.x - 6, y: yy)); g.addLine(to: CGPoint(x: t.x + 6, y: yy))
+      d.dot(t.x + dx, yy, 1.8, 0.9 * ht * dt)
     }
+    g.strokePath()
+
     // play / pause: треугольник или две палочки в кружке
-    let pl = pos(.play), pa: CGFloat = s.enabled.contains(.play) ? 1 : 0.35
-    d.ring(pl.x, pl.y, TopBar.clrR, 0.45 * pa, 1.2)
+    let pl = pos(.play), pa = dim(.play)
+    ringOf(.play)
     g.setStrokeColor(d.ink(0.85 * pa)); g.setFillColor(d.ink(0.85 * pa)); g.setLineWidth(1.2); g.setLineJoin(.round)
     if s.playing {
       g.fill(CGRect(x: pl.x - 5, y: pl.y - 6, width: 3.5, height: 12)); g.fill(CGRect(x: pl.x + 1.5, y: pl.y - 6, width: 3.5, height: 12))
     } else {
       g.beginPath(); g.move(to: CGPoint(x: pl.x - 4, y: pl.y - 7)); g.addLine(to: CGPoint(x: pl.x + 6, y: pl.y)); g.addLine(to: CGPoint(x: pl.x - 4, y: pl.y + 7)); g.closePath(); g.fillPath()
-    }
-    if let bpm = s.bpmShown {   // тянут вбок — темп под кнопкой
-      g.setFillColor(d.paper(0.9)); g.fill(CGRect(x: pl.x - 34, y: pl.y + 24, width: 68, height: 22))
-      d.text("\(Int(bpm)) bpm", pl.x, pl.y + 36, 14, 0.95, align: .center)
     }
     return tw
   }

@@ -6,7 +6,7 @@ enum SheetDraw {
   static func draw(_ d: Draw, _ s: Sheet, _ g: SheetGeo, lfos: [LfoSnap], held: SheetHit?, sample: (Int, Double, Double, Int) -> Double) {
     d.reading {
       let c = d.g, X = s.spec
-      c.setFillColor(d.paper(0.97)); c.fill(CGRect(x: 0, y: g.top, width: d.W, height: d.H - g.top))
+      c.setFillColor(d.paper(0.97)); c.fill(CGRect(x: 0, y: g.top, width: d.W, height: g.bottom + 8 - g.top))   // ниже — нижний бар
       c.setStrokeColor(d.ink(0.35)); c.setLineWidth(1)
       c.beginPath(); c.move(to: CGPoint(x: 0, y: g.top + 0.5)); c.addLine(to: CGPoint(x: d.W, y: g.top + 0.5)); c.strokePath()
       c.setFillColor(d.ink(0.3)); c.fill(CGRect(x: d.W / 2 - 18, y: g.top + 5, width: 36, height: 2))

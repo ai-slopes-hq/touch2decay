@@ -100,7 +100,7 @@ final class HostTests: XCTestCase {
   private var dir: URL!
   private var store: Store!
   private var host: Host!
-  private let bar = TopBar(W: 390, top: 47)
+  private let bar = TopBar(W: 390, top: 47, H: 844, safeBot: 34)
   private var ids: [NSObject] = []
 
   override class func setUp() {   // шрифты бандла тестов (как в DrawTests): draw хоста рисует плашку
@@ -139,7 +139,7 @@ final class HostTests: XCTestCase {
     XCTAssertFalse(host.legendOpen); XCTAssertFalse(world.acted, "легенда съела тап")
     host.openPlate()                                           // у фейкового мира веера нет — плашка на scale
     XCTAssertTrue(host.sclOpen)
-    tap(50, 400)
+    tap(50, 300)                                               // выше полосы вкладок — закрыть
     XCTAssertFalse(host.sclOpen); XCTAssertFalse(world.acted, "тап мимо списка миру не идёт")
     tap(195, 400)
     XCTAssertEqual(world.downs, 1); XCTAssertEqual(world.ups, 1)
@@ -154,21 +154,6 @@ final class HostTests: XCTestCase {
     XCTAssertFalse(world.acted, "левый край съедается, как headHit в вебе")
     let e2 = finger(0, 20, 300); host.down(e2); host.up(e2)
     XCTAssertTrue(world.acted, "x ≥ 14 — уже мир")
-  }
-
-  func testVolDrag() {   // в мире — канал мира; мастер на карте — Task 3
-    let v = bar.pos(.vol), f0 = finger(0, v.x, v.y)
-    host.down(f0)
-    var f = f0; f.y = v.y - 110; host.move(f)
-    XCTAssertEqual(host.mix.fader(10), 1, accuracy: 1e-12)
-    XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, pow(10, 6.0 / 20), accuracy: 1e-9)
-    XCTAssertNil(store.loadPrefs(), "prefs — по подъёму")
-    host.up(f)
-    XCTAssertEqual(store.loadPrefs()?.mix?.fader(10) ?? -1, 1, accuracy: 1e-12)
-    // вниз от 1 на 110 pt — на 0.5 ниже
-    f = f0; host.down(f); f.y += 110; host.move(f)
-    XCTAssertEqual(host.mix.fader(10), 0.5, accuracy: 1e-12)
-    XCTAssertFalse(world.acted)
   }
 
   func testPrefsVolClamped() {
@@ -202,14 +187,14 @@ final class HostTests: XCTestCase {
     host.reapply(); answer("w0", now: 1)
     tap(100, 400); answer("w1", now: 2)
     let before = world.restoredN
-    tap(bar.pos(.undo).x, bar.pos(.undo).y)
+    tapTr(.undo)
     XCTAssertEqual(core.restores.last?.w, "w0"); XCTAssertEqual(core.restores.last?.slot, 10)
     XCTAssertEqual(world.restoredN, before + 1)
     XCTAssertFalse(world.acted && world.dices + world.clears > 0)
   }
 
   func testDiceAndClearGoToWorld() {
-    tap(bar.pos(.dice).x, bar.pos(.dice).y); tap(bar.pos(.recycle).x, bar.pos(.recycle).y)
+    tapTr(.dice); tapTr(.recycle)
     XCTAssertEqual(world.dices, 1); XCTAssertEqual(world.clears, 1); XCTAssertEqual(world.downs, 0)
   }
 
@@ -218,7 +203,7 @@ final class HostTests: XCTestCase {
     host = makeHost(views: [w7]); host.go(7)
     core.lfoSnaps = [7, 12, 0].map { LfoSnap(slot: 7, obj: -1, key: $0, base: 0.5, morph: 0, rate: 1, depth: 0.5, u: 0, shape: 0, seed: 0) }
     w7.onClear = { [core, w7] in w7.rowLfoOff?(7); core.calls.append("CLEAR") }
-    tap(bar.pos(.recycle).x, bar.pos(.recycle).y)
+    tapTr(.recycle)
     XCTAssertEqual(core.calls.filter { $0.hasPrefix("lfoOff") || $0 == "CLEAR" }, ["lfoOff:-1:7", "CLEAR"])
   }
 
@@ -376,7 +361,7 @@ final class HostTests: XCTestCase {
   }
 
   // ---------- карта и выходы ----------
-  private let field = MapGeo.field(W: 390, H: 844, top: 47, safeBot: 34)
+  private let field = MapGeo.field(W: 390, H: 844, top: 47, safeBot: 34 + TopBar.barH)
   private func center(_ c: Int, _ r: Int) -> CGPoint { let p = field.rect(col: c, row: r); return CGPoint(x: p.midX, y: p.midY) }
   private func tapCell(_ c: Int, _ r: Int, n: Int = 0) { let p = center(c, r); tap(p.x, p.y, n: n) }
   private func tick(_ t: Double) { host.tick(now: t, dt: 0.016) }
@@ -615,7 +600,7 @@ final class HostTests: XCTestCase {
                      text: { _ in "" }, lfo: SheetLfo(obj: -1, keys: ["a", "b", "c"], shape: 1))
   }
   private func openFx() { world.fx = fxSpec(); tap(bar.pos(.fx).x, bar.pos(.fx).y); host.selectTab(.fx) }   // плашка помнит вкладку — fx выбираем явно
-  private func geo() -> SheetGeo { SheetGeo.make(host.sheet!, W: 390, H: 844, safeBot: 34) }
+  private func geo() -> SheetGeo { SheetGeo.make(host.sheet!, W: 390, H: 844, safeBot: 34 + TopBar.barH) }
   private func rowY(_ k: String) -> CGFloat { let g = geo(); return g.rows.first { $0.k == k }!.y + 23 }
   private func tilde(_ k: String) { tap(geo().lfoX, rowY(k)) }
   private func snap(_ key: Int, base: Double = 0.5, depth: Double = 0.5) -> LfoSnap {
@@ -661,11 +646,11 @@ final class HostTests: XCTestCase {
   }
 
   private func sclGeo() -> PlateGeo.SclGeo {
-    PlateGeo.make(Plate(tab: .scale), W: 390, H: 844, safeBot: 34, rows: 0).scl
+    PlateGeo.make(Plate(tab: .scale), W: 390, H: 844, safeBot: 34 + TopBar.barH, rows: 0).scl
   }
   private func tabTap(_ t: PlateTab, rows: Int = 3) {
     let tabs = Plate.tabs(hasFx: world.fx != nil, onMap: false)
-    let g = PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34, rows: rows, tabs: tabs)
+    let g = PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34 + TopBar.barH, rows: rows, tabs: tabs)
     let r = g.tabs.first { $0.tab == t }!.rect
     tap(r.midX, r.midY)
   }
@@ -673,10 +658,9 @@ final class HostTests: XCTestCase {
   func testPlateRemembersLastTab() {
     openFx(); XCTAssertEqual(host.plate?.tab, .fx)
     tabTap(.scale); XCTAssertEqual(host.plate?.tab, .scale); XCTAssertNil(host.sheet, "вкладка scale — без веера")
-    tap(bar.pos(.fx).x, bar.pos(.fx).y); XCTAssertNil(host.plate)
-    tap(bar.pos(.fx).x, bar.pos(.fx).y)
-    XCTAssertEqual(host.plate?.tab, .scale, "открылась на вкладке, где закрыли")
-    tabTap(.fx); XCTAssertNotNil(host.sheet)
+    tap(bar.pos(.fx).x, bar.pos(.fx).y); XCTAssertEqual(host.plate?.tab, .fx, "кнопка fx при плашке переключает на fx")
+    tap(bar.pos(.fx).x, bar.pos(.fx).y); XCTAssertNil(host.plate, "повторный тап закрывает")
+    host.openPlate(); XCTAssertEqual(host.plate?.tab, .fx, "openPlate открывает на вкладке, где закрыли")
   }
 
   func testTouchesDoNotReachFieldWhilePlateOpen() {
@@ -696,7 +680,7 @@ final class HostTests: XCTestCase {
 
   // ---------- вкладка mix ----------
   private func openMix() { host.openPlate(); host.selectTab(.mix) }
-  private func mixG() -> PlateGeo { PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34, rows: 0) }
+  private func mixG() -> PlateGeo { PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34 + TopBar.barH, rows: 0) }
   private func mixRowY(_ i: Int, scroll: CGFloat = 0) -> CGFloat { mixG().top + 8 + CGFloat(i) * Mixer.rowH + Mixer.rowH / 2 - scroll }
   private func drag(_ x: CGFloat, _ y: CGFloat, dx: CGFloat, dy: CGFloat) {
     let f = finger(0, x, y); host.down(f); var m = f; m.x += dx; m.y += dy; m.moved = true; host.move(m); host.up(m)
@@ -745,7 +729,7 @@ final class HostTests: XCTestCase {
   // ---------- вкладка sys ----------
   private func sysTap(_ i: Int) {
     host.openPlate(); host.selectTab(.sys)
-    let g = PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34, rows: 0)
+    let g = PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34 + TopBar.barH, rows: 0)
     tap(200, g.top + 8 + CGFloat(i) * PlateGeo.itemH + 20)
   }
   func testSysStableToggles() {
@@ -959,7 +943,7 @@ final class HostTests: XCTestCase {
   }
 
   // ---------- карта: поле, темп, лад ----------
-  private func mapField() -> Field { MapGeo.field(W: 390, H: 844, top: 47, safeBot: 34) }
+  private func mapField() -> Field { MapGeo.field(W: 390, H: 844, top: 47, safeBot: 34 + TopBar.barH) }
 
 
 
@@ -1002,7 +986,7 @@ final class HostTests: XCTestCase {
     host.go(7)
     a.tw.tempoSet?(133)
     a.tw.sets = []
-    tap(bar.pos(.dice).x, bar.pos(.dice).y)
+    tapTr(.dice)
     XCTAssertEqual(a.dices, 1); XCTAssertEqual(a.tw.sets, [133])
   }
 
@@ -1090,10 +1074,20 @@ final class HostTests: XCTestCase {
 
 
   // ---------- хедер в мире: vol, play, recycle ----------
-  private func vdrag(_ b: Btn, dx: CGFloat = 0, dy: CGFloat = 0, now: Double = 5) {
-    let p = bar.pos(b), f0 = finger(0, p.x, p.y, now: now)
+  // строка вкладки transport: открыть вкладку (если нет) и тапнуть по строке
+  private func tapTr(_ r: Plate.TransportRow, at t: Double = 0) {
+    if host.plate?.tab != .transport { tapBtn(.transport, at: t) }
+    let g = PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34 + TopBar.barH, rows: 0)
+    let f = finger(0, 120, Plate.transportRowY(g, r), now: t + 1)
+    host.down(f); var u = f; u.touchTime = t + 1.1; host.up(u)
+  }
+  // протяжка по фейдеру bpm на dx пунктов
+  private func dragBpm(dx: CGFloat) {
+    if host.plate?.tab != .transport { tapBtn(.transport) }
+    let g = PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34 + TopBar.barH, rows: 0)
+    let y = Plate.transportRowY(g, .bpm), f0 = finger(0, g.mixTx0 + 20, y, now: 5)
     host.down(f0)
-    var f = f0; f.x += dx; f.y += dy; f.moved = true; f.touchTime = now + 0.1; host.move(f)
+    var f = f0; f.x += dx; f.moved = true; f.touchTime = 5.1; host.move(f)
     host.up(f)
   }
   private func tapBtn(_ b: Btn, at t: Double = 0, hold: Double = 0.1) {
@@ -1102,69 +1096,22 @@ final class HostTests: XCTestCase {
     var u = f; u.touchTime = t + hold; host.up(u)
   }
 
-  func testVolDragChangesWorldChannelNotMaster() {
-    let master = host.vol, n = core.vols.count
-    vdrag(.vol, dy: -40)
-    XCTAssertGreaterThan(host.mix.fader(10), Mix.faderDef)
-    XCTAssertEqual(host.vol, master); XCTAssertEqual(core.vols.count, n, "мастер не тронут")
-    XCTAssertGreaterThan(core.faders.last { $0.0 == 10 }!.1, Mix.def.gain(10))
-  }
-
-  func testVolTapOpensNothing() {
-    let n = core.faders.count
-    tapBtn(.vol)
-    XCTAssertFalse(world.acted); XCTAssertNil(host.mix.g[10]); XCTAssertEqual(core.faders.count, n)
-  }
-
-  func testVolWorldChannelPersisted() {
-    vdrag(.vol, dy: -40)
-    XCTAssertEqual(store.loadPrefs()?.mix?.g[10], host.mix.fader(10))
-  }
-
   func testPlayTapTogglesClockForClockWorld() {
     tapBtn(.play); XCTAssertTrue(world.tw.playing)
     tapBtn(.play, at: 1); XCTAssertFalse(world.tw.playing)
     XCTAssertEqual(world.clears, 0)
   }
 
-  func testPlayTapSilencesWorldWithoutClock() {
-    world.hasClock = false
-    let n = core.snaps.count
-    tapBtn(.play)
-    XCTAssertEqual(world.clears, 1)
-    XCTAssertGreaterThan(core.snaps.count, n, "снимок для отмены, как у корзины")
-  }
-
-  func testPlayDragSetsBpmAndDoesNotToggle() {
-    world.tw.bpm = 100; world.tw.playing = true
-    vdrag(.play, dx: 40)
-    XCTAssertGreaterThan(core.masterBpms.last ?? 0, 100); XCTAssertLessThanOrEqual(core.masterBpms.last ?? 0, 200)
-    XCTAssertEqual(world.tw.bpm, core.masterBpms.last)
-    XCTAssertTrue(world.tw.playing, "протяжка не нажимает play")
-  }
-
-  func testPlayDragClampsToRange() {
-    world.tw.bpm = 190
-    vdrag(.play, dx: 300)
-    XCTAssertEqual(core.masterBpms.last, 200)
-  }
-
-  func testPlayDragIgnoredWithoutClock() {
-    world.hasClock = false
-    vdrag(.play, dx: 40)
-    XCTAssertTrue(core.masterBpms.isEmpty); XCTAssertEqual(world.clears, 0)
-  }
-
   func testRecycleClearsWorld() {
-    tapBtn(.recycle)
+    tapTr(.recycle)
     XCTAssertEqual(world.clears, 1)
   }
 
   func testBarStateReflectsClockAndChannel() {
     world.tw.playing = true
     let s = host.barState(world)
-    XCTAssertTrue(s.playing); XCTAssertEqual(s.vol, Mix.def.fader(10))
-    XCTAssertTrue(s.enabled.contains(.play)); XCTAssertTrue(s.enabled.contains(.recycle))
+    XCTAssertTrue(s.playing)
+    XCTAssertTrue(s.enabled.contains(.play)); XCTAssertTrue(s.enabled.contains(.transport))
   }
 
   // ---------- хедер на карте: мастер, общие play и recycle, undo recycle, солнце неактивно ----------
@@ -1181,18 +1128,10 @@ final class HostTests: XCTestCase {
   func testMapHeaderEnabledSet() {
     host = mapHost()
     let e = host.mapBarState().enabled
-    XCTAssertEqual(e, [.play, .vol, .recycle, .fx])
-    tapBtn(.recycle)
-    XCTAssertEqual(host.mapBarState().enabled, [.play, .vol, .recycle, .fx, .undo])
+    XCTAssertEqual(e, [.play, .transport, .vol, .fx])
+    tapTr(.recycle)
+    XCTAssertTrue(host.transportState().canUndo)
     XCTAssertEqual(host.mapBarState().title, "Universum")
-  }
-
-  func testMapVolDragChangesMaster() {
-    host = mapHost()
-    let v0 = host.vol, n = core.vols.count
-    vdrag(.vol, dy: -40)
-    XCTAssertGreaterThan(host.vol, v0); XCTAssertGreaterThan(core.vols.count, n)
-    XCTAssertNil(host.mix.g[10]); XCTAssertNil(host.mix.g[11])
   }
 
   func testMapPlayTogglesAllClocks() {
@@ -1203,53 +1142,45 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(world.clears + world2.clears, 0)
   }
 
-  func testMapPlayDragSetsMasterBpmEverywhere() {
-    host = mapHost()
-    vdrag(.play, dx: 40)
-    let b = core.masterBpms.last!
-    XCTAssertGreaterThan(b, 100); XCTAssertEqual(world.tw.bpm, b); XCTAssertEqual(world2.tw.bpm, b)
-    XCTAssertFalse(world.tw.playing, "протяжка не нажимает play")
-  }
-
   func testRecycleAllThenUndoRestoresAllWorlds() {
     host = mapHost()
-    tapBtn(.recycle)
+    tapTr(.recycle)
     XCTAssertEqual(world.clears, 1); XCTAssertEqual(world2.clears, 1)
-    tapBtn(.undo, at: 1)
+    tapTr(.undo, at: 1)
     XCTAssertEqual(core.restores.filter { $0.slot == 10 }.last?.w, "w10"); XCTAssertEqual(core.restores.filter { $0.slot == 11 }.last?.w, "w11")
     XCTAssertEqual(world.restoredN, 1 + 1 /* reapply */ - 1); XCTAssertGreaterThanOrEqual(world2.restoredN, 1)
-    XCTAssertFalse(host.mapBarState().enabled.contains(.undo), "один шаг")
+    XCTAssertFalse(host.transportState().canUndo, "один шаг")
   }
 
   func testRecycleTwiceUndoRestoresOriginals() {
     host = mapHost()
-    tapBtn(.recycle)
+    tapTr(.recycle)
     for sn in core.snaps.suffix(2) { core.queue.append((sn.id, sn.slot, "cleared\(sn.slot)")) }   // ответы на снимки после очистки
     host.tick(now: 2, dt: 0.016)
-    tapBtn(.recycle, at: 2)
-    tapBtn(.undo, at: 3)
+    tapTr(.recycle, at: 2)
+    tapTr(.undo, at: 3)
     XCTAssertNotEqual(core.restores.last { $0.slot == 10 }?.w, "cleared10")   // второй recycle не затирает запас пустыми мирами
   }
 
   func testRecycleRefusedWithoutBases() {
     host = makeHost(views: [world, HWorld(11)])   // reapply не звали — баз нет
-    tapBtn(.recycle)
-    XCTAssertEqual(world.clears, 0); XCTAssertFalse(host.mapBarState().enabled.contains(.undo))
+    tapTr(.recycle)
+    XCTAssertEqual(world.clears, 0); XCTAssertFalse(host.transportState().canUndo)
   }
 
   func testUndoOnMapDisabledWithoutRecycle() {
     host = mapHost()
     let n = core.restores.count
-    tapBtn(.undo)
+    tapTr(.undo)
     XCTAssertEqual(core.restores.count, n)
   }
 
   func testEnteringWorldDropsRecycleUndo() {
     host = mapHost()
-    tapBtn(.recycle)
+    tapTr(.recycle)
     host.goWorld(10)
     host.goMap()
-    XCTAssertFalse(host.mapBarState().enabled.contains(.undo))
+    XCTAssertFalse(host.transportState().canUndo)
   }
 
   func testSunTapDoesNothing() {
@@ -1293,5 +1224,95 @@ final class HostTests: XCTestCase {
     defer { host.toggleMidi() }
     host.reapply()                                           // повторный вызов (смена частоты) не роняет и не выключает часы
     XCTAssertTrue(host.midiClock.on)
+  }
+
+  // ---------- нижний бар: vol → mix, transport ----------
+  func testBarIsAtBottomAndWorldsLieAboveIt() {
+    XCTAssertEqual(bar.pos(.fx).y, 844 - 34 - TopBar.barH / 2)
+  }
+
+  func testVolButtonOpensMixWithVolumeRowSecondInWorld() {
+    tapBtn(.vol)
+    XCTAssertEqual(host.plate?.tab, .mix); XCTAssertEqual(host.plate?.scroll, 0)
+    XCTAssertEqual(Mixer.rows(current: 10).prefix(2).map { $0 }, [.world(10), .volume])
+    tapBtn(.vol, at: 2)
+    XCTAssertNil(host.plate, "повторный тап по vol закрывает плашку")
+  }
+
+  func testMixVolumeRowDragSetsMasterNotChannel() {
+    tapBtn(.vol)
+    let g = PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34 + TopBar.barH, rows: 0)
+    let y = g.top + 8 + Mixer.rowH * 1.5, v0 = host.vol, n = core.vols.count
+    let f0 = finger(0, g.mixTx0 + 40, y, now: 5)
+    host.down(f0)
+    var f = f0; f.x += 60; f.moved = true; f.touchTime = 5.1; host.move(f)
+    host.up(f)
+    XCTAssertGreaterThan(host.vol, v0); XCTAssertGreaterThan(core.vols.count, n)
+    XCTAssertNil(host.mix.g[10], "канал мира не тронут")
+  }
+
+  func testMapVolButtonOpensMixWithVolumeFirst() {
+    host = mapHost()
+    tapBtn(.vol)
+    XCTAssertEqual(host.plate?.tab, .mix)
+    XCTAssertEqual(Mixer.rows(current: nil).first, .volume)
+  }
+
+  func testTransportButtonOpensTabAndBarButtonsSwitchTabs() {
+    tapBtn(.transport)
+    XCTAssertEqual(host.plate?.tab, .transport)
+    tapBtn(.vol, at: 2)
+    XCTAssertEqual(host.plate?.tab, .mix, "кнопка бара при плашке переключает вкладку")
+  }
+
+  func testPlayTapWithoutClockDoesNothing() {
+    world.hasClock = false
+    tapBtn(.play)
+    XCTAssertEqual(world.clears, 0)
+  }
+
+  func testPlayButtonNeverChangesBpm() {
+    world.tw.bpm = 100
+    let p = bar.pos(.play), f0 = finger(0, p.x, p.y, now: 5)
+    host.down(f0); var f = f0; f.x += 80; f.moved = true; host.move(f); host.up(f)
+    XCTAssertTrue(core.masterBpms.isEmpty)
+  }
+
+  func testBpmFaderDragSetsBpm() {
+    world.tw.bpm = 100; world.tw.playing = true
+    dragBpm(dx: 40)
+    XCTAssertGreaterThan(core.masterBpms.last ?? 0, 100); XCTAssertLessThanOrEqual(core.masterBpms.last ?? 0, 200)
+    XCTAssertEqual(world.tw.bpm, core.masterBpms.last)
+    XCTAssertTrue(world.tw.playing)
+  }
+
+  func testBpmFaderClampsToRange() {
+    world.tw.bpm = 190
+    dragBpm(dx: 300)
+    XCTAssertEqual(core.masterBpms.last, 200)
+  }
+
+  func testBpmFaderIgnoredWithoutClock() {
+    world.hasClock = false
+    dragBpm(dx: 40)
+    XCTAssertTrue(core.masterBpms.isEmpty); XCTAssertEqual(world.clears, 0)
+  }
+
+  func testMapBpmFaderSetsMasterEverywhere() {
+    host = mapHost()
+    dragBpm(dx: 40)
+    let b = core.masterBpms.last!
+    XCTAssertGreaterThan(b, 100); XCTAssertEqual(world.tw.bpm, b); XCTAssertEqual(world2.tw.bpm, b)
+    XCTAssertFalse(world.tw.playing)
+  }
+
+  func testTransportPlayRowTogglesClock() {
+    tapTr(.play); XCTAssertTrue(world.tw.playing)
+  }
+
+  func testDiceRowDisabledOnMap() {
+    host = mapHost()
+    tapTr(.dice)
+    XCTAssertEqual(world.dices + world2.dices, 0); XCTAssertFalse(host.transportState().diceOn)
   }
 }

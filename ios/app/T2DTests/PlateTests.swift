@@ -8,12 +8,12 @@ final class PlateTests: XCTestCase {
   }
 
   func testTabsWithoutFxOpenOnScale() {
-    XCTAssertEqual(Plate.tabs(hasFx: false, onMap: false), [.scale, .mix, .sys])
+    XCTAssertEqual(Plate.tabs(hasFx: false, onMap: false), [.transport, .scale, .mix, .sys])
     XCTAssertEqual(Plate.tabs(hasFx: true, onMap: false), PlateTab.allCases)
   }
 
   func testMapTabsExcludeFx() {
-    XCTAssertEqual(Plate.tabs(hasFx: true, onMap: true), [.scale, .mix, .sys])
+    XCTAssertEqual(Plate.tabs(hasFx: true, onMap: true), [.transport, .scale, .mix, .sys])
   }
 
   func testFxGeometryMatchesSheet() {   // содержимое fx стоит там же, где панель Sheet: полоса вкладок — над ней
@@ -34,8 +34,9 @@ final class PlateTests: XCTestCase {
 
   func testTabStripHit() {
     let g = geo(.fx), y = g.stripTop + 20
-    XCTAssertEqual(Plate.hit(g, x: 10, y: y), .tab(.fx))
-    XCTAssertEqual(Plate.hit(g, x: 120, y: y), .tab(.scale))
+    XCTAssertEqual(Plate.hit(g, x: 10, y: y), .tab(.transport))
+    XCTAssertEqual(Plate.hit(g, x: 120, y: y), .tab(.fx))
+    XCTAssertEqual(Plate.hit(g, x: 200, y: y), .tab(.scale))
     XCTAssertEqual(Plate.hit(g, x: 380, y: y), .tab(.sys))
     XCTAssertEqual(Plate.hit(g, x: 100, y: g.top + 5), .content(100, g.top + 5))
   }
@@ -65,5 +66,20 @@ final class PlateTests: XCTestCase {
     XCTAssertEqual(g.bottom - g.top, 16 + 5 * PlateGeo.itemH)
     for (i, r) in Plate.SysRow.allCases.enumerated() { XCTAssertEqual(Plate.sysHit(g, x: 100, y: g.top + 8 + CGFloat(i) * 46 + 23), r) }
     XCTAssertNil(Plate.sysHit(g, x: 100, y: g.top + 2))
+  }
+
+  func testTransportRowsHit() {
+    let g = geo(.transport)
+    for r in Plate.TransportRow.allCases {
+      XCTAssertEqual(Plate.transportHit(g, x: 100, y: Plate.transportRowY(g, r)), r)
+    }
+    XCTAssertNil(Plate.transportHit(g, x: 100, y: g.top))
+    XCTAssertNil(Plate.transportHit(g, x: 100, y: g.bottom + 30))
+    XCTAssertEqual(Plate.TransportRow.allCases, [.play, .bpm, .dice, .undo, .recycle])
+  }
+
+  func testTransportBodyHeight() {
+    let g = geo(.transport)
+    XCTAssertEqual(g.bottom - g.top, 16 + 5 * PlateGeo.itemH)
   }
 }

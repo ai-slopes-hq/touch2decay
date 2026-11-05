@@ -4,11 +4,20 @@ import Foundation
 // плашка с вкладками (fx · scale · mix · sys): каркас, геометрия, попадания, рисование.
 // Содержимое fx — Sheet (его геометрия и касания), scale — список ладов и тоники; mix и sys приходят позже.
 
+enum SclPick: Equatable { case off, scale(Int), root(Int), outside }
+
 enum PlateTab: CaseIterable {
-  case fx, scale, mix, sys
+  case transport, fx, scale, mix, sys
   var label: String {
-    switch self { case .fx: return "fx"; case .scale: return "scale"; case .mix: return "mix"; case .sys: return "sys" }
+    switch self { case .transport: return "transport"; case .fx: return "fx"; case .scale: return "scale"; case .mix: return "mix"; case .sys: return "sys" }
   }
+}
+
+struct TransportState {
+  var playing = false
+  var bpm: Double?                       // nil — у мира нет часов: play и темп погашены
+  var range: ClosedRange<Double> = 40...200
+  var canUndo = false, diceOn = true, recycleOn = true, diceSpin = false
 }
 
 enum PlateHit: Equatable { case tab(PlateTab), content(CGFloat, CGFloat), close, none }
@@ -32,6 +41,20 @@ struct Plate {
   // лад под пальцем в содержимом scale; .outside — не на строке и не на тонике
   // вкладка mix: окно из visibleRows строк; scroll сдвигает список вверх
   static func maxScroll(rows n: Int) -> CGFloat { CGFloat(max(0, n - Mixer.visibleRows)) * Mixer.rowH }
+  // вкладка transport: старт/стоп часов, темп, бросок, отмена, очистка
+  enum TransportRow: CaseIterable { case play, bpm, dice, undo, recycle
+    var label: String {
+      switch self { case .play: return "play"; case .bpm: return "tempo"; case .dice: return "dice"; case .undo: return "undo"; case .recycle: return "clear" }
+    }
+  }
+  static func transportHit(_ g: PlateGeo, x: CGFloat, y: CGFloat) -> TransportRow? {
+    let y0 = g.top + 8, i = Int(floor((y - y0) / itemH))
+    guard y >= y0, TransportRow.allCases.indices.contains(i) else { return nil }
+    return TransportRow.allCases[i]
+  }
+  static func transportRowY(_ g: PlateGeo, _ r: TransportRow) -> CGFloat {
+    g.top + 8 + CGFloat(TransportRow.allCases.firstIndex(of: r) ?? 0) * itemH + itemH / 2
+  }
   // вкладка sys: общий лад, буфер звука, перезапуск, MIDI-часы; общий темп всегда включён — строка неактивна
   enum SysRow: CaseIterable { case scale, stable, restart, midi, tempo
     var label: String {
@@ -85,6 +108,7 @@ struct PlateGeo {
     let n = Scales.labels.count + 1
     let body: CGFloat
     switch p.tab {
+    case .transport: body = 16 + CGFloat(Plate.TransportRow.allCases.count) * itemH
     case .fx: body = 52 + CGFloat(rows) * itemH + extra
     case .scale: body = CGFloat(n) * itemH + 16
     case .mix: body = 16 + CGFloat(Mixer.visibleRows) * Mixer.rowH
@@ -112,7 +136,7 @@ enum PlateDraw {
 
   // fx рисует SheetDraw (панель от g.top); здесь — полоса вкладок и содержимое scale
   static func draw(_ d: Draw, _ p: Plate, _ g: PlateGeo, scl: Scl, mix: Mix = .def, lv: [Float] = [], current: Int? = nil,
-                   link: Link = Link(), audio: AudioPref = AudioPref(), restartK: CGFloat = 0) {
+                   link: Link = Link(), audio: AudioPref = AudioPref(), restartK: CGFloat = 0, tr: TransportState = TransportState(), vol: Double = Vol.def) {
     d.reading {
       let c = d.g
       c.setFillColor(d.paper(0.97)); c.fill(CGRect(x: 0, y: g.stripTop, width: d.W, height: g.top - g.stripTop))
@@ -125,12 +149,62 @@ enum PlateDraw {
         }
       }
       if p.tab == .fx { return }
-      c.setFillColor(d.paper(0.97)); c.fill(CGRect(x: 0, y: g.top, width: d.W, height: d.H - g.top))
+      c.setFillColor(d.paper(0.97)); c.fill(CGRect(x: 0, y: g.top, width: d.W, height: g.bottom + 8 - g.top))   // ниже — нижний бар
       c.setStrokeColor(d.ink(0.35)); c.setLineWidth(1)
       c.beginPath(); c.move(to: CGPoint(x: 0, y: g.top + 0.5)); c.addLine(to: CGPoint(x: d.W, y: g.top + 0.5)); c.strokePath()
+      if p.tab == .transport { drawTransport(d, g, tr) }
       if p.tab == .scale { drawScale(d, g, scl) }
-      if p.tab == .mix { drawMix(d, p, g, mix, lv, current) }
+      if p.tab == .mix { drawMix(d, p, g, mix, lv, current, vol) }
       if p.tab == .sys { drawSys(d, g, link, audio, restartK) }
+    }
+  }
+
+  private static func drawTransport(_ d: Draw, _ g: PlateGeo, _ t: TransportState) {
+    let c = d.g, bx = g.x + g.w - 20
+    for (i, r) in Plate.TransportRow.allCases.enumerated() {
+      let y = Plate.transportRowY(g, r)
+      let on: Bool
+      switch r {
+      case .play: on = t.bpm != nil
+      case .bpm: on = t.bpm != nil
+      case .dice: on = t.diceOn
+      case .undo: on = t.canUndo
+      case .recycle: on = t.recycleOn
+      }
+      d.text(r.label, g.x, y, 15, on ? 0.95 : 0.35)
+      c.setStrokeColor(d.ink(on ? 0.85 : 0.3)); c.setFillColor(d.ink(on ? 0.85 : 0.3)); c.setLineWidth(1.2); c.setLineCap(.round); c.setLineJoin(.round)
+      switch r {
+      case .play:
+        d.ring(bx, y, 12, on ? 0.6 : 0.25, 1.1)
+        if t.playing {
+          c.fill(CGRect(x: bx - 5, y: y - 6, width: 3.5, height: 12)); c.fill(CGRect(x: bx + 1.5, y: y - 6, width: 3.5, height: 12))
+        } else {
+          c.beginPath(); c.move(to: CGPoint(x: bx - 4, y: y - 7)); c.addLine(to: CGPoint(x: bx + 6, y: y)); c.addLine(to: CGPoint(x: bx - 4, y: y + 7)); c.closePath(); c.fillPath()
+        }
+      case .bpm:
+        let bpm = t.bpm ?? 120, k = (bpm - t.range.lowerBound) / (t.range.upperBound - t.range.lowerBound)
+        Mixer.fader(d, g.mixTx0, g.mixTx1, y, min(max(k, 0), 1), 0, on)
+        d.text("\(Int(bpm))", g.mixTx1 + 8, y, 12, on ? 0.7 : 0.3)
+      case .dice:
+        c.saveGState(); c.translateBy(x: bx, y: y); c.rotate(by: 0.18 + (t.diceSpin ? 0.9 : 0))
+        c.addPath(CGPath(roundedRect: CGRect(x: -8, y: -8, width: 16, height: 16), cornerWidth: 3, cornerHeight: 3, transform: nil)); c.strokePath()
+        for (px, py) in [(-3.5, -3.5), (3.5, -3.5), (0, 0), (-3.5, 3.5), (3.5, 3.5)] as [(CGFloat, CGFloat)] { d.dot(px, py, 1.2, on ? 0.85 : 0.3) }
+        c.restoreGState()
+      case .undo:
+        c.beginPath(); c.addArc(center: CGPoint(x: bx + 1, y: y + 1), radius: 7, startAngle: .pi * 1.05, endAngle: .pi * 2.35, clockwise: false); c.strokePath()
+        c.beginPath(); c.move(to: CGPoint(x: bx - 9.5, y: y - 4)); c.addLine(to: CGPoint(x: bx - 6, y: y + 2)); c.addLine(to: CGPoint(x: bx - 1.5, y: y - 2.5)); c.strokePath()
+      case .recycle:
+        c.beginPath()
+        c.move(to: CGPoint(x: bx - 8, y: y - 5)); c.addLine(to: CGPoint(x: bx + 8, y: y - 5))
+        c.move(to: CGPoint(x: bx - 3, y: y - 8)); c.addLine(to: CGPoint(x: bx + 3, y: y - 8))
+        c.move(to: CGPoint(x: bx - 6.5, y: y - 5)); c.addLine(to: CGPoint(x: bx - 5, y: y + 8)); c.addLine(to: CGPoint(x: bx + 5, y: y + 8)); c.addLine(to: CGPoint(x: bx + 6.5, y: y - 5))
+        c.strokePath()
+      }
+      c.setLineCap(.butt)
+      if i > 0 {
+        c.setStrokeColor(d.ink(0.1)); c.setLineWidth(1)
+        c.beginPath(); c.move(to: CGPoint(x: g.x, y: y - Plate.itemH / 2 + 0.5)); c.addLine(to: CGPoint(x: g.x + g.w, y: y - Plate.itemH / 2 + 0.5)); c.strokePath()
+      }
     }
   }
 
@@ -156,7 +230,7 @@ enum PlateDraw {
     }
   }
 
-  private static func drawMix(_ d: Draw, _ p: Plate, _ g: PlateGeo, _ mix: Mix, _ lv: [Float], _ current: Int?) {
+  private static func drawMix(_ d: Draw, _ p: Plate, _ g: PlateGeo, _ mix: Mix, _ lv: [Float], _ current: Int?, _ vol: Double) {
     let c = d.g, keys = Mixer.rows(current: current), y0 = g.top + 8, h = CGFloat(Mixer.visibleRows) * Mixer.rowH
     c.saveGState()
     c.clip(to: CGRect(x: 0, y: y0, width: d.W, height: h))
@@ -175,6 +249,10 @@ enum PlateDraw {
           c.setStrokeColor(d.ink(0.9)); c.beginPath()
           c.move(to: CGPoint(x: g.mixMx - 5.5, y: y + 5.5)); c.addLine(to: CGPoint(x: g.mixMx + 5.5, y: y - 5.5)); c.strokePath()
         } else if lvl > 0.003 { d.dot(g.mixMx, y, 2 + 2.5 * min(max(CGFloat(lvl) * 6, 0), 1), 0.7) }
+      case .volume:
+        d.mapText("volume", g.x, y, 13, 0.95)
+        Mixer.fader(d, g.mixTx0, g.mixTx1, y, vol, 0, true)
+        d.text(Vol.text(vol), g.mixTx1 + 8, y, 11, 0.55)
       case .master(let m):
         d.mapText(m.label, g.x, y, 13, 0.85)
         Mixer.fader(d, g.mixTx0, g.mixTx1, y, mix[m], 0, true)

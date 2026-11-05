@@ -2,14 +2,15 @@ import UIKit
 
 // микшер (вкладка mix плашки): порядок строк и рисование фейдера. Значения держит Host (Mix).
 enum Mixer {
-  enum Key: Hashable { case world(Int), master(MixM) }
+  enum Key: Hashable { case world(Int), volume, master(MixM) }   // volume — мастер-громкость, строка под текущим миром
   static let visibleRows = 6, rowH: CGFloat = 40         // вкладка mix плашки: шесть строк в окне, остальные — прокруткой
 
   // строки вкладки mix: текущий мир первым, остальные по порядку слота, затем мастер
   static func rows(current: Int?) -> [Key] {
     let ws = Worlds.all.map(\.slot).sorted()
     let order = current.map { c in [c] + ws.filter { $0 != c } } ?? ws
-    return order.map { Key.world($0) } + MixM.allCases.map { Key.master($0) }
+    let worlds = order.map { Key.world($0) }, tail = MixM.allCases.map { Key.master($0) }
+    return current == nil ? [.volume] + worlds + tail : [worlds[0], .volume] + worlds.dropFirst() + tail
   }
 
   // положение ручки — база на касании + сдвиг пальца по дорожке, зажато в 0…1

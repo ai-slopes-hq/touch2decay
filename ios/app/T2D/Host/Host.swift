@@ -50,7 +50,7 @@ final class Host {
   private var pending: [LfoKey: Double] = [:]                  // lfoAdd послан, снимок ещё без него: когда послан (с) — не слать снова
   private static let pendingTTL = 0.25                         // дольше — считаем, что кольцо отбросило
 
-  private var bar = TopBar(W: 0, top: 0)
+  private var bar = TopBar(W: 0, top: 0)                    // нижний бар; safeBot хоста — уже с barH (миры, плашка, карта лежат над баром)
   private var W: CGFloat = 0, H: CGFloat = 0, top: CGFloat = 0, safeBot: CGFloat = 0
   private var titleW: CGFloat = 0                              // из последнего draw: нужна попаданию по заголовку
   private var now = 0.0
@@ -59,17 +59,9 @@ final class Host {
   private var diceAt = -1e9                                    // мс: кость крутится 400 мс после броска
 
   // у пальца, начатого на хосте, своя цель до подъёма — миру он не уходит
-  private enum Route { case world(Int), btn(Btn), title, list(PlateGeo), mixRow(Mixer.Key?, Double), sheet(SheetHit), edge, corner, eat }
+  private enum Route { case world(Int), btn(Btn), title, list(PlateGeo), mixRow(Mixer.Key?, Double), tr(Plate.TransportRow, Double), sheet(SheetHit), edge, corner, eat }
   private var routes: [ObjectIdentifier: Route] = [:]
   private var mixF: (id: ObjectIdentifier, mode: Int, scroll0: CGFloat)?   // палец на вкладке mix: 0 — не решил, 1 — фейдер, 2 — прокрутка
-  private var volF: (id: ObjectIdentifier, v0: Double, y0: CGFloat)?
-  private var playF: (id: ObjectIdentifier, bpm0: Double, x0: CGFloat, drag: Bool)?   // play в руках: тап или протяжка вбок (bpm)
-  // vol правит канал текущего мира; без мира (карта, Task 3) — мастер
-  private var volInWorld: Bool { world != nil && !onMap }
-  private var volValue: Double { volInWorld ? mix.fader(world!.slot) : vol }
-  private func setVol(_ v: Double) {
-    if volInWorld, let w = world { mix.g[w.slot] = v; applyMix(); markPrefs() } else { setMasterVol(v) }
-  }
   func setMasterVol(_ v: Double) { vol = v; core.vol(Vol.gain(v)) }
   private var rowF: (id: ObjectIdentifier, key: String, v0: Double)?    // строка плашки в руках: база на момент касания
   private var padDepth: (id: ObjectIdentifier, d: Double)?                                        // последняя посланная глубина пада — для снятия на подъёме
@@ -135,8 +127,8 @@ final class Host {
 
   // top — верхний inset (safe area); строка кнопок и мир считают от него
   func layout(W: CGFloat, H: CGFloat, top: CGFloat, safeBot: CGFloat) {
-    self.W = W; self.H = H; self.top = top; self.safeBot = safeBot
-    bar = TopBar(W: W, top: top)
+    self.W = W; self.H = H; self.top = top; self.safeBot = safeBot + TopBar.barH
+    bar = TopBar(W: W, top: top, H: H, safeBot: safeBot)
     field = MapGeo.field(W: W, H: H, top: top, safeBot: safeBot)
     for v in views.values { v.layout(W: W, H: H, topY: top + 44, safeBot: safeBot) }
   }
@@ -156,8 +148,6 @@ final class Host {
     let r = onMap ? (mapDown(f) ?? .eat) : route(f)
     routes[f.id] = r
     switch r {
-    case .btn(.vol): volF = (f.id, volValue, f.y)
-    case .btn(.play): playF = (f.id, onMap ? (lastBpm ?? Host.masterDefault) : (world?.tempo?.bpm ?? 0), f.x, false)
     case .world(let s): touched.insert(s); views[s]?.down(f)
     case .sheet(let h): sheetDown(h, f)
     default: break
@@ -246,21 +236,7 @@ final class Host {
     switch r {
     case .world(let s): views[s]?.move(f)
     case .sheet(let h): sheetMove(h, f)
-    case .btn(.vol):
-      guard let d = volF, d.id == f.id else { return }
-      setVol(min(max(d.v0 - Double((f.y - d.y0) / Vol.travel), 0), 1))
-    case .btn(.play):
-      guard var d = playF, d.id == f.id, core.grid() == nil else { return }
-      if !d.drag && hypot(f.x - f.x0, f.y - f.y0) > Touch.tapMove { d.drag = true; playF = d }
-      guard d.drag else { return }
-      let raw = (d.bpm0 + Double(f.x - d.x0) / 2).rounded()
-      if onMap {                                           // карта: общий темп всех миров
-        let b = min(max(raw, 40), 200)
-        if b != lastBpm { tempoFrom(slot: -1, b); for case let t? in views.values.map(\.tempo) { t.setBpm(min(max(b, t.tempoRange.lowerBound), t.tempoRange.upperBound)) } }
-      } else if let t = world?.tempo, let w = world {
-        let b = min(max(raw, t.tempoRange.lowerBound), t.tempoRange.upperBound)
-        if b != t.bpm { t.setBpm(b); tempoFrom(slot: w.slot, b) }
-      }
+    case .tr(let r, let v0): if r == .bpm { bpmMove(f, v0) }
     case .mixRow(let k, let v0): mixTabMove(f, k, v0)
     case .edge:
       let dx = f.x - f.x0, dy = f.y - f.y0
@@ -279,9 +255,8 @@ final class Host {
       else if bar.hit(f.x, f.y, titleW: titleW) == .title { legendOpen = true }
     case .list(let g): pick(Plate.sclPick(g, x: f.x, y: f.y))
     case .btn(let b):
-      if b == .vol { volF = nil; savePrefs() }
-      else if b == .play { let dragged = playF?.drag == true; playF = nil; if !dragged, hitsBtn(f, b) { press(b) } }
-      else if hitsBtn(f, b) { press(b) }
+      if hitsBtn(f, b) { press(b) }
+    case .tr(let r, _): if r != .bpm, hypot(f.x - f.x0, f.y - f.y0) <= Touch.tapMove, plate.map({ Plate.transportHit(plateGeo($0), x: f.x, y: f.y) == r }) == true { transportAct(r) }
     case .corner: if world?.cornerHit(f.x, f.y) == true { goMap() }   // на подъёме с повторным попаданием, как кнопки
     case .mixRow: if mixF?.mode == 1 { applyMix(); markPrefs() }; mixF = nil
     case .edge, .eat: break
@@ -293,8 +268,6 @@ final class Host {
   func cancel(_ f: Finger) {
     guard let r = routes.removeValue(forKey: f.id) else { return }
     if case .world(let s) = r { views[s]?.cancel(f) }
-    if case .btn(.vol) = r { volF = nil; savePrefs() }
-    if case .btn(.play) = r { playF = nil }
     if case .sheet = r { releaseSheet(f) }
     if case .mixRow = r { if mixF?.mode == 1 { applyMix(); markPrefs() }; mixF = nil }
     endGesture()
@@ -312,18 +285,16 @@ final class Host {
 
   // ---------- хедер на карте ----------
   private var recycleStash: [(slot: Int, w: String, scl: Scl)]?   // состояния миров до последнего recycle на карте; один шаг отмены
-  private var mapEnabled: Set<Btn> { recycleStash == nil ? [.play, .vol, .recycle, .fx] : [.play, .vol, .recycle, .fx, .undo] }
+  private var mapEnabled: Set<Btn> { [.play, .transport, .vol, .fx] }
   private func hitsBtn(_ f: Finger, _ b: Btn) -> Bool { bar.hit(f.x, f.y, titleW: onMap ? 0 : titleW, enabled: onMap ? mapEnabled : Set(Btn.allCases)) == .btn(b) }
 
   func mapBarState() -> TopBar.State {
-    var st = TopBar.State(title: "Universum", vol: vol, volHeld: volF != nil, scl: scl, sclOpen: false,
-                          canUndo: recycleStash != nil, fxArc: nil, fxHeld: held(.fx),
-                          backHeld: false, diceHeld: false, diceAt: -1e9)
+    var st = TopBar.State(title: "Universum", held: heldBtns)
     st.enabled = mapEnabled
     st.playing = views.values.contains { $0.tempo?.playing == true }
-    if let d = playF, d.drag { st.bpmShown = lastBpm ?? Host.masterDefault }
     return st
   }
+  private var heldBtns: Set<Btn> { Set(Btn.allCases.filter { held($0) }) }
 
   // recycle на карте: очистить все миры. Состояния до очистки — в recycleStash (база отмены каждого мира);
   // нет базы хотя бы у одного — ничего не очищаем, иначе отмена потеряла бы мир
@@ -357,36 +328,84 @@ final class Host {
 
   private func pressMap(_ b: Btn) {
     switch b {
-    case .play:   // общий play: любой мир идёт — остановить все часы, иначе запустить все
-      let on = !views.values.contains { $0.tempo?.playing == true }
-      for v in views.values { v.tempo?.play(on) }
-    case .recycle: recycleAll()
-    case .undo: undoRecycle()
-    case .fx: openPlate()
-    case .vol, .dice, .back: break
+    case .play: transportAct(.play)
+    case .transport: togglePlate(.transport)
+    case .vol: togglePlate(.mix)
+    case .fx: togglePlate(.fx)
+    case .back: break
     }
   }
 
   private func press(_ b: Btn) {
     if onMap { pressMap(b); return }
-    guard let w = world else { return }
     switch b {
-    case .dice: w.dice(); diceAt = now * 1000; syncModelsToMaster()
-    case .recycle: w.clear()
-    case .undo: undoStep()
-    case .fx: openPlate()
     case .back: goMap()
-    case .play:   // тап: часы мира; нет часов — заглушить мир, как корзина (отмена вернёт)
-      if let t = w.tempo { t.play(!t.playing) } else { w.clear() }
-    case .vol: break   // vol — жест, тап ничего не открывает
+    case .play: transportAct(.play)
+    case .transport: togglePlate(.transport)
+    case .vol: togglePlate(.mix)
+    case .fx: togglePlate(.fx)
     }
+  }
+
+  // строки вкладки transport и кнопка play: один путь для карты и мира
+  func transportAct(_ r: Plate.TransportRow) {
+    if onMap {
+      switch r {
+      case .play: let on = !views.values.contains { $0.tempo?.playing == true }; for v in views.values { v.tempo?.play(on) }
+      case .undo: undoRecycle()
+      case .recycle: recycleAll()
+      case .bpm, .dice: break
+      }
+      return
+    }
+    guard let w = world else { return }
+    switch r {
+    case .play: if let t = w.tempo { t.play(!t.playing) }
+    case .dice: w.dice(); diceAt = now * 1000; syncModelsToMaster()
+    case .undo: undoStep()
+    case .recycle: w.clear()
+    case .bpm: break
+    }
+  }
+
+  // темп: фейдер вкладки transport; карта — общий темп всех миров, мир — его диапазон
+  private func bpmMove(_ f: Finger, _ v0: Double) {
+    guard core.grid() == nil, let p = plate else { return }
+    let g = plateGeo(p), dx = Double((f.x - f.x0) / (g.mixTx1 - g.mixTx0))
+    if onMap {
+      let c = min(max((v0 + dx * 160).rounded(), 40), 200)
+      if c != lastBpm { tempoFrom(slot: -1, c); for case let t? in views.values.map(\.tempo) { t.setBpm(min(max(c, t.tempoRange.lowerBound), t.tempoRange.upperBound)) } }
+    } else if let t = world?.tempo, let w = world {
+      let lo = t.tempoRange.lowerBound, hi = t.tempoRange.upperBound
+      let b = min(max((v0 + dx * (hi - lo)).rounded(), lo), hi)
+      if b != t.bpm { t.setBpm(b); tempoFrom(slot: w.slot, b) }
+    }
+  }
+
+  func transportState() -> TransportState {
+    var t = TransportState()
+    t.diceSpin = now * 1000 - diceAt < 400
+    if onMap {
+      t.playing = views.values.contains { $0.tempo?.playing == true }
+      t.bpm = lastBpm ?? Host.masterDefault; t.canUndo = recycleStash != nil; t.diceOn = false
+    } else if let w = world {
+      t.playing = w.tempo?.playing ?? false
+      if let tp = w.tempo { t.bpm = tp.bpm; t.range = tp.tempoRange }
+      t.canUndo = undo.depth(slot: w.slot) > 0
+    }
+    return t
   }
 
   // ---------- плашка с вкладками ----------
   private var plateTabs: [PlateTab] { Plate.tabs(hasFx: world?.fx != nil, onMap: onMap) }
   func openPlate() {
     let t = plateTabs
-    plate = Plate(tab: t.contains(lastTab) ? lastTab : t[0])
+    plate = Plate(tab: t.contains(lastTab) ? lastTab : t.contains(.scale) ? .scale : t[0])
+  }
+  // кнопка бара: вкладка открыта — закрыть; другая — переключить; закрыта — открыть (нет такой вкладки — как lastTab)
+  func togglePlate(_ tab: PlateTab) {
+    if plate?.tab == tab { plate = nil; return }
+    if plateTabs.contains(tab) { plate = Plate(tab: tab) } else if plate == nil { openPlate() } else { plate = nil }
   }
   func selectTab(_ t: PlateTab) { if plateTabs.contains(t), plate?.tab != t { plate = Plate(tab: t) } }
 
@@ -400,6 +419,7 @@ final class Host {
   private func plateRoute(_ f: Finger) -> Route {
     guard let p = plate else { return .eat }
     let g = plateGeo(p)
+    if case .btn(let b)? = bar.hit(f.x, f.y, titleW: 0, enabled: onMap ? mapEnabled : Set(Btn.allCases)), b != .back || !onMap { return .btn(b) }   // кнопки бара работают и при плашке
     switch Plate.hit(g, x: f.x, y: f.y) {
     case .close: plate = nil; return .eat
     case .tab(let t): selectTab(t); return .eat
@@ -408,6 +428,7 @@ final class Host {
       if p.tab == .fx, let s = sheet { return .sheet(sheetHit(s, geo(s), x: f.x, y: f.y, fxBtn: bar.pos(.fx))) }
       if p.tab == .scale { return .list(g) }
       if p.tab == .sys { sysDown(Plate.sysHit(g, x: f.x, y: f.y)); return .eat }
+      if p.tab == .transport { return Plate.transportHit(g, x: f.x, y: f.y).map { .tr($0, onMap ? (lastBpm ?? Host.masterDefault) : (world?.tempo?.bpm ?? 0)) } ?? .eat }
       return p.tab == .mix ? mixTabDown(f, p, g) : .eat
     }
   }
@@ -431,12 +452,12 @@ final class Host {
     case .none: return .mixRow(nil, 0)
     case .fader(let k):
       if let t = mixTap, t.key == k, now - t.t < Touch.dtapMs / 1000 {
-        switch k { case .world(let s): mix.g[s] = nil; case .master(let m): mix[m] = m.def }
+        switch k { case .world(let s): mix.g[s] = nil; case .volume: setMasterVol(Vol.def); case .master(let m): mix[m] = m.def }
         applyMix(); markPrefs(); mixTap = nil; mixF = nil
         return .eat
       }
       mixTap = (k, now)
-      switch k { case .world(let s): return .mixRow(k, mix.fader(s)); case .master(let m): return .mixRow(k, mix[m]) }
+      switch k { case .world(let s): return .mixRow(k, mix.fader(s)); case .volume: return .mixRow(k, vol); case .master(let m): return .mixRow(k, mix[m]) }
     }
   }
 
@@ -449,7 +470,7 @@ final class Host {
     }
     if d.mode == 1, let k {
       let g = plateGeo(p), v = Mixer.slide(v0, dx, span: g.mixTx1 - g.mixTx0)
-      switch k { case .world(let s): mix.g[s] = v; case .master(let m): mix[m] = v }
+      switch k { case .world(let s): mix.g[s] = v; case .volume: setMasterVol(v); case .master(let m): mix[m] = v }
       applyMix()
     } else if d.mode == 2 {
       plate?.scroll = min(max(d.scroll0 - dy, 0), Plate.maxScroll(rows: mixKeys.count))
@@ -700,19 +721,15 @@ final class Host {
   }
 
   func barState(_ w: World) -> TopBar.State {
-    var st = TopBar.State(title: w.title, vol: mix.fader(w.slot), volHeld: volF != nil, scl: scl, sclOpen: false,
-                          canUndo: undo.depth(slot: w.slot) > 0, fxArc: w.fx?.arc?(), fxHeld: fxHeld,
-                          backHeld: held(.back), diceHeld: held(.dice), diceAt: diceAt)
-    st.playing = w.tempo?.playing ?? true
-    st.volDef = Mix.faderDef; st.volScale = (-36, 6); st.volText = Mix.faderText
-    if let d = playF, d.drag, let t = w.tempo { st.bpmShown = t.bpm }
+    var st = TopBar.State(title: w.title, held: heldBtns)
+    st.playing = w.tempo?.playing ?? false
     return st
   }
 
   // карта видна — в режиме .map и в переходе в обе стороны (до конца: снимок мира тает, карточки проявляются)
   private func drawPlate(_ d: Draw, _ p: Plate, _ now: Double) {
     PlateDraw.draw(d, p, plateGeo(p), scl: scl, mix: mix, lv: levels.lv, current: onMap ? nil : world?.slot,
-                   link: link, audio: audioPref, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
+                   link: link, audio: audioPref, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))), tr: transportState(), vol: vol)
   }
 
   func draw(_ d: Draw, now: Double) {

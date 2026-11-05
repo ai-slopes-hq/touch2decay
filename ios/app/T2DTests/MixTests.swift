@@ -57,13 +57,15 @@ final class MixTests: XCTestCase {
     let ws = Worlds.all.map(\.slot).sorted(), cur = ws[3]
     let r = Mixer.rows(current: cur)
     XCTAssertEqual(r.first, .world(cur))
-    XCTAssertEqual(Array(r.prefix(ws.count)), [.world(cur)] + ws.filter { $0 != cur }.map { .world($0) })
+    XCTAssertEqual(r[1], .volume, "мастер-громкость сразу под текущим миром")
+    XCTAssertEqual(Array(r.prefix(ws.count + 1)).filter { $0 != .volume }, [.world(cur)] + ws.filter { $0 != cur }.map { .world($0) })
     XCTAssertEqual(Array(r.suffix(4)), MixM.allCases.map { .master($0) })
   }
 
   func testMixRowsOnMapKeepOrder() {
     let ws = Worlds.all.map(\.slot).sorted()
-    XCTAssertEqual(Array(Mixer.rows(current: nil).prefix(ws.count)), ws.map { .world($0) })
-    XCTAssertEqual(Mixer.rows(current: nil).count, ws.count + 4)
+    XCTAssertEqual(Mixer.rows(current: nil).first, .volume)
+    XCTAssertEqual(Array(Mixer.rows(current: nil).dropFirst().prefix(ws.count)), ws.map { .world($0) })
+    XCTAssertEqual(Mixer.rows(current: nil).count, ws.count + 5)
   }
 }
