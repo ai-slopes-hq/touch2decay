@@ -40,11 +40,14 @@ private final class HCore: HostCore {
   func levels(_ out: inout [Float]) -> Bool { levelReads += 1; for i in out.indices { out[i] = 0 }; return true }
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { sin(2 * .pi * u) }
   func hevents() -> [Double] { [] }
-  func grid() -> MidiGrid? { nil }
+  var gridOn = false                       // внешний MIDI: сетка идёт
+  func grid() -> MidiGrid? { gridOn ? MidiGrid(t0: 0, p: 0.5) : nil }
 }
 
 private final class TW: WorldTempo {
   var bpm = 120.0, playing = false, armed = false
+  var range: ClosedRange<Double> = 40...200
+  var tempoRange: ClosedRange<Double> { range }
   var tempoSet: ((Double) -> Void)?
   var sets: [Double] = []
   func refresh(now: Double) {}
@@ -873,6 +876,41 @@ final class HostTests: XCTestCase {
     a.tw.tempoSet?(133)
     XCTAssertEqual(core.masterBpms, [133])
     XCTAssertEqual(b.tw.sets, [133]); XCTAssertEqual(a.tw.sets, [], "источнику темп не возвращается")
+  }
+
+  func testTempoFromClampsToWorldRangeAndSilentOnMidi() {
+    let a = HWorld(7), b = HWorld(8), c = HWorld(9)
+    b.tw.range = 60...180
+    host = makeHost(views: [a, b, c])
+    a.tw.tempoSet?(45)
+    XCTAssertEqual(b.tw.sets, [60]); XCTAssertEqual(c.tw.sets, [45]); XCTAssertEqual(core.masterBpms, [45])
+    core.gridOn = true
+    a.tw.tempoSet?(150)
+    XCTAssertEqual(b.tw.sets, [60]); XCTAssertEqual(c.tw.sets, [45]); XCTAssertEqual(core.masterBpms, [45], "внешний MIDI: тишина")
+  }
+
+  func testReapplyResendsLastBpmAndSyncsModels() {
+    let a = HWorld(7), b = HWorld(8)
+    b.tw.range = 60...180
+    host = makeHost(views: [a, b])
+    host.reapply()
+    XCTAssertEqual(core.masterBpms, [], "темпа ещё не было — мастер остаётся своим (100)")
+    XCTAssertEqual(a.tw.sets, [100]); XCTAssertEqual(b.tw.sets, [100], "модели показывают мастер")
+    a.tw.tempoSet?(172)
+    core.masterBpms = []; a.tw.sets = []; b.tw.sets = []
+    host.reapply()                                           // init ядра сбросил мастер — шлём последний
+    XCTAssertEqual(core.masterBpms, [172])
+    XCTAssertEqual(a.tw.sets, [172]); XCTAssertEqual(b.tw.sets, [172])
+  }
+
+  func testDiceSyncsModelsToMaster() {
+    let a = HWorld(7)
+    host = makeHost(views: [a])
+    host.go(7)
+    a.tw.tempoSet?(133)
+    a.tw.sets = []
+    tap(bar.pos(.dice).x, bar.pos(.dice).y)
+    XCTAssertEqual(a.dices, 1); XCTAssertEqual(a.tw.sets, [133])
   }
 
   func testNoLinkClockToggle() throws {

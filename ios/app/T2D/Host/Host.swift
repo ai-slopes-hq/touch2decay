@@ -50,6 +50,8 @@ final class Host {
   private var W: CGFloat = 0, H: CGFloat = 0, top: CGFloat = 0, safeBot: CGFloat = 0
   private var titleW: CGFloat = 0                              // из последнего draw: нужна попаданию по заголовку
   private var now = 0.0
+  static let masterDefault = 100.0                             // мастер ядра после init (Host::masterBpm)
+  private var lastBpm: Double?                                 // последний темп, отправленный мастеру: init ядра его стирает
   private var diceAt = -1e9                                    // мс: кость крутится 400 мс после броска
 
   // у пальца, начатого на хосте, своя цель до подъёма — миру он не уходит
@@ -184,10 +186,20 @@ final class Host {
     return nil
   }
 
-  // ручка темпа любого мира → мастер ядра и setBpm у остальных миров с часами (host/tempo.js tempoFrom)
+  // ручка темпа любого мира → мастер ядра и setBpm у остальных миров с часами, каждому в его диапазоне (host/tempo.js tempoFrom).
+  // Внешний MIDI ведёт темп сам, мастер ручной игнорирует — молчим, чтобы модели не показывали неправду
   func tempoFrom(slot: Int, _ bpm: Double) {
+    guard core.grid() == nil else { return }
+    lastBpm = bpm
     core.setMasterBpm(bpm)
-    for (s, v) in views where s != slot { v.tempo?.setBpm(bpm) }
+    for (s, v) in views where s != slot { if let t = v.tempo { t.setBpm(min(max(bpm, t.tempoRange.lowerBound), t.tempoRange.upperBound)) } }
+  }
+
+  // модели ← мастер (только отображение, мастер не трогаем): после reinit ядра, undo и кубика (host/tempo.js syncModelsToMaster)
+  func syncModelsToMaster() {
+    guard core.grid() == nil else { return }
+    let bpm = lastBpm ?? Self.masterDefault
+    for (_, v) in views { if let t = v.tempo { t.setBpm(min(max(bpm, t.tempoRange.lowerBound), t.tempoRange.upperBound)) } }
   }
 
   // микшер в ядро: фейдеры 12 миров и мастер (после каждой правки и при reinit)
@@ -337,7 +349,7 @@ final class Host {
     guard let w = world else { return }
     switch b {
     case .scl: sclOpen = true
-    case .dice: w.dice(); diceAt = now * 1000
+    case .dice: w.dice(); diceAt = now * 1000; syncModelsToMaster()
     case .clr: w.clear()
     case .undo: undoStep()
     case .rev: if let fx = w.fx { sheet = Sheet(spec: fx, slot: w.slot) }
@@ -493,6 +505,7 @@ final class Host {
     let r = undo.undo(slot: w.slot, cur: scl)
     guard r.done else { return }
     w.restored(); pending.removeAll()
+    syncModelsToMaster()
     if let s = r.scl { scl = s; core.scale(s) }
     if let b = undo.last(slot: w.slot) { setScene(w.slot, b.w, b.scl) }   // undo.poll базу после undo не отдаёт
   }
@@ -564,6 +577,8 @@ final class Host {
       if case .world(let slot) = nav.view, let s = perScl[slot] { scl = s } else { scl = prefsScl }
     }
     pending.removeAll()                                      // reinit ядра стирает LFO и без сцены
+    if let b = lastBpm { core.setMasterBpm(b) }              // t2d_app_init сбросил мастер в 100 — вернуть последний
+    syncModelsToMaster()                                     // сцены вернули прежние bpm моделей — показывать мастер
     core.scale(scl)
     core.vol(Vol.gain(vol))
     applyMix()

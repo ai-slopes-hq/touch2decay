@@ -30,8 +30,11 @@ protocol WorldTempo: AnyObject {
   func play(_ on: Bool)
   var playing: Bool { get }
   var armed: Bool { get }                                // есть что играть (остров, пад, шаг, кольцо)
+  var tempoRange: ClosedRange<Double> { get }            // диапазон темпа мира (веб: tempo.min/max); по умолчанию 40…200
   var tempoSet: ((Double) -> Void)? { get set }          // ставит хост: рукой правили темп мира → мастер и остальные миры (host/tempo.js tempoFrom)
 }
+
+extension WorldTempo { var tempoRange: ClosedRange<Double> { 40...200 } }
 
 protocol World: AnyObject {
   var slot: Int { get }

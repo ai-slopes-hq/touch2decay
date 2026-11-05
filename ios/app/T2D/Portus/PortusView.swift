@@ -143,6 +143,7 @@ extension PortusView: WorldTempo {
     _ = mirror.load(mbuf, n: n)
   }
   func refresh(now: Double) { pullMirror(now: now) }
+  var tempoRange: ClosedRange<Double> { 60...180 }
   func setBpm(_ bpm: Double) { send(Act.bpm, 0, [bpm]) }
   func play(_ on: Bool) { send(Act.play, 0, [on ? 1 : 0]) }
   var armed: Bool { (0..<Por.nstep).contains { isle($0).on } }

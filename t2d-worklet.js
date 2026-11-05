@@ -142,7 +142,7 @@ class T2d extends AudioWorkletProcessor {
       this.count = 0;
       const w = {};
       for (const s of this.slots) { w[s] = { mirror: this.nums(x.t2d_mirror(s)), heard: this.heard[s] }; this.heard[s] = []; }
-      this.port.postMessage({ t: 'm', n: this.applied, w, host: this.grid() });
+      this.port.postMessage({ t: 'm', n: this.applied, w, host: this.grid(), mbpm: x.t2d_master_bpm_get() });
     }
     return true;
   }

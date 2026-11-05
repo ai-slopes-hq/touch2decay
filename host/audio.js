@@ -5,6 +5,7 @@ import { startClock } from './clock.js';
 import { clamp } from './util.js';
 import { worlds, nav } from './registry.js';
 import { scl } from './scale.js';
+import { syncModelsToMaster } from './tempo.js';
 
 export let ctx = null, an = null, scopeBuf = null;
 // асимметричный перегруз: смещённый tanh даёт чётные гармоники — ламповая/фузовая грязь, а не просто громче
@@ -65,8 +66,9 @@ export function setCoreVer(v) { coreVer = v; }
 export let core = null;
 // мастер-темп хоста (ядро: Host::masterBpm): помним последний, чтобы новый узел после перезапуска звука получил его сразу
 let masterBpmNow = 0;
-export const masterBpm = () => masterBpmNow;
-export function setMasterBpm(bpm) { if (!(bpm > 0)) return; masterBpmNow = bpm; if (core) core.send({ t: 'master', bpm }); }
+// живой узел отвечает своим значением (k.bpm — из t2d_master_bpm_get в каждом сообщении 'm'), иначе — кэш
+export const masterBpm = () => (core && core.node && core.bpm > 0 ? core.bpm : masterBpmNow);
+export function setMasterBpm(bpm) { if (!(bpm > 0)) return; masterBpmNow = bpm; if (core) { core.bpm = bpm; core.send({ t: 'master', bpm }); } }
 // MIDI-часы живут в ядре (core/sdk/transport.hpp): сетка долей {t0, p} (секунды контекста) — в каждом зеркале и с событиями; события
 // часов (пуск, стоп, темп, доля, launch) — подписчикам onClock (host/midi.js решает, кого запускать). Ядра нет / не готово — сетки нет.
 const clockSubs = [];
@@ -74,7 +76,7 @@ export const onClock = (fn) => { clockSubs.push(fn); };
 export const coreGrid = () => (core && core.grid && core.grid.on && core.grid.p > 0 ? core.grid : null);
 let building = null;                                     // мир, чей build идёт сейчас: его посылы — после его фейдера
 function buildCore(c, masterIn) {
-  const k = { ctx: c, node: null, ready: false, sent: 0, queue: [], subs: [], scale: '', grid: null };
+  const k = { ctx: c, node: null, ready: false, sent: 0, queue: [], subs: [], scale: '', grid: null, bpm: 0 };
   k.ins = REVS.map(() => gainNode(1));                   // сумма посылов по типу → вход узла
   k.ret = gainNode(1); k.ret.connect(masterIn);
   k.dry = Object.fromEntries(SDK_WORLDS.map((s) => [s, gainNode(1)]));
@@ -94,7 +96,7 @@ function buildCore(c, masterIn) {
     node.onprocessorerror = () => console.error('t2d core: the worklet failed');
     node.port.onmessage = (e) => {
       const d = e.data;
-      if (d.t === 'm') { if (d.host) k.grid = d.host; for (const fn of k.subs) fn(d); }
+      if (d.t === 'm') { if (d.host) k.grid = d.host; if (d.mbpm > 0) k.bpm = d.mbpm; for (const fn of k.subs) fn(d); }
       else if (d.t === 'h') { if (d.grid) k.grid = d.grid; if (core === k) for (const fn of clockSubs) { try { fn(d.ev); } catch (err) { console.error('clock:', err); } } }
       else if (d.t === 'ready') k.ready = true;
       else if (d.t === 'err') console.error('t2d core:', d.msg);
@@ -177,12 +179,14 @@ export let restartAt = 0;
 // Снимки миров → новый контекст → миры восстанавливаются из снимков (у мира I снимок — закреплённая сцена фасада модели)
 export function restartAudio() {
   if (!ctx) return;
+  masterBpmNow = masterBpm();                            // узел ещё жив — актуальный темп из ядра (MIDI мог его сдвинуть), а не кэш ручных смен
   const keep = {};
   for (const [n, w] of Object.entries(worlds)) if (w.snapshot) { try { keep[n] = w.snapshot(); } catch (_) { /* мир без снимка */ } }
   const old = ctx;
   build();
   try { old.close(); } catch (_) { /* уже закрыт */ }
   for (const [n, js] of Object.entries(keep)) { try { worlds[n].restore(js); } catch (_) { /* ok */ } }
+  syncModelsToMaster();                                  // снимки вернули прежние bpm моделей — показывать мастер
   for (const [n, w] of Object.entries(worlds)) if (w.enter && (+n === nav.world || w.sounding())) { try { w.enter(); } catch (_) { /* ok */ } }
   if (ctx.state !== 'running') ctx.resume().catch(() => {});
   restartAt = performance.now();
@@ -219,6 +223,7 @@ export function build() {
   syncScale();
   applyMix();
   for (const [n, w] of Object.entries(worlds)) if (w.build) { building = n; try { w.build(ctx, chans[n].in); } finally { building = null; } }
+  syncModelsToMaster();                                  // новый узел ядра — мастер 100 или прежний, модели показывают его
 }
 
 // iOS: звук только после касания; плюс обход переключателя «бесшумно»
