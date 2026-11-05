@@ -267,9 +267,9 @@ final class HorologiumTests: XCTestCase {
     setMirror(on: [2], phi: 0.25, lvl: 0.8)
     let s = view.ringSpec(2)
     XCTAssertEqual(s.title, "circulus IV")
-    XCTAssertEqual(s.rows.map(\.key), ["on", "under", "phi", "lvl", "inst"]); XCTAssertEqual(s.rows.map(\.label), ["sounds", "undertone", "phase", "level", "instrument"])
-    XCTAssertEqual(s.rows.map(\.code), [-1, -1, 9, 10, -1]); XCTAssertEqual(s.lfo?.obj, -1); XCTAssertEqual(s.lfo?.keys, ["phi", "lvl"]); XCTAssertEqual(s.lfo?.shape, 0)
-    XCTAssertEqual(["on", "under", "phi", "lvl", "inst"].map(s.text), ["yes", "4 a turn", "4 / 16", "80%", "click"])
+    XCTAssertEqual(s.rows.map(\.key), ["on", "under", "phi", "lvl", "flt", "inst"]); XCTAssertEqual(s.rows.map(\.label), ["sounds", "undertone", "phase", "level", "filtrum", "instrument"])
+    XCTAssertEqual(s.rows.map(\.code), [-1, -1, 9, 10, 23, -1]); XCTAssertEqual(s.lfo?.obj, -1); XCTAssertEqual(s.lfo?.keys, ["phi", "lvl", "flt"]); XCTAssertEqual(s.lfo?.shape, 0)
+    XCTAssertEqual(["on", "under", "phi", "lvl", "flt", "inst"].map(s.text), ["yes", "4 a turn", "4 / 16", "80%", "off", "click"])
     XCTAssertEqual(s.get("on"), 1); XCTAssertEqual(s.get("phi"), 0.25)
     s.set("under", 0.7)
     XCTAssertEqual([rec.acts[0].kind, rec.acts[0].i], [0, 2]); XCTAssertEqual(rec.acts[0].a, [1, 1])
@@ -277,7 +277,39 @@ final class HorologiumTests: XCTestCase {
     s.set("on", 0.2); XCTAssertEqual(rec.acts[2].a, [0, 0])
     setMirror(on: [2], under: [2], now: 2)
     XCTAssertEqual(view.ringSpec(2).text("under"), "1/4 · 3 a turn")
-    XCTAssertEqual(view.ringSpec(3).text("under"), "5 a turn"); XCTAssertEqual(view.ringSpec(0).rows.map(\.code), [-1, -1, 5, 6, -1])
+    XCTAssertEqual(view.ringSpec(3).text("under"), "5 a turn"); XCTAssertEqual(view.ringSpec(0).rows.map(\.code), [-1, -1, 5, 6, 21, -1])
+  }
+
+  func testFilterText() {
+    XCTAssertEqual(Horo.filterText(0.5), "off"); XCTAssertEqual(Horo.filterText(0.47), "off"); XCTAssertEqual(Horo.filterText(0.53), "off")
+    XCTAssertEqual(Horo.filterText(0), "low 200"); XCTAssertEqual(Horo.filterText(1), "high 8.0 k")
+    XCTAssertEqual(Horo.filterText(0.3), "low 3.8 k"); XCTAssertEqual(Horo.filterText(0.7), "high 175")
+    XCTAssertEqual(Horo.filterText(.nan), "off")
+  }
+  func testRingSheetHasFilterRow() {
+    setMirror(on: [2])
+    let s = view.ringSpec(2)
+    XCTAssertEqual(s.rows.count, 6); XCTAssertEqual(s.rows[4].key, "flt"); XCTAssertEqual(s.rows[5].key, "inst")
+    s.set("flt", 0.2); XCTAssertEqual([rec.acts[0].kind, rec.acts[0].i], [0, 2]); XCTAssertEqual(rec.acts[0].a, [6, 0.2])
+    s.set("inst", 1); XCTAssertEqual(rec.acts[1].a, [4, 7], "индекс inst прежний")
+    s.tap?("inst"); XCTAssertEqual(rec.acts.last?.a, [4, Double((view.mirror.rings[2].inst + 1) % 8)])
+    s.tap?("flt"); XCTAssertEqual(rec.acts.count, 3, "тап по filtrum — ничего")
+  }
+  func testSheetFilterLfoKeys() {
+    for i in 0..<8 {
+      let s = view.ringSpec(i)
+      XCTAssertEqual(s.rows.first { $0.key == "flt" }?.code, 21 + i); XCTAssertTrue(s.lfo!.keys.contains("flt"))
+    }
+  }
+  func testRingSheetFitsScreens() {                         // 6 строк (+ панель LFO) — под верхней строкой на самых тесных экранах
+    for (W, H, sb) in [(390.0, 844.0, 34.0), (375.0, 667.0, 0.0)] {
+      for lfoKey in [nil, "flt"] as [String?] {
+        let sh = Sheet(spec: view.ringSpec(2), slot: HorologiumView.slotN); sh.lfoKey = lfoKey
+        let g = SheetGeo.make(sh, W: CGFloat(W), H: CGFloat(H), safeBot: CGFloat(sb))
+        XCTAssertEqual(g.rows.count, 6); XCTAssertGreaterThan(g.top, 70, "\(W)x\(H) lfo \(lfoKey ?? "-")")
+        XCTAssertLessThanOrEqual(g.rows.last!.y + g.rows.last!.h, g.lfoTop)
+      }
+    }
   }
 
   func testRingSheetInstrument() {

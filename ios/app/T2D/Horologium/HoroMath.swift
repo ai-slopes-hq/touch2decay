@@ -66,6 +66,14 @@ enum Horo {
     return v == v.rounded() ? String(Int(v)) : "\(v)"
   }
 
+  // подпись фильтра кольца: мёртвая зона 0.47…0.53 — off; ниже lowpass 20 кГц→200 Гц, выше highpass 20 Гц→8 кГц (как в ядре)
+  static func filterText(_ flt: Double) -> String {
+    guard flt.isFinite, flt < 0.47 || flt > 0.53 else { return "off" }
+    let f = flt < 0.5 ? 20000 * pow(0.01, (0.47 - max(0, flt)) / 0.47) : 20 * pow(400, (min(1, flt) - 0.53) / 0.47)
+    let hz = Int(f.rounded())
+    return "\(flt < 0.5 ? "low" : "high") \(hz >= 1000 ? String(format: "%.1f k", f / 1000) : String(hz))"
+  }
+
   // множитель кольца: номер или 12/n под унтертоном, подтянутый к равномерной темперации на aequalis (model.js:43)
   static func mOf(_ r: HoroRing, aequalis: Double) -> Double {
     let m = r.under ? 12 / Double(r.n) : Double(r.n)

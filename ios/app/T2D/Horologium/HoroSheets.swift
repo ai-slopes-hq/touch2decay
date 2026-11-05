@@ -3,7 +3,8 @@ import Foundation
 // плашки Horologium: кольцо, ступица и веер FX (view.js:97-115, :251-256); значения — только из зеркала
 extension HorologiumView {
   static let fxKeys = ["aequalis", "materia", "concursus", "chance", "hall"]   // порядок Fx в ядре и код LFO
-  static let ringKeys = ["on", "under", "phi", "lvl", "inst"]                   // порядок RingKey в RING ядра
+  static let ringKeys = ["on", "under", "phi", "lvl", "flt", "inst"]            // порядок строк плашки; индекс в ядре — ringIdx
+  static let ringIdx = ["on": 0, "under": 1, "phi": 2, "lvl": 3, "inst": 4, "flt": 6]   // RingKey ядра (flt = 6, inst остаётся 4)
 
   private func pct(_ v: Double) -> String { "\(v.isFinite ? Int(Horo.clamp(Horo.jsRound(v * 100), -1e6, 1e6)) : 0)%" }
 
@@ -29,9 +30,9 @@ extension HorologiumView {
   }
 
   func ringSpec(_ i: Int) -> SheetSpec {
-    let keys = HorologiumView.ringKeys, labels = ["sounds", "undertone", "phase", "level", "instrument"]
-    let codes = [-1, -1, 5 + 2 * i, 6 + 2 * i, -1]           // LFO: фаза и громкость; sounds / undertone / instrument — без LFO
-    func k(_ key: String) -> Int { keys.firstIndex(of: key) ?? 0 }
+    let keys = HorologiumView.ringKeys, labels = ["sounds", "undertone", "phase", "level", "filtrum", "instrument"]
+    let codes = [-1, -1, 5 + 2 * i, 6 + 2 * i, 21 + i, -1]   // LFO: фаза, громкость и фильтр; sounds / undertone / instrument — без LFO
+    func k(_ key: String) -> Int { HorologiumView.ringIdx[key] ?? 0 }
     return SheetSpec(
       title: "circulus \(Horo.roman[i + 2])", hint: "ring — tap outside to close",
       rows: keys.enumerated().map { SheetRow(key: $1, label: labels[$0], code: codes[$0]) },
@@ -41,6 +42,7 @@ extension HorologiumView {
         case "on": return r.on ? 1 : 0
         case "under": return r.under ? 1 : 0
         case "phi": return r.phi
+        case "flt": return r.flt
         case "inst": return Double(r.inst) / 7
         default: return r.lvl
         }
@@ -55,11 +57,12 @@ extension HorologiumView {
         case "on": return r.on ? "yes" : "no"
         case "under": return r.under ? "1/\(r.n) · \(Horo.num2(12 / Double(r.n))) a turn" : "\(r.n) a turn"
         case "phi": return "\(Horo.rot(r.phi, r.len)) / \(r.len)"
+        case "flt": return Horo.filterText(r.flt)
         case "inst": return Horo.instNames[r.inst]
         default: return pct(r.lvl)
         }
       },
-      lfo: SheetLfo(obj: -1, keys: ["phi", "lvl"], shape: 0),
+      lfo: SheetLfo(obj: -1, keys: ["phi", "lvl", "flt"], shape: 0),
       reset: nil, arc: nil,
       tap: { [unowned self] key in                           // тап по строке instrument — следующий по кругу; прочие строки не трогаем
         guard key == "inst" else { return }
