@@ -38,7 +38,9 @@ void Cymatica::action(int kind, int i, const double* a, int n) {
     case F0: if (n >= 1) plate_.f0(a[0]); break;
     case STRIKE: if (n >= 2) { const double rec = arg(5); plate_.strike(a[0], a[1], arg(2), arg(3), arg(4), !std::isnan(rec) && rec != 0); } break;
     case SEQ: plate_.seq(a, n); break;
-    case LOCK: if (n >= 3) plate_.lock(a[0] != 0, a[1], a[2]); break;
+    case LOCK:                                          // с хостом сетка — всегда clk_->grid (мастер или MIDI): LOCK ничего не меняет; без хоста — как было
+      if (n >= 3) { plate_.lock(a[0] != 0, a[1], a[2]); if (clk_) { lockT0_ = std::nan(""); syncGrid(); } }
+      break;
     case BOW: if (n >= 1) plate_.bow(i, a[0] != 0, arg(1), arg(2), arg(3), arg(4), arg(5)); break;
     case FX: if (n >= 1) hall_ = a[0]; break;
     case STRIKE_AT: if (n >= 2) { Phase ph; ph.valid = plate_.phase(ph.r, ph.m, ph.steps); model_.strikeAt(a[0], a[1], ph); } break;

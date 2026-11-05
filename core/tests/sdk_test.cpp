@@ -4711,6 +4711,51 @@ static void horoLockNoMidi() {
   CHECK(d < 0.02);
 }
 
+static int cymNodesBad(cymatica::Cymatica& w, const sdk::Grid& g, int blocks, int* n, double tol = 2.0 / 48000) {   // шаги пластины мимо узлов g за blocks блоков хоста
+  double hb[256]; int bad = 0;
+  for (int b = 0; b < blocks; b++) {
+    H.process(128);
+    const int m = w.heard(hb, 256);
+    for (int i = 0; i + 4 < m; i += 5) {
+      if (hb[i] != 1) continue;
+      ++*n;
+      const double q = g.p / 4, ph = (hb[i + 3] - g.t0) / q;
+      if (std::fabs(ph - std::round(ph)) * q > tol) bad++;
+    }
+  }
+  return bad;
+}
+
+static void cymaticaLockOverriddenByGrid() {
+  static Scale sc;
+  static cymatica::Cymatica w(sc);
+  H.prepare(48000, 1);
+  w.prepare(48000, 7);
+  H.add(2, &w);
+  const double one[1] = {1}, off[3] = {1, 0, 0}, own[3] = {0, 0.013, 0.3};
+  H.action(2, cymatica::PLAY, 0, one, 1);
+  H.action(2, cymatica::LOCK, 0, off, 3);                                     // веб: LOCK off — мастер главнее
+  for (int b = 0; b < 100; b++) H.process(128);                               // шаг 0 и устоявшийся ход
+  int n = 0;
+  CHECK(cymNodesBad(w, H.clock().grid, 400, &n) == 0 && n > 5);
+  H.action(2, cymatica::LOCK, 0, own, 3);                                     // чужая сетка — тоже мимо
+  n = 0;
+  CHECK(cymNodesBad(w, H.clock().grid, 400, &n) == 0 && n > 5);
+  H.midiMsg(sdk::MidiMsg::BEAT, 0, 120, H.clock().now);                       // внешний MIDI: сетка 0.5 с от метки
+  const double b0 = H.clock().now;
+  while (H.clock().now - b0 < 0.5 - 128 / 48000.0 / 2) H.process(128);
+  H.midiMsg(sdk::MidiMsg::BEAT, 1, 120, H.clock().now);
+  H.process(128);
+  CHECK(H.externalGrid());
+  H.action(2, cymatica::LOCK, 0, off, 3);
+  for (int b = 0; b < 160; b++) H.process(128);
+  n = 0;
+  const sdk::Grid ext = H.clock().grid;
+  const int eb = cymNodesBad(w, ext, 200, &n, 0.001);   // сетку MIDI Follower подтягивает по долям — миллисекунда; свой темп (0.3 с) промахнулся бы на десятки
+  CHECK(eb == 0 && n > 3);
+  CHECK(ext.p > 0.49 && ext.p < 0.51);
+}
+
 static void cymaticaGridNoLock() {
   static Scale sc;
   static cymatica::Cymatica w(sc);
@@ -4918,7 +4963,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appMidiClock(); appMidiTime(); appMidiOverflow(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoFilterMap(); horoFilterAudio(); horoFilterTail(); horoFilterExtremes(); horoModelFltGarbage(); horoLfoFlt(); horoDiceFlt(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); sdkEuclid(); horoOnsets(); horoBackward(); horoBackwardJump(); horoRot(); horoLenSwitch(); horoNonFiniteTempo(); horoConcursus(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); horoRetiredActions(); horoLockNeedsRunOnly(); hostTwoWorldsSamePhase(); hostMasterBpmChange(); horoLockNoMidi(); cymaticaGridNoLock(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoFilterMap(); horoFilterAudio(); horoFilterTail(); horoFilterExtremes(); horoModelFltGarbage(); horoLfoFlt(); horoDiceFlt(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); sdkEuclid(); horoOnsets(); horoBackward(); horoBackwardJump(); horoRot(); horoLenSwitch(); horoNonFiniteTempo(); horoConcursus(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); horoRetiredActions(); horoLockNeedsRunOnly(); hostTwoWorldsSamePhase(); hostMasterBpmChange(); horoLockNoMidi(); cymaticaGridNoLock(); cymaticaLockOverriddenByGrid(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
