@@ -17,7 +17,7 @@ final class HorologiumView: World {
   var rowLfoOff: ((Int) -> Void)?
   // view.js:257-260
   let legend: [LegendRow] = [
-    LegendRow(glyph: .tap, gesture: "tap a ring", does: "it sounds: n strikes a turn, the n-th harmonic"),
+    LegendRow(glyph: .tap, gesture: "tap a ring", does: "it sounds: n of its steps, the n-th harmonic"),
     LegendRow(glyph: .double, gesture: "double tap a ring", does: "undertone 1/n"),
     LegendRow(glyph: .drag, gesture: "drag along a ring", does: "its length"),
     LegendRow(glyph: .hold, gesture: "hold a ring", does: "its sheet"),
@@ -196,7 +196,8 @@ final class HorologiumView: World {
       var d = a - t.a0
       if d > .pi { d -= 2 * .pi }; if d < -.pi { d += 2 * .pi }
       t.turn += d; t.a0 = a; t.ph = true
-      let L = Horo.lenAfter(t.len0, turned: t.turn)
+      let g = Horo.lenGesture(len0: t.len0, turn: t.turn)
+      let L = g.len; t.len0 = g.len0; t.turn = g.turn      // за пределом 1…16 база сдвигается — разворот отзывается сразу
       if L != t.sent { t.sent = L; core.action(Act.ring, t.i, [5, Double(L)], touchTime: f.touchTime) }
     default: break
     }

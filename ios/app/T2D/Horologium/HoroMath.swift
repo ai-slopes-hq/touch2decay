@@ -45,6 +45,17 @@ enum Horo {
     return Int(min(16, max(1, Double(base) + min(32, max(-32, dn)))))
   }
 
+  // жест длины: длина и, если палец ушёл за предел 1…16, новая база (len0, turn = 0) — разворот отзывается сразу
+  static func lenGesture(len0: Int, turn d: Double) -> (len: Int, len0: Int, turn: Double) {
+    let base = min(16, max(1, len0))
+    let L = lenAfter(base, turned: d)
+    guard d.isFinite else { return (L, base, 0) }
+    let dn = min(32, max(-32, (d / (2 * Double.pi / 16) + 0.5).rounded(.down)))
+    let raw = Double(base) + dn
+    if (L == 16 && raw > 16) || (L == 1 && raw < 1) { return (L, L, 0) }
+    return (L, len0, d)
+  }
+
   static func uOfE(_ e: Double) -> Double { clamp(0.9 * log2(e / et), -3, 8) }
   static func eOfU(_ u: Double) -> Double { et * pow(2, u / 0.9) }
 

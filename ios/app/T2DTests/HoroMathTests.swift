@@ -33,6 +33,23 @@ final class HoroMathTests: XCTestCase {
     XCTAssertEqual(Horo.lenAfter(8, turned: .nan), 8); XCTAssertEqual(Horo.lenAfter(8, turned: 1e300), 16)
   }
 
+  func testLenGestureOvershoot() {                         // кружишь за предел 16 — разворот отзывается сразу, без «размотки» лишнего
+    let step = 2 * Double.pi / 16
+    var g = (len0: 16, turn: 0.0)
+    g.turn += 2 * 2 * Double.pi                              // два полных оборота вперёд
+    let a = Horo.lenGesture(len0: g.len0, turn: g.turn)
+    XCTAssertEqual(a.len, 16); g = (a.len0, a.turn)
+    g.turn -= step                                           // один шаг назад
+    XCTAssertEqual(Horo.lenGesture(len0: g.len0, turn: g.turn).len, 15)
+    var h = (len0: 3, turn: -5 * 2 * Double.pi)               // и вниз за предел 1
+    let b = Horo.lenGesture(len0: h.len0, turn: h.turn)
+    XCTAssertEqual(b.len, 1); h = (b.len0, b.turn)
+    h.turn += step
+    XCTAssertEqual(Horo.lenGesture(len0: h.len0, turn: h.turn).len, 2)
+    XCTAssertEqual(Horo.lenGesture(len0: 8, turn: 2.4 * step).len, 10)   // в пределах — без перебазировки
+    XCTAssertEqual(Horo.lenGesture(len0: 8, turn: 2.4 * step).len0, 8)
+  }
+
   func testUOfE() {
     XCTAssertEqual(Horo.uOfE(Horo.et), 0, accuracy: 1e-12)
     XCTAssertEqual(Horo.uOfE(1e-6), -3)

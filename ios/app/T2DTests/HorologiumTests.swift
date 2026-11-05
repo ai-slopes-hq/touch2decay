@@ -431,7 +431,7 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(l.map(\.glyph), [.tap, .double, .drag, .hold, .throw, .drag, .tap, .tap])
     XCTAssertEqual(l.map(\.gesture), ["tap a ring", "double tap a ring", "drag along a ring", "hold a ring", "swing the pendulum",
                                       "drag along the tempus scale", "tap the hub", "tap the sun"])
-    XCTAssertEqual(l.map(\.does), ["it sounds: n strikes a turn, the n-th harmonic", "undertone 1/n", "its length", "its sheet",
+    XCTAssertEqual(l.map(\.does), ["it sounds: n of its steps, the n-th harmonic", "undertone 1/n", "its length", "its sheet",
                                    "by hand — it ticks · throw — faster · over the top — a chord · catch — stop",
                                    "speed: rhythm … tone · double tap — back to tempo", "run / stop · hold — tempo", "map of worlds"])
     XCTAssertEqual(view.title, "Horologium"); XCTAssertEqual(view.sub, "numeri · horae")

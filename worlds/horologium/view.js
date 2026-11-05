@@ -255,7 +255,7 @@ export function createView(T, model, engine) {
     lfo: { keys: ['aequalis', 'materia', 'concursus', 'chance', 'hall'], shapes: 'random' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => model.loadFx(o),
   };
-  const legend = [['tap', 'tap a ring', 'it sounds: n strikes a turn, the n-th harmonic'], ['double', 'double tap a ring', 'undertone 1/n'], ['drag', 'drag along a ring', 'its phase'],
+  const legend = [['tap', 'tap a ring', 'it sounds: n of its steps, the n-th harmonic'], ['double', 'double tap a ring', 'undertone 1/n'], ['drag', 'drag along a ring', 'its phase'],
     ['hold', 'hold a ring', 'its sheet'], ['throw', 'swing the pendulum', 'by hand — it ticks · throw — faster · over the top — a chord · catch — stop'],
     ['drag', 'drag along the tempus scale', 'speed: rhythm … tone · double tap — back to tempo'], ['tap', 'tap the hub', 'run / stop · hold — tempo'], ['tap', 'tap the sun', 'map of worlds']];
   const corner = { hit: (f) => { const G = G0(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} };   // солнце — карта
