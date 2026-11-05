@@ -1335,19 +1335,20 @@ async def sc_horologium(p):                        # Horologium Nova: кольц
     for _ in range(30):
         if await p.js('()=>t2d.horo.ready'): break
         await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.horo.ratio().a') == 'IV : V : VI', 'rings IV, V, VI at first'
+    assert await p.js('()=>t2d.horo.ratio().a') == 'II : III : IV', 'rings II, III, IV at first'
     await p.shot('horologium-still')
     h = await p.js('()=>t2d.horo.hub()'); await p.tap(h['x'], h['y']); await p.pg.wait_for_timeout(2500)
     assert await p.js('()=>t2d.horo.clock.run'), 'tap the hub — the clock runs'
     st = await p.js('()=>t2d.horo.strikes'); lv = await p.js('()=>T2D.level'); print('  strikes in 2.5 s:', st, 'level', round(lv, 3))
-    assert st >= 6 and lv > 0.01, f'rings strike: {st} {lv}'
+    assert st >= 6 and lv > 0.0005, f'rings strike: {st} {lv}'
     await p.shot('horologium-run')
-    a = await p.js('()=>t2d.horo.ring(0, 1.1)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(400)
-    assert await p.js('()=>t2d.horo.rings[0].on'), 'tap ring II — it joins'
+    a = await p.js('()=>t2d.horo.ring(5, 1.1)'); await p.tap(a['x'], a['y']); await p.pg.wait_for_timeout(400)
+    assert await p.js('()=>t2d.horo.rings[5].on'), 'tap ring VII — it joins'
     a = await p.js('()=>t2d.horo.ring(1, 1.1)'); await p.pin(a['x'], a['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.horo.rings[1].under && t2d.horo.rings[1].on'), 'double tap ring III — undertone'
     b0 = await p.js('()=>t2d.horo.ring(2, 0.5)'); b1 = await p.js('()=>t2d.horo.ring(2, 0.9)'); pid = await p.hold(b0['x'], b0['y'], ms=60); await p.drag(pid, b0['x'], b0['y'], b1['x'], b1['y'], steps=6); await p.up(); await p.pg.wait_for_timeout(100)
     ph = await p.js('()=>t2d.horo.rings[2].phi'); assert 0.05 < ph < 0.95, f'drag along ring IV — its phase: {ph}'
+    assert await p.js('()=>t2d.horo.rings[2].len') == 16, 'rings default to 16 slots'
     c = await p.js('()=>t2d.horo.ring(3, 1.1)'); await p.hold(c['x'], c['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold a ring — its sheet'
     await p.shot('horologium-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)

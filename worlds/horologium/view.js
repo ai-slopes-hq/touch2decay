@@ -77,7 +77,7 @@ export function createView(T, model, engine) {
     }
     if (t.kind === 'ring' && t.moved) {                   // вдоль кольца — фаза
       const a = Math.atan2(f.x - G.cx, -(f.y - G.cy)); let d = a - t.a0; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU;
-      model.setPhase(t.i, ((t.phi0 - d / TAU) % 1 + 1) % 1); t.a0 = a; t.phi0 = r.phi; t.ph = true;
+      model.setPhase(t.i, ((t.phi0 - d / TAU) % 1 + 1) % 1); t.a0 = a; t.phi0 = rings[t.i].phi; t.ph = true;
     }
   }
   function up(f) {
