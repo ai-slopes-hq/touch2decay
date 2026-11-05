@@ -42,7 +42,7 @@
 | VI | Paradisus | `worlds/paradisus/` | в архиве |
 | VII | Monochordum | ядро, слот 7 | |
 | VIII | Oceanus | ядро, слот 8 | |
-| IX | Horologium (Nova) | ядро, слот 9 | ударные (04.11, на iPhone не проверено; `docs/worlds/horologium.md`) |
+| IX | Horologium (Nova) | ядро, слот 9 | ударные, кольца по Евклиду, длина кольца (05.11, на iPhone не проверено; `docs/worlds/horologium.md`) |
 | X | Firmamentum | ядро, слот 10 | образец model / engine / view |
 | XI | Tria corpora | ядро, слот 11 | |
 | XII | Arcadia | ядро, слот 12 | |
