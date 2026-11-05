@@ -21,7 +21,7 @@ namespace cymatica {
 //   F0     a = [hz]
 //   STRIKE a = [x, y, hz, vel, hard, rec]       — NaN в hz / vel / hard: по умолчанию (f0, 1, 0.5)
 //   SEQ    a = SEQ_N чисел, см. plate.hpp
-//   LOCK   a = [off, t0, p]                     — t0 во времени ядра, секунды
+//   LOCK   a = [off, t0, p]                     — t0 во времени ядра, секунды; хост-мир сетку берёт сам из часов (clk_->grid), LOCK не нужен
 //   BOW    i = id, a = [on, x, y, exciter, pressure, amp]   — NaN: как было
 //   FX     a = [hall]                           — посыл в зал
 // Уровень модели (касания и ручки; имена — как у методов model.js), модель сама шлёт в пластину:
@@ -57,6 +57,7 @@ class Cymatica : public sdk::World, private Sink {
   void prepare(double sr, uint32_t seed) override;
   void action(int kind, int i, const double* a, int n) override;
   void process(const sdk::Out& out, int n) override;
+  void attach(const sdk::Clock* c) override { clk_ = c; }
   sdk::Rev rev() const override { return sdk::Rev::plate; }
   int mirror(double* buf, int cap) const override;
   int heard(double* buf, int cap) override;
@@ -68,6 +69,7 @@ class Cymatica : public sdk::World, private Sink {
   const Model& model() const { return model_; }
 
  private:
+  void syncGrid();
   void seq(const double* a) override { plate_.seq(a, SEQ_N); }
   void f0(double hz) override { plate_.f0(hz); }
   void params(double s, double d, double b) override { plate_.params(s, d, b); }
@@ -97,6 +99,9 @@ class Cymatica : public sdk::World, private Sink {
   int ans_[ANSWER_CAP] = {};
   int nAns_ = 0;
   bool humOn_ = true;
+  const sdk::Clock* clk_ = nullptr;                      // часы хоста: сетка шагов — clk_->grid (мастер или MIDI); без хоста — свой темп
+  bool lockOff_ = true;                                  // что отдали пластине в прошлый раз (lock — только при смене)
+  double lockT0_ = 0, lockP_ = 0;
   double time_ = 0, echoAt_ = -1e9, humAt_ = -1e9, gateC_ = 0;
   long pairSerial_ = 0;
   sdk::OnePole echoSend_;

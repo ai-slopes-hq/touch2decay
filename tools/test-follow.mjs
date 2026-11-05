@@ -19,7 +19,7 @@ const fakeCtx = (starts, rec) => {
 // Natura и Portus ставят шаги в ядре — core/tests/sdk_test.cpp (naturaWorld, portusWorld); Monochordum — tools/test-mono-core.mjs
 
 // ---------- Cymatica: сетка уходит в ядро раньше узора (пуск встаёт на узел) ----------
-test('cymatica: play sends the lock before the seq message', async () => {
+test('cymatica: play sends the lock before the PLAY message', async () => {
   const sent = [];
   const cym = { model: await import('../worlds/cymatica/model.js'), engine: await import('../worlds/cymatica/engine.js') };
   let grid = null;                                      // сетки при сборке нет — появляется к пуску
@@ -30,7 +30,7 @@ test('cymatica: play sends the lock before the seq message', async () => {
   model.listen(engine.on);
   engine.build(fakeCtx([], []), node()); engine.start();
   sent.length = 0; grid = { t0: 1, p: 0.5 }; model.play(true);
-  const LOCK = 4, SEQ = 3;                              // коды action — worlds/cymatica/bridge.js
+  const LOCK = 4, SEQ = 8;                              // коды action — worlds/cymatica/bridge.js
   const i = sent.findIndex((m) => m.t === 'action' && m.kind === LOCK), j = sent.findIndex((m) => m.t === 'action' && m.kind === SEQ);
   assert.ok(i >= 0 && j >= 0 && i < j, `lock at ${i}, seq at ${j}`);
   assert.deepEqual(sent[i].abs, [1]);                   // t0 — во времени контекста: worklet переведёт во время ядра

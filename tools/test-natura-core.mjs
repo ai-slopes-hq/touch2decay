@@ -34,6 +34,7 @@ for (const [name, [S, acts]] of Object.entries(CASES)) {
     const k = loadT2d();
     k.init(SR, 1);
     k.action(SLOT, ACT.STATE, 0, st);
+    k.masterBpm(st[0]);                                  // шаги идут по сетке мастера; нативный мир — по своему темпу: темп мастера = темп сцены
     k.action(SLOT, ACT.PLAY, 0, [1]);
     let worst = 0, peak = 0, sendE = 0, a = 0;
     const played = [], notes = [];

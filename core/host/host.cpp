@@ -38,6 +38,7 @@ void Host::prepare(double sr, uint32_t seed) {
   rng_ = sdk::Rng(0x51F0u);
   morphClassic_ = sdk::WaveMorph(sdk::WaveMorph::CLASSIC);
   morphRandom_ = sdk::WaveMorph(sdk::WaveMorph::RANDOM);
+  pickGrid();                                           // сетка мастера есть сразу, не после первого блока
 }
 
 void Host::add(int slot, sdk::World* w) {

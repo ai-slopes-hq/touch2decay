@@ -12,6 +12,9 @@ export function createModel(opts = {}) {
   const steps = [], answers = [];
   const m = sdkFacade(facade, SLOT, ACTIONS, { ...opts, chunk: (core) => { const h = core.heard(SLOT); if (h.length) { steps.push(...parseHeard([h])); answers.push(...parseAnswers([h])); } } });
   m.rebind(opts.seed ?? 1);                      // как engine.build: сцена фасада — в узел ядра целиком (иначе у пластины умолчания 0.66 вместо 2/7)
+  const setBpm = m.setBpm;                       // без MIDI шаги идут по сетке мастера: темп узора — и темп мастера (в приложении их связывает хост)
+  m.core.masterBpm(m.state.seq.bpm);
+  m.setBpm = (b) => { m.core.masterBpm(b); return setBpm(b); };
   m.steps = steps; m.answers = answers;
   m.coreModel = () => parseModel(m.mirror());    // модель из зеркала ядра
   m.coreSnapshot = () => m.core.snapshot(SLOT);  // снимок модели ядра (JSON)

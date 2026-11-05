@@ -63,9 +63,11 @@ for (const name of Object.keys(SCENARIOS)) {
 
 // t2d.wasm: слот 2 (хост + ядро в одном модуле) — сухой выход и услышанные шаги против эталона
 const HAS_WASM = existsSync(WASM) && readFileSync(WASM).length > 0 && (() => { const c = loadT2d(); c.init(SR, SEED); return c.mirror(SLOT).length > 0; })();   // старый t2d.wasm — без слота 2
+const OWN_CLOCK = new Set(['tempo', 'lock', 'lockStart', 'all']);
 for (const name of Object.keys(SCENARIOS)) {
   test(`t2d.wasm matches the reference: ${name}`, (t) => {
     if (!HAS_WASM) return t.skip('t2d.wasm is not built — core/build.sh');
+    if (OWN_CLOCK.has(name)) return t.skip('своё время пластины (смена темпа на ходу, явный lock): в t2d.wasm шаги идут по сетке мастера — пластину без хоста сверяет render-cli выше');
     const r = playRef(SCENARIOS[name]), c = playCore(SCENARIOS[name]);
     same(c.L, r.L, `${name} L`); same(c.R, r.R, `${name} R`);
     assert.equal(c.steps.length, r.steps.length, `${name}: step count`);

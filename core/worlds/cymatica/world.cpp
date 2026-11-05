@@ -11,6 +11,7 @@ void Cymatica::prepare(double sr, uint32_t seed) {
   model_.reset(seed + 1);                               // ГСЧ модели (луна random) — своё, у пластины (шанс удара, шум смычка) — зерно мира
   nAns_ = 0;
   humOn_ = true;
+  lockOff_ = true; lockT0_ = lockP_ = 0;
   time_ = 0; echoAt_ = -1e9; humAt_ = -1e9; pairSerial_ = 0;
   gateC_ = 1 - std::exp(-1 / (0.01 * sr_));
   echoSend_ = sdk::OnePole();
@@ -21,7 +22,16 @@ void Cymatica::prepare(double sr, uint32_t seed) {
   sendC_ = 1 - std::exp(-1 / (SEND_TAU * sr_));
 }
 
+// сетка шагов пластины — из часов хоста (мастер или MIDI); без хоста или без сетки — свой темп. Пластине — только при смене
+void Cymatica::syncGrid() {
+  const bool off = !(clk_ && clk_->grid.on && clk_->grid.p > 0);
+  const double g0 = off ? 0 : clk_->grid.t0, gp = off ? 0 : clk_->grid.p;
+  if (off == lockOff_ && g0 == lockT0_ && gp == lockP_) return;
+  plate_.lock(off, g0, gp); lockOff_ = off; lockT0_ = g0; lockP_ = gp;
+}
+
 void Cymatica::action(int kind, int i, const double* a, int n) {
+  syncGrid();                                           // пуск (PLAY, SEQ) встаёт уже на сетку, а не на ближайший сэмпл
   const auto arg = [&](int k) { return (a && k < n) ? a[k] : std::nan(""); };
   switch (kind) {
     case PARAMS: plate_.params(arg(0), arg(1), arg(2)); break;
@@ -130,6 +140,7 @@ bool Cymatica::sounding() const {
 void Cymatica::process(const sdk::Out& out, int n) {
   if (n <= 0) return;
   model_.tick(n / sr_);                                 // время модели — звуковой поток: луна и запись игрой идут и без окна
+  syncGrid();
   plate_.process(out.L, out.R, n);
   retime();
   for (Pair& p : pairs_) {

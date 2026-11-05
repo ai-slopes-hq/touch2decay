@@ -411,7 +411,7 @@ test('Cymatica [core]: отзыв резонатора — нота удара �
   m.strikeAt(C.cellCenter(1, 0, n), 0, null); m.tick(0.01);   // кольцо выше: 12 + 12 = 24 — та же нота октавой выше, тоже отзывается
   assert.deepEqual(m.answers.map((a) => a.semi), [12, 24]);
   m.load({ rhythm: { len: 4, steps: [{ vel: 1 }] }, melody: { len: 1, steps: [own] } });   // узор: удар шага по ноте 12 — отзыв от шага
-  m.play(true); m.tick(0.7);
+  m.play(true); m.tick(0.8);                                  // пуск встаёт на узел сетки мастера (до 1 шага ожидания)
   assert.ok(m.answers.length >= 4, `шаги тоже отзываются: ${m.answers.length}`);
 });
 

@@ -98,7 +98,10 @@ export function playCore(steps, seed = SEED) {
   for (const a of PRE) c.action(SLOT, a.kind, a.i, a.a);
   const idOf = bowIds(), L = [], R = [], heard = [];
   for (const s of steps) {
-    if (!s.run) { const a = toAction(s, idOf); if (a) c.action(SLOT, a.kind, a.i, a.a); continue; }
+    if (!s.run) {
+      if (s.t === 'seq' && s.playing && s.bpm > 0) c.masterBpm(s.bpm);   // без MIDI шаги идут по сетке мастера — темп мастера = темп узора эталона
+      const a = toAction(s, idOf); if (a) c.action(SLOT, a.kind, a.i, a.a); continue;
+    }
     for (let b = 0; b < s.run; b++) {
       c.process(BLOCK);
       L.push(Float32Array.from(c.dry(SLOT, 0))); R.push(Float32Array.from(c.dry(SLOT, 1)));

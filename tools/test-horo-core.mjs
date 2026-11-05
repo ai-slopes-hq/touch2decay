@@ -1,5 +1,5 @@
 // Сверка ядра Horologium (core/worlds/horologium → t2d.wasm, слот 9) с эталоном — прежней JS-моделью и прежним worklet колеса
-// (tools/ref, ГСЧ с зерном): колесо (P, F), снимок (без inst). Звук — ударные, у него эталона нет:
+// (tools/ref, ГСЧ с зерном): колесо скорость F (фаза P — пока стоит), снимок (без inst). Звук — ударные, у него эталона нет:
 // его проверяет core/tests/sdk_test.cpp. Плюс замок к такту MIDI и раскладка зеркала.
 //   core/build.sh && node --test tools/test-horo-core.mjs
 import { test } from 'node:test';
@@ -13,7 +13,9 @@ const strip = (js) => { const o = JSON.parse(js); o.r.forEach((q) => delete q.in
 for (const name of Object.keys(ACTS)) {
   test(`sdk: Horologium wheel and snapshot match the reference: ${name}`, () => {
     const r = refPath(ACTS[name]), c = corePath(ACTS[name]);
-    r.wheel.forEach(([P, F], b) => { assert.ok(Math.abs(c.wheel[b][0] - P) < 1e-9 && Math.abs(c.wheel[b][1] - F) < 1e-9, `${name}: wheel block ${b}: ${c.wheel[b]} vs ${[P, F]}`); });
+    // скорость F — как у эталона; фаза P — только пока колесо стоит: при run колесо в хосте всегда привязано к сетке мастера (замок), эталон крутится свободно
+    r.wheel.forEach(([P, F], b) => { assert.ok(Math.abs(c.wheel[b][1] - F) < 1e-9, `${name}: speed block ${b}: ${c.wheel[b][1]} vs ${F}`); });
+    if (name === 'still') r.wheel.forEach(([P], b) => { assert.ok(Math.abs(c.wheel[b][0] - P) < 1e-9, `${name}: phase block ${b}`); });
     assert.deepEqual(strip(c.snapshot), strip(r.snapshot), `${name}: snapshot`);
   });
 }

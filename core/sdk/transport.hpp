@@ -42,6 +42,7 @@ struct MasterClock {
   double bpm = 100, t0 = 0, p = 0.6;
   Grid grid() const { Grid g; g.on = true; g.t0 = t0; g.p = p; return g; }
   void setBpm(double b, double now) {
+    if (!(b > 0)) return;                               // NaN и ≤ 0 — не трогаем (зажим по диапазону — в Host)
     const double n = (now - t0) / p;
     p = 60 / b; bpm = b; t0 = now - n * p;
   }

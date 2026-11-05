@@ -820,6 +820,8 @@ static void masterClockRebase() {
 
 static void masterBpmClamp() {
   H.prepare(48000, 1);
+  CHECK(H.clock().grid.on);                              // сразу после prepare, без блока
+  { sdk::MasterClock m; m.setBpm(std::nan(""), 1); m.setBpm(0, 1); m.setBpm(-5, 1); NEAR(m.p, 0.6, 1e-12); }
   H.masterBpm(10); NEAR(H.masterBpmNow(), 40, 1e-9);
   H.masterBpm(900); NEAR(H.masterBpmNow(), 200, 1e-9);
   H.masterBpm(std::nan("")); NEAR(H.masterBpmNow(), 200, 1e-9);
@@ -830,6 +832,10 @@ static void hostGridSelect() {
   H.time(0); H.process(128);
   CHECK(H.clock().grid.on);
   NEAR(H.clock().grid.p, 0.6, 1e-12);
+  { const double t0a = H.clock().grid.t0, na = (H.clock().now - t0a) / 0.6;
+    H.masterBpm(90);
+    NEAR((H.clock().now - H.clock().grid.t0) / H.clock().grid.p, na, 1e-9);   // фаза: номер доли тот же
+    H.masterBpm(100); H.masterBpm(100); }
   H.masterBpm(90); H.process(128);
   NEAR(H.clock().grid.p, 60.0 / 90, 1e-12);
   H.masterBpm(100);
@@ -842,6 +848,7 @@ static void hostGridSelect() {
   NEAR(H.clock().grid.p, 0.5, 1e-9);
   NEAR(H.masterBpmNow(), 120, 1e-6);
   H.masterBpm(90); H.process(128);                       // MIDI главнее
+  NEAR(H.masterBpmNow(), 120, 1e-6);                     // и masterBpmNow не меняется
   NEAR(H.clock().grid.p, 0.5, 1e-9);
   H.midiMsg(sdk::MidiMsg::STOP, 0, 0, 1.6);
   H.time(1.6); H.process(128);
@@ -3118,7 +3125,9 @@ static void appMidiTime() {
   CHECK(farM2.g[0] == 1 && farM2.g[1] == ref[1]);
   const MidiRun nearP = appMidiRun(950000000ll, false, false, {128}, 2000 * 128, false, true);
   const MidiRun farP2 = appMidiRun(1050000000ll, false, false, {128}, 2000 * 128, false, true);
-  CHECK(nearP.g[0] == 0);                                                 // переведена в будущее: Follower сетку из будущего сразу гасит
+  CHECK(nearP.g[0] == 1);
+  NEAR(nearP.g[2], 0.5, 1e-3);                                            // переведена в будущее: Follower гасит сетку, мастер её перенял и идёт дальше (t0 = метка, не дефолт)
+  NEAR(nearP.g[1], 0.95, 1e-3);
   CHECK(farP2.g[0] == 1);                                                 // не переведена: начало блока
 }
 
@@ -3136,7 +3145,7 @@ static void appMidiOverflow() {
   double buf[16], g[4];
   CHECK(t2d_app_hevents(buf, 16) == 0);                                   // ничего не доехало до ядра
   t2d_app_grid(g);
-  CHECK(g[0] == 0);
+  CHECK(g[0] == 1 && g[1] == 0 && g[2] == 0.6);                           // MIDI не доехало — сетка мастера по умолчанию
   t2d_app_stats(&st);
   CHECK(st.midi_lost == 0);
 }
@@ -4613,6 +4622,122 @@ static void horoLockNeedsRunOnly() {                         // замок к т
   CHECK(w.mirror(m, 72) == 67 && m[10] == 0);
 }
 
+// миры без MIDI идут по сетке мастера: общая фаза, смена темпа на ходу, колесо Горизонта, узлы Cymatica
+static bool onNode(const sdk::Grid& g, double t0b, double blk, int perBeat) {   // в блоке [t0b, t0b+blk] лежит узел сетки
+  const double q = g.p / perBeat, j = std::ceil((t0b - g.t0) / q - 1e-9);
+  return g.t0 + j * q <= t0b + blk + 1e-9;
+}
+
+static void hostTwoWorldsSamePhase() {
+  static Scale sc;
+  static portus::World pw(sc);
+  static natura::World nw(sc);
+  H.prepare(48000, 1);
+  pw.prepare(48000, 5); nw.prepare(48000, 5);
+  H.add(0, &pw); H.add(1, &nw);
+  const auto pact = [&](int kind, int i, std::initializer_list<double> a) { std::vector<double> v(a); pw.action(kind, i, v.data(), static_cast<int>(v.size())); };
+  pact(portus::FX, portus::CHANCE, {1});
+  for (int i = 0; i < 16; i++) pact(portus::PLACE, i, {6, 1});
+  std::vector<double> a = {100, 16};
+  for (double v : {0.4, 0.0, 0.5, 0.4, 0.62, 0.25, 0.08, 0.45, 1.0}) a.push_back(v);
+  for (int i = 0; i < 16; i++) { const double pd[9] = {1, static_cast<double>(i % 8), 0, 0, -1, -1, -1, -1, -1}; for (double v : pd) a.push_back(v); }
+  nw.action(natura::STATE, 0, a.data(), static_cast<int>(a.size()));
+  const double blk = 128 / 48000.0;
+  const double one[1] = {1};
+  int phits = 0, nhits = 0, bad = 0;
+  double hb[128];
+  bool pStarted = false, nStarted = false;
+  for (int b = 0; b < 1500; b++) {
+    const double t0b = H.clock().now;
+    if (!pStarted && t0b >= 0) { pw.action(portus::PLAY, 0, one, 1); pStarted = true; }
+    if (!nStarted && t0b >= 1.3) { nw.action(natura::PLAY, 0, one, 1); nStarted = true; }
+    H.process(128);
+    int m = pw.heard(hb, 64);
+    for (int i = 0; i + 1 < m; i += 2) { phits++; if (!onNode(H.clock().grid, t0b, blk, 4)) bad++; }
+    m = nw.heard(hb, 128);
+    for (int i = 0; i + 1 < m; i += 2) if (hb[i] == 1) { nhits++; if (!onNode(H.clock().grid, t0b, blk, 4)) bad++; }
+  }
+  CHECK(phits > 20 && nhits > 10);
+  CHECK(bad == 0);
+}
+
+static void hostMasterBpmChange() {
+  static Scale sc;
+  static portus::World pw(sc);
+  H.prepare(48000, 1);
+  pw.prepare(48000, 5);
+  H.add(0, &pw);
+  const auto pact = [&](int kind, int i, std::initializer_list<double> a) { std::vector<double> v(a); pw.action(kind, i, v.data(), static_cast<int>(v.size())); };
+  pact(portus::FX, portus::CHANCE, {1});
+  for (int i = 0; i < 16; i++) pact(portus::PLACE, i, {6, 1});
+  pact(portus::PLAY, 0, {1});
+  double hb[64], last = -1;
+  int dup = 0, badInt = 0, n = 0;
+  const double q2 = 60.0 / 140 / 4, blk = 128 / 48000.0;
+  for (int b = 0; b < 1200; b++) {
+    if (b == 400) H.masterBpm(140);
+    const double t0b = H.clock().now;
+    H.process(128);
+    const int m = pw.heard(hb, 64);
+    for (int i = 0; i + 1 < m; i += 2) {
+      if (b > 410 && last >= 0) { n++; const double d = t0b - last; if (d < blk / 2) dup++; else if (std::fabs(d - q2) > 2 * blk) badInt++; }
+      last = t0b;
+    }
+  }
+  CHECK(n > 10);
+  CHECK(dup == 0);
+  CHECK(badInt == 0);
+}
+
+static void horoLockNoMidi() {
+  static Scale sc;
+  static horologium::World w(sc);
+  H.prepare(48000, 1);
+  w.prepare(48000, 7);
+  H.add(0, &w);
+  double m[72];
+  for (int b = 0; b < 40; b++) H.process(128);
+  CHECK(w.mirror(m, 72) == 67 && m[5] == 0 && m[10] == 0);                    // run = 0: колесо стоит
+  const double p0 = m[7];
+  for (int b = 0; b < 40; b++) H.process(128);
+  w.mirror(m, 72); NEAR(m[7], p0, 1e-12);
+  const double on[1] = {1};
+  w.action(horologium::RUN, -1, on, 1);
+  for (int b = 0; b < 400; b++) H.process(128);
+  CHECK(w.mirror(m, 72) == 67 && m[5] == 1 && m[10] == 1);                    // run: замок без MIDI
+  const sdk::Grid g = H.clock().grid;
+  double want = std::fmod((H.clock().now - g.t0) / (4 * g.p), 1.0); if (want < 0) want += 1;
+  double d = std::fabs(m[7] - want); d = std::fmin(d, 1 - d);
+  CHECK(d < 0.02);
+}
+
+static void cymaticaGridNoLock() {
+  static Scale sc;
+  static cymatica::Cymatica w(sc);
+  w.prepare(48000, 7);
+  sdk::Clock clk; clk.sr = 48000; clk.grid.on = true; clk.grid.t0 = 0.07; clk.grid.p = 0.5;
+  w.attach(&clk);                                                             // LOCK не шлём
+  const double one[1] = {1};
+  w.action(cymatica::PLAY, 0, one, 1);
+  float L[128], R[128], sL[128], sR[128];
+  const sdk::Out out{L, R, sL, sR};
+  double hb[256];
+  int n = 0, bad = 0;
+  for (int b = 0; b < 800; b++) {
+    w.process(out, 128);
+    clk.now += 128 / 48000.0;
+    const int m = w.heard(hb, 256);
+    for (int i = 0; i + 4 < m; i += 5) {
+      if (hb[i] != 1) continue;
+      n++;
+      const double q = clk.grid.p / 4, ph = (hb[i + 3] - clk.grid.t0) / q;
+      if (std::fabs(ph - std::round(ph)) * q > 2.0 / 48000) bad++;
+    }
+  }
+  CHECK(n > 10);
+  CHECK(bad == 0);
+}
+
 // ступени лада наружу: таблица host/scale.js
 static void appScaleSteps() {
   const int want[6][7] = {{0, 2, 4, 5, 7, 9, 11}, {0, 2, 3, 5, 7, 8, 10}, {0, 2, 3, 5, 7, 9, 10},
@@ -4793,7 +4918,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appMidiClock(); appMidiTime(); appMidiOverflow(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoFilterMap(); horoFilterAudio(); horoFilterTail(); horoFilterExtremes(); horoModelFltGarbage(); horoLfoFlt(); horoDiceFlt(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); sdkEuclid(); horoOnsets(); horoBackward(); horoBackwardJump(); horoRot(); horoLenSwitch(); horoNonFiniteTempo(); horoConcursus(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); horoRetiredActions(); horoLockNeedsRunOnly(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoFilterMap(); horoFilterAudio(); horoFilterTail(); horoFilterExtremes(); horoModelFltGarbage(); horoLfoFlt(); horoDiceFlt(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); sdkEuclid(); horoOnsets(); horoBackward(); horoBackwardJump(); horoRot(); horoLenSwitch(); horoNonFiniteTempo(); horoConcursus(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); horoRetiredActions(); horoLockNeedsRunOnly(); hostTwoWorldsSamePhase(); hostMasterBpmChange(); horoLockNoMidi(); cymaticaGridNoLock(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

@@ -31,6 +31,7 @@ for (const [name, setup] of Object.entries(CASES)) {
     const k = loadT2d();
     k.init(SR, 1);
     k.restore(SLOT, js);
+    k.masterBpm(JSON.parse(js).bpm ?? 120);             // шаги идут по сетке мастера; нативный мир — по своему темпу
     k.action(SLOT, ACT.PLAY, 0, [1]);
     let worst = 0, peak = 0, sendE = 0;
     const steps = [];

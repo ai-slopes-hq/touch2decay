@@ -38,6 +38,7 @@ for (const name of Object.keys(ACTS)) {
 // ---------- автострам в ядре: шаги по сэмплу, свой темп и сетка MIDI ----------
 function autoRig({ seed = 9, bpm = 120, div = 1, pattern = 2, swing = 0, chance = 1 } = {}) {
   const c = loadT2d(); c.init(SR, seed);
+  c.masterBpm(bpm);                                     // без MIDI шаги идут по сетке мастера
   const par = (k, v) => c.action(SLOT, ACT.autopar, AUTO_KEYS.indexOf(k), [v]);
   par('bpm', bpm); par('div', div); par('pattern', pattern); par('swing', swing);
   c.action(SLOT, ACT.fx, FX_KEYS.indexOf('chance'), [chance]);
