@@ -18,6 +18,7 @@ final class MonochordView: World {
   private(set) lazy var fx: SheetSpec? = fxSpec            // плашка собрана раз: замыкания читают зеркало вживую
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
+  var tempoSet: ((Double) -> Void)?                       // ставит хост (WorldTempo)
   var rowLfoOff: ((Int) -> Void)?
   // view.js:304-306
   let legend: [LegendRow] = [

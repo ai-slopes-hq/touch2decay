@@ -89,22 +89,13 @@ final class TempoTests: XCTestCase {
     XCTAssertTrue(h.playing); XCTAssertEqual(h.bpm, 140)
   }
 
-  func testCymaticaGridSentOnlyOnChange() {
+  // сетку MIDI ядро читает само (clk_->grid): Swift LOCK не шлёт ни при каком шаге часов
+  func testCymaticaDoesNotSendLock() {
     buf = mirror(cym); let c = cymatica()
-    c.grid(nil); XCTAssertEqual(rec.acts.count, 0)                 // ничего не слали — и выключать нечего
-    let g = MidiGrid(t0: 12.5, p: 0.125)
-    c.grid(g); c.grid(g)
-    XCTAssertEqual(rec.acts.count, 1)
-    XCTAssertEqual(rec.acts[0].kind, 4); XCTAssertEqual(rec.acts[0].a, [0, 12.5, 0.125])
-    c.grid(MidiGrid(t0: 13, p: 0.125)); XCTAssertEqual(rec.acts.count, 2)
-    c.grid(nil)
-    XCTAssertEqual(rec.acts.count, 3); XCTAssertEqual(rec.acts[2].a, [1, 0, 0])
-    c.grid(MidiGrid(t0: 1, p: 0)); XCTAssertEqual(rec.acts.count, 3)   // p ≤ 0 — не сетка
-  }
-
-  func testOtherWorldsIgnoreGrid() {
-    buf = mirror(por); portus().grid(MidiGrid(t0: 1, p: 1))
-    XCTAssertEqual(rec.acts.count, 0)
+    let core = FakeCore(); core.gridV = MidiGrid(t0: 12.5, p: 0.125)
+    let clock = MidiClock(core: core, follow: MidiFollow(worlds: { [c] }, here: { c }), worlds: { [c] })
+    clock.step(now: 1); core.gridV = MidiGrid(t0: 13, p: 0.125); clock.step(now: 2); core.gridV = nil; clock.step(now: 3)
+    XCTAssertEqual(rec.acts.filter { $0.kind == Cym.Act.lock }.count, 0)
   }
 
   // фон: кадров нет, своё (оптимистичное) значение протухает по now из refresh

@@ -13,6 +13,7 @@ final class PortusView: World {
   private(set) lazy var fx: SheetSpec? = fxSpec              // веер собран раз: замыкания читают состояние вживую
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
+  var tempoSet: ((Double) -> Void)?                       // ставит хост (WorldTempo)
   var rowLfoOff: ((Int) -> Void)?
   var goMap: (() -> Void)?
   var lfoBase: ((Int, Int) -> Double?)?

@@ -13,6 +13,7 @@ final class NaturaView: World {
   private(set) lazy var fx: SheetSpec? = fxSpec              // веер собран раз: замыкания читают состояние вживую
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
+  var tempoSet: ((Double) -> Void)?                       // ставит хост (WorldTempo)
   var rowLfoOff: ((Int) -> Void)?
   // host/legend.js:25-31
   let legend: [LegendRow] = [

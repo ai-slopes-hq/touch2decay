@@ -1,9 +1,9 @@
 import Foundation
 import QuartzCore
 
-/// Таймер MIDI-часов на главной очереди: раз в 25 мс миры освежают зеркало, сетка ядра идёт мирам,
+/// Таймер MIDI-часов на главной очереди: раз в 25 мс миры освежают зеркало,
 /// события ядра (старт, стоп, темп, бит, launch) — политике MidiFollow.
-/// Порядок шага важен: сетка раньше событий — Cymatica должна получить LOCK до launch (веб: `model.onAct(syncLock)`).
+/// Сетку Cymatica и мастер-темп ядро берёт само (внешний MIDI главнее мастер-сетки).
 final class MidiClock {
   static let period = 0.025
 
@@ -19,14 +19,9 @@ final class MidiClock {
   func step(now: Double) {
     let ws = worlds()
     for w in ws { w.refresh(now: now) }
-    let g = core.grid()
-    for w in ws { w.grid(g) }
     follow.events(core.hevents())
     follow.scan()
   }
-
-  /// После re-init ядра: LOCK в ядре стёрт, а адаптер помнит отправленное — следующий шаг пошлёт сетку заново.
-  func forgetGrid() { for w in worlds() { w.grid(nil) } }
 
   var on: Bool {
     get { timer != nil }
@@ -41,7 +36,6 @@ final class MidiClock {
         timer = t
       } else {
         timer?.cancel(); timer = nil
-        forgetGrid()
         follow.reset()
       }
     }

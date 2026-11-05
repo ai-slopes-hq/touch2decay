@@ -175,7 +175,9 @@ extension NaturaView {
     }
     guard t.moved else { return }
     switch t.kind {
-    case .boat: send(A.setbpm, 0, [Horo.jsRound(Nat.clamp(t.v0 + dx / 2, 40, 200))])
+    case .boat:
+      let b = Horo.jsRound(Nat.clamp(t.v0 + dx / 2, 40, 200))
+      send(A.setbpm, 0, [b]); tempoSet?(b)
     case .bridge:
       let o = geo.onRiver(x, y)
       send(A.len, 0, [Double(min(16, max(2, NatGeo.slotOf(o.t + 0.02) + 1)))])

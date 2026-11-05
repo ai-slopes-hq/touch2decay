@@ -86,7 +86,7 @@ extension PortusView {
     switch t.kind {
     case .ph:
       let b = Horo.jsRound(clamp(t.v0 + (x - t.x0) / 2, 60, 180))
-      if b != bpm { send(A.bpm, 0, [b]) }
+      if b != bpm { send(A.bpm, 0, [b]); tempoSet?(b) }
     case .moon:
       send(A.luna, 0, [clamp(t.v0 + (t.y0 - y) / (G.hor - G.top - G.moon.r * 0.9))])
       send(A.luna, 1, [clamp(t.v1 + (x - t.x0) / (G.Ws * 0.5))])

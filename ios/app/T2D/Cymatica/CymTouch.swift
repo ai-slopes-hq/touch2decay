@@ -178,7 +178,7 @@ extension CymaticaView {
     switch t.kind {
     case .play where mv:                                      // зажал ▶ и ведёшь — темп
       let b = Horo.jsRound(clamp(t.bpm0 + (t.x - t.x0) * 0.5, 40, 200))
-      if b != bpm { send(A.bpm, 0, [b]) }
+      if b != bpm { send(A.bpm, 0, [b]); tempoSet?(b) }
       bpmUntil = now + 1
     case .len:                                                // у каждого кольца своя длина
       let len = Int(Horo.jsRound(clamp(g.slotOf(t.x, t.y) + 0.5, 1, Double(Cym.slots))))

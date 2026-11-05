@@ -36,7 +36,7 @@ final class StoreTests: XCTestCase {
 
   func testPrefsMixRoundtrip() {
     var m = Mix(); m.g[10] = 0.4; m.mute[4] = true; m.lpf = 0.5
-    let p = PrefsFile(vol: 0.6, mix: m, link: Link(clock: true, scale: false), audio: AudioPref(stable: true))
+    let p = PrefsFile(vol: 0.6, mix: m, link: Link(scale: false), audio: AudioPref(stable: true))
     store().savePrefs(p)
     XCTAssertEqual(store().loadPrefs(), p)
   }

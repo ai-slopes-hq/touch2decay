@@ -15,6 +15,7 @@ final class HorologiumView: World {
   private(set) lazy var fx: SheetSpec? = fxSpec            // веер собран раз: замыкания читают зеркало вживую
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?                            // не используются: объектов нет, строки LFO — по кодам
+  var tempoSet: ((Double) -> Void)?                       // ставит хост (WorldTempo)
   var rowLfoOff: ((Int) -> Void)?
   // view.js:257-260
   let legend: [LegendRow] = [

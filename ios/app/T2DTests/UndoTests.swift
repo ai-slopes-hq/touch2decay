@@ -25,6 +25,8 @@ final class FakeCore: HostCore {
   func lfoSnap() -> [LfoSnap] { [] }
   func levels(_ out: inout [Float]) -> Bool { false }
   func lfoSample(shape: Int, morph: Double, u: Double, seed: Int) -> Double { 0 }
+  var masterBpms: [Double] = []
+  func setMasterBpm(_ bpm: Double) -> Bool { masterBpms.append(bpm); return true }
   var ev: [Double] = []; var gridV: MidiGrid?
   func hevents() -> [Double] { defer { ev = [] }; return ev }
   func grid() -> MidiGrid? { gridV }

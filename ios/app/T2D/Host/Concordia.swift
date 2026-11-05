@@ -5,7 +5,7 @@ import UIKit
 enum Settings: Equatable { case off, concordia, mixer }
 
 enum Concordia {
-  enum Key { case clock, scale, stable, restart, mixer }
+  enum Key { case scale, stable, restart, mixer }
   struct Box {
     var x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat
     var rows: [(key: Key, label: String, sub: String, y: CGFloat)]
@@ -13,9 +13,9 @@ enum Concordia {
 
   // settingsBox: под солнцем, но не ниже низа экрана; строки с шагом 44
   static func box(W: CGFloat, H: CGFloat, safeBot: CGFloat, sunY: CGFloat) -> Box {
-    let w = min(260, W - 40), h: CGFloat = 252, x = W / 2 - w / 2, y = min(H - safeBot - h - 10, sunY + 30)
+    let w = min(260, W - 40), h: CGFloat = 208, x = W / 2 - w / 2, y = min(H - safeBot - h - 10, sunY + 30)
     let rows: [(Key, String, String)] = [
-      (.clock, "shared tempo", "one bpm in every sequencer"), (.scale, "shared scale", "one scale in every world"),
+      (.scale, "shared scale", "one scale in every world"),
       (.stable, "stable audio", "larger buffer — for USB interfaces"), (.restart, "restart audio", "after plugging an interface"),
       (.mixer, "mixer", "every world · low-pass, compressor, ceiling")]
     return Box(x: x, y: y, w: w, h: h, rows: rows.enumerated().map { (key: $1.0, label: $1.1, sub: $1.2, y: y + 46 + 44 * CGFloat($0)) })
@@ -39,7 +39,7 @@ enum Concordia {
   }
 
   // restartK — 1 сразу после перезапуска, до 0 за 0.9 с
-  static func draw(_ d: Draw, _ b: Box, link: Link, stable: Bool, midi: Bool = false, restartK: CGFloat) {
+  static func draw(_ d: Draw, _ b: Box, link: Link, stable: Bool, restartK: CGFloat) {
     d.reading {
       let g = d.g
       g.setFillColor(d.paper(0.94)); g.fill(CGRect(x: b.x, y: b.y, width: b.w, height: b.h))
@@ -61,9 +61,9 @@ enum Concordia {
           d.mapText(k > 0 ? "audio restarted" : r.label, b.x + 16, r.y - 6, 15, 0.6 + 0.35 * k); d.mapText(r.sub, b.x + 16, r.y + 10, 11, 0.45)
           restartArrow(d, bx, r.y, k)
         default:
-          let on = r.key == .stable ? stable : (r.key == .clock ? link.clock : link.scale)
+          let on = r.key == .stable ? stable : link.scale
           d.mapText(r.label, b.x + 16, r.y - 6, 15, on ? 0.95 : 0.6)
-          d.mapText(r.key == .clock && midi ? "midi clock" : r.sub, b.x + 16, r.y + 10, 11, 0.45)
+          d.mapText(r.sub, b.x + 16, r.y + 10, 11, 0.45)
           d.ring(bx, r.y, 9, on ? 0.9 : 0.45, 1.1)
           if on { d.dot(bx, r.y, 4.5, 0.9) }
         }

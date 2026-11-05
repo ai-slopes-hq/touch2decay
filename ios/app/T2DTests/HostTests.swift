@@ -20,6 +20,8 @@ private final class HCore: HostCore {
   func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { masters.append([lpf, thr, ratio, ceil]); return true }
   func scale(_ s: Scl) -> Bool { scales.append(s); calls.append("scale"); return true }
   func scaleSteps(_ idx: Int) -> [Int] { webScaleSteps(idx) }
+  var masterBpms: [Double] = []
+  func setMasterBpm(_ bpm: Double) -> Bool { masterBpms.append(bpm); return true }
   func snap(slot: Int, id: Int) -> Bool { snaps.append((slot, id)); return true }
   func restore(slot: Int, _ w: String) -> Bool { restores.append((slot, w)); calls.append("restore:\(w)"); return true }
   func takeSnap() -> (id: Int, slot: Int, w: String)? { queue.isEmpty ? nil : queue.removeFirst() }
@@ -41,6 +43,15 @@ private final class HCore: HostCore {
   func grid() -> MidiGrid? { nil }
 }
 
+private final class TW: WorldTempo {
+  var bpm = 120.0, playing = false, armed = false
+  var tempoSet: ((Double) -> Void)?
+  var sets: [Double] = []
+  func refresh(now: Double) {}
+  func setBpm(_ b: Double) { bpm = b; sets.append(b) }
+  func play(_ on: Bool) { playing = on }
+}
+
 // поддельный мир: считает касания и действия; "угол с картой" — прямоугольник x ≥ 300, y ≥ 700
 private final class HWorld: World {
   let slot: Int
@@ -56,6 +67,8 @@ private final class HWorld: World {
   var goMap: (() -> Void)?
   var lfoBase: ((Int, Int) -> Double?)?
   var onClear: (() -> Void)?
+  let tw = TW()
+  var tempo: WorldTempo? { tw }
   var sets: [(String, Double)] = []
   var downs = 0, moves = 0, ups = 0, cancels = 0, dices = 0, clears = 0, restoredN = 0
   func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat) {}
@@ -230,7 +243,7 @@ final class HostTests: XCTestCase {
 
   // ---------- вход в мир и лад ----------
   private let major3 = Scl(on: true, idx: 0, root: 3)
-  private func link(_ scale: Bool) { store.savePrefs(PrefsFile(vol: 0.5, link: Link(clock: false, scale: scale))) }
+  private func link(_ scale: Bool) { store.savePrefs(PrefsFile(vol: 0.5, link: Link(scale: scale))) }
 
   func testGoWorldCallsEnter() {
     let w = HWorld(10); host = makeHost(views: [w])
@@ -854,14 +867,28 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(host.settings, .concordia); XCTAssertNil(host.nav.anim); XCTAssertNil(host.nav.peek)
   }
 
+  func testSetBpmReachesMaster() {
+    let a = HWorld(7), b = HWorld(8)
+    host = makeHost(views: [a, b])
+    a.tw.tempoSet?(133)
+    XCTAssertEqual(core.masterBpms, [133])
+    XCTAssertEqual(b.tw.sets, [133]); XCTAssertEqual(a.tw.sets, [], "источнику темп не возвращается")
+  }
+
+  func testNoLinkClockToggle() throws {
+    let labels = Concordia.box(W: 390, H: 844, safeBot: 34, sunY: 300).rows.map(\.label)
+    XCTAssertEqual(labels, ["shared scale", "stable audio", "restart audio", "mixer"])
+    XCTAssertFalse(String(decoding: try JSONEncoder().encode(Link()), as: UTF8.self).contains("clock"))
+  }
+
   func testConcordiaToggles() {
     host = makeHost(); tick(1); tap(195, mapField().sy)
-    XCTAssertEqual(host.link, Link(clock: false, scale: true))
-    tapRow(.clock); tapRow(.scale)
-    XCTAssertEqual(host.link, Link(clock: true, scale: false))
+    XCTAssertEqual(host.link, Link(scale: true))
+    tapRow(.scale)
+    XCTAssertEqual(host.link, Link(scale: false))
     XCTAssertEqual(host.settings, .concordia, "строка не закрывает коробку")
     tick(4.2)                                                // автосохранение через 3 с
-    XCTAssertEqual(store.loadPrefs()?.link, Link(clock: true, scale: false))
+    XCTAssertEqual(store.loadPrefs()?.link, Link(scale: false))
   }
 
   func testStableTogglesAudioAndSaves() {
@@ -938,9 +965,9 @@ final class HostTests: XCTestCase {
   }
 
   func testPrefsLoadAppliesLink() {
-    store.savePrefs(PrefsFile(vol: 0.5, mix: nil, link: Link(clock: true, scale: false), audio: AudioPref(stable: true)))
+    store.savePrefs(PrefsFile(vol: 0.5, mix: nil, link: Link(scale: false), audio: AudioPref(stable: true)))
     let h = makeHost()
-    XCTAssertEqual(h.link, Link(clock: true, scale: false)); XCTAssertEqual(h.audioPref, AudioPref(stable: true))
+    XCTAssertEqual(h.link, Link(scale: false)); XCTAssertEqual(h.audioPref, AudioPref(stable: true))
   }
 
   // ---------- микшер: открыт строкой mixer в concordia ----------

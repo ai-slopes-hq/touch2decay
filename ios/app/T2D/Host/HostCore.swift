@@ -14,6 +14,7 @@ protocol HostCore: AnyObject {
   func scaleSteps(_ idx: Int) -> [Int]                                // 7 ступеней лада в полутонах от тоники; [] — нет такого лада
   @discardableResult func fader(slot: Int, g: Double) -> Bool         // линейный коэффициент фейдера слота (ядро сглаживает)
   @discardableResult func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool   // Гц, дБ, N, дБ
+  @discardableResult func setMasterBpm(_ bpm: Double) -> Bool        // темп мастер-сетки ядра 40…200 (MIDI-сетка главнее)
   @discardableResult func snap(slot: Int, id: Int) -> Bool            // запросить снимок мира; готовый заберёт takeSnap
   @discardableResult func restore(slot: Int, _ w: String) -> Bool     // false — отброшено
   func takeSnap() -> (id: Int, slot: Int, w: String)?                 // по одному; nil — нет
@@ -58,6 +59,7 @@ final class AppHostCore: HostCore {
   }
   func fader(slot: Int, g: Double) -> Bool { act(Int32(T2D_H_FADER), slot, [g]) }
   func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { act(Int32(T2D_H_MASTER), 0, [lpf, thr, ratio, ceil]) }
+  func setMasterBpm(_ bpm: Double) -> Bool { act(Int32(T2D_H_MASTER_BPM), 0, [bpm]) }
   func snap(slot: Int, id: Int) -> Bool { act(Int32(T2D_H_SNAP), slot, [Double(id)]) }
 
   func lfoAdd(slot: Int, obj: Int, key: Int, base: Double, shape: Int) -> Bool {

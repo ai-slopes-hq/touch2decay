@@ -84,7 +84,7 @@ enum MixM: CaseIterable {
 }
 
 // связь с внешними часами и ладом (в настройках; UI — позже)
-struct Link: Codable, Equatable { var clock = false; var scale = true }
+struct Link: Codable, Equatable { var scale = true }   // темп общий всегда (мастер ядра); старое поле clock в prefs молча игнорируется
 // настройки звука: stable — буфер 1024 вместо 256; midi — слушать MIDI-часы (старый prefs.json без поля — выключено)
 struct AudioPref: Codable, Equatable {
   var stable = false

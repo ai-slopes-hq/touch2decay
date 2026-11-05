@@ -19,7 +19,7 @@ protocol UndoCommitting: AnyObject {
   var commitUndo: (() -> Void)? { get set }              // ставит хост: снять undo-снимок мира сейчас
 }
 
-// сетка MIDI-часов в секундах ядра (Cymatica получает её как LOCK)
+// сетка MIDI-часов в секундах ядра; нужна только флагу «внешний MIDI» (строка midi clock)
 struct MidiGrid: Equatable { var t0, p: Double }
 
 // темп и пуск мира-секвенсера для системы (MIDI-часы, фон): только действия, которые у мира уже есть
@@ -30,10 +30,7 @@ protocol WorldTempo: AnyObject {
   func play(_ on: Bool)
   var playing: Bool { get }
   var armed: Bool { get }                                // есть что играть (остров, пад, шаг, кольцо)
-  func grid(_ g: MidiGrid?)                              // сетка часов; нужна только Cymatica
-}
-extension WorldTempo {
-  func grid(_ g: MidiGrid?) {}
+  var tempoSet: ((Double) -> Void)? { get set }          // ставит хост: рукой правили темп мира → мастер и остальные миры (host/tempo.js tempoFrom)
 }
 
 protocol World: AnyObject {

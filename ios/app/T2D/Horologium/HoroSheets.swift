@@ -75,7 +75,10 @@ extension HorologiumView {
       title: "tempus", hint: "one turn of the wheel = one bar — tap outside to close",
       rows: [SheetRow(key: "bpm", label: "tempo", code: -1)],
       get: { [unowned self] _ in (mirror.bpm - 40) / 160 },
-      set: { [unowned self] _, v in core.action(Act.bpm, 0, [Horo.jsRound(40 + v * 160)], touchTime: 0) },
+      set: { [unowned self] _, v in
+        let b = Horo.jsRound(40 + v * 160)
+        core.action(Act.bpm, 0, [b], touchTime: 0); tempoSet?(b)
+      },
       text: { [unowned self] _ in "\(Int(mirror.bpm.rounded())) bpm" },
       lfo: nil, reset: nil, arc: nil)
   }

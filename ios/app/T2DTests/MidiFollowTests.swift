@@ -8,6 +8,7 @@ private final class FakeTempo: WorldTempo {
   var playing: Bool
   var armed: Bool
   init(bpm: Double = 120, playing: Bool = false, armed: Bool = false) { self.bpm = bpm; self.playing = playing; self.armed = armed }
+  var tempoSet: ((Double) -> Void)?
   func refresh(now: Double) {}
   func setBpm(_ b: Double) { bpm = b; calls.append("set \(b)") }
   func play(_ on: Bool) { playing = on; calls.append("play \(on)") }

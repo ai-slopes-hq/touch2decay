@@ -69,6 +69,7 @@ extension MonochordView {
       set: { [unowned self] k, v in
         let val = k == "tempo" ? (40 + v * 160).rounded() : (k == "rate" || k == "pattern") ? step(v) : v
         core.action(Act.autopar, ap[k] ?? 4, [val], touchTime: 0)
+        if k == "tempo" { tempoSet?(val) }
       },
       text: { [unowned self] k in
         switch k {

@@ -8,7 +8,7 @@ private final class ClkWorld: WorldTempo {
   func refresh(now: Double) { calls.append("refresh") }
   func setBpm(_ b: Double) { bpm = b; calls.append("set \(b)") }
   func play(_ on: Bool) { playing = on; calls.append("play \(on)") }
-  func grid(_ g: MidiGrid?) { calls.append(g.map { "grid \($0.t0) \($0.p)" } ?? "grid nil") }
+  var tempoSet: ((Double) -> Void)?
 }
 
 final class MidiClockTests: XCTestCase {
@@ -25,20 +25,26 @@ final class MidiClockTests: XCTestCase {
     let c = rig([a, other], here: a)
     core.ev = [1, 0, 5, 120, 4, 120]; core.gridV = MidiGrid(t0: 2, p: 0.5)
     c.step(now: 1)
-    XCTAssertEqual(a.calls, ["refresh", "grid 2.0 0.5", "play true"], "сетка раньше launch")
+    XCTAssertEqual(a.calls, ["refresh", "play true"])
     XCTAssertTrue(a.playing); XCTAssertFalse(other.playing, "чужой не armed мир не стартует")
-    let gi = a.calls.firstIndex { $0.hasPrefix("grid") }!, pi = a.calls.firstIndex(of: "play true")!
-    XCTAssertLessThan(gi, pi)
     XCTAssertEqual(other.calls.first, "refresh")
   }
 
-  func testNoGridPassesNil() {
+  func testStepOnlyRefreshesWithoutGrid() {
     let a = ClkWorld(); let c = rig([a], here: a)
     c.step(now: 1)
-    XCTAssertEqual(a.calls, ["refresh", "grid nil"])
+    XCTAssertEqual(a.calls, ["refresh"])
   }
 
-  func testOffUnlocksAndForgets() {
+  // ядро само перенимает MIDI-темп в мастер: Swift мастер не трогает, миры получают темп политикой
+  func testMidiTempoSetsMaster() {
+    let a = ClkWorld(); let c = rig([a], here: a)
+    core.ev = [3, 133]
+    c.step(now: 1)
+    XCTAssertEqual(a.bpm, 133); XCTAssertEqual(core.masterBpms, [], "мастер ведёт ядро, не хост")
+  }
+
+  func testOffForgetsStopped() {
     let a = ClkWorld(), b = ClkWorld(); b.armed = false
     let c = rig([a, b], here: a)
     c.on = true
@@ -47,7 +53,7 @@ final class MidiClockTests: XCTestCase {
     XCTAssertFalse(a.playing)
     a.calls = []; b.calls = []
     c.on = false
-    XCTAssertEqual(a.calls, ["grid nil"]); XCTAssertEqual(b.calls, ["grid nil"])
+    XCTAssertEqual(a.calls, []); XCTAssertEqual(b.calls, [])
     XCTAssertFalse(c.on)
     // набор остановленных забыт: launch запускает только мир на экране, прежде остановленный a — нет
     here = b; b.armed = true
@@ -63,16 +69,6 @@ final class MidiClockTests: XCTestCase {
     c.step(now: 1)
     XCTAssertFalse(a.playing, "старые события не запускают мир при включении часов")
     c.on = false
-  }
-
-  func testForgetGridResendsLock() {
-    let a = ClkWorld(); let c = rig([a], here: a)
-    core.gridV = MidiGrid(t0: 1, p: 1); c.step(now: 1)
-    a.calls = []
-    c.forgetGrid()
-    XCTAssertEqual(a.calls, ["grid nil"], "после re-init адаптер забывает отправленную сетку")
-    c.step(now: 2)
-    XCTAssertEqual(a.calls.last, "grid 1.0 1.0")
   }
 
   func testTimerStartsAndStops() {

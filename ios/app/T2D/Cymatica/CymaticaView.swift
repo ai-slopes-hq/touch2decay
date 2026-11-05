@@ -13,6 +13,7 @@ final class CymaticaView: World {
   private(set) lazy var fx: SheetSpec? = fanSpec              // веер собран раз: замыкания читают состояние вживую
   var openSheet: ((SheetSpec) -> Void)?
   var objGone: ((Int) -> Void)?
+  var tempoSet: ((Double) -> Void)?                       // ставит хост (WorldTempo)
   var rowLfoOff: ((Int) -> Void)?
   var goMap: (() -> Void)?
   var lfoBase: ((Int, Int) -> Double?)?
@@ -46,7 +47,6 @@ final class CymaticaView: World {
   private var evs: [CymHeard] = []
   var area: (W: Double, H: Double, topY: Double, safeBot: Double) = (390, 844, 59, 34)
   private(set) var now = 0.0
-  private var lockSent: MidiGrid?                          // какая сетка ушла в ядро: шлём только при смене (syncLock, engine.js)
   var fingers: [ObjectIdentifier: CymFinger] = [:]           // пальцы мира; touchReset (undo) забывает их все
   var pair: CymPair?                                         // два пальца: поворот или щипок
   var ringTurn = [0.0, 0.0], ringOrn = [0.0, 0.0]            // для картинки: остаток поворота кольца (°) и накопленный поворот узора; 0 ритм, 1 мелодия
@@ -169,10 +169,4 @@ extension CymaticaView: WorldTempo {
   func setBpm(_ bpm: Double) { send(Cym.Act.bpm, 0, [bpm]) }
   func play(_ on: Bool) { if on != playing { send(Cym.Act.play, 0, [on ? 1 : 0]) } }   // как tempo.play веба
   var armed: Bool { (0..<rlen).contains { step($0).on } }
-  func grid(_ g: MidiGrid?) {
-    let g = g.flatMap { $0.p > 0 ? $0 : nil }                // сетка с p ≤ 0 — не сетка
-    if g == lockSent { return }
-    lockSent = g
-    send(Cym.Act.lock, 0, g.map { [0, $0.t0, $0.p] } ?? [1, 0, 0])
-  }
 }

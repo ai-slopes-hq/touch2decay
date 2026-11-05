@@ -96,6 +96,7 @@ final class Host {
         self.undo.commit(slot: slot, scl: self.scl)
       }
       v.goMap = { [weak self] in self?.goMap() }
+      v.tempo?.tempoSet = { [weak self] b in self?.tempoFrom(slot: slot, b) }
       v.lfoBase = { [weak self] obj, code in    // свежий снимок ядра, не lfos плашки
         guard let b = self?.core.lfoSnap().first(where: { $0.slot == slot && $0.obj == obj && $0.key == code })?.base, b.isFinite else { return nil }
         return b
@@ -183,6 +184,12 @@ final class Host {
     return nil
   }
 
+  // ручка темпа любого мира → мастер ядра и setBpm у остальных миров с часами (host/tempo.js tempoFrom)
+  func tempoFrom(slot: Int, _ bpm: Double) {
+    core.setMasterBpm(bpm)
+    for (s, v) in views where s != slot { v.tempo?.setBpm(bpm) }
+  }
+
   // микшер в ядро: фейдеры 12 миров и мастер (после каждой правки и при reinit)
   func applyMix() {
     for w in Worlds.all { core.fader(slot: w.slot, g: mix.gain(w.slot)) }
@@ -194,7 +201,6 @@ final class Host {
   private func settingsDown(_ f: Finger) {
     guard Concordia.inside(cBox, x: f.x, y: f.y) else { settings = .off; return }
     switch Concordia.hit(cBox, x: f.x, y: f.y) {
-    case .clock?: link.clock.toggle(); markPrefs()
     case .scale?: link.scale.toggle(); markPrefs()
     case .stable?: toggleStable()
     case .restart?: restartAudio()
@@ -570,7 +576,7 @@ final class Host {
       undo.base(slot: slot, w: nil, scl: s); undo.commit(slot: slot, scl: s)
     }
     if let c = curSlot { views[c]?.enter() }                 // init ядра сбросил «проснулся» (веб: restartAudio → enter)
-    if audioPref.midi { midiClock.on = true; midiClock.forgetGrid() }   // init стёр LOCK Cymatica в ядре, адаптер помнит отправленное — слать заново
+    if audioPref.midi { midiClock.on = true }
   }
 
   // ---------- рисование ----------
@@ -594,7 +600,7 @@ final class Host {
       let t = nav.anim == nil ? nav.peek.flatMap { p in nav.freeze.map { p.t0 + $0 * Nav.peekDur } } ?? now : now
       MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, settings: settings != .off, now: t)
       if settings == .concordia && !nav.busy(now) {
-        Concordia.draw(d, cBox, link: link, stable: audioPref.stable, midi: core.grid() != nil, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
+        Concordia.draw(d, cBox, link: link, stable: audioPref.stable, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
       }
       if settings == .mixer && !nav.busy(now) { Mixer.draw(d, mixGeo, mix: mix, lv: levels.lv) }
       return

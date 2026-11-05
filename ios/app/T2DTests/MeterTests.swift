@@ -13,6 +13,7 @@ private final class NullHostCore: HostCore {
   func master(lpf: Double, thr: Double, ratio: Double, ceil: Double) -> Bool { true }
   func scale(_ s: Scl) -> Bool { true }
   func scaleSteps(_ idx: Int) -> [Int] { webScaleSteps(idx) }
+  func setMasterBpm(_ bpm: Double) -> Bool { true }
   func snap(slot: Int, id: Int) -> Bool { true }
   func restore(slot: Int, _ w: String) -> Bool { true }
   func takeSnap() -> (id: Int, slot: Int, w: String)? { nil }
