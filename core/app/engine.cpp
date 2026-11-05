@@ -82,6 +82,7 @@ void Engine::hostAction(const Action& act) {
         masterTarget_[THRESHOLD_DB] = act.a[1]; masterTarget_[RATIO] = act.a[2]; masterTarget_[CEIL_DB] = act.a[3];
       }
       break;
+    case T2D_H_MASTER_BPM: if (act.n >= 1) t2d_master_bpm(act.a[0]); break;
     case T2D_H_SCALE: if (act.n >= 3) t2d_scale(act.a[0] != 0, static_cast<int>(act.a[1]), static_cast<int>(act.a[2])); break;
     case T2D_H_LFO_ADD:                                     // a = [obj, key, base, shape]; i = слот
       if (act.n >= 4) t2d_lfo_add(act.i, static_cast<int>(act.a[0]), static_cast<int>(act.a[1]), act.a[2], static_cast<int>(act.a[3]));

@@ -36,6 +36,18 @@ struct Grid {                           // сетка долей: доля n —
 // момент шага k при perBeat шагах на долю
 inline double stepTime(const Grid& g, double k, int perBeat) { return g.t0 + (k / perBeat) * g.p; }
 
+// Мастер-сетка хоста: идёт всегда, даже без MIDI. Темп меняется без скачка фазы (номер доли в момент смены тот же);
+// внешняя сетка Follower её перекрывает — мастер её перенимает (adopt) и после стопа идёт дальше с тем же темпом и фазой.
+struct MasterClock {
+  double bpm = 100, t0 = 0, p = 0.6;
+  Grid grid() const { Grid g; g.on = true; g.t0 = t0; g.p = p; return g; }
+  void setBpm(double b, double now) {
+    const double n = (now - t0) / p;
+    p = 60 / b; bpm = b; t0 = now - n * p;
+  }
+  void adopt(const Grid& g) { t0 = g.t0; p = g.p; bpm = 60 / p; }
+};
+
 // Часы для мира: время начала блока (с), частота и сетка (если есть). Даёт хост перед каждым блоком.
 struct Clock {
   double now = 0, sr = 48000;

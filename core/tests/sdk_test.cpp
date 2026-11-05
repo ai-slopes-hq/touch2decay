@@ -809,6 +809,51 @@ static double hostBlocks(int blocks, double* tailMax) {   // гонит блок
 }
 
 // Громкость мастера: по умолчанию 1.0, к цели — однополюсно с τ = 30 мс, без скачков
+static void masterClockRebase() {
+  sdk::MasterClock m; m.t0 = 0.1;
+  const double now = 1.234, n0 = (now - m.t0) / m.p;
+  m.setBpm(150, now);
+  NEAR((now - m.t0) / m.p, n0, 1e-9);
+  CHECK(m.grid().on);
+  NEAR(m.grid().p, 60.0 / 150, 1e-12);
+}
+
+static void masterBpmClamp() {
+  H.prepare(48000, 1);
+  H.masterBpm(10); NEAR(H.masterBpmNow(), 40, 1e-9);
+  H.masterBpm(900); NEAR(H.masterBpmNow(), 200, 1e-9);
+  H.masterBpm(std::nan("")); NEAR(H.masterBpmNow(), 200, 1e-9);
+}
+
+static void hostGridSelect() {
+  H.prepare(48000, 1);
+  H.time(0); H.process(128);
+  CHECK(H.clock().grid.on);
+  NEAR(H.clock().grid.p, 0.6, 1e-12);
+  H.masterBpm(90); H.process(128);
+  NEAR(H.clock().grid.p, 60.0 / 90, 1e-12);
+  H.masterBpm(100);
+  H.time(1.0);
+  H.midiMsg(sdk::MidiMsg::BEAT, 0, 120, 1.0);
+  H.time(1.5);
+  H.midiMsg(sdk::MidiMsg::BEAT, 1, 120, 1.5);
+  H.process(128);
+  CHECK(H.clock().grid.on);
+  NEAR(H.clock().grid.p, 0.5, 1e-9);
+  NEAR(H.masterBpmNow(), 120, 1e-6);
+  H.masterBpm(90); H.process(128);                       // MIDI главнее
+  NEAR(H.clock().grid.p, 0.5, 1e-9);
+  H.midiMsg(sdk::MidiMsg::STOP, 0, 0, 1.6);
+  H.time(1.6); H.process(128);
+  const double t0 = H.clock().grid.t0;
+  CHECK(H.clock().grid.on);
+  NEAR(H.clock().grid.p, 0.5, 1e-9);
+  H.time(3.0); H.process(128);                           // секунда тишины — мастер идёт дальше
+  CHECK(H.clock().grid.on);
+  NEAR(H.clock().grid.p, 0.5, 1e-9);
+  NEAR(H.clock().grid.t0, t0, 1e-12);
+}
+
 static void hostVolSmooth() {
   const double sr = 48000;
   H.prepare(sr, 7);
@@ -4741,7 +4786,7 @@ static void appHostMaster() {
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--scale") { scaleTable(); return 0; }
-  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel(); naturaDice();
+  rng(); onepole(); dc(); clip(); pan(); delay(); echo(); biquad(); json(); reverb(); scaleBasics(); host(); masterClockRebase(); masterBpmClamp(); hostGridSelect(); hostVolSmooth(); firm(); firmSend(); firmIds(); knee(); resonator(); stepclock(); cymWorld(); cymModel(); pingpongAd(); pingpongPortus(); saw(); portusModel(); portusWorld(); chorusMono(); tapeGlide(); glideBlock(); naturaWave(); naturaWorld(); naturaModel(); naturaDice();
   tenebraeTone(); tenebraeWaves(); tenebraeWavesNyquist(); tenebraeMorph(); tenebraeShifter();
   tenebraeVoiceSilent(); tenebraeVoiceExtremes(); tenebraeVoiceNoise(); tenebraeVoiceRelive();
   tenebraeWorldBus(); tenebraeTzfmFollows(); tenebraeLinksClear(); tenebraeMirror(); tenebraeModelPick(); tenebraeActionNan(); tenebraeCycleSafe(); tenebraeStrikeClear(); tenebraeScaleRetune();

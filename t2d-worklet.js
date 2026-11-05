@@ -72,6 +72,7 @@ class T2d extends AudioWorkletProcessor {
       x.t2d_action(d.slot, d.kind, d.i | 0, x.t2d_args(), n);
     } else if (d.t === 'fader') x.t2d_fader(d.slot, d.g);
     else if (d.t === 'scale') x.t2d_scale(d.on ? 1 : 0, d.idx | 0, d.root | 0);
+    else if (d.t === 'master') x.t2d_master_bpm(+d.bpm || 0);
     else if (d.t === 'midi') x.t2d_midi_byte(d.src | 0, d.b | 0, +d.at || 0);
     else if (d.t === 'midimsg') x.t2d_midi_msg(d.kind | 0, +d.n || 0, +d.bpm || 0, +d.at || 0);
     else if (d.t === 'snap') {

@@ -32,6 +32,7 @@ export function loadT2d() {
       x.t2d_restore(slot, b.length);
     },
     fader: (slot, g) => x.t2d_fader(slot, g),
+    masterBpm: (bpm) => x.t2d_master_bpm(bpm),
     scale: (on, idx, root) => x.t2d_scale(on ? 1 : 0, idx, root),
   };
 }

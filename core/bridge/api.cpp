@@ -103,6 +103,8 @@ T2D_API void t2d_restore(int slot, int len) {
 }
 T2D_API void t2d_fader(int slot, double g) { host.fader(slot, g); }
 T2D_API void t2d_scale(int on, int idx, int root) { host.scale(on != 0, idx, root); }
+T2D_API void t2d_master_bpm(double bpm) { host.masterBpm(bpm); }
+T2D_API double t2d_master_bpm_get(void) { return host.masterBpmNow(); }
 T2D_API void t2d_vol(double g) { host.vol(g); }
 
 // часы: время начала следующего блока (секунды контекста), MIDI — байт от входа src или разобранное сообщение (оболочка iOS)

@@ -11,7 +11,7 @@ static int revIndex(Rev r) { return static_cast<int>(r); }   // тип → но�
 void Host::prepare(double sr, uint32_t seed) {
   clock_ = sdk::Clock{}; clock_.sr = sr > 0 ? sr : 48000;
   for (auto& p : parsers_) p = sdk::ClockParser();
-  follower_ = sdk::Follower(); evCount_ = 0;
+  follower_ = sdk::Follower(); master_ = sdk::MasterClock(); evCount_ = 0;
   for (int i = 0; i < 4; i++) reverbs_[i].prepare(sr, kTypes[i], seed + static_cast<uint32_t>(i));
   for (int s = 0; s < SLOTS; s++) std::memset(dry_[s], 0, sizeof dry_[s]);
   std::memset(ext_, 0, sizeof ext_);
@@ -58,7 +58,7 @@ void Host::follow(const sdk::MidiMsg& m, double at) {
     }
     evQueue_[evCount_][0] = ev[i]; evQueue_[evCount_][1] = bpm; evCount_++;
   }
-  clock_.grid = follower_.grid();
+  pickGrid();
 }
 
 void Host::midiByte(int src, int status, double at) {
@@ -102,11 +102,22 @@ const float* Host::dry(int slot, int ch) const {
 
 const float* Host::ret(int ch) const { return ret_[ch & 1]; }
 
+void Host::pickGrid() {
+  if (follower_.grid().on) master_.adopt(follower_.grid());
+  clock_.grid = master_.grid();
+}
+
+void Host::masterBpm(double bpm) {
+  if (!(bpm == bpm) || follower_.grid().on) return;      // NaN или MIDI главнее
+  master_.setBpm(bpm < 40 ? 40 : bpm > 200 ? 200 : bpm, clock_.now);
+  clock_.grid = master_.grid();
+}
+
 void Host::process(int n) {
   if (n > BLOCK) n = BLOCK;
   if (n < 0) n = 0;
   follower_.tick(clock_.now);                           // часы пропали (1 с без долей) — сетки нет
-  clock_.grid = follower_.grid();
+  pickGrid();
   const size_t bytes = sizeof(float) * static_cast<size_t>(n);
   for (int r = 0; r < 4; r++) for (int c = 0; c < 2; c++) std::memcpy(revIn_[r][c], ext_[r][c], bytes);   // внешние посылы — основа суммы
   for (int s = 0; s < SLOTS; s++) {

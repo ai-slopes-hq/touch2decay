@@ -24,6 +24,8 @@ int t2d_snapshot(int slot);                       // в str_buf; длина, н�
 void t2d_restore(int slot, int len);              // из str_buf; LFO объектов слота снимаются (FX остаются)
 void t2d_fader(int slot, double g);
 void t2d_scale(int on, int idx, int root);
+void t2d_master_bpm(double bpm);                 // темп мастер-сетки 40…200 (MIDI-сетка главнее)
+double t2d_master_bpm_get(void);
 void t2d_vol(double g);
 void t2d_time(double t);                          // время начала следующего блока, с
 void t2d_midi_byte(int src, int status, double at);

@@ -55,6 +55,8 @@ class Host {
   void midiByte(int src, int status, double at);        // берёт только системные реального времени (≥ 0xF8)
   void midiMsg(int kind, double n, double bpm, double at);   // kind — sdk::MidiMsg::Type
   const sdk::Clock& clock() const { return clock_; }
+  void masterBpm(double bpm);                           // темп мастер-сетки 40…200; пока идёт MIDI-сетка — игнор; NaN — не меняет
+  double masterBpmNow() const { return master_.bpm; }
   int events(double* buf, int cap);                     // по 2 числа: код (sdk::Follower::Ev), bpm; очищает очередь
 
   // Микс для приложения (веб эти не зовёт). n ≤ 128, без аллокаций.
@@ -94,10 +96,12 @@ class Host {
   Scale scale_;
   sdk::Reverb reverbs_[4];                              // по типам sdk::Rev: room, plate, hall, cathedral
   void follow(const sdk::MidiMsg& m, double at);
+  void pickGrid();                                      // сетка миров: внешняя (мастер её перенимает) или мастер
   static constexpr int SRC = 8, EVMAX = 32;             // входов MIDI; длина очереди событий
   sdk::Clock clock_;
   sdk::ClockParser parsers_[SRC];                       // по разборщику на вход
   sdk::Follower follower_;
+  sdk::MasterClock master_;                             // всегда включённая сетка; MIDI её перекрывает
   double evQueue_[EVMAX][2] = {};                       // события часов: код, bpm; полная — старое уходит
   int evCount_ = 0;
 
