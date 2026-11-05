@@ -136,7 +136,7 @@ final class HostTests: XCTestCase {
     XCTAssertTrue(host.legendOpen)
     tap(195, 400)
     XCTAssertFalse(host.legendOpen); XCTAssertFalse(world.acted, "легенда съела тап")
-    tap(bar.pos(.scl).x, bar.pos(.scl).y)
+    host.openScaleList()   // кнопки scl больше нет: список откроет плашка (Task 4)
     XCTAssertTrue(host.sclOpen)
     tap(50, 400)
     XCTAssertFalse(host.sclOpen); XCTAssertFalse(world.acted, "тап мимо списка миру не идёт")
@@ -145,7 +145,7 @@ final class HostTests: XCTestCase {
   }
 
   func testDimmedEatsTouch() {
-    let p = bar.pos(.rev)
+    let p = bar.pos(.fx)
     let f = finger(0, p.x, p.y); host.down(f); host.move(f); host.up(f)   // у мира нет веера: кнопка тусклая, тап съеден
     XCTAssertFalse(world.acted)
     let e = finger(0, 5, 300); host.down(e); host.move(e); host.up(e)    // левая полоса x < 14 под верхней строкой
@@ -177,7 +177,7 @@ final class HostTests: XCTestCase {
   }
 
   func testScalePickSendsScale() {
-    tap(bar.pos(.scl).x, bar.pos(.scl).y)
+    host.openScaleList()   // кнопки scl больше нет: список откроет плашка (Task 4)
     let L = bar.sclList
     tap(L.bx + 20, L.top + TopBar.itemH * 3.5)                 // строка 3: off, major, minor, dorian → idx 2
     XCTAssertEqual(core.scales.last, Scl(on: true, idx: 2, root: 0)); XCTAssertEqual(host.scl, core.scales.last)
@@ -207,7 +207,7 @@ final class HostTests: XCTestCase {
   }
 
   func testDiceAndClearGoToWorld() {
-    tap(bar.pos(.dice).x, bar.pos(.dice).y); tap(bar.pos(.clr).x, bar.pos(.clr).y)
+    tap(bar.pos(.dice).x, bar.pos(.dice).y); tap(bar.pos(.recycle).x, bar.pos(.recycle).y)
     XCTAssertEqual(world.dices, 1); XCTAssertEqual(world.clears, 1); XCTAssertEqual(world.downs, 0)
   }
 
@@ -216,14 +216,14 @@ final class HostTests: XCTestCase {
     host = makeHost(views: [w7]); host.go(7)
     core.lfoSnaps = [7, 12, 0].map { LfoSnap(slot: 7, obj: -1, key: $0, base: 0.5, morph: 0, rate: 1, depth: 0.5, u: 0, shape: 0, seed: 0) }
     w7.onClear = { [core, w7] in w7.rowLfoOff?(7); core.calls.append("CLEAR") }
-    tap(bar.pos(.clr).x, bar.pos(.clr).y)
+    tap(bar.pos(.recycle).x, bar.pos(.recycle).y)
     XCTAssertEqual(core.calls.filter { $0.hasPrefix("lfoOff") || $0 == "CLEAR" }, ["lfoOff:-1:7", "CLEAR"])
   }
 
   func testReinitReappliesScene() {
     host.reapply(); answer("w0", now: 1)
     tap(100, 400); answer("w1", now: 2)
-    tap(bar.pos(.scl).x, bar.pos(.scl).y)
+    host.openScaleList()   // кнопки scl больше нет: список откроет плашка (Task 4)
     tap(bar.sclList.bx + 20, bar.sclList.top + TopBar.itemH * 1.5)   // major
     tap(50, 400)                                                     // закрыть список
     let live = host.scl
@@ -614,7 +614,7 @@ final class HostTests: XCTestCase {
     return SheetSpec(title: "FX", hint: "", rows: rows, get: { _ in 0.5 }, set: { [world] k, v in world.sets.append((k, v)) },
                      text: { _ in "" }, lfo: SheetLfo(obj: -1, keys: ["a", "b", "c"], shape: 1))
   }
-  private func openFx() { world.fx = fxSpec(); tap(bar.pos(.rev).x, bar.pos(.rev).y) }
+  private func openFx() { world.fx = fxSpec(); tap(bar.pos(.fx).x, bar.pos(.fx).y) }
   private func geo() -> SheetGeo { SheetGeo.make(host.sheet!, W: 390, H: 844, safeBot: 34) }
   private func rowY(_ k: String) -> CGFloat { let g = geo(); return g.rows.first { $0.k == k }!.y + 23 }
   private func tilde(_ k: String) { tap(geo().lfoX, rowY(k)) }
@@ -627,7 +627,7 @@ final class HostTests: XCTestCase {
   func testSheetRowTapCallsTap() {
     var tapped: [String] = []
     var sp = fxSpec(); sp.tap = { tapped.append($0) }
-    world.fx = sp; tap(bar.pos(.rev).x, bar.pos(.rev).y)
+    world.fx = sp; tap(bar.pos(.fx).x, bar.pos(.fx).y)
     tap(100, rowY("b"))
     XCTAssertEqual(tapped, ["b"])
   }
@@ -635,7 +635,7 @@ final class HostTests: XCTestCase {
   func testSheetRowDragNoTap() {
     var tapped: [String] = []
     var sp = fxSpec(); sp.tap = { tapped.append($0) }
-    world.fx = sp; tap(bar.pos(.rev).x, bar.pos(.rev).y)
+    world.fx = sp; tap(bar.pos(.fx).x, bar.pos(.fx).y)
     let r = finger(0, 100, rowY("b"))
     host.down(r); var m = r; m.x = 140; host.move(m); host.up(m)
     XCTAssertTrue(tapped.isEmpty); XCTAssertFalse(world.sets.isEmpty)
@@ -644,7 +644,7 @@ final class HostTests: XCTestCase {
   func testSheetRowDragBackNoTap() {                      // ушёл на 40 pt и вернулся на место — всё равно не тап (moved липкий)
     var tapped: [String] = []
     var sp = fxSpec(); sp.tap = { tapped.append($0) }
-    world.fx = sp; tap(bar.pos(.rev).x, bar.pos(.rev).y)
+    world.fx = sp; tap(bar.pos(.fx).x, bar.pos(.fx).y)
     let r = finger(0, 100, rowY("b"))
     host.down(r); var m = r; m.x = 140; m.moved = true; host.move(m); m.x = 100; host.move(m); host.up(m)
     XCTAssertTrue(tapped.isEmpty)
@@ -652,10 +652,10 @@ final class HostTests: XCTestCase {
 
   func testFxOpensAndClosesSheet() {
     world.fx = nil
-    tap(bar.pos(.rev).x, bar.pos(.rev).y)
+    tap(bar.pos(.fx).x, bar.pos(.fx).y)
     XCTAssertNil(host.sheet, "у мира без веера плашки нет")
     openFx(); XCTAssertNotNil(host.sheet)
-    tap(bar.pos(.rev).x, bar.pos(.rev).y); XCTAssertNil(host.sheet)
+    tap(bar.pos(.fx).x, bar.pos(.fx).y); XCTAssertNil(host.sheet)
     openFx(); tap(195, geo().top - 20); XCTAssertNil(host.sheet)
   }
 
@@ -821,7 +821,7 @@ final class HostTests: XCTestCase {
 
   func testFxHeldWhileFingerOnRev() {
     world.fx = fxSpec()
-    let p = bar.pos(.rev), f = finger(0, p.x, p.y)
+    let p = bar.pos(.fx), f = finger(0, p.x, p.y)
     host.down(f); XCTAssertTrue(host.fxHeld); host.up(f); XCTAssertFalse(host.fxHeld)
   }
 

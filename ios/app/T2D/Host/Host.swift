@@ -61,7 +61,7 @@ final class Host {
   private var rowF: (id: ObjectIdentifier, key: String, v0: Double)?    // строка плашки в руках: база на момент касания
   private var padDepth: (id: ObjectIdentifier, d: Double)?                                        // последняя посланная глубина пада — для снятия на подъёме
   private func held(_ b: Btn) -> Bool { routes.values.contains { if case .btn(b) = $0 { return true } else { return false } } }
-  var fxHeld: Bool { held(.rev) }
+  var fxHeld: Bool { held(.fx) }
   private var touched: Set<Int> = []                       // слоты миров, которых коснулся текущий жест: undo.commit — по каждому
 
   private var scenes: [Int: (w: String, scl: Scl)] = [:]      // последний известный снимок мира по слоту: из него автосохранение и reinit
@@ -245,7 +245,7 @@ final class Host {
   // действие строки панели — на касании (audio-panel.js panelDown)
   private func panelDown(_ k: AudioPanel.Key) {
     switch k {
-    case .stop: press(.clr)                                  // без часов — заглушить мир, как корзина (отмена вернёт)
+    case .stop: press(.recycle)                                  // без часов — заглушить мир, как корзина (отмена вернёт)
     case .restart: restartAudio()
     case .stable: toggleStable()
     case .midi: toggleMidi()
@@ -275,7 +275,7 @@ final class Host {
       }
     }
     if legendOpen { return .title }
-    if let s = sheet { return .sheet(sheetHit(s, geo(s), x: f.x, y: f.y, fxBtn: bar.pos(.rev))) }
+    if let s = sheet { return .sheet(sheetHit(s, geo(s), x: f.x, y: f.y, fxBtn: bar.pos(.fx))) }
     if sclOpen { return .list }
     switch bar.hit(f.x, f.y, titleW: titleW) {
     case .title: return .title
@@ -345,16 +345,17 @@ final class Host {
     for slot in s.sorted() { undo.commit(slot: slot, scl: scl) }
   }
 
+  func openScaleList() { sclOpen = true }   // до плашки (Task 4) — единственный вход в список ладов
+
   private func press(_ b: Btn) {
     guard let w = world else { return }
     switch b {
-    case .scl: sclOpen = true
     case .dice: w.dice(); diceAt = now * 1000; syncModelsToMaster()
-    case .clr: w.clear()
+    case .recycle: w.clear()
     case .undo: undoStep()
-    case .rev: if let fx = w.fx { sheet = Sheet(spec: fx, slot: w.slot) }
+    case .fx: if let fx = w.fx { sheet = Sheet(spec: fx, slot: w.slot) }
     case .back: goMap()
-    case .vol: break
+    case .vol, .play: break   // vol — жест (канал мира), play — Task 2
     }
   }
 

@@ -14,21 +14,20 @@ final class TopBarTests: XCTestCase {
   }
 
   func testPositions() {
-    XCTAssertEqual(bar.pos(.clr).x, 363); XCTAssertEqual(bar.pos(.clr).y, 67)
-    XCTAssertEqual(bar.pos(.undo).x, 324)
-    XCTAssertEqual(bar.pos(.dice).x, 285)
-    XCTAssertEqual(bar.pos(.rev).x, 240)
-    XCTAssertEqual(bar.pos(.scl).x, 194)
-    XCTAssertEqual(bar.pos(.vol).x, 152)
+    XCTAssertEqual(bar.pos(.fx).x, 363); XCTAssertEqual(bar.pos(.fx).y, 67)
+    XCTAssertEqual(bar.pos(.recycle).x, 322)
+    XCTAssertEqual(bar.pos(.dice).x, 284)
+    XCTAssertEqual(bar.pos(.undo).x, 246)
+    XCTAssertEqual(bar.pos(.vol).x, 208)
+    XCTAssertEqual(bar.pos(.play).x, 170)
     let b = bar.pos(.back)
     XCTAssertEqual(b.x, 26); XCTAssertEqual(b.y, 67); XCTAssertEqual(b.r, 13)
   }
 
   func testRadii() {
-    XCTAssertEqual(bar.pos(.scl).r, 20)
-    XCTAssertEqual(bar.pos(.rev).r, 20)
+    XCTAssertEqual(bar.pos(.fx).r, 20)
     XCTAssertEqual(bar.pos(.vol).r, 17)
-    for k in [Btn.clr, .undo, .dice] { XCTAssertEqual(bar.pos(k).r, 17) }
+    for k in [Btn.recycle, .undo, .dice, .play] { XCTAssertEqual(bar.pos(k).r, 17) }
   }
 
   func testHitCentres() {
@@ -39,16 +38,16 @@ final class TopBarTests: XCTestCase {
   }
 
   func testHitRadiiBoundaries() {
-    let c = bar.pos(.clr), s = bar.pos(.scl), v = bar.pos(.vol), b = bar.pos(.back)
-    XCTAssertEqual(bar.hit(c.x, c.y + 20.9, titleW: tw), .btn(.clr))   // CLR_R + 4 = 21
+    let c = bar.pos(.recycle), s = bar.pos(.fx), v = bar.pos(.vol), b = bar.pos(.back)
+    XCTAssertEqual(bar.hit(c.x, c.y + 20.9, titleW: tw), .btn(.recycle))   // CLR_R + 4 = 21
     XCTAssertNil(bar.hit(c.x, c.y + 21.1, titleW: tw))
-    XCTAssertEqual(bar.hit(s.x, s.y + 25.9, titleW: tw), .btn(.scl))   // BTN_R + 6 = 26
-    XCTAssertEqual(bar.hit(v.x - 20.9, v.y, titleW: tw), .btn(.vol))
+    XCTAssertEqual(bar.hit(s.x, s.y + 25.9, titleW: tw), .btn(.fx))   // BTN_R + 6 = 26
+    XCTAssertEqual(bar.hit(v.x, v.y + 20.9, titleW: tw), .btn(.vol))   // по вертикали: по бокам зона соседей
     XCTAssertEqual(bar.hit(b.x, b.y - 22.9, titleW: tw), .btn(.back))      // r + 10 = 23
   }
 
   func testHitMisses() {
-    XCTAssertNil(bar.hit(120, y, titleW: tw))      // между заголовком и громкостью
+    XCTAssertNil(bar.hit(125, y, titleW: tw))      // между заголовком и play
     XCTAssertNil(bar.hit(195, 47 + 60, titleW: tw))   // под строкой
     XCTAssertNil(bar.hit(200, 300, titleW: tw))
   }
@@ -105,7 +104,7 @@ final class TopBarTests: XCTestCase {
       let s = TopBar.State(title: "x", vol: 0.5, volHeld: false, scl: Scl(on: false, idx: 0, root: 0), sclOpen: false,
                            canUndo: false, fxArc: arc, fxHeld: false, diceAt: -1e9)
       bar.draw(d, s, now: 0)
-      let r = bar.pos(.rev), p = c.data!.assumingMemoryBound(to: UInt8.self)
+      let r = bar.pos(.fx), p = c.data!.assumingMemoryBound(to: UInt8.self)
       return Int(p[Int(r.y) * c.bytesPerRow + Int(r.x + TopBar.btnR + 5) * 4])   // 90° дуги; фон — чёрный, дуга — светлая
     }
     XCTAssertGreaterThan(px(0.5), 200)
@@ -137,5 +136,49 @@ final class TopBarTests: XCTestCase {
     XCTAssertGreaterThan(pixel(B.x - 3, B.y, back: true), pixel(B.x - 3, B.y))
     XCTAssertGreaterThan(pixel(B.x + B.r, B.y, back: true), pixel(B.x + B.r, B.y) + 40, "кольцо стрелки")
     XCTAssertGreaterThan(pixel(D.x + TopBar.clrR, D.y, dice: true), pixel(D.x + TopBar.clrR, D.y) + 40, "кольцо кубика")
+  }
+
+  func testButtonOrderRightToLeft() {
+    let xs = [Btn.fx, .recycle, .dice, .undo, .vol, .play, .back].map { bar.pos($0).x }
+    XCTAssertEqual(xs, xs.sorted(by: >))
+  }
+
+  func testDisabledButtonHasNoHit() {
+    let u = bar.pos(.undo)
+    XCTAssertEqual(bar.hit(u.x, u.y, titleW: tw), .btn(.undo))
+    XCTAssertNil(bar.hit(u.x, u.y, titleW: tw, enabled: Set(Btn.allCases).subtracting([.undo])))
+  }
+
+  func testNearestButtonWinsInOverlap() {
+    let d = bar.pos(.dice), r = bar.pos(.recycle)
+    XCTAssertEqual(bar.hit(d.x + 15, d.y, titleW: tw), .btn(.dice))      // у dice
+    XCTAssertEqual(bar.hit(r.x - 15, r.y, titleW: tw), .btn(.recycle))   // у recycle
+  }
+
+  func testSixButtonsDoNotOverlapAtW320() {
+    let b = TopBar(W: 320, top: 47)
+    let order = [Btn.fx, .recycle, .dice, .undo, .vol, .play]
+    for (a, c) in zip(order, order.dropFirst()) {
+      let p = b.pos(a), q = b.pos(c)
+      XCTAssertGreaterThanOrEqual(hypot(p.x - q.x, p.y - q.y), p.r + q.r + 2, "\(a) / \(c)")
+    }
+    let (w, _, _) = TopBar.fit("Tria corpora", max: b.titleMax)
+    XCTAssertLessThanOrEqual(TopBar.titleX + w, b.pos(.play).x - b.pos(.play).r - 4 + 0.5)
+  }
+
+  private func drawn(playing: Bool) -> Int {
+    let c = CGContext(data: nil, width: 390, height: 300, bitsPerComponent: 8, bytesPerRow: 0,
+                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    c.translateBy(x: 0, y: 300); c.scaleBy(x: 1, y: -1)
+    var s = TopBar.State(title: "x", vol: 0.5, volHeld: false, scl: Scl(on: false, idx: 0, root: 0), sclOpen: false,
+                         canUndo: false, fxArc: nil, fxHeld: false, diceAt: -1e9)
+    s.playing = playing
+    bar.draw(Draw(g: c, W: 390, H: 300), s, now: 0)
+    let p = bar.pos(.play), px = c.data!.assumingMemoryBound(to: UInt8.self)
+    return Int(px[Int(p.y) * c.bytesPerRow + Int(p.x) * 4])   // центр: у pause — зазор между палочками, у play — треугольник
+  }
+
+  func testPlayIconSwitches() {
+    XCTAssertNotEqual(drawn(playing: true), drawn(playing: false))
   }
 }
