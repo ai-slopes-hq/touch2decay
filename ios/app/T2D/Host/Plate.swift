@@ -32,6 +32,20 @@ struct Plate {
   // лад под пальцем в содержимом scale; .outside — не на строке и не на тонике
   // вкладка mix: окно из visibleRows строк; scroll сдвигает список вверх
   static func maxScroll(rows n: Int) -> CGFloat { CGFloat(max(0, n - Mixer.visibleRows)) * Mixer.rowH }
+  // вкладка sys: общий лад, буфер звука, перезапуск, MIDI-часы; общий темп всегда включён — строка неактивна
+  enum SysRow: CaseIterable { case scale, stable, restart, midi, tempo
+    var label: String {
+      switch self { case .scale: return "shared scale"; case .stable: return "stable audio"; case .restart: return "restart audio"
+                    case .midi: return "midi clock"; case .tempo: return "shared tempo" }
+    }
+  }
+  static func sysHit(_ g: PlateGeo, x: CGFloat, y: CGFloat) -> SysRow? {
+    let y0 = g.top + 8, i = Int(floor((y - y0) / itemH))
+    guard y >= y0, SysRow.allCases.indices.contains(i) else { return nil }
+    return SysRow.allCases[i]
+  }
+  static let itemH = PlateGeo.itemH
+
   enum MixHit: Equatable { case mute(Int), fader(Mixer.Key), none }
   static func mixHit(_ g: PlateGeo, scroll: CGFloat, keys: [Mixer.Key], x: CGFloat, y: CGFloat) -> MixHit {
     let y0 = g.top + 8
@@ -74,7 +88,7 @@ struct PlateGeo {
     case .fx: body = 52 + CGFloat(rows) * itemH + extra
     case .scale: body = CGFloat(n) * itemH + 16
     case .mix: body = 16 + CGFloat(Mixer.visibleRows) * Mixer.rowH
-    case .sys: body = 16 + CGFloat(rows) * itemH
+    case .sys: body = 16 + CGFloat(Plate.SysRow.allCases.count) * itemH
     }
     let top = bottom - body, stripTop = top - stripH
     let cw = tonW, rx = x + w - 2 * cw, ch = CGFloat(n) * itemH / 6
@@ -88,7 +102,8 @@ struct PlateGeo {
 
 enum PlateDraw {
   // fx рисует SheetDraw (панель от g.top); здесь — полоса вкладок и содержимое scale
-  static func draw(_ d: Draw, _ p: Plate, _ g: PlateGeo, scl: Scl, mix: Mix = .def, lv: [Float] = [], current: Int? = nil) {
+  static func draw(_ d: Draw, _ p: Plate, _ g: PlateGeo, scl: Scl, mix: Mix = .def, lv: [Float] = [], current: Int? = nil,
+                   link: Link = Link(), audio: AudioPref = AudioPref(), restartK: CGFloat = 0) {
     d.reading {
       let c = d.g
       c.setFillColor(d.paper(0.97)); c.fill(CGRect(x: 0, y: g.stripTop, width: d.W, height: g.top - g.stripTop))
@@ -106,6 +121,29 @@ enum PlateDraw {
       c.beginPath(); c.move(to: CGPoint(x: 0, y: g.top + 0.5)); c.addLine(to: CGPoint(x: d.W, y: g.top + 0.5)); c.strokePath()
       if p.tab == .scale { drawScale(d, g, scl) }
       if p.tab == .mix { drawMix(d, p, g, mix, lv, current) }
+      if p.tab == .sys { drawSys(d, g, link, audio, restartK) }
+    }
+  }
+
+  private static func drawSys(_ d: Draw, _ g: PlateGeo, _ link: Link, _ audio: AudioPref, _ k: CGFloat) {
+    let c = d.g, bx = g.x + g.w - 20
+    for (i, r) in Plate.SysRow.allCases.enumerated() {
+      let y = g.top + 8 + CGFloat(i) * Plate.itemH + Plate.itemH / 2
+      switch r {
+      case .restart:
+        d.text(k > 0 ? "audio restarted" : r.label, g.x, y, 15, 0.6 + 0.35 * k)
+        Concordia.restartArrow(d, bx, y, k)
+      default:
+        let on = r == .scale ? link.scale : r == .stable ? audio.stable : r == .midi ? audio.midi : true
+        let a: CGFloat = r == .tempo ? 0.35 : on ? 0.95 : 0.6
+        d.text(r.label, g.x, y, 15, a)
+        d.ring(bx, y, 9, r == .tempo ? 0.25 : on ? 0.9 : 0.45, 1.1)
+        if on { d.dot(bx, y, 4.5, r == .tempo ? 0.3 : 0.9) }
+      }
+      if i > 0 {
+        c.setStrokeColor(d.ink(0.1)); c.setLineWidth(1)
+        c.beginPath(); c.move(to: CGPoint(x: g.x, y: y - Plate.itemH / 2 + 0.5)); c.addLine(to: CGPoint(x: g.x + g.w, y: y - Plate.itemH / 2 + 0.5)); c.strokePath()
+      }
     }
   }
 

@@ -450,7 +450,18 @@ final class Host {
     case .content:
       if p.tab == .fx, let s = sheet { return .sheet(sheetHit(s, geo(s), x: f.x, y: f.y, fxBtn: bar.pos(.fx))) }
       if p.tab == .scale { return .list(g) }
+      if p.tab == .sys { sysDown(Plate.sysHit(g, x: f.x, y: f.y)); return .eat }
       return p.tab == .mix ? mixTabDown(f, p, g) : .eat
+    }
+  }
+
+  private func sysDown(_ r: Plate.SysRow?) {
+    switch r {
+    case .scale?: link.scale.toggle(); markPrefs()
+    case .stable?: toggleStable()
+    case .restart?: restartAudio()
+    case .midi?: toggleMidi()
+    case .tempo?, nil: break                               // темп общий всегда — строка неактивна
     }
   }
 
@@ -747,7 +758,8 @@ final class Host {
       // только -shot: peek с замороженным k — время кадра подменяем (иначе он кончится за 420 мс)
       let t = nav.anim == nil ? nav.peek.flatMap { p in nav.freeze.map { p.t0 + $0 * Nav.peekDur } } ?? now : now
       MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, now: t)
-      if !nav.busy(now) { bar.draw(d, mapBarState(), now: now * 1000); if let p = plate { PlateDraw.draw(d, p, plateGeo(p), scl: scl, mix: mix, lv: levels.lv, current: onMap ? nil : world?.slot) } }
+      if !nav.busy(now) { bar.draw(d, mapBarState(), now: now * 1000); if let p = plate { PlateDraw.draw(d, p, plateGeo(p), scl: scl, mix: mix, lv: levels.lv, current: onMap ? nil : world?.slot,
+                                          link: link, audio: audioPref, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9)))) } }
       if settings == .concordia && !nav.busy(now) {
         Concordia.draw(d, cBox, link: link, stable: audioPref.stable, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
       }
@@ -763,7 +775,8 @@ final class Host {
       for r in routes.values { if case .sheet(let h) = r { held = h } }
       SheetDraw.draw(d, s, geo(s), lfos: lfos, held: held, sample: core.lfoSample)
     }
-    if let p = plate { PlateDraw.draw(d, p, plateGeo(p), scl: scl, mix: mix, lv: levels.lv, current: onMap ? nil : world?.slot) }
+    if let p = plate { PlateDraw.draw(d, p, plateGeo(p), scl: scl, mix: mix, lv: levels.lv, current: onMap ? nil : world?.slot,
+                                          link: link, audio: audioPref, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9)))) }
     if legendOpen { Legend.draw(d, title: "L E G E N D A", rows: w.legend, W: W, H: H, top: top, safeBot: safeBot) }
   }
 }

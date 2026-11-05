@@ -59,4 +59,11 @@ final class PlateTests: XCTestCase {
     XCTAssertEqual(Plate.mixHit(g, scroll: 0, keys: keys, x: g.mixMx, y: g.top + 8 + 20), .mute(10))
     XCTAssertEqual(Plate.mixHit(g, scroll: 0, keys: keys, x: g.mixTx0 + 5, y: g.top + 2), .none)
   }
+
+  func testSysRowsHit() {
+    let g = geo(.sys)
+    XCTAssertEqual(g.bottom - g.top, 16 + 5 * PlateGeo.itemH)
+    for (i, r) in Plate.SysRow.allCases.enumerated() { XCTAssertEqual(Plate.sysHit(g, x: 100, y: g.top + 8 + CGFloat(i) * 46 + 23), r) }
+    XCTAssertNil(Plate.sysHit(g, x: 100, y: g.top + 2))
+  }
 }

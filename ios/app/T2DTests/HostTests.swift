@@ -681,7 +681,9 @@ final class HostTests: XCTestCase {
 
   func testTouchesDoNotReachFieldWhilePlateOpen() {
     openFx()
-    tap(100, 100); tap(100, rowY("a")); tap(380, 300)
+    tap(100, rowY("a")); tap(geo().lfoX, rowY("b"))             // внутри плашки
+    tap(380, 300)                                              // мимо — закрывает, миру не идёт
+    XCTAssertNil(host.plate)
     XCTAssertEqual(world.downs, 0); XCTAssertEqual(world.ups, 0)
   }
 
@@ -702,12 +704,13 @@ final class HostTests: XCTestCase {
 
   func testVerticalDragScrollsHorizontalDragMovesFader() {
     openMix()
-    drag(mixG().mixTx0 + 40, mixRowY(0), dx: 2, dy: -60)
-    XCTAssertEqual(host.plate?.scroll, 60); XCTAssertNil(host.mix.g[10], "вертикаль — скролл, фейдер на месте")
-    drag(mixG().mixTx0 + 40, mixRowY(0, scroll: 60), dx: 30, dy: 3)
-    XCTAssertEqual(host.plate?.scroll, 60, "горизонталь не скроллит")
+    drag(mixG().mixTx0 + 40, mixRowY(0), dx: 2, dy: -20)
+    XCTAssertEqual(host.plate?.scroll, 20); XCTAssertNil(host.mix.g[10], "вертикаль — скролл, фейдер на месте")
+    host.tick(now: 5, dt: 0.016)                                // не двойной тап
+    drag(mixG().mixTx0 + 40, mixRowY(0, scroll: 20), dx: 12, dy: 3)
+    XCTAssertEqual(host.plate?.scroll, 20, "горизонталь не скроллит")
     let span = mixG().mixTx1 - mixG().mixTx0
-    XCTAssertEqual(host.mix.fader(10), Mix.faderDef + Double(30 / span), accuracy: 1e-9)
+    XCTAssertEqual(host.mix.fader(10), Mix.faderDef + Double(12 / span), accuracy: 1e-9)
     XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, host.mix.gain(10), accuracy: 1e-12)
   }
 
@@ -737,6 +740,35 @@ final class HostTests: XCTestCase {
     let before = host.mix[.ceil]
     drag(mixG().mixTx0 + 40, y, dx: -30, dy: 0)
     XCTAssertLessThan(host.mix[.ceil], before)
+  }
+
+  // ---------- вкладка sys ----------
+  private func sysTap(_ i: Int) {
+    host.openPlate(); host.selectTab(.sys)
+    let g = PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34, rows: 0)
+    tap(200, g.top + 8 + CGFloat(i) * PlateGeo.itemH + 20)
+  }
+  func testSysStableToggles() {
+    var got: [Bool] = []; host.onStable = { got.append($0) }
+    sysTap(1)
+    XCTAssertEqual(got, [true]); XCTAssertTrue(host.audioPref.stable); XCTAssertNotNil(host.plate, "плашка остаётся")
+  }
+  func testSysRestartCallsCallback() {
+    var n = 0; host.onRestart = { n += 1 }
+    sysTap(2); XCTAssertEqual(n, 1)
+  }
+  func testSysMidiToggles() {
+    var got: [Bool] = []; host.onMidi = { got.append($0) }
+    sysTap(3); XCTAssertEqual(got, [true]); XCTAssertTrue(host.midiClock.on)
+  }
+  func testSysSharedScaleToggles() {
+    let before = host.link.scale
+    sysTap(0); XCTAssertEqual(host.link.scale, !before)
+  }
+  func testSysSharedTempoDisabled() {
+    let a = host.audioPref, l = host.link
+    sysTap(4)
+    XCTAssertEqual(host.audioPref, a); XCTAssertEqual(host.link, l); XCTAssertFalse(world.acted)
   }
 
   func testFxTabRowDragUsesSheetValue() {
