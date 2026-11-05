@@ -350,17 +350,14 @@ final class Host {
   }
 
   // play на карте: идут часы — стоп им и тишина мирам без часов (Oceanus, Tenebrae…); иначе — пуск часов
-  private var mapStopped = false
-  private var mapPlaying: Bool { !mapStopped && (views.values.contains { $0.tempo?.playing == true } || views.values.contains { $0.tempo == nil }) }
+  private var mapPlaying: Bool { views.values.contains { $0.tempo?.playing == true } }
   private func mapPlay() {
     if mapPlaying {
       for v in views.values { v.tempo?.play(false) }
       let silent = slots.filter { views[$0]?.tempo == nil }
       if !silent.isEmpty { recycleAll(silent) }
-      mapStopped = true
     } else {
       for v in views.values { v.tempo?.play(true) }
-      mapStopped = false
     }
   }
 
@@ -505,7 +502,7 @@ final class Host {
       if let from = lastSlot { perScl[from] = scl }
       if let s = perScl[slot] { scl = s; core.scale(s) }
     }
-    lastSlot = slot; recycleStash = nil; plate = nil; mapStopped = false
+    lastSlot = slot; recycleStash = nil; plate = nil
     views[slot]?.enter()
     nav.anim = (now, false, slot)
   }
