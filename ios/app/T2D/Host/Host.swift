@@ -337,7 +337,7 @@ final class Host {
     }
     for slot in slots { views[slot]?.clear() }
     recycleStash = stash
-    for slot in slots { undo.commit(slot: slot, scl: scl) }   // сцены и базы — уже очищенные
+    for slot in slots { undo.commit(slot: slot, scl: link.scale ? scl : (perScl[slot] ?? scl)) }   // сцены и базы — уже очищенные
     return true
   }
 
@@ -388,7 +388,7 @@ final class Host {
     let t = plateTabs
     plate = Plate(tab: t.contains(lastTab) ? lastTab : t[0])
   }
-  func selectTab(_ t: PlateTab) { if plateTabs.contains(t) { plate = Plate(tab: t) } }
+  func selectTab(_ t: PlateTab) { if plateTabs.contains(t), plate?.tab != t { plate = Plate(tab: t) } }
 
   private func plateGeo(_ p: Plate) -> PlateGeo {
     var rows = 0, extra: CGFloat = 0
@@ -633,8 +633,8 @@ final class Host {
   func tick(now: Double, dt: Double) {
     self.now = now
     _ = nav.step(now)                                        // закрыл кончившиеся переход и peek; по концу входа — режим .world
+    if plate?.tab == .mix || onMap { levels.poll(now: now, read: core.levels) }   // лучи карты и уровни вкладки mix
     if onMap {                                               // карта и переход: мир не тикает
-      levels.poll(now: now, read: core.levels)               // лучи карты — пока она видна
       for v in views.values { v.idle() }                     // слить кольца миров, чтобы вход не отыграл старое
     } else { world?.tick(now: now, dt: dt) }                 // мир тикает вне перехода
     if sheet != nil { lfos = core.lfoSnap() }
