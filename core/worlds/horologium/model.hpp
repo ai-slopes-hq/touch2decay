@@ -11,12 +11,12 @@ namespace horologium {
 
 constexpr int NR = 8;                                   // кольца II…IX
 enum Fx { AEQUALIS, MATERIA, CONCURSUS, CHANCE, HALL, NFX };   // порядок — fx в model.js
-enum RingKey { ON, UNDER, PHI, LVL, INST, LEN, NRK };
+enum RingKey { ON, UNDER, PHI, LVL, INST, LEN, FLT, NRK };
 constexpr int LEN_MAX = 16;                             // гнёзд в кольце: 1…16 (шестнадцатые), по умолчанию 16
 extern const char* const FX_NAMES[NFX];
 extern const double FX_DEF[NFX];
 
-struct Ring { int n = 2; bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0, len = 16; };   // inst — голос кольца (Inst из drums.hpp), по умолчанию — номер кольца; len — длина кольца в шагах 1…16
+struct Ring { int n = 2; bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0, len = 16; double flt = 0.5; };   // flt — DJ-фильтр голоса 0…1: 0.5 выкл, влево lowpass, вправо highpass; inst — голос кольца (Inst из drums.hpp), по умолчанию — номер кольца; len — длина кольца в шагах 1…16
 struct Clock { bool run = false; double bpm = 100; };
 
 class Model {
@@ -36,9 +36,9 @@ class Model {
   void setRun(bool on) { clock_.run = on; }
   void setBpm(double bpm) { clock_.bpm = bpm; }
   void clear();                                         // всё в тишину; кит — по умолчанию (inst = номер кольца)
-  void dice();                                          // три соседних кольца k…k+2 (k = 2…7), у каждого len и фаза-сдвиг; under общий; часы идут (как dice в model.js)
+  void dice();                                          // три соседних кольца k…k+2 (k = 2…7), у каждого len и фаза-сдвиг; under общий; часы идут; в конце — не более одного фильтра (flt) на звучащем кольце (как dice в model.js)
 
-  std::string snapshot() const;                         // тот же JSON, что у model.js: {r: [{on, under, phi, lvl, inst, len}], fx, bpm, run}
+  std::string snapshot() const;                         // тот же JSON, что у model.js: {r: [{on, under, phi, lvl, inst, len, flt}], fx, bpm, run}
   void restore(const std::string& js);
   bool sounding() const;
 

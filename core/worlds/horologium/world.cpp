@@ -24,11 +24,12 @@ void World::action(int kind, int i, const double* a, int n) {
     case BPM: if (n >= 1 && a[0] > 0) model_.setBpm(a[0]); break;
     case CLEAR: model_.clear(); break;
     case DICE: model_.dice(); break;
-    case sdk::ACT_LFO: {                                // LFO плашек: Fx 0…4, кольца 5 + 2·i (phi) и 6 + 2·i (lvl) (i == -1 у плашек мира)
+    case sdk::ACT_LFO: {                                // LFO плашек: Fx 0…4, кольца 5 + 2·i (phi) и 6 + 2·i (lvl), фильтр 21 + i (i == -1 у плашек мира)
       if (n < 2 || i != -1) break;
       const int key = static_cast<int>(a[0]);
       if (key >= 0 && key < NFX) model_.setFx(key, a[1]);
       else if (key >= NFX && key < NFX + 2 * NR) model_.setRing((key - NFX) / 2, key % 2 ? PHI : LVL, a[1]);
+      else if (key >= NFX + 2 * NR && key < NFX + 3 * NR) model_.setRing(key - NFX - 2 * NR, FLT, a[1]);   // 21 + i — фильтр кольца i
       break;
     }
     default: break;
@@ -41,7 +42,7 @@ void World::process(const sdk::Out& out, int n) {
   const double now = clk_ ? clk_->now : now_;
   now_ = now + n / sr_;
   Sound::R r[NR];
-  for (int i = 0; i < NR; i++) { const Ring& q = model_.ring(i); r[i] = Sound::R{q.on, q.under, q.phi, q.lvl, q.inst, model_.pitch(i), q.len}; }
+  for (int i = 0; i < NR; i++) { const Ring& q = model_.ring(i); r[i] = Sound::R{q.on, q.under, q.phi, q.lvl, q.inst, model_.pitch(i), q.len, static_cast<float>(q.flt)}; }
   sound_.set(r, model_.Fnow(), model_.fx(MATERIA), model_.fx(CONCURSUS), model_.fx(CHANCE), model_.tint());
   const Clock& c = model_.clock();
   const bool want = clk_ && clk_->grid.on && clk_->grid.p > 0 && c.run;   // замок к такту: оборот = 4 доли
@@ -67,7 +68,7 @@ int World::mirror(double* buf, int cap) const {
   for (int k = 0; k < NFX; k++) *p++ = model_.fx(k);
   *p++ = c.run; *p++ = c.bpm;
   *p++ = sound_.P(); *p++ = sound_.F(); *p++ = static_cast<double>(sound_.strikes()); *p++ = locked_;
-  for (int i = 0; i < NR; i++) { const Ring& q = model_.ring(i); *p++ = q.on; *p++ = q.under; *p++ = q.phi; *p++ = q.lvl; *p++ = q.inst; *p++ = q.len; }
+  for (int i = 0; i < NR; i++) { const Ring& q = model_.ring(i); *p++ = q.on; *p++ = q.under; *p++ = q.phi; *p++ = q.lvl; *p++ = q.inst; *p++ = q.len; *p++ = q.flt; }
   return MIRROR_N;
 }
 

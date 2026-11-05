@@ -7,10 +7,11 @@
 // шаг, начало которого пересекли. concursus — удар сильнее, где кольца бьют на одном шаге (или «раз»).
 // Голос запускается не чаще 24 раз в секунду на кольцо (MIN_GAP): на быстром колесе лишние удары считаются (strikes), но голос
 // не перезапускают — иначе щелчки. Хвост доигрывает и после выключения кольца. Выход — сумма голосов × KIT × панорама,
-// DC-блок и tanh(0.9x). Тишина (колец нет или колесо стоит, голоса отзвучали) — нули без шагов голосов; идёт только колесо.
+// DC-блок и tanh(0.9x). DJ-фильтр на голос (flt): свой Biquad на кольцо после голоса и до панорамы, 0.5 — байпас без вызова. Тишина (колец нет или колесо стоит, голоса отзвучали) — нули без шагов голосов; идёт только колесо.
 // Параметры (кольца, fx, Ft, замок) задаёт мир перед каждым блоком; время блока — от часов хоста.
 #pragma once
 #include <cstdint>
+#include "../../sdk/biquad.hpp"
 #include "../../sdk/rng.hpp"
 #include "drums.hpp"
 #include "model.hpp"
@@ -23,8 +24,11 @@ class Sound {
   void prepare(double sr, uint32_t seed);
   static constexpr double MIN_GAP = 1.0 / 24;           // секунд между запусками голоса одного кольца
   static int rotOf(double phi, int L);                  // сдвиг рисунка: (floor(phi·L + 0.5) mod L + L) mod L; нечисло → 0
+  // срез DJ-фильтра по flt: lowpass 20 кГц→200 Гц при flt 0.47→0, highpass 20 Гц→8 кГц при 0.53→1 (экспонента). Мёртвая зона и нечисло — байпас: возвращает 0.
+  // *hp (если не nullptr) — highpass; в байпасе false. Частоту под sr/2 зажимает process.
+  static double filterHz(float flt, bool* hp);
   static int stepsOf(bool under) { return under ? 8 : 16; }   // шагов на оборот
-  struct R { bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0; double hz = 110; int len = 16; };   // len — длина кольца в шагах 1…16
+  struct R { bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0; double hz = 110; int len = 16; float flt = 0.5f; };   // len — длина кольца в шагах 1…16; flt — DJ-фильтр 0…1, 0.5 (мёртвая зона 0.47…0.53) — выкл
   // tint — окраска шумовых и металлических голосов (Model::tint()); hz кольца — Model::pitch(i)
   void set(const R* rings, double Ft, double mat, double conc, double chance, double tint);
   void lock(double t0, double bar);                     // замок к такту (новый — фаза прыгнет к обороту)
@@ -44,6 +48,9 @@ class Sound {
     int inst = 0; double hz = 110;
     double pan = 0, acc = 1;
     int len = 16, rot = 0;
+    float fltT = 0.5f, flt = 0.5f;                                  // flt цель и сглаженный (один полюс, раз в блок)
+    int fmode = 0;                                                   // 0 байпас, 1 lowpass, 2 highpass
+    sdk::Biquad f;                                                   // DJ-фильтр голоса
     int64_t last = -(int64_t(1) << 40);                             // номер сэмпла последнего запуска голоса
     Drum d;
   };

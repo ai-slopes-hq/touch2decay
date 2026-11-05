@@ -9,8 +9,8 @@ import { loadT2d } from './t2d-core.mjs';
 
 export const SEED = 909, OUT = 2.4, SLOT = 9;
 export const ACT = { ring: 0, fx: 1, run: 2, held: 3, step: 4, bpm: 5, speed: 6, clear: 7 };   // held / step / speed выведены (ядро их игнорирует), номера остались
-export const FX_KEYS = ['aequalis', 'materia', 'concursus', 'chance', 'hall'], RING_KEYS = ['on', 'under', 'phi', 'lvl'];
-export const HEAD = FX_KEYS.length + 6, M = { run: 5, bpm: 6, P: 7, F: 8, strikes: 9, locked: 10 };
+export const FX_KEYS = ['aequalis', 'materia', 'concursus', 'chance', 'hall'], RING_KEYS = ['on', 'under', 'phi', 'lvl', 'inst', 'len', 'flt'];   // порядок RingKey ядра; эталонный worklet знает только первые четыре, flt — байпас 0.5
+export const HEAD = FX_KEYS.length + 6, RING_M = 7, MIRROR_N = HEAD + 8 * RING_M, M = { run: 5, bpm: 6, P: 7, F: 8, strikes: 9, locked: 10 };   // кольцо в зеркале: on, under, phi, lvl, inst, len, flt
 
 export const ACTS = {
   still: [{ run: 100 }, ['ring', 4, 'on', 1], { run: 50 }],                          // колесо стоит — тишина
@@ -32,7 +32,7 @@ export const ACTS = {
 const hostScale = (sc) => ({ get on() { return sc.on; }, get root() { return sc.on ? sc.root : 0; } });
 const cat = (bs) => { const o = new Float32Array(bs.length * BLOCK); bs.forEach((b, k) => o.set(b, k * BLOCK)); return o; };
 
-export function refPath(steps, { seed = SEED, ticks = false } = {}) {
+export function refPath(steps, { seed = SEED } = {}) {
   const { reg, ctx } = sandbox('./ref/horo-worklet.js', { currentTime: 0 });
   const proc = new reg.horo({ processorOptions: { seed: seed + 1 } });
   const sc = { on: false, idx: 0, root: 0 };
@@ -52,7 +52,6 @@ export function refPath(steps, { seed = SEED, ticks = false } = {}) {
   for (const s of steps) {
     if (s.run) {
       for (let b = 0; b < s.run; b++) {
-        if (ticks) model.tick();
         const l = new Float32Array(BLOCK), r = new Float32Array(BLOCK);
         proc.process([], [[l, r]], {});
         ctx.currentTime += BLOCK / SR;
@@ -99,4 +98,3 @@ export function corePath(steps, { seed = SEED } = {}) {
   }
   return { L: cat(L), R: cat(R), wheel, snapshot: c.snapshot(SLOT) };
 }
-

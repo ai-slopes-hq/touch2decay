@@ -69,12 +69,13 @@ test('lock: the phase stays on the bar after a pause (error ≤ 0.1)', () => {
 test('mirror: head layout', () => {
   const c = loadT2d(); c.init(SR, 1);
   const m = c.mirror(SLOT);
-  assert.equal(m.length, 11 + 8 * 6);
-  assert.equal(m.length, 59);
+  assert.equal(m.length, 11 + 8 * 7);
+  assert.equal(m.length, 67);
   assert.equal(m[M.bpm], 100);
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[11 + i * 6]), [1, 1, 1, 0, 0, 0, 0, 0], 'II, III, IV on');
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[11 + i * 6 + 4]), [0, 1, 2, 3, 4, 5, 6, 7], 'default kit: inst = ring');
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[11 + i * 6 + 5]), [16, 16, 16, 16, 16, 16, 16, 16], 'len 16');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[11 + i * 7]), [1, 1, 1, 0, 0, 0, 0, 0], 'II, III, IV on');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[11 + i * 7 + 4]), [0, 1, 2, 3, 4, 5, 6, 7], 'default kit: inst = ring');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[11 + i * 7 + 5]), [16, 16, 16, 16, 16, 16, 16, 16], 'len 16');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[11 + i * 7 + 6]), [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], 'flt 0.5 (off)');
 });
 
 test('speed: reference path vs t2d.wasm, scenario all (~10 s)', () => {

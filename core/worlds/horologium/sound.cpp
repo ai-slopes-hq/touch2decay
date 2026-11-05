@@ -37,11 +37,19 @@ void Sound::set(const R* rings, double Ft, double mat, double conc, double chanc
     o.hz = std::isfinite(rings[i].hz) ? rings[i].hz : 0;
     o.len = rings[i].len >= 1 && rings[i].len <= 16 ? rings[i].len : 16;
     o.rot = rotOf(o.phi, o.len);
+    o.fltT = std::isnan(rings[i].flt) ? 0.5f : rings[i].flt < 0 ? 0.f : rings[i].flt > 1 ? 1.f : rings[i].flt;
   }
   Ft_ = std::isfinite(Ft) ? Ft : 0; mat_ = unit(mat, 0.35); conc_ = unit(conc, 0.4); chance_ = unit(chance, 1);
   tint_ = std::isfinite(tint) && tint > 0 ? tint : 1;
 }
 
+double Sound::filterHz(float flt, bool* hp) {
+  if (hp) *hp = false;
+  if (std::isnan(flt)) return 0;
+  if (flt < 0.47f) return 200.0 * std::pow(100.0, flt / 0.47);   // 0 → 200 Гц, 0.47 → 20 кГц
+  if (flt > 0.53f) { if (hp) *hp = true; return 20.0 * std::pow(400.0, (flt - 0.53) / 0.47); }   // 0.53 → 20 Гц, 1 → 8 кГц
+  return 0;
+}
 
 void Sound::lock(double t0, double bar) {
   if (!(bar > 0)) { lockOn_ = false; return; }
@@ -79,7 +87,19 @@ void Sound::process(float* L, float* R, int n, double now) {
     }
     smp_ += n;
     dc_[0] = dc_[1] = dx_[0] = dx_[1] = 0;
+    for (O& o : r_) { o.f.reset(); o.fmode = 0; o.flt = o.fltT; }   // фильтры спят: состояние забыто, flt догнал цель
     return;
+  }
+  const double kFlt = 1 - std::exp(-n / (0.02 * sr));   // сглаживание flt: 20 мс на блок
+  for (O& o : r_) {                                     // коэффициенты DJ-фильтров — раз в блок
+    o.flt += (o.fltT - o.flt) * static_cast<float>(kFlt);
+    bool hp = false;
+    const double hz = filterHz(o.flt, &hp);
+    const int mode = hz > 0 ? (hp ? 2 : 1) : 0;
+    if (mode == 0) { o.fmode = 0; continue; }
+    if (o.fmode == 0) o.f.reset();                      // вход из байпаса: память устарела
+    o.fmode = mode;
+    o.f.set(hp ? sdk::Biquad::highpass : sdk::Biquad::lowpass, std::fmin(hz, 0.45 * sr), 2, sr);
   }
   for (int k = 0; k < n; k++) {
     F_ += (Ft_ - F_) * kF;
@@ -123,8 +143,10 @@ void Sound::process(float* L, float* R, int n, double now) {
       }
     }
     for (O& o : r_) {                                   // голоса звучат и у выключенных колец — хвост доигрывает
-      if (!o.d.active()) continue;
-      const double y = o.d.step(rng_) * KIT;
+      const bool act = o.d.active();
+      if (!act && (o.fmode == 0 || o.f.silent())) continue;   // голос отзвучал, фильтр дозвучал
+      double y = act ? o.d.step(rng_) * KIT : 0;
+      if (o.fmode) { y = o.f.step(y); if ((k & 31) == 0) o.f.flushTiny(1e-12); }   // DJ-фильтр: после голоса, до панорамы
       yl += y * (1 - o.pan) * 0.5; yr += y * (1 + o.pan) * 0.5;
     }
     L[k] = static_cast<float>(yl); R[k] = static_cast<float>(yr);

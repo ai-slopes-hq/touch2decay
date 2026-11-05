@@ -11,10 +11,11 @@ export const LENS = [16, 16, 12, 8, 6];                 // длины колец
 export const NAMES = [[[1, 2], 'diapason'], [[2, 3], 'diapente'], [[3, 4], 'diatessaron'], [[4, 5], 'ditonus'], [[5, 6], 'semiditonus'], [[8, 9], 'tonus'], [[4, 5, 6], 'trias harmonica'], [[10, 12, 15], 'trias mollis'], [[4, 5, 6, 7], 'septima naturalis'], [[3, 4, 5], 'trias harmonica'], [[2, 3, 4], 'diapente · diapason']];
 export const noteName = (f) => { const m = Math.round(12 * Math.log2(f / 55)); return `${NOTES[((m % 12) + 12) % 12]}${Math.floor((m + 9) / 12) + 1}`; };
 
+const fltOf = (v) => (typeof v === 'number' && !Number.isNaN(v) ? clamp(v) : 0.5);   // DJ-фильтр 0…1, 0.5 — выкл; нет, мусор, NaN → 0.5
 const lenOf = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(clamp(v, 1, 16)) : 16);   // мусор → 16, иначе 1…16
 
 export function createModel({ scale = { on: false, root: 0 }, rng = Math.random } = {}) {
-  const rings = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: i < 3, under: false, phi: 0, lvl: 0.8, len: 16 }));
+  const rings = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: i < 3, under: false, phi: 0, lvl: 0.8, len: 16, flt: 0.5 }));
   const fx = { aequalis: 0, materia: 0.35, concursus: 0.4, chance: 1, hall: 0 };   // 05.11: hall 0 по умолчанию, как в ядре
   const clock = { run: false, bpm: 100 };
   const state = { rings, fx, clock };
@@ -33,7 +34,7 @@ export function createModel({ scale = { on: false, root: 0 }, rng = Math.random 
   function toggleRing(i) { const r = rings[i]; r.on = !r.on; sendAll(); if (r.on) emit({ t: 'wake' }); }
   function toggleUnder(i) { const r = rings[i]; r.under = !r.under; r.on = true; sendAll(); emit({ t: 'wake' }); }   // двойной тап — унтертон
   function setPhase(i, phi) { rings[i].phi = phi; emit({ t: 'rings' }); }   // вдоль кольца — фаза
-  function setRing(i, k, v) { const r = rings[i]; if (k === 'on' || k === 'under') r[k] = v >= 0.5; else r[k] = v; sendAll(); }   // плашка кольца
+  function setRing(i, k, v) { const r = rings[i]; if (k === 'on' || k === 'under') r[k] = v >= 0.5; else if (k === 'flt') r.flt = fltOf(v); else r[k] = v; sendAll(); }   // плашка кольца
   function setFx(k, v) { fx[k] = v; emit({ t: 'fx' }); }
   function loadFx(o) { Object.assign(fx, o); emit({ t: 'fx' }); }
 
@@ -62,16 +63,19 @@ export function createModel({ scale = { on: false, root: 0 }, rng = Math.random 
   // ---------- патч ----------
   function dice() {                                       // три соседних кольца k…k+2 (k = 2…7), у каждого len и сдвиг; under общий; часы идут
     const R = rng, k = 2 + Math.floor(R() * 6), under = R() < 0.25;
-    rings.forEach((r) => { r.on = r.n >= k && r.n <= k + 2; r.under = under; r.phi = 0; r.lvl = 0.8; r.len = 16; });
+    rings.forEach((r) => { r.on = r.n >= k && r.n <= k + 2; r.under = under; r.phi = 0; r.lvl = 0.8; r.len = 16; r.flt = 0.5; });
     for (let n = k; n <= k + 2; n++) { const r = rings[n - 2]; r.len = LENS[Math.floor(R() * LENS.length)]; r.phi = Math.floor(R() * r.len) / r.len; }   // тройка по возрастанию: длина, затем сдвиг в шагах
-    fx.materia = R(); emit({ t: 'fx' }); sendAll(); setRun(true);
+    fx.materia = R();
+    const pick = Math.floor(R() * 3), apply = R() < 0.5, low = R() < 0.5, q = R();   // фильтр — броски только после materia: кольцо из трёх, применять ли, знак (lowpass при < 0.5), глубина; не более одного кольца
+    if (apply) rings[k - 2 + Math.min(pick, 2)].flt = low ? 0.30 + 0.17 * q : 0.53 + 0.12 * q;
+    emit({ t: 'fx' }); sendAll(); setRun(true);
   }
-  function clear() { for (const r of rings) { r.on = false; r.len = 16; } clock.run = false; sendAll(); }
-  const snapshot = () => JSON.stringify({ r: rings.map(({ on, under, phi, lvl, len }) => ({ on, under, phi, lvl, len })), fx, bpm: clock.bpm, run: clock.run });
+  function clear() { for (const r of rings) { r.on = false; r.len = 16; r.flt = 0.5; } clock.run = false; sendAll(); }
+  const snapshot = () => JSON.stringify({ r: rings.map(({ on, under, phi, lvl, len, flt }) => ({ on, under, phi, lvl, len, flt })), fx, bpm: clock.bpm, run: clock.run });
   function restore(js) {
     const st = JSON.parse(js);
     if (!st.r) return;                                   // снимок старого Horologium — не наш
-    st.r.forEach((q, i) => Object.assign(rings[i], { len: 16 }, q, { len: lenOf(q.len) }));
+    st.r.forEach((q, i) => Object.assign(rings[i], { len: 16 }, q, { len: lenOf(q.len), flt: fltOf(q.flt) }));
     Object.assign(fx, st.fx); clock.bpm = st.bpm; clock.run = st.run; emit({ t: 'fx' }); sendAll();
   }
 
