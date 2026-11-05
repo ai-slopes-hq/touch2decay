@@ -27,8 +27,9 @@ class Sound {
   // срез DJ-фильтра по flt: lowpass 20 кГц→200 Гц при flt 0.47→0, highpass 20 Гц→8 кГц при 0.53→1 (экспонента). Мёртвая зона и нечисло — байпас: возвращает 0.
   // *hp (если не nullptr) — highpass; в байпасе false. Частоту под sr/2 зажимает process.
   static double filterHz(float flt, bool* hp);
-  static int stepsOf(bool under) { return under ? 8 : 16; }   // шагов на оборот
-  struct R { bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0; double hz = 110; int len = 16; float flt = 0.5f; };   // len — длина кольца в шагах 1…16; flt — DJ-фильтр 0…1, 0.5 (мёртвая зона 0.47…0.53) — выкл
+  static float filterWet(float flt);                                // доля фильтра 0…1: 0 в мёртвой зоне
+  static int stepsOf(int under) { return under == 1 ? 8 : under == 2 ? 32 : 16; }   // шагов на оборот: обычное — шестнадцатые, унтертон ÷2 — восьмые, ×2 — тридцать вторые
+  struct R { bool on = false; int under = 0; double phi = 0, lvl = 0.8; int inst = 0; double hz = 110; int len = 16; float flt = 0.5f; };   // len — длина кольца в шагах 1…16; flt — DJ-фильтр 0…1, 0.5 (мёртвая зона 0.47…0.53) — выкл
   // tint — окраска шумовых и металлических голосов (Model::tint()); hz кольца — Model::pitch(i)
   void set(const R* rings, double Ft, double mat, double conc, double chance, double tint);
   void lock(double t0, double bar);                     // замок к такту (новый — фаза прыгнет к обороту)
@@ -44,11 +45,12 @@ class Sound {
 
  private:
   struct O {
-    int n = 2; bool on = false, under = false; double phi = 0, lvl = 0.8;
+    int n = 2; bool on = false; int under = 0; double phi = 0, lvl = 0.8;
     int inst = 0; double hz = 110;
     double pan = 0, acc = 1;
     int len = 16, rot = 0;
     float fltT = 0.5f, flt = 0.5f;                                  // flt цель и сглаженный (один полюс, раз в блок)
+    float wet = 0;                                                   // доля фильтра в звуке (кроссфейд у краёв мёртвой зоны)
     int fmode = 0;                                                   // 0 байпас, 1 lowpass, 2 highpass
     sdk::Biquad f;                                                   // DJ-фильтр голоса
     int64_t last = -(int64_t(1) << 40);                             // номер сэмпла последнего запуска голоса

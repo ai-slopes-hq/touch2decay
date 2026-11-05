@@ -16,7 +16,8 @@ constexpr int LEN_MAX = 16;                             // гнёзд в кол�
 extern const char* const FX_NAMES[NFX];
 extern const double FX_DEF[NFX];
 
-struct Ring { int n = 2; bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0, len = 16; double flt = 0.5; };   // flt — DJ-фильтр голоса 0…1: 0.5 выкл, влево lowpass, вправо highpass; inst — голос кольца (Inst из drums.hpp), по умолчанию — номер кольца; len — длина кольца в шагах 1…16
+// under — отношение кольца: 0 обычное, 1 унтертон (÷2: восьмые, высота 12/n), 2 ×2 (32 шага на оборот, высота n)
+struct Ring { int n = 2; bool on = false; int under = 0; double phi = 0, lvl = 0.8; int inst = 0, len = 16; double flt = 0.5; };   // flt — DJ-фильтр голоса 0…1: 0.5 выкл, влево lowpass, вправо highpass; inst — голос кольца (Inst из drums.hpp), по умолчанию — номер кольца; len — длина кольца в шагах 1…16
 struct Clock { bool run = false; double bpm = 100; };
 
 class Model {

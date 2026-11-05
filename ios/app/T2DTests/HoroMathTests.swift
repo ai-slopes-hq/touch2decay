@@ -2,7 +2,7 @@ import XCTest
 
 final class HoroMathTests: XCTestCase {
   private func rings(_ on: [Int], under: [Int] = []) -> [HoroRing] {
-    (0..<Horo.nr).map { HoroRing(n: $0 + 2, on: on.contains($0 + 2), under: under.contains($0 + 2), phi: 0, lvl: 0.8) }
+    (0..<Horo.nr).map { HoroRing(n: $0 + 2, on: on.contains($0 + 2), under: under.contains($0 + 2) ? 1 : 0, phi: 0, lvl: 0.8) }
   }
 
   func testEuclid() {
@@ -18,12 +18,12 @@ final class HoroMathTests: XCTestCase {
   }
 
   func testSlot() {
-    func r(under: Bool = false, phi: Double = 0, len: Int = 16) -> HoroRing { HoroRing(n: 2, under: under, phi: phi, len: len) }
+    func r(under: Int = 0, phi: Double = 0, len: Int = 16) -> HoroRing { HoroRing(n: 2, under: under, phi: phi, len: len) }
     XCTAssertEqual(Horo.slot(r(), P: 0.5), 8); XCTAssertEqual(Horo.slot(r(len: 12), P: 1), 4)
-    XCTAssertEqual(Horo.slot(r(under: true), P: 0.5), 4); XCTAssertEqual(Horo.slot(r(phi: 3.0 / 16), P: 0), 3)
+    XCTAssertEqual(Horo.slot(r(under: 1), P: 0.5), 4); XCTAssertEqual(Horo.slot(r(under: 2), P: 0.75), 8); XCTAssertEqual(Horo.slot(r(phi: 3.0 / 16), P: 0), 3)
     XCTAssertEqual(Horo.slot(r(), P: -0.01), 15); XCTAssertEqual(Horo.slot(r(), P: .nan), 0)
     for L in [1, 7, 16] { for P in [1e300, -1e300, Double.infinity] { XCTAssertTrue((0..<L).contains(Horo.slot(r(phi: 1e300, len: L), P: P))) } }
-    XCTAssertEqual(Horo.steps(r()), 16); XCTAssertEqual(Horo.steps(r(under: true)), 8)
+    XCTAssertEqual(Horo.steps(r()), 16); XCTAssertEqual(Horo.steps(r(under: 1)), 8); XCTAssertEqual(Horo.steps(r(under: 2)), 32); XCTAssertEqual(Horo.label(r(under: 2)), "II×2")
   }
 
   func testLenAfter() {
@@ -77,7 +77,7 @@ final class HoroMathTests: XCTestCase {
   }
 
   func testMOfAequalis() {
-    let r = HoroRing(n: 5, on: true, under: false, phi: 0, lvl: 0)
+    let r = HoroRing(n: 5, on: true, under: 0, phi: 0, lvl: 0)
     XCTAssertEqual(Horo.mOf(r, aequalis: 0), 5)
     XCTAssertEqual(Horo.mOf(r, aequalis: 1), pow(2, 28.0 / 12), accuracy: 1e-9)
   }
@@ -100,16 +100,17 @@ final class HoroMathTests: XCTestCase {
     for (W, H, safe) in [(390.0, 844.0, 34.0), (375.0, 667.0, 0.0)] {
       let G = HoroGeo(W: CGFloat(W), H: CGFloat(H), topY: 59, safeBot: CGFloat(safe))
       XCTAssertGreaterThanOrEqual(G.padStep, 44)
+      XCTAssertEqual(Set((0..<8).map { G.padY($0) }).count, 2, "два ряда")
       for i in 0..<8 {
-        XCTAssertEqual(G.padAt(CGPoint(x: G.padX(i), y: G.padY)), i)
-        XCTAssertEqual(G.padAt(CGPoint(x: G.padX(i) + G.padStep * 0.49, y: G.padY)), i)
+        XCTAssertEqual(G.padAt(CGPoint(x: G.padX(i), y: G.padY(i))), i)
+        XCTAssertEqual(G.padAt(CGPoint(x: G.padX(i) + G.padStep * 0.49, y: G.padY(i))), i)
         XCTAssertLessThanOrEqual(G.padX(i) + G.padStep / 2, CGFloat(W)); XCTAssertGreaterThanOrEqual(G.padX(i) - G.padStep / 2, 0)
       }
-      XCTAssertNil(G.padAt(CGPoint(x: G.cx, y: G.padY - 60)))
-      XCTAssertNil(G.padAt(CGPoint(x: G.padX(0) - G.padStep, y: G.padY)))
-      XCTAssertGreaterThan(G.padY - 22, G.ty + 21 + 8, "пэды ниже строки отношения")
+      XCTAssertNil(G.padAt(CGPoint(x: G.cx, y: G.padY0 - 60)))
+      XCTAssertNil(G.padAt(CGPoint(x: G.padX(0) - G.padStep, y: G.padY(0))))
+      XCTAssertGreaterThan(G.padY0 - 22, G.ty + 21 + 8, "пэды ниже строки отношения")
       XCTAssertLessThanOrEqual(G.bot, CGFloat(H - safe))
-      XCTAssertNil(G.ringAt(G.padX(3), G.padY))
+      XCTAssertNil(G.ringAt(G.padX(3), G.padY(3)))
     }
   }
 
@@ -129,7 +130,7 @@ final class HoroMathTests: XCTestCase {
     XCTAssertEqual(HoroMirror().rings[0].flt, 0.5)
     XCTAssertEqual(m.rings.count, 8)
     XCTAssertEqual(m.rings[3].n, 5)
-    XCTAssertTrue(m.rings[3].on && m.rings[3].under)
+    XCTAssertTrue(m.rings[3].on && m.rings[3].under == 1)
     XCTAssertEqual(m.rings[3].phi, 0.5)
     XCTAssertEqual(m.rings[3].lvl, 0.7)
     XCTAssertFalse(m.rings[2].on)

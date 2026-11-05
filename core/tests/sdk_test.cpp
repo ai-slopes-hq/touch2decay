@@ -3878,7 +3878,7 @@ static long horoExpect(double P0, double P1, int S, int rot, int k, int L) {
   return c;
 }
 // кольцо idx (n = idx + 2), длина L, сдвиг phi, F = 0.5: удары против horoExpect; stepsAt — проверять, что удары только на шагах 0 и 8
-static void horoOnsetCase(int idx, int L, double phi, bool under, bool onlyZeroEight) {
+static void horoOnsetCase(int idx, int L, double phi, int under, bool onlyZeroEight) {
   horologium::Sound s; s.prepare(48000, 1);
   horologium::Sound::R r[8]; r[idx].on = true; r[idx].inst = 5; r[idx].len = L; r[idx].phi = phi; r[idx].under = under;
   float Lb[128], Rb[128]; long last = 0;
@@ -3890,17 +3890,19 @@ static void horoOnsetCase(int idx, int L, double phi, bool under, bool onlyZeroE
       if (onlyZeroEight) CHECK(st == 0 || st == 8);
     }
   }
-  const int S = under ? 8 : 16, k = std::min(idx + 2, L);
+  const int S = horologium::Sound::stepsOf(under), k = std::min(idx + 2, L);
   CHECK(s.P() > 3.9);
   CHECK(s.strikes() == horoExpect(0, s.P(), S, horologium::Sound::rotOf(phi, L), k, L));
   CHECK(s.strikes() > 0);
 }
 static void horoOnsets() {
-  horoOnsetCase(0, 16, 0, false, true);                      // II, L16
-  horoOnsetCase(1, 12, 0, false, false);                     // III, L12
-  horoOnsetCase(2, 8, 3.0 / 8, false, false);                // IV, L8, phi = 3/8
-  horoOnsetCase(0, 16, 0, true, false);                      // II под унтертоном (S = 8)
-  horoOnsetCase(7, 6, 0, false, false);                      // IX, L6: k = 6 — каждый шаг
+  horoOnsetCase(0, 16, 0, 0, true);                      // II, L16
+  horoOnsetCase(1, 12, 0, 0, false);                     // III, L12
+  horoOnsetCase(2, 8, 3.0 / 8, 0, false);                // IV, L8, phi = 3/8
+  horoOnsetCase(0, 16, 0, 1, false);                         // II под унтертоном ÷2 (S = 8)
+  horoOnsetCase(6, 16, 0, 2, false);                         // VIII ×2 (S = 32): 8 ударов дважды за такт — 16
+  horoOnsetCase(7, 16, 3.0 / 16, 2, false);                  // IX ×2 со сдвигом
+  horoOnsetCase(7, 6, 0, 0, false);                      // IX, L6: k = 6 — каждый шаг
 }
 static void horoRunTo(horologium::Sound& s, horologium::Sound::R* r, double target, int* b) {   // колесо вперёд, пока P не дойдёт до target (назад колесо не ходит)
   float Lb[128], Rb[128];
@@ -4095,6 +4097,11 @@ static void horoFilterMap() {
   for (float f = 0.531f; f <= 1.0f; f += 0.01f) { const double h = Sound::filterHz(f, &hp); CHECK(hp && h > prev); prev = h; }
   CHECK(Sound::filterHz(0.3f, nullptr) > 0);                  // hp = nullptr допустим
   CHECK(horologium::Sound::R{}.flt == 0.5f);
+  CHECK(Sound::filterWet(0.5f) == 0 && Sound::filterWet(0.47f) == 0 && Sound::filterWet(0.53f) == 0);   // доля фильтра: 0 в мёртвой зоне, плавно до 1
+  CHECK(Sound::filterWet(0.44f) > 0.99f && Sound::filterWet(0.56f) > 0.99f && Sound::filterWet(0.0f) == 1 && Sound::filterWet(1.0f) == 1);
+  float pw = 0;
+  for (float f = 0.47f; f >= 0.4399f; f -= 0.001f) { const float w = Sound::filterWet(f); CHECK(w >= pw && w - pw < 0.04f); pw = w; }
+  CHECK(Sound::filterWet(NAN) == 0);
 }
 // RMS ударов одного кольца за последние 1.5 с (после 0.5 с на сглаживание flt); блок L / R копируется в out, если он задан
 static double horoFltRms(int inst, double hz, float flt, std::vector<float>* out = nullptr) {
@@ -4216,7 +4223,7 @@ static void horoDiceFlt() {
     m.dice();
     sdk::Rng g(seed);                                                      // прежний кубик (до фильтра), тот же порядок бросков
     const int k = 2 + static_cast<int>(g.next() * 6);
-    const bool under = g.next() < 0.25;
+    const int under = g.next() < 0.25 ? 1 : 0;
     double phi[8] = {}; int len[8]; for (int i = 0; i < 8; i++) len[i] = 16;
     for (int n = k; n <= k + 2; n++) { len[n - 2] = LENS[static_cast<int>(g.next() * 5)]; phi[n - 2] = static_cast<int>(g.next() * len[n - 2]) / static_cast<double>(len[n - 2]); }
     const double mat = g.next();

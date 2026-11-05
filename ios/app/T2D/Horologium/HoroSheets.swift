@@ -30,8 +30,8 @@ extension HorologiumView {
   }
 
   func ringSpec(_ i: Int) -> SheetSpec {
-    let keys = HorologiumView.ringKeys, labels = ["sounds", "undertone", "phase", "level", "filtrum", "instrument"]
-    let codes = [-1, -1, 5 + 2 * i, 6 + 2 * i, 21 + i, -1]   // LFO: фаза, громкость и фильтр; sounds / undertone / instrument — без LFO
+    let keys = HorologiumView.ringKeys, labels = ["sounds", "ratio", "phase", "level", "filtrum", "instrument"]
+    let codes = [-1, -1, 5 + 2 * i, 6 + 2 * i, 21 + i, -1]   // LFO: фаза, громкость и фильтр; sounds / ratio / instrument — без LFO
     func k(_ key: String) -> Int { HorologiumView.ringIdx[key] ?? 0 }
     return SheetSpec(
       title: "circulus \(Horo.roman[i + 2])", hint: "ring — tap outside to close",
@@ -40,7 +40,7 @@ extension HorologiumView {
         let r = mirror.rings[i]
         switch key {
         case "on": return r.on ? 1 : 0
-        case "under": return r.under ? 1 : 0
+        case "under": return Double(r.under) / 2
         case "phi": return r.phi
         case "flt": return r.flt
         case "inst": return Double(r.inst) / 7
@@ -48,14 +48,14 @@ extension HorologiumView {
         }
       },
       set: { [unowned self] key, v in
-        let val = key == "on" || key == "under" ? (v >= 0.5 ? 1 : 0) : key == "inst" ? (v * 7).rounded() : v
+        let val = key == "on" ? (v >= 0.5 ? 1 : 0) : key == "under" ? (v * 2).rounded() : key == "inst" ? (v * 7).rounded() : v
         core.action(Act.ring, i, [Double(k(key)), val], touchTime: 0)
       },
       text: { [unowned self] key in
         let r = mirror.rings[i]
         switch key {
         case "on": return r.on ? "yes" : "no"
-        case "under": return r.under ? "1/\(r.n) · \(Horo.num2(12 / Double(r.n))) a turn" : "\(r.n) a turn"
+        case "under": return r.under == 1 ? "1/\(r.n) · \(Horo.num2(12 / Double(r.n))) a turn" : r.under == 2 ? "×2 · \(r.n) a turn, twice as fast" : "\(r.n) a turn"
         case "phi": return "\(Horo.rot(r.phi, r.len)) / \(r.len)"
         case "flt": return Horo.filterText(r.flt)
         case "inst": return Horo.instNames[r.inst]
@@ -64,7 +64,8 @@ extension HorologiumView {
       },
       lfo: SheetLfo(obj: -1, keys: ["phi", "lvl", "flt"], shape: 0),
       reset: nil, arc: nil,
-      tap: { [unowned self] key in                           // тап по строке instrument — следующий по кругу; прочие строки не трогаем
+      tap: { [unowned self] key in                           // тап по строке instrument — следующий по кругу, по ratio — следующее отношение; прочие строки не трогаем
+        if key == "under" { core.action(Act.ring, i, [1, Double((mirror.rings[i].under + 1) % 3)], touchTime: 0); return }
         guard key == "inst" else { return }
         core.action(Act.ring, i, [4, Double((mirror.rings[i].inst + 1) % 8)], touchTime: 0)
       })

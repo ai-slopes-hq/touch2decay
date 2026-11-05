@@ -65,7 +65,7 @@ extension HorologiumView {
       g.setLineWidth(1); g.setStrokeColor(d.ink(on ? 0.5 + 0.2 * CGFloat(r.lvl) : 0.13))
       if !on { g.setLineDash(phase: 0, lengths: [2, 4]) }
       arc(g, G.cx, G.cy, rr); g.setLineDash(phase: 0, lengths: [])
-      if on && r.under { g.setStrokeColor(d.ink(0.3)); arc(g, G.cx, G.cy, rr - 3) }   // унтертон — двойной обвод
+      if on && r.under != 0 { g.setStrokeColor(d.ink(0.3)); arc(g, G.cx, G.cy, rr + (r.under == 2 ? 3 : -3)) }   // унтертон — двойной обвод внутри, ×2 — снаружи
       fillSlots(r)
       dr.gaps.removeAll(keepingCapacity: true)
       for q in dr.slots {
@@ -79,7 +79,7 @@ extension HorologiumView {
         let gl: CGFloat = fast ? 0.35 + 0.4 * CGFloat(r.lvl) : q.j == cur ? hit : 0
         if gl > 0.05 { d.glowAt(x, y, 10 + 8 * gl, 0.35 * gl) }
         g.setFillColor(d.ink(min(1, 0.55 + 0.45 * gl)))
-        if r.under {
+        if r.under != 0 {
           g.beginPath(); g.move(to: CGPoint(x: x, y: y - 3.6)); g.addLine(to: CGPoint(x: x + 3, y: y)); g.addLine(to: CGPoint(x: x, y: y + 3.6)); g.addLine(to: CGPoint(x: x - 3, y: y)); g.closePath(); g.fillPath()
         } else { disc(g, x, y, 3.1) }
       }
@@ -95,7 +95,7 @@ extension HorologiumView {
         la = best
       }
       let lx = G.cx + CGFloat(sin(la)) * rr, ly = G.cy - CGFloat(cos(la)) * rr, fs: CGFloat = on ? 11 : 9.5
-      let lab = r.under ? "1/\(Horo.roman[r.n])" : Horo.roman[r.n], w = d.mapTextWidth(lab, fs)
+      let lab = Horo.label(r), w = d.mapTextWidth(lab, fs)
       g.setFillColor(theme.bg.cgColor); g.fill(CGRect(x: lx - w / 2 - 2, y: ly - 6, width: w + 4, height: 12))
       d.mapText(lab, lx, ly, fs, on ? 0.9 : 0.32, align: .center)
       if i == held {                                      // название инструмента — только пока кольцо в руке
@@ -168,18 +168,18 @@ extension HorologiumView {
     } else { g.setFillColor(d.ink(0.9)); disc(g, G.cx, G.cy, 3.2) }
   }
 
-  // ряд пэдов: hairline-кружок, цифра кольца, точка у включённого; под пэдом — инструмент курсивом; вспышка — по ringHit
+  // два ряда пэдов: hairline-кружок, цифра кольца, точка у включённого; под пэдом — инструмент курсивом; вспышка — по ringHit
   private func drawPads(_ d: Draw, _ now: Double) {
     let g = d.g, G = geo
     g.setLineWidth(1)
     for i in 0..<Horo.nr {
-      let r = mirror.rings[i], on = r.on, x = G.padX(i), y = G.padY, hit = cl(1 - (now - ringHit[i]) / 0.26)
+      let r = mirror.rings[i], on = r.on, x = G.padX(i), y = G.padY(i), hit = cl(1 - (now - ringHit[i]) / 0.26)
       let held = holds.values.contains { $0.kind == .pad && $0.i == i }
-      g.setStrokeColor(d.ink(on ? 0.7 + 0.25 * hit : held ? 0.5 : 0.25)); arc(g, x, y, G.padR)
+      g.setStrokeColor(d.ink(on ? 0.7 + 0.25 * hit : held ? 0.55 : 0.42)); arc(g, x, y, G.padR)
       if on && hit > 0.05 { g.setStrokeColor(d.ink(0.35 * hit)); arc(g, x, y, G.padR + 2.5) }
-      d.mapText(Horo.roman[i + 2], x, y - 2, 12, on ? 0.95 : 0.32, align: .center, italic: false)
+      d.mapText(Horo.roman[i + 2], x, y - 2, 12, on ? 0.95 : 0.5, align: .center, italic: false)
       if on { g.setFillColor(d.ink(0.9)); disc(g, x, y + 8, 1.6) }
-      d.reading { d.mapText(Horo.instNames[r.inst], x, y + G.padR + 13, 10, on ? 0.7 : 0.3, align: .center) }
+      d.reading { d.mapText(Horo.instNames[r.inst], x, y + G.padR + 13, 10, on ? 0.7 : 0.45, align: .center) }
     }
   }
 

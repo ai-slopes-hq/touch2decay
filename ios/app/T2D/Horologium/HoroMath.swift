@@ -2,7 +2,7 @@ import Foundation
 
 // кольцо зеркала: n — номер (II…IX), on / under — звучит / унтертон, phi — фаза (доля оборота), lvl — громкость (core/worlds/horologium/world.hpp)
 struct HoroRing {
-  var n = 2, on = false, under = false, phi = 0.0, lvl = 0.0, inst = 0, len = 16, flt = 0.5   // len — длина кольца в шагах 1…16; flt — фильтр 0…1, 0.5 = байпас
+  var n = 2, on = false, under = 0, phi = 0.0, lvl = 0.0, inst = 0, len = 16, flt = 0.5   // len — длина кольца в шагах 1…16; flt — фильтр 0…1, 0.5 = байпас
 }
 
 // константы и чистая математика Horologium (worlds/horologium/model.js, view.js): имена нот, отношение колец
@@ -27,7 +27,8 @@ enum Horo {
     let l = Double(L), v = fmod(fmod((phi * l + 0.5).rounded(.down), l) + l, l)
     return v.isFinite ? Int(min(l - 1, max(0, v))) : 0
   }
-  static func steps(_ r: HoroRing) -> Int { r.under ? 8 : 16 }   // шагов на оборот: шестнадцатая, унтертон — восьмая
+  static func steps(_ r: HoroRing) -> Int { r.under == 1 ? 8 : r.under == 2 ? 32 : 16 }   // шагов на оборот: шестнадцатая; унтертон ÷2 — восьмая; ×2 — тридцать вторая
+  static func label(_ r: HoroRing) -> String { r.under == 1 ? "1/\(roman[r.n])" : r.under == 2 ? "\(roman[r.n])×2" : roman[r.n] }   // подпись кольца
   static func slot(_ r: HoroRing, P: Double) -> Int {
     let L = min(16, max(1, r.len)), l = Double(L)
     guard P.isFinite else { return 0 }
@@ -76,7 +77,7 @@ enum Horo {
 
   // множитель кольца: номер или 12/n под унтертоном, подтянутый к равномерной темперации на aequalis (model.js:43)
   static func mOf(_ r: HoroRing, aequalis: Double) -> Double {
-    let m = r.under ? 12 / Double(r.n) : Double(r.n)
+    let m = r.under == 1 ? 12 / Double(r.n) : Double(r.n)
     if aequalis <= 0 { return m }
     let e = pow(2, jsRound(12 * log2(m)) / 12)
     return m * pow(e / m, aequalis)
@@ -86,8 +87,8 @@ enum Horo {
   static func ratio(_ rings: [HoroRing], F: Double) -> (a: String, b: String) {
     let on = rings.filter { $0.on }
     if on.isEmpty { return ("quies", "tap a ring") }
-    let a = on.map { $0.under ? "1/\(roman[$0.n])" : roman[$0.n] }.joined(separator: " : ")
-    let ms = on.map { $0.under ? 12 / Double($0.n) : Double($0.n) }.sorted()
+    let a = on.map { label($0) }.joined(separator: " : ")
+    let ms = on.map { $0.under == 1 ? 12 / Double($0.n) : Double($0.n) }.sorted()
     var name = ""
     for (set, nm) in names where set.count == ms.count && set.indices.allSatisfy({ abs(set[$0] / set[0] - ms[$0] / ms[0]) < 1e-6 }) { name = nm; break }
     let tail = name.isEmpty ? "" : " — \(name)"

@@ -68,11 +68,11 @@ export function createView(T, model, engine) {
     const r = rings[i];
     T.openSheet({
       title: `circulus ${ROMAN[r.n]}`, hint: 'ring — tap outside to close',
-      rows: [{ key: 'on', label: 'sounds' }, { key: 'under', label: 'undertone' }, { key: 'phi', label: 'phase' }, { key: 'lvl', label: 'level' }],
+      rows: [{ key: 'on', label: 'sounds' }, { key: 'under', label: 'ratio' }, { key: 'phi', label: 'phase' }, { key: 'lvl', label: 'level' }],
       lfo: { id: `horo-r${i}`, keys: ['phi', 'lvl'], shapes: 'classic' },
-      get: (k) => (k === 'on' || k === 'under' ? (r[k] ? 1 : 0) : r[k]),
-      set: (k, v) => model.setRing(i, k, v),
-      text: (k) => (k === 'on' ? (r.on ? 'yes' : 'no') : k === 'under' ? (r.under ? `1/${r.n} · ${+(12 / r.n).toFixed(2)} a turn` : `${r.n} a turn`) : k === 'phi' ? `${rotOf(r.phi, r.len)} / ${r.len}` : `${Math.round(r.lvl * 100)}%`),
+      get: (k) => (k === 'on' ? (r.on ? 1 : 0) : k === 'under' ? r.under / 2 : r[k]),
+      set: (k, v) => model.setRing(i, k, k === 'under' ? Math.round(v * 2) : v),
+      text: (k) => (k === 'on' ? (r.on ? 'yes' : 'no') : k === 'under' ? (r.under === 1 ? `1/${r.n} · ${+(12 / r.n).toFixed(2)} a turn` : r.under === 2 ? `×2 · ${r.n} a turn, twice as fast` : `${r.n} a turn`) : k === 'phi' ? `${rotOf(r.phi, r.len)} / ${r.len}` : `${Math.round(r.lvl * 100)}%`),
     });
   }
   function hubSheet() {
@@ -119,7 +119,7 @@ export function createView(T, model, engine) {
     rings.forEach((r, i) => {
       const rr = ringR(G, i), on = r.on, L = r.len, k = Math.min(r.n, L), hit = clamp(1 - (now - ringHit[i]) / 260), cur = slotOf(r, P);
       c.lineWidth = 1; c.strokeStyle = ink(on ? 0.5 + 0.2 * r.lvl : 0.13); c.setLineDash(on ? [] : [2, 4]); c.beginPath(); c.arc(G.cx, G.cy, rr, 0, TAU); c.stroke(); c.setLineDash([]);
-      if (on && r.under) { c.strokeStyle = ink(0.3); c.beginPath(); c.arc(G.cx, G.cy, rr - 3, 0, TAU); c.stroke(); }   // унтертон — двойной обвод
+      if (on && r.under) { c.strokeStyle = ink(0.3); c.beginPath(); c.arc(G.cx, G.cy, rr + (r.under === 2 ? 3 : -3), 0, TAU); c.stroke(); }   // унтертон — двойной обвод внутри, ×2 — снаружи
       const hits = [];                                    // углы гнёзд с ударом — для места под число
       for (let j = 0; j < L; j++) {
         const a = (j / L) * TAU, sn = Math.sin(a), cs = Math.cos(a), x = G.cx + sn * rr, y = G.cy - cs * rr;
@@ -139,7 +139,7 @@ export function createView(T, model, engine) {
       if (ms.length) { let best = la, bd = 9; for (let j = 0; j < ms.length; j++) { const a0 = ms[j], a1 = j + 1 < ms.length ? ms[j + 1] : ms[0] + TAU, mid = (a0 + a1) / 2, d = Math.abs(((mid - la + Math.PI) % TAU + TAU) % TAU - Math.PI); if (d < bd) { bd = d; best = mid; } } la = best; }
       const lx = G.cx + Math.sin(la) * rr, ly = G.cy - Math.cos(la) * rr;
       c.font = `italic ${on ? 11 : 9.5}px ${T.MAP}`; c.textAlign = 'center'; c.textBaseline = 'middle';
-      const lab = r.under ? `1/${ROMAN[r.n]}` : ROMAN[r.n], w = c.measureText(lab).width;
+      const lab = r.under === 1 ? `1/${ROMAN[r.n]}` : r.under === 2 ? `${ROMAN[r.n]}×2` : ROMAN[r.n], w = c.measureText(lab).width;
       c.fillStyle = BGC; c.fillRect(lx - w / 2 - 2, ly - 6, w + 4, 12);
       c.fillStyle = ink(on ? 0.9 : 0.32); c.fillText(lab, lx, ly);
     });
@@ -199,7 +199,7 @@ export function createView(T, model, engine) {
     lfo: { keys: ['aequalis', 'materia', 'concursus', 'chance', 'hall'], shapes: 'random' },
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => model.loadFx(o),
   };
-  const legend = [['tap', 'tap a ring', 'it sounds: n of its steps, the n-th harmonic'], ['double', 'double tap a ring', 'undertone 1/n'], ['drag', 'drag along a ring', 'its phase'],
+  const legend = [['tap', 'tap a ring', 'it sounds: n of its steps, the n-th harmonic'], ['double', 'double tap a ring', 'ratio: 1/n · ×2 · normal'], ['drag', 'drag along a ring', 'its phase'],
     ['hold', 'hold a ring', 'its sheet'], ['tap', 'tap the hub', 'run / stop · hold — tempo'], ['tap', 'tap the sun', 'map of worlds']];
   const corner = { hit: (f) => { const G = G0(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} };   // солнце — карта
 

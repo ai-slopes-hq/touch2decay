@@ -23,7 +23,7 @@ void Model::reset(uint32_t seed) {
 double Model::Fnow() const { return clock_.run ? Ft() : 0; }
 
 double Model::mOf(const Ring& r) const {
-  const double m = r.under ? 12.0 / r.n : r.n;
+  const double m = r.under == 1 ? 12.0 / r.n : r.n;
   if (fx_[AEQUALIS] <= 0) return m;
   const double et = std::pow(2.0, std::floor(12 * std::log2(m) + 0.5) / 12);
   return m * std::pow(et / m, fx_[AEQUALIS]);
@@ -61,7 +61,7 @@ void Model::setRing(int i, int key, double v) {
   Ring& r = r_[i];
   switch (key) {
     case ON: r.on = v >= 0.5; break;
-    case UNDER: r.under = v >= 0.5; break;
+    case UNDER: r.under = std::isfinite(v) ? (v < 0.5 ? 0 : v < 1.5 ? 1 : 2) : 0; break;
     case PHI: r.phi = v; break;
     case LVL: r.lvl = v; break;
     case INST: if (std::isfinite(v)) r.inst = static_cast<int>(std::lround(std::clamp(v, 0.0, NINST - 1.0))); break;
@@ -73,7 +73,7 @@ void Model::setRing(int i, int key, double v) {
 
 void Model::dice() {                                    // порядок вызовов rng_ — как в model.js
   const int k = 2 + static_cast<int>(rng_.next() * 6);
-  const bool under = rng_.next() < 0.25;
+  const int under = rng_.next() < 0.25 ? 1 : 0;
   for (Ring& r : r_) {
     r.on = r.n >= k && r.n <= k + 2;
     r.under = under; r.lvl = 0.8; r.phi = 0; r.len = 16; r.flt = 0.5;
@@ -102,7 +102,7 @@ std::string Model::snapshot() const {
   Json st = Json::object(), arr = Json::array(), fx = Json::object();
   for (const Ring& r : r_) {
     Json o = Json::object();
-    o.set("on", Json::boolean(r.on)); o.set("under", Json::boolean(r.under)); o.set("phi", Json::num(r.phi)); o.set("lvl", Json::num(r.lvl)); o.set("inst", Json::num(r.inst)); o.set("len", Json::num(r.len)); o.set("flt", Json::num(r.flt));
+    o.set("on", Json::boolean(r.on)); o.set("under", Json::num(r.under)); o.set("phi", Json::num(r.phi)); o.set("lvl", Json::num(r.lvl)); o.set("inst", Json::num(r.inst)); o.set("len", Json::num(r.len)); o.set("flt", Json::num(r.flt));
     arr.push(std::move(o));
   }
   for (int k = 0; k < NFX; k++) fx.set(FX_NAMES[k], Json::num(fx_[k]));
@@ -127,7 +127,8 @@ void Model::restore(const std::string& js) {
     if (const Json* x = q.get(RING_KEYS[INST]); x && x->type == Json::Num && std::isfinite(x->n)) setRing(i, INST, x->n);
     if (const Json* x = q.get(RING_KEYS[LEN]); x && x->type == Json::Num) setRing(i, LEN, x->n);
     if (const Json* x = q.get(RING_KEYS[FLT]); x && x->type == Json::Num) setRing(i, FLT, x->n);   // нет или не число — 0.5
-    flag(q, RING_KEYS[ON], r_[i].on); flag(q, RING_KEYS[UNDER], r_[i].under); num(q, RING_KEYS[PHI], r_[i].phi); num(q, RING_KEYS[LVL], r_[i].lvl);
+    flag(q, RING_KEYS[ON], r_[i].on); if (const Json* x = q.get(RING_KEYS[UNDER])) { if (x->type == Json::Bool) setRing(i, UNDER, x->b ? 1 : 0); else if (x->type == Json::Num) setRing(i, UNDER, x->n); }   // старые сцены: true / false
+    num(q, RING_KEYS[PHI], r_[i].phi); num(q, RING_KEYS[LVL], r_[i].lvl);
   }
   if (const Json* fx = st.get("fx"); fx && fx->type == Json::Obj) for (int k = 0; k < NFX; k++) { double v = fx_[k]; num(*fx, FX_NAMES[k], v); setFx(k, v); }
   num(st, "bpm", clock_.bpm); flag(st, "run", clock_.run);

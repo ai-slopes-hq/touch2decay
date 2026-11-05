@@ -124,7 +124,7 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(rec.acts.count, 3, "подъём второго тапа ничего не шлёт")
     rec.acts = []; setMirror(on: [2], under: [2], now: 6)
     tap(f1, onRing(2, 0.3), at: 7); view.down(finger(f1, onRing(2, 0.3), t0: 7.2, now: 7.2))
-    XCTAssertEqual(rec.acts[1].a, [1, 0], "унтертон уже есть — снимается")
+    XCTAssertEqual(rec.acts[1].a, [1, 2], "унтертон (1) → следующее отношение ×2")
   }
 
   func testLenDrag() {
@@ -200,7 +200,7 @@ final class HorologiumTests: XCTestCase {
   }
 
   // ---------- пэды ----------
-  private func padPt(_ i: Int) -> CGPoint { CGPoint(x: G.padX(i), y: G.padY) }
+  private func padPt(_ i: Int) -> CGPoint { CGPoint(x: G.padX(i), y: G.padY(i)) }
 
   func testPadTapTogglesOn() {
     setMirror()
@@ -226,7 +226,7 @@ final class HorologiumTests: XCTestCase {
     setMirror()
     tap(f1, onRing(2, 0.3), at: 5); XCTAssertEqual([rec.acts[0].kind, rec.acts[0].i], [0, 2])
     rec.acts = []; tap(f1, hub, at: 6); XCTAssertEqual(rec.acts[0].kind, 2)
-    rec.acts = []; tap(f1, CGPoint(x: G.cx, y: G.padY - 60), at: 7); XCTAssertTrue(rec.acts.isEmpty, "пустое место между отношением и пэдами")
+    rec.acts = []; tap(f1, CGPoint(x: G.cx, y: G.padY0 - 60), at: 7); XCTAssertTrue(rec.acts.isEmpty, "пустое место между отношением и пэдами")
   }
 
   func testPadsDrawNoCrash() { setMirror(on: [1, 4], now: 1); render(view, now: 1) }
@@ -267,7 +267,7 @@ final class HorologiumTests: XCTestCase {
     setMirror(on: [2], phi: 0.25, lvl: 0.8)
     let s = view.ringSpec(2)
     XCTAssertEqual(s.title, "circulus IV")
-    XCTAssertEqual(s.rows.map(\.key), ["on", "under", "phi", "lvl", "flt", "inst"]); XCTAssertEqual(s.rows.map(\.label), ["sounds", "undertone", "phase", "level", "filtrum", "instrument"])
+    XCTAssertEqual(s.rows.map(\.key), ["on", "under", "phi", "lvl", "flt", "inst"]); XCTAssertEqual(s.rows.map(\.label), ["sounds", "ratio", "phase", "level", "filtrum", "instrument"])
     XCTAssertEqual(s.rows.map(\.code), [-1, -1, 9, 10, 23, -1]); XCTAssertEqual(s.lfo?.obj, -1); XCTAssertEqual(s.lfo?.keys, ["phi", "lvl", "flt"]); XCTAssertEqual(s.lfo?.shape, 0)
     XCTAssertEqual(["on", "under", "phi", "lvl", "flt", "inst"].map(s.text), ["yes", "4 a turn", "4 / 16", "80%", "off", "click"])
     XCTAssertEqual(s.get("on"), 1); XCTAssertEqual(s.get("phi"), 0.25)
@@ -277,7 +277,7 @@ final class HorologiumTests: XCTestCase {
     s.set("on", 0.2); XCTAssertEqual(rec.acts[2].a, [0, 0])
     setMirror(on: [2], under: [2], now: 2)
     XCTAssertEqual(view.ringSpec(2).text("under"), "1/4 · 3 a turn")
-    XCTAssertEqual(view.ringSpec(3).text("under"), "5 a turn"); XCTAssertEqual(view.ringSpec(0).rows.map(\.code), [-1, -1, 5, 6, 21, -1])
+    XCTAssertEqual(view.ringSpec(3).text("under"), "5 a turn"); s.set("under", 1); XCTAssertEqual(rec.acts.last?.a, [1, 2]); setMirror(on: [2], under: [], now: 3); view.ringSpec(2).tap?("under"); XCTAssertEqual(rec.acts.last?.a, [1, 1]); XCTAssertEqual(view.ringSpec(0).rows.map(\.code), [-1, -1, 5, 6, 21, -1])
   }
 
   func testFilterText() {
@@ -371,7 +371,7 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(l.count, 7)
     XCTAssertEqual(l.map(\.glyph), [.tap, .double, .drag, .hold, .tap, .tap, .tap])
     XCTAssertEqual(l.map(\.gesture), ["tap a ring", "double tap a ring", "drag along a ring", "hold a ring", "tap a pad", "tap the hub", "tap the sun"])
-    XCTAssertEqual(l.map(\.does), ["it sounds: n of its steps, the n-th harmonic", "undertone 1/n", "its length", "its sheet",
+    XCTAssertEqual(l.map(\.does), ["it sounds: n of its steps, the n-th harmonic", "ratio: 1/n · ×2 · normal", "its length", "its sheet",
                                    "its ring sounds on / off · hold — its sheet", "run / stop · hold — tempo", "map of worlds"])
     XCTAssertEqual(view.title, "Horologium"); XCTAssertEqual(view.sub, "numeri · horae")
   }

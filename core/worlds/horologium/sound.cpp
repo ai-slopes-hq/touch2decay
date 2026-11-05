@@ -51,6 +51,13 @@ double Sound::filterHz(float flt, bool* hp) {
   return 0;
 }
 
+// Доля фильтра в звуке: 0 в мёртвой зоне, плавно до 1 за 0.03 от её краёв — вход в фильтр и выход из байпаса без скачка.
+float Sound::filterWet(float flt) {
+  if (std::isnan(flt)) return 0;
+  const float w = flt < 0.5f ? (0.47f - flt) / 0.03f : (flt - 0.53f) / 0.03f;
+  return w < 0 ? 0 : w > 1 ? 1 : w;
+}
+
 void Sound::lock(double t0, double bar) {
   if (!(bar > 0)) { lockOn_ = false; return; }
   if (!lockOn_) snap_ = true;
@@ -96,7 +103,8 @@ void Sound::process(float* L, float* R, int n, double now) {
     bool hp = false;
     const double hz = filterHz(o.flt, &hp);
     const int mode = hz > 0 ? (hp ? 2 : 1) : 0;
-    if (mode == 0) { o.fmode = 0; continue; }
+    if (mode == 0) { o.fmode = 0; o.wet = 0; continue; }
+    o.wet = filterWet(o.flt);
     if (o.fmode == 0) o.f.reset();                      // вход из байпаса: память устарела
     o.fmode = mode;
     o.f.set(hp ? sdk::Biquad::highpass : sdk::Biquad::lowpass, std::fmin(hz, 0.45 * sr), 2, sr);
@@ -146,7 +154,7 @@ void Sound::process(float* L, float* R, int n, double now) {
       const bool act = o.d.active();
       if (!act && (o.fmode == 0 || o.f.silent())) continue;   // голос отзвучал, фильтр дозвучал
       double y = act ? o.d.step(rng_) * KIT : 0;
-      if (o.fmode) { y = o.f.step(y); if ((k & 31) == 0) o.f.flushTiny(1e-12); }   // DJ-фильтр: после голоса, до панорамы
+      if (o.fmode) { y += (o.f.step(y) - y) * o.wet; if ((k & 31) == 0) o.f.flushTiny(1e-12); }   // DJ-фильтр: после голоса, до панорамы
       yl += y * (1 - o.pan) * 0.5; yr += y * (1 + o.pan) * 0.5;
     }
     L[k] = static_cast<float>(yl); R[k] = static_cast<float>(yr);

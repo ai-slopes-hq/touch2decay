@@ -19,7 +19,7 @@ struct HoroMirror {
     o = HoroMirror.head
     for i in 0..<Horo.nr {
       let s = o + i * HoroMirror.ringN
-      rings[i].on = b[s] != 0; rings[i].under = b[s + 1] != 0; rings[i].phi = b[s + 2]; rings[i].lvl = b[s + 3]
+      rings[i].on = b[s] != 0; rings[i].under = Int(b[s + 1]); rings[i].phi = b[s + 2]; rings[i].lvl = b[s + 3]
       rings[i].inst = b[s + 4].isFinite ? min(7, max(0, Int(b[s + 4]))) : 0
       rings[i].len = b[s + 5].isNaN ? 16 : Int(min(16, max(1, b[s + 5].rounded())))   // нечисло → 16, иначе зажим 1…16
       rings[i].flt = b[s + 6].isFinite ? min(1, max(0, b[s + 6])) : 0.5               // нечисло → 0.5 (байпас), иначе зажим 0…1

@@ -37,14 +37,14 @@ test(`Horologium [${name}]: удары за оборот — обертон n, �
   const m = createModel(), { rings, fx } = m.state;
   rings.forEach((r) => { r.on = [4, 5, 6].includes(r.n); });   // умолчание — II, III, IV
   const r5 = rings[3], r7 = rings[5];
-  assert.equal(m.mOf(r5), 5); r5.under = true; assert.equal(m.mOf(r5), 12 / 5);
+  assert.equal(m.mOf(r5), 5); r5.under = 1; assert.equal(m.mOf(r5), 12 / 5);
   fx.aequalis = 1; assert.ok(near(m.mOf(r5), 2 ** (Math.round(12 * Math.log2(2.4)) / 12)));
   assert.ok(near(m.mOf(r7), 2 ** (34 / 12)), 'седьмая гармоника → 34 полутона');
   fx.aequalis = 0.5; assert.ok(near(m.mOf(r7), Math.sqrt(7 * 2 ** (34 / 12))));
-  fx.aequalis = 0; r5.under = false;
+  fx.aequalis = 0; r5.under = 0;
   assert.deepEqual(m.ratio(0.5), { a: 'IV : V : VI', b: 'rhythmus · 4 · 5 · 6 ictus in circuitu · trias harmonica' });
   assert.deepEqual(m.ratio(55 / 4), { a: 'IV : V : VI', b: 'tonus — trias harmonica · A1 C#2 E2' });
-  rings.forEach((r) => { r.on = [4, 5, 6].includes(r.n); r.under = true; });
+  rings.forEach((r) => { r.on = [4, 5, 6].includes(r.n); r.under = 1; });
   assert.ok(m.ratio(0.5).b.endsWith('trias mollis') && m.ratio(0.5).a === '1/IV : 1/V : 1/VI');
   rings.forEach((r) => { r.on = false; }); assert.deepEqual(m.ratio(1), { a: 'quies', b: 'tap a ring' });
 });
@@ -148,11 +148,12 @@ test('Horologium facade: Euclid helpers', () => {
   }
   assert.equal(facade.euclid(0, 3, 8), true);
   for (const [phi, L, want] of [[0, 16, 0], [3 / 16, 16, 3], [0.5, 12, 6], [-0.25, 16, 12], [1, 16, 0], [0.99, 16, 0], [NaN, 16, 0], [1e300, 16, 0], [undefined, 8, 0]]) assert.equal(facade.rotOf(phi, L), want, `rot ${phi} ${L}`);
-  assert.equal(facade.stepsOf({ under: false }), 16); assert.equal(facade.stepsOf({ under: true }), 8);
-  assert.equal(facade.slotOf({ n: 2, under: false, phi: 0, len: 16 }, 0.5), 8);
-  assert.equal(facade.slotOf({ n: 2, under: false, phi: 0, len: 12 }, 1), 4);
-  assert.equal(facade.slotOf({ n: 2, under: true, phi: 0, len: 16 }, 0.5), 4);
-  assert.equal(facade.slotOf({ n: 2, under: false, phi: 3 / 16, len: 16 }, 0), 3);
-  assert.equal(facade.slotOf({ n: 2, under: false, phi: 0, len: 16 }, -0.01), 15);
-  assert.equal(facade.slotOf({ n: 2, under: false, phi: 0, len: 16 }, NaN), 0);
+  assert.equal(facade.stepsOf({ under: 0 }), 16); assert.equal(facade.stepsOf({ under: 1 }), 8); assert.equal(facade.stepsOf({ under: 2 }), 32);
+  assert.equal(facade.slotOf({ n: 2, under: 0, phi: 0, len: 16 }, 0.5), 8);
+  assert.equal(facade.slotOf({ n: 2, under: 0, phi: 0, len: 12 }, 1), 4);
+  assert.equal(facade.slotOf({ n: 2, under: 1, phi: 0, len: 16 }, 0.5), 4);
+  assert.equal(facade.slotOf({ n: 2, under: 2, phi: 0, len: 16 }, 0.75), 8);   // ×2: 32 шага на оборот, 24 mod 16
+  assert.equal(facade.slotOf({ n: 2, under: 0, phi: 3 / 16, len: 16 }, 0), 3);
+  assert.equal(facade.slotOf({ n: 2, under: 0, phi: 0, len: 16 }, -0.01), 15);
+  assert.equal(facade.slotOf({ n: 2, under: 0, phi: 0, len: 16 }, NaN), 0);
 });

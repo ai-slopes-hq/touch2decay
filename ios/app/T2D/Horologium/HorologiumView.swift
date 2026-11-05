@@ -20,7 +20,7 @@ final class HorologiumView: World {
   // view.js:257-260
   let legend: [LegendRow] = [
     LegendRow(glyph: .tap, gesture: "tap a ring", does: "it sounds: n of its steps, the n-th harmonic"),
-    LegendRow(glyph: .double, gesture: "double tap a ring", does: "undertone 1/n"),
+    LegendRow(glyph: .double, gesture: "double tap a ring", does: "ratio: 1/n · ×2 · normal"),
     LegendRow(glyph: .drag, gesture: "drag along a ring", does: "its length"),
     LegendRow(glyph: .hold, gesture: "hold a ring", does: "its sheet"),
     LegendRow(glyph: .tap, gesture: "tap a pad", does: "its ring sounds on / off · hold — its sheet"),
@@ -126,9 +126,9 @@ final class HorologiumView: World {
       else { holds[f.id] = Hold(kind: .none) }
       return
     }
-    if let l = lastRingTap, l.i == i, tt - l.t < Touch.dtapMs / 1000 {   // двойной тап — унтертон (и включает)
+    if let l = lastRingTap, l.i == i, tt - l.t < Touch.dtapMs / 1000 {   // двойной тап — следующее отношение ×1 → 1/n → ×2 (и включает)
       lastRingTap = nil
-      core.action(Act.ring, i, [1, mirror.rings[i].under ? 0 : 1], touchTime: f.touchTime)
+      core.action(Act.ring, i, [1, Double((mirror.rings[i].under + 1) % 3)], touchTime: f.touchTime)
       ringOn(i, true, f)
       holds[f.id] = Hold(kind: .none); return
     }
