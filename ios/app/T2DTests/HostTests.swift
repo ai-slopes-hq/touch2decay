@@ -958,33 +958,10 @@ final class HostTests: XCTestCase {
     let d = Draw(g: g, W: 390, H: 844); d.setTheme(world.theme); return d
   }
 
-  // ---------- concordia: тап по солнцу, строки, общий лад ----------
+  // ---------- карта: поле, темп, лад ----------
   private func mapField() -> Field { MapGeo.field(W: 390, H: 844, top: 47, safeBot: 34) }
-  private func box() -> Concordia.Box { Concordia.box(W: 390, H: 844, safeBot: 34, sunY: mapField().sy) }
-  private func tapRow(_ k: Concordia.Key) {
-    let b = box(), r = b.rows.first { $0.key == k }!
-    tap(b.x + b.w / 2, r.y)
-  }
 
-  func testConcordiaOutsideCloses() {
-    host = makeHost(); tick(1); host.openSettings(.concordia)
-    let b = box()
-    tap(b.x - 8, b.y + 100)
-    XCTAssertEqual(host.settings, .off)
-    XCTAssertNil(host.nav.peek); XCTAssertNil(host.nav.anim)
-  }
 
-  func testConcordiaEatsMap() {
-    host = makeHost(); tick(1); host.openSettings(.concordia)
-    let p = mapField().rect(col: 3, row: 1)                  // клетка Firmamentum
-    tap(p.midX, p.midY)
-    XCTAssertNil(host.nav.anim, "касание мимо коробки закрыло настройки и входа не начало")
-    XCTAssertEqual(host.settings, .off)
-    host.openSettings(.concordia)
-    let b = box()
-    tap(b.x + b.w / 2, b.y + 8)                              // внутри коробки, но не на строке
-    XCTAssertEqual(host.settings, .concordia); XCTAssertNil(host.nav.anim); XCTAssertNil(host.nav.peek)
-  }
 
   func testSetBpmReachesMaster() {
     let a = HWorld(7), b = HWorld(8)
@@ -1029,38 +1006,9 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(a.dices, 1); XCTAssertEqual(a.tw.sets, [133])
   }
 
-  func testNoLinkClockToggle() throws {
-    let labels = Concordia.box(W: 390, H: 844, safeBot: 34, sunY: 300).rows.map(\.label)
-    XCTAssertEqual(labels, ["shared scale", "stable audio", "restart audio", "mixer"])
-    XCTAssertFalse(String(decoding: try JSONEncoder().encode(Link()), as: UTF8.self).contains("clock"))
-  }
 
-  func testConcordiaToggles() {
-    host = makeHost(); tick(1); host.openSettings(.concordia)
-    XCTAssertEqual(host.link, Link(scale: true))
-    tapRow(.scale)
-    XCTAssertEqual(host.link, Link(scale: false))
-    XCTAssertEqual(host.settings, .concordia, "строка не закрывает коробку")
-    tick(4.2)                                                // автосохранение через 3 с
-    XCTAssertEqual(store.loadPrefs()?.link, Link(scale: false))
-  }
 
-  func testStableTogglesAudioAndSaves() {
-    host = makeHost(); tick(1); host.openSettings(.concordia)
-    var got: [Bool] = []; host.onStable = { got.append($0) }
-    tapRow(.stable)
-    XCTAssertEqual(got, [true]); XCTAssertTrue(host.audioPref.stable)
-    XCTAssertEqual(store.loadPrefs()?.audio, AudioPref(stable: true), "переключение сохраняется сразу")
-    tapRow(.stable)
-    XCTAssertEqual(got, [true, false]); XCTAssertEqual(store.loadPrefs()?.audio, AudioPref(stable: false))
-  }
 
-  func testStableFlashesRestart() {
-    host = makeHost(); tick(2); host.openSettings(.concordia)
-    XCTAssertLessThan(host.restartAt, -1)
-    tapRow(.stable)
-    XCTAssertEqual(host.restartAt, 2, "stable перезапускает звук — как в вебе вспыхивает «audio restarted»")
-  }
 
   func testMixDecodeClampsToUnit() throws {
     let j = #"{"g":{"10":2,"11":-1},"mute":{},"lpf":5,"thr":-3,"ratio":1.5,"ceil":99}"#
@@ -1069,33 +1017,12 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(m.lpf, 1); XCTAssertEqual(m.thr, 0); XCTAssertEqual(m.ratio, 1); XCTAssertEqual(m.ceil, 1)
   }
 
-  func testRestartCallsAudio() {
-    host = makeHost(); tick(2); host.openSettings(.concordia)
-    XCTAssertLessThan(host.restartAt, -1, "до первого перезапуска вспышки нет")
-    var n = 0; host.onRestart = { n += 1 }
-    tapRow(.restart)
-    XCTAssertEqual(n, 1); XCTAssertEqual(host.restartAt, 2)
-    XCTAssertEqual(host.settings, .concordia)
-  }
 
-  func testGoWorldResetsSettings() {
-    host = makeHost(); tick(1)
-    host.openSettings(.concordia); tap(5, 5)                       // открыть и закрыть тапом мимо
-    XCTAssertEqual(host.settings, .off)
-    tapCell(3, 1); tick(2)
-    XCTAssertEqual(host.nav.view, .world(10)); XCTAssertEqual(host.settings, .off)
-    host.goMap(); tick(3)
-    XCTAssertEqual(host.settings, .off)
-    host.openSettings(.concordia)
-    XCTAssertEqual(host.settings, .concordia)
-    host.goWorld(10)                                         // из кода, при открытой коробке
-    XCTAssertEqual(host.settings, .off)
-  }
 
   func testPerSclWhenUnlinked() {
     let w2 = HWorld(2)
     host = makeHost(views: [world, w2]); tick(1)
-    host.openSettings(.concordia); tapRow(.scale); tap(5, 5)       // лад не общий
+    sysTap(0); tap(5, 5)                                           // лад не общий: вкладка sys, shared scale
     XCTAssertFalse(host.link.scale)
     host.go(10)
     let a = Scl(on: true, idx: 1, root: 2), b = Scl(on: true, idx: 3, root: 5)
@@ -1124,97 +1051,19 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(h.link, Link(scale: false)); XCTAssertEqual(h.audioPref, AudioPref(stable: true))
   }
 
-  // ---------- микшер: открыт строкой mixer в concordia ----------
-  private func mgeo() -> Mixer.Geo { Mixer.geo(W: 390, H: 844, top: 47, safeBot: 34) }
-  private func openMixer() { host.openSettings(.concordia); tapRow(.mixer) }
-  private func rowY(_ slot: Int) -> CGFloat { mgeo().rows.first { $0.slot == slot }!.y }
-  private func masterY(_ m: MixM) -> CGFloat { mgeo().mr.first { $0.m == m }!.y }
+  // ---------- микшер: prefs ----------
   // палец: касание в (x, y), сдвиг на dx; возвращает палец до подъёма
   private func hold(_ n: Int, _ x: CGFloat, _ y: CGFloat, dx: CGFloat = 0) -> Finger {
     var f = finger(n, x, y); host.down(f); f.x += dx; f.moved = true; host.move(f); return f
   }
 
-  func testMixerOpensAndBack() {
-    host = makeHost(); tick(1); openMixer()
-    XCTAssertEqual(host.settings, .mixer)
-    let g = mgeo()
-    tap(g.x + 40, g.top + 20)                                // ‹ concordia
-    XCTAssertEqual(host.settings, .concordia)
-    tapRow(.mixer); XCTAssertEqual(host.settings, .mixer)
-    tap(5, 5)                                                // мимо коробки
-    XCTAssertEqual(host.settings, .concordia)
-  }
 
-  func testMixerFaderDragRelative() {
-    host = makeHost(); tick(1); openMixer()
-    let g = mgeo(), L = g.tx1 - g.tx0
-    let f = hold(0, g.tx0 + 10, rowY(10))
-    XCTAssertEqual(host.mix.fader(10), Mix.faderDef, accuracy: 1e-12, "ручка не прыгает к пальцу")
-    var m = f; m.x += 0.1 * L; host.move(m)
-    XCTAssertEqual(host.mix.fader(10), Mix.faderDef + 0.1, accuracy: 1e-9)
-    XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, host.mix.gain(10), accuracy: 1e-12)
-    host.up(m)
-  }
 
-  func testMixerDoubleTapDefault() {
-    host = makeHost(); tick(1); openMixer()
-    let g = mgeo()
-    let f = hold(0, g.tx0 + 10, rowY(10), dx: 30); host.up(f)
-    XCTAssertNotNil(host.mix.g[10])
-    tick(2); tap(g.tx0 + 10, rowY(10)); tick(2.1); tap(g.tx0 + 10, rowY(10))
-    XCTAssertNil(host.mix.g[10])
-    let m = hold(0, g.tx0 + 50, masterY(.thr), dx: -30); host.up(m)
-    XCTAssertNotEqual(host.mix[.thr], 0.75)
-    tick(3); tap(g.tx0 + 10, masterY(.thr)); tick(3.1); tap(g.tx0 + 10, masterY(.thr))
-    XCTAssertEqual(host.mix[.thr], 0.75)
-  }
 
-  func testMixerDoubleTapTooSlow() {
-    host = makeHost(); tick(1); openMixer()
-    let g = mgeo()
-    let f = hold(0, g.tx0 + 10, rowY(10), dx: 30); host.up(f)
-    tick(2); tap(g.tx0 + 10, rowY(10)); tick(2.5); tap(g.tx0 + 10, rowY(10))
-    XCTAssertNotNil(host.mix.g[10])
-  }
 
-  func testMixerMute() {
-    host = makeHost(); tick(1); openMixer()
-    let g = mgeo()
-    tap(g.tx1 + 40, rowY(10))
-    XCTAssertEqual(host.mix.mute[10], true); XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, 0)
-    tap(g.tx1 + 40, rowY(10))
-    XCTAssertEqual(host.mix.mute[10], false); XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, 1, accuracy: 1e-12)
-  }
 
-  func testMixerMasterSends() {
-    host = makeHost(); tick(1); openMixer()
-    let g = mgeo(), L = g.tx1 - g.tx0
-    let f = hold(0, g.tx0 + L / 2, masterY(.ceil), dx: -L); host.up(f)
-    let m = core.masters.last!
-    XCTAssertEqual(m[0], 22000); XCTAssertEqual(m[1], -10, accuracy: 1e-9)
-    XCTAssertEqual(m[2], 2.496, accuracy: 1e-9); XCTAssertEqual(m[3], -12, accuracy: 1e-9)
-  }
 
-  func testMixerDragOutsideKeepsMixer() {
-    host = makeHost(); tick(1); openMixer()
-    let g = mgeo(), L = g.tx1 - g.tx0
-    var f = hold(0, g.tx0 + 10, rowY(10)); f.x = 1000; f.y = 2000; host.move(f); host.up(f)
-    XCTAssertEqual(host.settings, .mixer)
-    XCTAssertEqual(host.mix.fader(10), 1, accuracy: 1e-12, "зажато в 0…1")
-    _ = L
-  }
 
-  func testMixerSecondFingerDoesNotMoveFirst() {
-    host = makeHost(); tick(1); openMixer()
-    let g = mgeo(), L = g.tx1 - g.tx0
-    let a = hold(0, g.tx0 + 10, rowY(10), dx: 0.1 * L)
-    let v = host.mix.fader(10)
-    var b = hold(1, g.tx0 + 10, masterY(.lpf)); b.x -= 0.3 * L; host.move(b)
-    XCTAssertEqual(host.mix.fader(10), v, accuracy: 1e-12)
-    XCTAssertEqual(host.mix[.lpf], 0.7, accuracy: 1e-9)
-    host.up(b); host.up(a)
-    XCTAssertEqual(host.settings, .mixer)
-  }
 
   func testReapplySendsMix() {
     store.savePrefs(PrefsFile(vol: 0.5, mix: Mix(g: [4: 0.5], mute: [10: true]), link: Link(), audio: AudioPref()))
@@ -1225,13 +1074,12 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(core.faders.count, 11); XCTAssertEqual(core.masters.count, 1)
   }
 
-  func testMixSavedAfterDrag() {
-    host = makeHost(); tick(1); openMixer()
-    let g = mgeo()
-    let f = hold(0, g.tx0 + 10, rowY(10), dx: 20); host.up(f)
-    tick(4.2)
-    XCTAssertEqual(store.loadPrefs()?.mix?.g[10], host.mix.g[10])
-    XCTAssertNotNil(host.mix.g[10])
+
+  func testPlateDrawsEveryTab() {
+    host = makeHost(); tick(1)
+    for t in Plate.tabs(hasFx: false, onMap: false) { host.openPlate(); host.selectTab(t); host.draw(drawCtx(), now: 1) }
+    host = mapHost(); host.openPlate()
+    for t in [PlateTab.scale, .mix, .sys] { host.selectTab(t); host.draw(drawCtx(), now: 1) }
   }
 
   func testMixLoadedOnInit() {
@@ -1240,10 +1088,6 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(h.mix.g[4], 0.5); XCTAssertEqual(h.mix.mute[10], true); XCTAssertEqual(h.mix[.thr], 0.3)
   }
 
-  func testMixerDrawsOpen() {
-    host = makeHost(); tick(1); openMixer(); tick(2)
-    host.draw(drawCtx(), now: 2)
-  }
 
   // ---------- хедер в мире: vol, play, recycle ----------
   private func vdrag(_ b: Btn, dx: CGFloat = 0, dy: CGFloat = 0, now: Double = 5) {
@@ -1411,9 +1255,9 @@ final class HostTests: XCTestCase {
   func testSunTapDoesNothing() {
     host = mapHost()
     tap(195, mapField().sy)
-    XCTAssertEqual(host.settings, .off); XCTAssertEqual(host.nav.view, .map)
+    XCTAssertEqual(host.nav.view, .map); XCTAssertNil(host.plate)
     tap(195 + 60, mapField().sy)   // бывшая подпись concordia
-    XCTAssertEqual(host.settings, .off)
+    XCTAssertNil(host.plate)
   }
 
   // ---------- звук: stable / restart / midi (бывшие строки панели audio, теперь вкладка sys — Task 6) ----------

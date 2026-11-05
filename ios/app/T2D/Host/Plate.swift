@@ -101,6 +101,15 @@ struct PlateGeo {
 }
 
 enum PlateDraw {
+  // круговая стрелка «перезапуск» (k — 1 сразу после перезапуска, до 0): вкладка sys
+  static func restartArrow(_ d: Draw, _ bx: CGFloat, _ y: CGFloat, _ k: CGFloat) {
+    let g = d.g
+    g.setStrokeColor(d.ink(0.5 + 0.5 * k)); g.setLineWidth(1.1); g.beginPath()
+    g.addArc(center: CGPoint(x: bx, y: y), radius: 8, startAngle: -0.3, endAngle: .pi * 1.6, clockwise: false); g.strokePath()
+    let tx = bx + 8 * cos(-0.3), ty = y + 8 * sin(-0.3)
+    g.beginPath(); g.move(to: CGPoint(x: tx - 4, y: ty - 1)); g.addLine(to: CGPoint(x: tx, y: ty)); g.addLine(to: CGPoint(x: tx + 1, y: ty - 4.5)); g.strokePath()
+  }
+
   // fx рисует SheetDraw (панель от g.top); здесь — полоса вкладок и содержимое scale
   static func draw(_ d: Draw, _ p: Plate, _ g: PlateGeo, scl: Scl, mix: Mix = .def, lv: [Float] = [], current: Int? = nil,
                    link: Link = Link(), audio: AudioPref = AudioPref(), restartK: CGFloat = 0) {
@@ -132,7 +141,7 @@ enum PlateDraw {
       switch r {
       case .restart:
         d.text(k > 0 ? "audio restarted" : r.label, g.x, y, 15, 0.6 + 0.35 * k)
-        Concordia.restartArrow(d, bx, y, k)
+        PlateDraw.restartArrow(d, bx, y, k)
       default:
         let on = r == .scale ? link.scale : r == .stable ? audio.stable : r == .midi ? audio.midi : true
         let a: CGFloat = r == .tempo ? 0.35 : on ? 0.95 : 0.6

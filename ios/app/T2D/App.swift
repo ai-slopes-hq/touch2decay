@@ -95,8 +95,8 @@ struct T2DApp: App {
     case "map": shotMap(); return
     case "nav": shotNav(); return
     case "peek": shotPeek(); return
-    case "concordia", "mixer": shotConcordia(mixer: T2DApp.shotName == "mixer"); return
-    case "audio": shotAudio(); return
+    case "header": return                                   // хедер мира Firmamentum — как есть
+    case "plate-fx", "plate-scale", "plate-mix", "plate-sys": shotPlate(T2DApp.shotName); return
     case "oceanus", "oceanus-sheet", "oceanus-luna", "oceanus-fan": shotOcean(T2DApp.shotName); return
     case "monochord", "monochord-sheet", "monochord-earth-sheet", "monochord-wind", "monochord-fan": shotMono(T2DApp.shotName); return
     case "horologium", "horologium-ring-sheet", "horologium-hub-sheet", "horologium-fan", "horologium-pads": shotHoro(T2DApp.shotName); return
@@ -181,23 +181,12 @@ struct T2DApp: App {
     }
   }
 
-  // карта (iPhone 16: inset 59 / 34): тап по солнцу — concordia; mixer — дальше строка mixer, фейдер Arcadia влево на 60 pt, тап по mute её строки
-  private func shotConcordia(mixer: Bool) {
-    let b = UIScreen.main.bounds, q = DispatchQueue.main
-    let sy = MapGeo.field(W: b.width, H: b.height, top: 59, safeBot: 34).sy
-    q.asyncAfter(deadline: .now() + 1) { touch(b.width / 2, sy, at: 1) }
-    guard mixer else { return }
-    let box = Concordia.box(W: b.width, H: b.height, safeBot: 34, sunY: sy)
-    q.asyncAfter(deadline: .now() + 1.5) { touch(b.width / 2, box.rows.first { $0.key == .mixer }!.y, at: 1.5) }
-    q.asyncAfter(deadline: .now() + 2) {
-      let g = Mixer.geo(W: b.width, H: b.height, top: 59, safeBot: 34), y = g.rows.first { $0.slot == 12 }!.y
-      let x0 = g.tx0 + (g.tx1 - g.tx0) * CGFloat(Mix.faderDef)
-      var f = Finger(id: ObjectIdentifier(host), x: x0, y: y, x0: x0, y0: y, t0: 2, moved: false, touchTime: 2)
-      host.down(f)
-      for i in 1...6 { f.x = x0 - 10 * CGFloat(i); f.moved = true; host.move(f) }
-      host.up(f)
-      touch(g.mx, y, at: 2.2)
-    }
+  // -shot plate-*: в Firmamentum плашка открыта на нужной вкладке (fx — веер мира; mix — фейдер Arcadia не трогаем, виден список)
+  private func shotPlate(_ name: String) {
+    host.go(FirmamentumView.slotN)
+    world.dice()
+    let tab: PlateTab = name == "plate-fx" ? .fx : name == "plate-scale" ? .scale : name == "plate-mix" ? .mix : .sys
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { host.openPlate(); host.selectTab(tab) }
   }
 
   // Oceanus: два оставленных города; oceanus — ещё и временный под пальцем (веб oceanus-held), -sheet — плашка города,
@@ -490,13 +479,6 @@ struct T2DApp: App {
       host.shotState(scl: Scl(on: true, idx: 2, root: 3))
     default: break                                          // ten-empty: пустое поле
     }
-  }
-
-  // -shot audio: в Firmamentum тап по кнопке громкости (W − 238, top + 20)
-  private func shotAudio() {
-    host.go(FirmamentumView.slotN)
-    world.dice()
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { touch(UIScreen.main.bounds.width - 238, 59 + 20, at: 1) }
   }
 
   // -shot undo: тап по небу → звезда → кнопка undo → звезды нет; касания идут через Host, число звёзд — в консоль (stdout)
