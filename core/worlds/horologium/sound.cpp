@@ -38,7 +38,7 @@ void Sound::set(const R* rings, double Ft, double mat, double conc, double chanc
     o.len = rings[i].len >= 1 && rings[i].len <= 16 ? rings[i].len : 16;
     o.rot = rotOf(o.phi, o.len);
   }
-  Ft_ = Ft; mat_ = unit(mat, 0.35); conc_ = unit(conc, 0.4); chance_ = unit(chance, 1); aeq_ = unit(aeq, 0);
+  Ft_ = std::isfinite(Ft) ? Ft : 0; mat_ = unit(mat, 0.35); conc_ = unit(conc, 0.4); chance_ = unit(chance, 1); aeq_ = unit(aeq, 0);
   tint_ = std::isfinite(tint) && tint > 0 ? tint : 1;
 }
 
@@ -107,7 +107,7 @@ void Sound::process(float* L, float* R, int n, double now) {
       const O& o = *act[a];
       const int S = stepsOf(o.under);
       const double q0 = std::floor(P0 * S), q1 = std::floor(P_ * S);
-      if (q0 == q1) continue;
+      if (q0 == q1 || !std::isfinite(q0) || !std::isfinite(q1)) continue;   // NaN в колесе — не бить (приведение к int было бы UB)
       const double qb = std::fmax(q0, q1);              // начало пересечённого шага (и вперёд, и назад)
       double jd = std::fmod(qb + o.rot, o.len);
       if (jd < 0) jd += o.len;

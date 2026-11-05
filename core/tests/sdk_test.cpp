@@ -3895,6 +3895,19 @@ static void horoLenSwitch() {                                // длина 16 �
   CHECK(s.strikes() - s0 == horoExpect(P0, s.P(), 16, horologium::Sound::rotOf(0, 3), 2, 3));
   CHECK(s.strikes() - s0 > 0);
 }
+static void horoNonFiniteTempo() {                         // Ft = NaN / inf / 1e300: выход конечный, колесо конечное, удары не взрываются
+  for (double ft : {static_cast<double>(NAN), static_cast<double>(INFINITY), -static_cast<double>(INFINITY), 1e300}) {
+    horologium::Sound s; s.prepare(48000, 1);
+    horologium::Sound::R r[8]; r[0].on = true; r[0].inst = 5; r[2].on = true; r[2].inst = 5;
+    float Lb[128], Rb[128];
+    for (int b = 0; b < 40; b++) {
+      s.set(r, ft, 0.35, 1, 1, 0, 1); s.process(Lb, Rb, 128, b * 128 / 48000.0);
+      for (int k = 0; k < 128; k++) CHECK(std::isfinite(Lb[k]) && std::isfinite(Rb[k]));
+    }
+    CHECK(std::isfinite(s.P()) && std::isfinite(s.F()));
+    CHECK(s.strikes() >= 0 && s.strikes() <= 40 * 128 * 2);   // не больше одного удара на кольцо за сэмпл
+  }
+}
 static void horoConcursus() {                                // II и IV, L16: общие шаги 0 и 8 — 1 + 1.2; только IV (4, 12) — 1 − 0.35
   horologium::Sound s; s.prepare(48000, 1);
   horologium::Sound::R r[8];
@@ -4508,7 +4521,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appMidiClock(); appMidiTime(); appMidiOverflow(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); sdkEuclid(); horoOnsets(); horoBackward(); horoRot(); horoLenSwitch(); horoConcursus(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); sdkEuclid(); horoOnsets(); horoBackward(); horoRot(); horoLenSwitch(); horoNonFiniteTempo(); horoConcursus(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
