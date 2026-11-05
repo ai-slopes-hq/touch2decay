@@ -40,11 +40,11 @@
 | IV | Natura | ядро, слот 4 | |
 | V | Inferno | ядро, слот 5 | |
 | VI | Paradisus | `worlds/paradisus/` | в архиве |
-| VII | Monochordum | ядро, слот 7 | |
+| VII | Monochordum | ядро, слот 7 | в нативе выключен (05.11, `Worlds.off`) |
 | VIII | Oceanus | ядро, слот 8 | |
 | IX | Horologium (Nova) | ядро, слот 9 | ударные, кольца по Евклиду, длина кольца, пэды и фильтр на голос, без маятника и tempus (05.11, принят автором на iPhone; `docs/worlds/horologium.md`) |
 | X | Firmamentum | ядро, слот 10 | образец model / engine / view |
-| XI | Tria corpora | ядро, слот 11 | |
+| XI | Tria corpora | ядро, слот 11 | в нативе выключен (05.11, `Worlds.off`) |
 | XII | Arcadia | ядро, слот 12 | |
 | XIII | Portus | ядро, слот 13 | |
 | XV | Goetia | ядро, слот 15 | выключен (04.11) |

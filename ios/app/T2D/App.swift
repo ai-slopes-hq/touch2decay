@@ -29,10 +29,10 @@ struct T2DApp: App {
   @State private var audio: Audio
   @State private var world: FirmamentumView          // нужен только -shot (плашка звезды); Host держит миры сам
   @State private var ocean: OceanusView              // нужен только -shot oceanus*; Host держит миры сам
-  @State private var mono: MonochordView             // нужен только -shot monochord*; Host держит миры сам
+  @State private var mono: MonochordView?             // нужен только -shot monochord*; Host держит миры сам
   @State private var horo: HorologiumView            // нужен только -shot horologium*; Host держит миры сам
   @State private var arc: ArcadiaView                // нужен только -shot arcadia*; Host держит миры сам
-  @State private var tria: TriaView                  // нужен только -shot tria*; Host держит миры сам
+  @State private var tria: TriaView?                  // нужен только -shot tria*; Host держит миры сам
   @State private var inf: InfernoView                // нужен только -shot inferno*; Host держит миры сам
   @State private var nat: NaturaView                 // нужен только -shot natura*; Host держит миры сам
   @State private var por: PortusView                 // нужен только -shot portus*; Host держит миры сам
@@ -71,7 +71,7 @@ struct T2DApp: App {
     a.stable = h.audioPref.stable                           // до start(): буфер берётся при запуске
     h.onRestart = { a.restart() }; h.onStable = { a.stable = $0 }
     h.onMidi = { midi.on = $0 }
-    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }[0]); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }[0]); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _nat = State(initialValue: views.compactMap { $0 as? NaturaView }[0]); _por = State(initialValue: views.compactMap { $0 as? PortusView }[0]); _cym = State(initialValue: views.compactMap { $0 as? CymaticaView }[0]); _ten = State(initialValue: views.compactMap { $0 as? TenebraeView }[0]); _host = State(initialValue: h)
+    _audio = State(initialValue: a); _world = State(initialValue: views.compactMap { $0 as? FirmamentumView }[0]); _ocean = State(initialValue: views.compactMap { $0 as? OceanusView }[0]); _mono = State(initialValue: views.compactMap { $0 as? MonochordView }.first); _horo = State(initialValue: views.compactMap { $0 as? HorologiumView }[0]); _arc = State(initialValue: views.compactMap { $0 as? ArcadiaView }[0]); _tria = State(initialValue: views.compactMap { $0 as? TriaView }.first); _inf = State(initialValue: views.compactMap { $0 as? InfernoView }[0]); _nat = State(initialValue: views.compactMap { $0 as? NaturaView }[0]); _por = State(initialValue: views.compactMap { $0 as? PortusView }[0]); _cym = State(initialValue: views.compactMap { $0 as? CymaticaView }[0]); _ten = State(initialValue: views.compactMap { $0 as? TenebraeView }[0]); _host = State(initialValue: h)
   }
 
   var body: some Scene {
@@ -220,13 +220,13 @@ struct T2DApp: App {
     case "monochord":
       core.action(4, 0, [0.5], touchTime: 0); core.action(3, 2, [1], touchTime: 0)
       q.asyncAfter(deadline: .now() + 1) { core.action(0, 1, [0.3, 0.9], touchTime: 0) }
-    case "monochord-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono.stringSpec(1)) }
-    case "monochord-earth-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono.earthSpec()) }
+    case "monochord-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono!.stringSpec(1)) }
+    case "monochord-earth-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono!.earthSpec()) }
     case "monochord-wind":
       core.action(6, 0, [0.6], touchTime: 0)
-      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono.windSpec(), lfoKey: "wind"); host.shotLfo(rate: 1, depth: 0.5) }
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono!.windSpec(), lfoKey: "wind"); host.shotLfo(rate: 1, depth: 0.5) }
     default:
-      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono.fxSpec, lfoKey: "decay"); host.shotLfo(rate: 1, depth: 0.5) }
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(mono!.fxSpec, lfoKey: "decay"); host.shotLfo(rate: 1, depth: 0.5) }
     }
   }
 
@@ -280,12 +280,12 @@ struct T2DApp: App {
     host.go(TriaView.slotN)
     let q = DispatchQueue.main
     switch name {
-    case "tria-lux": tria.lux()
-    case "tria-fall": tria.plumb()
-    case "tria-held": q.asyncAfter(deadline: .now() + 3) { tria.holdShot(1) }
-    case "tria-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(tria.bodySpec(1)) }
+    case "tria-lux": tria!.lux()
+    case "tria-fall": tria!.plumb()
+    case "tria-held": q.asyncAfter(deadline: .now() + 3) { tria!.holdShot(1) }
+    case "tria-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(tria!.bodySpec(1)) }
     case "tria-fan":
-      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(tria.fx!, lfoKey: "gravitas"); host.shotLfo(rate: 1, depth: 0.5) }
+      q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(tria!.fx!, lfoKey: "gravitas"); host.shotLfo(rate: 1, depth: 0.5) }
     default: break
     }
   }
