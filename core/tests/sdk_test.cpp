@@ -3689,7 +3689,7 @@ static void horoSoundGarbage() {                           // NaN / inf / 1e300 
   }
 }
 static void horoModelPitch() {
-  const int tonalI[5] = {horologium::KICK, horologium::TOM, horologium::SNARE, horologium::RIM, horologium::BELL};
+  const int tonalI[4] = {horologium::KICK, horologium::BLIP, horologium::CLICK, horologium::ULTRA};
   for (int pass = 0; pass < 3; pass++) {
     Scale sc; if (pass == 2) { sc.on = true; sc.idx = 1; sc.root = 9; }
     horologium::Model m(sc);
@@ -3701,14 +3701,14 @@ static void horoModelPitch() {
       if (pass < 2) { const double o = std::log2(f / (m.baseB() * m.mOf(m.ring(i)))); NEAR(o, std::round(o), 1e-9); }   // гармоника, сдвинутая октавами
       else { const double s = 12 * std::log2(f / 55); NEAR(s, std::round(s), 1e-9); CHECK(sc.inScale(static_cast<int>(std::lround(s)))); }
     }
-    for (int i = 0; i < 8; i++) { m.setRing(i, horologium::INST, horologium::HAT); CHECK(m.pitch(i) == 0); }
+    for (int i = 0; i < 8; i++) { m.setRing(i, horologium::INST, horologium::STATIC); CHECK(m.pitch(i) == 0); }
   }
   Scale sc; horologium::Model m(sc); NEAR(m.tint(), 1, 1e-12);
   sc.on = true; sc.root = 3; NEAR(m.tint(), std::pow(2.0, 3 / 12.0), 1e-12);
   sc.root = 9; NEAR(m.tint(), std::pow(2.0, -3 / 12.0), 1e-12);
 }
 static void horoModelPitchGarbage() {
-  const int tonalI[5] = {horologium::KICK, horologium::TOM, horologium::SNARE, horologium::RIM, horologium::BELL};
+  const int tonalI[4] = {horologium::KICK, horologium::BLIP, horologium::CLICK, horologium::ULTRA};
   const double bad[] = {1e6, -1e6, 1e300, -1e300};
   for (int pass = 0; pass < 2; pass++) for (double v : bad) {
     Scale sc; if (pass) { sc.on = true; sc.root = 5; }
@@ -3731,12 +3731,27 @@ static void drumVoices() {
       CHECK(act < static_cast<int>(2 * sr));              // голос сам гаснет
     }
 }
-static void drumHatMateria() {
+static void drumGlitch() {                                 // glitch: короткая бочка, ультразвук, materia удлиняет, stutter — пачка гранов
   double p, t; int a;
-  const double soft = drumRun(horologium::HAT, 0, 48000, 2, &p, &t, &a), hard = drumRun(horologium::HAT, 1, 48000, 2, &p, &t, &a);
-  CHECK(hard > 1.5 * soft);                               // metallum — хвост hat длиннее
-  const double o0 = drumRun(horologium::OHAT, 0, 48000, 2, &p, &t, &a), h0 = drumRun(horologium::HAT, 0, 48000, 2, &p, &t, &a);
-  CHECK(o0 > 3 * h0);                                     // open hat — длиннее hat
+  CHECK(drumRun(horologium::KICK, 0.5, 48000, 2, &p, &t, &a) < 0.2);       // бочка коротенькая (T60 по −60 дБ)
+  for (int inst : {horologium::KICK, horologium::BLIP, horologium::STATIC, horologium::BIT, horologium::STUTTER})
+    CHECK(drumRun(inst, 1, 48000, 2, &p, &t, &a) > 1.5 * drumRun(inst, 0, 48000, 2, &p, &t, &a));   // metallum — длиннее
+  horologium::Drum d; d.prepare(48000); sdk::Rng rng(3);
+  d.hit(horologium::ULTRA, 10000, 1, 0.35, 1);
+  int zc = 0; double prev = 0;
+  for (int k = 0; k < 48; k++) { const double x = d.step(rng); if (k && (x > 0) != (prev > 0)) zc++; prev = x; }
+  CHECK(zc >= 15);                                          // 1 мс на ~10 кГц — около 20 переходов через ноль
+  for (double mat : {0.0, 1.0}) {                           // stutter: 3 (corium) … 6 (metallum) гранов — столько всплесков огибающей
+    horologium::Drum s; s.prepare(48000); sdk::Rng r2(5);
+    s.hit(horologium::STUTTER, 0, 1, mat, 1);
+    int bursts = 0, quiet = 24;                             // гран — всплеск выше 0.1 после ≥ 0.5 мс тишины (< 0.03)
+    for (int k = 0; k < 48000 && s.active(); k++) {
+      const double x = std::fabs(s.step(r2));
+      if (x > 0.1 && quiet >= 24) bursts++;
+      quiet = x < 0.03 ? quiet + 1 : 0;
+    }
+    CHECK(bursts == (mat > 0.5 ? 6 : 3));
+  }
 }
 static constexpr double HORO_OLD_RMS = 0.058198;           // прежний мир: IV, V, VI, lvl 0.8, 100 BPM, B = 55, 8 с, 48 кГц, seed 910 (замер до правки звука)
 // сцена tick: IV, V, VI (кольца 2…4), lvl 0.8, 100 BPM (Ft = 100/240), fx по умолчанию, 8 с, 48 кГц
@@ -3775,10 +3790,10 @@ static void horoCeiling() {                               // IX (m = 9), F = 8: 
     horoSoundRun(s, r, 8, 1, sr, &pk);
     CHECK(s.attacks() - a0 <= 24 && s.attacks() - a0 >= 16);    // 72 удара/с: голос — каждый 3-й или 4-й (шаг удара — целые сэмплы)
     CHECK(s.strikes() - s0 >= 60);
-    CHECK(pk <= std::tanh(0.81));
+    CHECK(pk <= 0.9);
   }
 }
-static void horoKitPeak() {                               // восемь колец, lvl 1, concursus 1 — пик до tanh ≤ 0.81; развёртка по materia, tint, высоте
+static void horoKitPeak() {                               // восемь колец, lvl 1, concursus 1 — пик после tanh ≤ 0.9; развёртка по materia, tint, высоте
   for (double Ft : {100.0 / 240, 4 * 100.0 / 240, 16 * 100.0 / 240})
     for (double mat : {0.0, 0.35, 1.0})
       for (double tint : {std::pow(2, -6 / 12.0), 1.0, std::pow(2, 6 / 12.0)})
@@ -3794,12 +3809,12 @@ static void horoKitPeak() {                               // восемь кол
             s.set(r, Ft, mat, 1, 1, 0, tint); s.process(L, R, 128, b * 128 / 48000.0);
             for (int k = 0; k < 128; k++) { CHECK(std::isfinite(L[k]) && std::isfinite(R[k])); pk = std::fmax(pk, std::fmax(std::fabs(L[k]), std::fabs(R[k]))); }
           }
-          CHECK(pk <= std::tanh(0.81));
+          CHECK(pk <= 0.9);
         }
 }
-static constexpr double HORO_KIT_RMS = 0.0054;             // достигнутый RMS кита в той же сцене (замер при KIT 0.128 и GAIN)
+static constexpr double HORO_KIT_RMS = 0.0072;             // достигнутый RMS glitch-кита в той же сцене (click, static, ultra; KIT 0.25 и GAIN)
 static void horoKitRms() {                                // страж регрессии: уровень кита не уплывает больше чем на ±3 дБ
-  // Достигнуто около −21 дБ к HORO_OLD_RMS. RMS коротких ударных не равен громкости долгих резонаторов под потолком пика на 8 колец;
+  // Достигнуто около −18 дБ к HORO_OLD_RMS. RMS коротких ударных не равен громкости долгих резонаторов под потолком пика на 8 колец;
   // громкость подбирается на слух, а не по RMS.
   const double rms = horoTickRms();
   CHECK(rms < HORO_OLD_RMS);
@@ -4353,7 +4368,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appMidiClock(); appMidiTime(); appMidiOverflow(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumHatMateria(); horoLfoIgnores(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

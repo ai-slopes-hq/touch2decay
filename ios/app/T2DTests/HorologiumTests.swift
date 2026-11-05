@@ -325,7 +325,7 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(s.title, "circulus IV")
     XCTAssertEqual(s.rows.map(\.key), ["on", "under", "phi", "lvl", "inst"]); XCTAssertEqual(s.rows.map(\.label), ["sounds", "undertone", "phase", "level", "instrument"])
     XCTAssertEqual(s.rows.map(\.code), [-1, -1, 9, 10, -1]); XCTAssertEqual(s.lfo?.obj, -1); XCTAssertEqual(s.lfo?.keys, ["phi", "lvl"]); XCTAssertEqual(s.lfo?.shape, 0)
-    XCTAssertEqual(["on", "under", "phi", "lvl", "inst"].map(s.text), ["yes", "4 a turn", "90°", "80%", "snare"])
+    XCTAssertEqual(["on", "under", "phi", "lvl", "inst"].map(s.text), ["yes", "4 a turn", "90°", "80%", "click"])
     XCTAssertEqual(s.get("on"), 1); XCTAssertEqual(s.get("phi"), 0.25)
     s.set("under", 0.7)
     XCTAssertEqual([rec.acts[0].kind, rec.acts[0].i], [0, 2]); XCTAssertEqual(rec.acts[0].a, [1, 1])
@@ -339,18 +339,18 @@ final class HorologiumTests: XCTestCase {
   func testRingSheetInstrument() {
     setMirror(on: [2], inst: [0, 1, 7, 3, 4, 5, 6, 7])
     let s = view.ringSpec(2)
-    XCTAssertEqual(s.text("inst"), "open hat"); XCTAssertEqual(s.get("inst"), 1)
+    XCTAssertEqual(s.text("inst"), "stutter"); XCTAssertEqual(s.get("inst"), 1)
     s.tap?("inst"); XCTAssertEqual(rec.acts.last?.a, [4, 0], "тап — следующий по кругу")
     s.set("inst", 0.3); XCTAssertEqual(rec.acts.last?.a, [4, 2])
     s.tap?("phi"); XCTAssertEqual(rec.acts.count, 2, "тап по другой строке — ничего")
   }
-  func testInstCaptionOnlyWhileHeld() {                    // кольцо V (i = 3) — inst 3, clap
+  func testInstCaptionOnlyWhileHeld() {                    // кольцо V (i = 3) — inst 3, static
     setMirror(on: [3])
-    XCTAssertFalse(said(now: 1).contains("clap"))
+    XCTAssertFalse(said(now: 1).contains("static"))
     view.down(finger(f1, onRing(3, 0.3), t0: 1, now: 1))
-    XCTAssertTrue(said(now: 1.1).contains("clap"))
+    XCTAssertTrue(said(now: 1.1).contains("static"))
     view.up(finger(f1, onRing(3, 0.3), t0: 1, now: 1.15))
-    XCTAssertFalse(said(now: 1.2).contains("clap"))
+    XCTAssertFalse(said(now: 1.2).contains("static"))
   }
   func testNoLimen() { setMirror(run: true, F: 2, on: [0, 1]); XCTAssertFalse(said(now: 1).contains("limen")) }
 
