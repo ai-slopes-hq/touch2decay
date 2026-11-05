@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../../sdk/euclid.hpp"
 #include "../../sdk/jsmath.hpp"
 #include "../../sdk/json.hpp"
 
@@ -335,7 +336,7 @@ void Model::dice(uint32_t seed) {                         // генератив�
   sdk::Rng R(seed);
   const int n = 8 + static_cast<int>(std::floor(R.next() * 9)), k = 3 + static_cast<int>(std::floor(R.next() * (n - 4)));
   bool e[SLOTS] = {};
-  for (int i = 0; i < n; i++) e[i] = (i * k) % n < k;     // euclid(k, n)
+  for (int i = 0; i < n; i++) e[i] = sdk::euclid(i, k, n);
   int m = 3 + static_cast<int>(std::floor(R.next() * 6));
   while (n % m == 0) m++;                                 // длина мелодии не делит ритм — ноты ложатся на удары по-новому каждый круг
   int list[NOTE_TOP + 1];

@@ -1,7 +1,10 @@
 // Horologium — колесо и ударные кольца, см. sound.hpp. Колесо и обнаружение удара — в порядке эталона tools/ref/horo-worklet.js.
 #include "sound.hpp"
 
+#include <algorithm>
 #include <cmath>
+
+#include "../../sdk/euclid.hpp"
 
 namespace horologium {
 
@@ -17,6 +20,14 @@ void Sound::prepare(double sr, uint32_t seed) {
   lockOn_ = snap_ = false; dc_[0] = dc_[1] = dx_[0] = dx_[1] = 0; nh_ = 0; strikes_ = attacks_ = smp_ = 0;
 }
 
+int Sound::rotOf(double phi, int L) {
+  if (L < 1) return 0;
+  const double x = std::fmod(std::floor(phi * L + 0.5), L);   // без приведения огромного double к int
+  if (!std::isfinite(x)) return 0;
+  const int r = static_cast<int>(x);
+  return (r % L + L) % L;
+}
+
 void Sound::set(const R* rings, double Ft, double mat, double conc, double chance, double aeq, double tint) {
   const auto unit = [](double v, double d) { return std::isnan(v) ? d : v < 0 ? 0 : v > 1 ? 1 : v; };   // второй заслон: голос не терпит NaN и бесконечного хвоста
   for (int i = 0; i < NR; i++) {
@@ -24,6 +35,8 @@ void Sound::set(const R* rings, double Ft, double mat, double conc, double chanc
     o.on = rings[i].on; o.under = rings[i].under; o.phi = rings[i].phi; o.lvl = unit(rings[i].lvl, 0.8);
     o.inst = rings[i].inst >= 0 && rings[i].inst < NINST ? rings[i].inst : i;   // голос не терпит мусора: чужой номер — кит по умолчанию
     o.hz = std::isfinite(rings[i].hz) ? rings[i].hz : 0;
+    o.len = rings[i].len >= 1 && rings[i].len <= 16 ? rings[i].len : 16;
+    o.rot = rotOf(o.phi, o.len);
   }
   Ft_ = Ft; mat_ = unit(mat, 0.35); conc_ = unit(conc, 0.4); chance_ = unit(chance, 1); aeq_ = unit(aeq, 0);
   tint_ = std::isfinite(tint) && tint > 0 ? tint : 1;
@@ -88,30 +101,35 @@ void Sound::process(float* L, float* R, int n, double now) {
     if (glideN_ > 0) { const double g = glide_ / glideN_; dP += g; glide_ -= g; glideN_--; }
     const double P0 = P_;
     P_ += dP;
-    const double Fe = std::fabs(dP) * sr;               // мгновенная скорость (и при спуске руками)
     double yl = 0, yr = 0;
+    bool fire[NR] = {};                                 // проход 1: какие кольца бьют на этом сэмпле
     for (int a = 0; a < na; a++) {
+      const O& o = *act[a];
+      const int S = stepsOf(o.under);
+      const double q0 = std::floor(P0 * S), q1 = std::floor(P_ * S);
+      if (q0 == q1) continue;
+      const double qb = std::fmax(q0, q1);              // начало пересечённого шага (и вперёд, и назад)
+      double jd = std::fmod(qb + o.rot, o.len);
+      if (jd < 0) jd += o.len;
+      const int j = static_cast<int>(jd);
+      fire[a] = sdk::euclid(j, std::min(o.n, o.len), o.len);
+    }
+    const bool once = std::floor(P0) != std::floor(P_);   // «раз»: оборот сменился
+    for (int a = 0; a < na; a++) {
+      if (!fire[a] || !(rnd() < chance_)) continue;     // ГСЧ — только для сработавших
       O& o = *act[a];
-      const double x0 = P0 * o.m + o.phi, x1 = P_ * o.m + o.phi;
-      if (std::floor(x1) != std::floor(x0) && rnd() < chance_) {   // удар
-        double acc = 1;
-        if (conc_ > 0) {                                // concursus: совпал с ударом другого кольца или с «раз»
-          const double w = std::fmin(0.05, 0.006 * Fe);
-          bool hitc = std::fabs(P_ - std::floor(P_ + 0.5)) < w;
-          for (int b = 0; b < na && !hitc; b++) {
-            const O& q = *act[b];
-            if (&q == &o) continue;
-            const double xq = P_ * q.m + q.phi;
-            if (std::fabs(xq - std::floor(xq + 0.5)) < w * q.m) hitc = true;
-          }
-          if (hitc) acc += conc_ * 1.2; else acc *= 1 - 0.35 * conc_;
-        }
-        strikes_++;
-        if (nh_ < HMAX) hit_[nh_++] = o.n - 2;
-        if (smp_ - o.last >= gap_) {                    // потолок: между запусками голоса кольца — не меньше MIN_GAP
-          o.d.hit(o.inst, o.hz, tint_, mat_, acc * o.lvl);
-          o.last = smp_; attacks_++;
-        }
+      double acc = 1;
+      if (conc_ > 0) {                                  // concursus: совпал с ударом другого кольца или с «раз»
+        bool hitc = once;
+        for (int b = 0; b < na && !hitc; b++) if (b != a && fire[b]) hitc = true;
+        if (hitc) acc += conc_ * 1.2; else acc *= 1 - 0.35 * conc_;
+      }
+      o.acc = acc;
+      strikes_++;
+      if (nh_ < HMAX) hit_[nh_++] = o.n - 2;
+      if (smp_ - o.last >= gap_) {                      // потолок: между запусками голоса кольца — не меньше MIN_GAP
+        o.d.hit(o.inst, o.hz, tint_, mat_, acc * o.lvl);
+        o.last = smp_; attacks_++;
       }
     }
     for (O& o : r_) {                                   // голоса звучат и у выключенных колец — хвост доигрывает

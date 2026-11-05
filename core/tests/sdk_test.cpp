@@ -46,6 +46,7 @@
 #include "../worlds/arcadia/model.hpp"
 #include "../worlds/natura/world.hpp"
 #include "../worlds/inferno/world.hpp"
+#include "../sdk/euclid.hpp"
 #include "../worlds/horologium/drums.hpp"
 #include "../worlds/horologium/model.hpp"
 #include "../worlds/horologium/sound.hpp"
@@ -3803,21 +3804,129 @@ static void horoSoundRun(horologium::Sound& s, horologium::Sound::R* r, double F
     for (int k = 0; k < 128; k++) { CHECK(std::isfinite(L[k]) && std::isfinite(R[k])); if (peak) *peak = std::fmax(*peak, std::fmax(std::fabs(L[k]), std::fabs(R[k]))); }
   }
 }
-static void horoAttacksPerTurn() {                        // V (m = 5), F = 0.5: ниже потолка — голос на каждый удар
-  horologium::Sound s; s.prepare(48000, 1);
-  horologium::Sound::R r[8]; r[3].on = true; r[3].inst = 1; r[3].hz = 120;
-  horoSoundRun(s, r, 0.5, 4, 48000, nullptr);
-  CHECK(s.attacks() == s.strikes() && s.attacks() == static_cast<long>(std::floor(5 * s.P())));
+static constexpr long HORO_CEIL_LO = 17;                     // см. horoCeiling: голос не чаще 1/24 с = 5.33 шага (128 шагов/с); Евклид 9/16 — зазоры 1–2 шага, значит голос через 6–7 шагов: 18…21 в секунду, минус 1 на край окна
+static void sdkEuclid() {                                  // k ударов на n шагов; шаг 0 бьёт при k > 0; k = n — все
+  for (int n = 1; n <= 16; n++)
+    for (int k = 0; k <= n; k++) {
+      int c = 0;
+      for (int j = 0; j < n; j++) c += sdk::euclid(j, k, n);
+      CHECK(c == k);
+      if (k > 0) CHECK(sdk::euclid(0, k, n));
+      if (k == n) for (int j = 0; j < n; j++) CHECK(sdk::euclid(j, k, n));
+    }
 }
-static void horoCeiling() {                               // IX (m = 9), F = 8: 72 удара/с — голосов ≤ 24/с
+// число шагов q в (floor(P0·S), floor(P1·S)], на которых кольцо бьёт (rot — сдвиг рисунка, k ударов на L шагов)
+static long horoExpect(double P0, double P1, int S, int rot, int k, int L) {
+  long c = 0;
+  for (long q = static_cast<long>(std::floor(P0 * S)) + 1; q <= static_cast<long>(std::floor(P1 * S)); q++)
+    if (sdk::euclid(static_cast<int>(((q + rot) % L + L) % L), k, L)) c++;
+  return c;
+}
+// кольцо idx (n = idx + 2), длина L, сдвиг phi, F = 0.5: удары против horoExpect; stepsAt — проверять, что удары только на шагах 0 и 8
+static void horoOnsetCase(int idx, int L, double phi, bool under, bool onlyZeroEight) {
+  horologium::Sound s; s.prepare(48000, 1);
+  horologium::Sound::R r[8]; r[idx].on = true; r[idx].inst = 5; r[idx].len = L; r[idx].phi = phi; r[idx].under = under;
+  float Lb[128], Rb[128]; long last = 0;
+  for (int b = 0; b < 8 * 48000 / 128; b++) {                // 4 такта при F = 0.5
+    s.set(r, 0.5, 0.35, 1, 1, 0, 1); s.process(Lb, Rb, 128, b * 128 / 48000.0);
+    if (s.strikes() != last) {
+      last = s.strikes();
+      const int st = static_cast<int>(std::floor(s.P() * 16)) % 16;
+      if (onlyZeroEight) CHECK(st == 0 || st == 8);
+    }
+  }
+  const int S = under ? 8 : 16, k = std::min(idx + 2, L);
+  CHECK(s.P() > 3.9);
+  CHECK(s.strikes() == horoExpect(0, s.P(), S, horologium::Sound::rotOf(phi, L), k, L));
+  CHECK(s.strikes() > 0);
+}
+static void horoOnsets() {
+  horoOnsetCase(0, 16, 0, false, true);                      // II, L16
+  horoOnsetCase(1, 12, 0, false, false);                     // III, L12
+  horoOnsetCase(2, 8, 3.0 / 8, false, false);                // IV, L8, phi = 3/8
+  horoOnsetCase(0, 16, 0, true, false);                      // II под унтертоном (S = 8)
+  horoOnsetCase(7, 6, 0, false, false);                      // IX, L6: k = 6 — каждый шаг
+}
+static void horoBackward() {                                 // колесо назад: переход через начало шага 0 — один удар; прыжок замка назад — не больше одного
+  float Lb[128], Rb[128];
+  {
+    horologium::Sound s; s.prepare(48000, 1);
+    horologium::Sound::R r[8]; r[0].on = true; r[0].inst = 5; r[0].len = 16;
+    s.step(-0.45);
+    for (int b = 0; b < static_cast<int>(0.2 * 48000 / 128); b++) { s.set(r, 0, 0.35, 1, 1, 0, 1); s.process(Lb, Rb, 128, b * 128 / 48000.0); }
+    CHECK(s.P() < -0.44 && s.P() > -0.46);
+    CHECK(s.strikes() == 1);
+  }
+  for (int both = 0; both < 2; both++) {
+    horologium::Sound s; s.prepare(48000, 1);
+    horologium::Sound::R r[8]; r[0].on = true; r[0].inst = 5; r[0].len = 16;
+    if (both) { r[2].on = true; r[2].inst = 5; r[2].len = 16; }
+    s.step(0.4);
+    int b = 0;
+    for (; b < static_cast<int>(0.2 * 48000 / 128); b++) { s.set(r, 0, 0.35, 1, 1, 0, 1); s.process(Lb, Rb, 128, b * 128 / 48000.0); }
+    CHECK(s.P() > 0.39 && s.P() < 0.41);
+    const long s0 = s.strikes(), now = b * 128;
+    s.lock(now / 48000.0, 2);                                // фаза такта 0 — колесо прыгает с 0.4 на 0
+    s.set(r, 0, 0.35, 1, 1, 0, 1); s.process(Lb, Rb, 128, now / 48000.0);
+    CHECK(s.P() < 0.05);
+    CHECK(s.strikes() - s0 <= 1 + both);
+  }
+}
+static void horoRot() {
+  using horologium::Sound;
+  CHECK(Sound::rotOf(-0.25, 16) == 12);
+  CHECK(Sound::rotOf(1.0, 16) == 0);
+  CHECK(Sound::rotOf(0.99, 16) == 0);
+  CHECK(Sound::rotOf(NAN, 16) == 0);
+  CHECK(Sound::rotOf(INFINITY, 16) == 0);
+  const int big = Sound::rotOf(1e300, 16); CHECK(big >= 0 && big < 16);
+  CHECK(Sound::rotOf(0.5, 1) == 0);
+  CHECK(Sound::stepsOf(false) == 16 && Sound::stepsOf(true) == 8);
+}
+static void horoLenSwitch() {                                // длина 16 → 3 посреди такта (шаг 13): дальше по новому рисунку
+  horologium::Sound s; s.prepare(48000, 1);
+  horologium::Sound::R r[8]; r[0].on = true; r[0].inst = 5; r[0].len = 16;
+  float Lb[128], Rb[128]; int b = 0;
+  const auto blk = [&] { s.set(r, 0.5, 0.35, 1, 1, 0, 1); s.process(Lb, Rb, 128, b++ * 128 / 48000.0); for (int k = 0; k < 128; k++) CHECK(std::isfinite(Lb[k]) && std::isfinite(Rb[k])); };
+  while (s.P() < 0.85) blk();
+  const double P0 = s.P(); const long s0 = s.strikes();
+  r[0].len = 3;
+  while (s.P() < 2) blk();
+  CHECK(s.strikes() - s0 == horoExpect(P0, s.P(), 16, horologium::Sound::rotOf(0, 3), 2, 3));
+  CHECK(s.strikes() - s0 > 0);
+}
+static void horoConcursus() {                                // II и IV, L16: общие шаги 0 и 8 — 1 + 1.2; только IV (4, 12) — 1 − 0.35
+  horologium::Sound s; s.prepare(48000, 1);
+  horologium::Sound::R r[8];
+  for (int i : {0, 2}) { r[i].on = true; r[i].inst = 5; r[i].len = 16; r[i].lvl = 1; }
+  float Lb[16], Rb[16]; long last = 0; int seen[16] = {};
+  for (int b = 0; b < 4 * 48000 / 16; b++) {
+    s.set(r, 0.5, 0.35, 1, 1, 0, 1); s.process(Lb, Rb, 16, b * 16 / 48000.0);
+    if (s.strikes() == last) continue;
+    last = s.strikes();
+    const int st = static_cast<int>(std::floor(s.P() * 16)) % 16;
+    seen[st]++;
+    if (st == 0 || st == 8) NEAR(s.lastAcc(2), 1 + 1.2, 1e-12);
+    else if (st == 4 || st == 12) NEAR(s.lastAcc(2), 1 - 0.35, 1e-12);
+    else CHECK(false);
+  }
+  CHECK(seen[0] > 0 && seen[4] > 0 && seen[8] > 0 && seen[12] > 0);
+}
+static void horoAttacksPerTurn() {                        // V (k = 5), L16, F = 0.5: ниже потолка — голос на каждый удар
+  horologium::Sound s; s.prepare(48000, 1);
+  horologium::Sound::R r[8]; r[3].on = true; r[3].inst = 1; r[3].hz = 120; r[3].len = 16;
+  horoSoundRun(s, r, 0.5, 4, 48000, nullptr);
+  CHECK(s.attacks() == s.strikes() && s.attacks() == horoExpect(0, s.P(), 16, 0, 5, 16));
+}
+static void horoCeiling() {                               // IX (k = 9 из 16), F = 8: 72 удара/с — голосов ≤ 24/с
   for (double sr : {44100.0, 48000.0}) {
     horologium::Sound s; s.prepare(sr, 1);
-    horologium::Sound::R r[8]; r[7].on = true; r[7].inst = 5;
+    horologium::Sound::R r[8]; r[7].on = true; r[7].inst = 5; r[7].len = 16;
     double pk = 0;
     horoSoundRun(s, r, 8, 0.5, sr, &pk);
     const long a0 = s.attacks(), s0 = s.strikes();
     horoSoundRun(s, r, 8, 1, sr, &pk);
-    CHECK(s.attacks() - a0 <= 24 && s.attacks() - a0 >= 16);    // 72 удара/с: голос — каждый 3-й или 4-й (шаг удара — целые сэмплы)
+    CHECK(s.attacks() - a0 <= 24 && s.attacks() - a0 >= HORO_CEIL_LO);
     CHECK(s.strikes() - s0 >= 60);
     CHECK(pk <= 0.9);
   }
@@ -4399,7 +4508,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appMidiClock(); appMidiTime(); appMidiOverflow(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); sdkEuclid(); horoOnsets(); horoBackward(); horoRot(); horoLenSwitch(); horoConcursus(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }
