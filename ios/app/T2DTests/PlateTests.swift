@@ -48,4 +48,15 @@ final class PlateTests: XCTestCase {
     XCTAssertEqual(Plate.sclPick(g, x: L.rx + L.cw + 5, y: L.top + L.ch * 1.5), .root(7))
     XCTAssertEqual(Plate.sclPick(g, x: L.bx + PlateGeo.listW + 2, y: L.top + 20), .outside)
   }
+
+  func testMixWindowAndScrollLimit() {
+    let g = geo(.mix), keys = Mixer.rows(current: 10)
+    XCTAssertEqual(g.bottom - g.top, 16 + CGFloat(Mixer.visibleRows) * Mixer.rowH)
+    XCTAssertEqual(Plate.maxScroll(rows: keys.count), CGFloat(keys.count - Mixer.visibleRows) * Mixer.rowH)
+    XCTAssertEqual(Plate.maxScroll(rows: 3), 0)
+    XCTAssertEqual(Plate.mixHit(g, scroll: 0, keys: keys, x: g.mixTx0 + 5, y: g.top + 8 + 20), .fader(keys[0]))
+    XCTAssertEqual(Plate.mixHit(g, scroll: Mixer.rowH, keys: keys, x: g.mixTx0 + 5, y: g.top + 8 + 20), .fader(keys[1]))
+    XCTAssertEqual(Plate.mixHit(g, scroll: 0, keys: keys, x: g.mixMx, y: g.top + 8 + 20), .mute(10))
+    XCTAssertEqual(Plate.mixHit(g, scroll: 0, keys: keys, x: g.mixTx0 + 5, y: g.top + 2), .none)
+  }
 }

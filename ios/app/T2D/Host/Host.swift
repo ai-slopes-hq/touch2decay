@@ -62,8 +62,9 @@ final class Host {
   private var diceAt = -1e9                                    // мс: кость крутится 400 мс после броска
 
   // у пальца, начатого на хосте, своя цель до подъёма — миру он не уходит
-  private enum Route { case world(Int), btn(Btn), title, list(PlateGeo), sheet(SheetHit), edge, corner, eat, mix(Mixer.Key, Double) }   // mix: строка и её база на касании
+  private enum Route { case world(Int), btn(Btn), title, list(PlateGeo), mixRow(Mixer.Key?, Double), sheet(SheetHit), edge, corner, eat, mix(Mixer.Key, Double) }   // mix: строка и её база на касании
   private var routes: [ObjectIdentifier: Route] = [:]
+  private var mixF: (id: ObjectIdentifier, mode: Int, scroll0: CGFloat)?   // палец на вкладке mix: 0 — не решил, 1 — фейдер, 2 — прокрутка
   private var volF: (id: ObjectIdentifier, v0: Double, y0: CGFloat)?
   private var playF: (id: ObjectIdentifier, bpm0: Double, x0: CGFloat, drag: Bool)?   // play в руках: тап или протяжка вбок (bpm)
   // vol правит канал текущего мира; без мира (карта, Task 3) — мастер
@@ -297,6 +298,7 @@ final class Host {
         let b = min(max(raw, t.tempoRange.lowerBound), t.tempoRange.upperBound)
         if b != t.bpm { t.setBpm(b); tempoFrom(slot: w.slot, b) }
       }
+    case .mixRow(let k, let v0): mixTabMove(f, k, v0)
     case .mix(let k, let v0):
       let v = Mixer.value(mixGeo, v0: v0, dx: f.x - f.x0)
       switch k { case .world(let s): mix.g[s] = v; case .master(let m): mix[m] = v }
@@ -323,6 +325,7 @@ final class Host {
       else if hitsBtn(f, b) { press(b) }
     case .corner: if world?.cornerHit(f.x, f.y) == true { goMap() }   // на подъёме с повторным попаданием, как кнопки
     case .mix: applyMix(); markPrefs()
+    case .mixRow: if mixF?.mode == 1 { applyMix(); markPrefs() }; mixF = nil
     case .edge, .eat: break
     }
     endGesture()
@@ -336,6 +339,7 @@ final class Host {
     if case .btn(.play) = r { playF = nil }
     if case .sheet = r { releaseSheet(f) }
     if case .mix = r { applyMix(); markPrefs() }
+    if case .mixRow = r { if mixF?.mode == 1 { applyMix(); markPrefs() }; mixF = nil }
     endGesture()
   }
 
@@ -445,7 +449,42 @@ final class Host {
     case .none: return .eat
     case .content:
       if p.tab == .fx, let s = sheet { return .sheet(sheetHit(s, geo(s), x: f.x, y: f.y, fxBtn: bar.pos(.fx))) }
-      return p.tab == .scale ? .list(g) : .eat
+      if p.tab == .scale { return .list(g) }
+      return p.tab == .mix ? mixTabDown(f, p, g) : .eat
+    }
+  }
+
+  private var mixKeys: [Mixer.Key] { Mixer.rows(current: onMap ? nil : world?.slot) }
+  // mute и двойной тап — сразу; иначе ждём первое смещение: вертикаль — скролл, горизонталь — фейдер
+  private func mixTabDown(_ f: Finger, _ p: Plate, _ g: PlateGeo) -> Route {
+    mixF = (f.id, 0, p.scroll)
+    switch Plate.mixHit(g, scroll: p.scroll, keys: mixKeys, x: f.x, y: f.y) {
+    case .mute(let s): mix.mute[s] = mix.mute[s] != true; applyMix(); markPrefs(); mixF = nil; return .eat
+    case .none: return .mixRow(nil, 0)
+    case .fader(let k):
+      if let t = mixTap, t.key == k, now - t.t < Touch.dtapMs / 1000 {
+        switch k { case .world(let s): mix.g[s] = nil; case .master(let m): mix[m] = m.def }
+        applyMix(); markPrefs(); mixTap = nil; mixF = nil
+        return .eat
+      }
+      mixTap = (k, now)
+      switch k { case .world(let s): return .mixRow(k, mix.fader(s)); case .master(let m): return .mixRow(k, mix[m]) }
+    }
+  }
+
+  private func mixTabMove(_ f: Finger, _ k: Mixer.Key?, _ v0: Double) {
+    guard var d = mixF, d.id == f.id, let p = plate else { return }
+    let dx = f.x - f.x0, dy = f.y - f.y0
+    if d.mode == 0 {
+      guard hypot(dx, dy) > Touch.slop else { return }
+      d.mode = abs(dx) > abs(dy) && k != nil ? 1 : 2; mixF = d
+    }
+    if d.mode == 1, let k {
+      let g = plateGeo(p), v = Mixer.slide(v0, dx, span: g.mixTx1 - g.mixTx0)
+      switch k { case .world(let s): mix.g[s] = v; case .master(let m): mix[m] = v }
+      applyMix()
+    } else if d.mode == 2 {
+      plate?.scroll = min(max(d.scroll0 - dy, 0), Plate.maxScroll(rows: mixKeys.count))
     }
   }
 
@@ -708,7 +747,7 @@ final class Host {
       // только -shot: peek с замороженным k — время кадра подменяем (иначе он кончится за 420 мс)
       let t = nav.anim == nil ? nav.peek.flatMap { p in nav.freeze.map { p.t0 + $0 * Nav.peekDur } } ?? now : now
       MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, now: t)
-      if !nav.busy(now) { bar.draw(d, mapBarState(), now: now * 1000); if let p = plate { PlateDraw.draw(d, p, plateGeo(p), scl: scl) } }
+      if !nav.busy(now) { bar.draw(d, mapBarState(), now: now * 1000); if let p = plate { PlateDraw.draw(d, p, plateGeo(p), scl: scl, mix: mix, lv: levels.lv, current: onMap ? nil : world?.slot) } }
       if settings == .concordia && !nav.busy(now) {
         Concordia.draw(d, cBox, link: link, stable: audioPref.stable, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
       }
@@ -724,7 +763,7 @@ final class Host {
       for r in routes.values { if case .sheet(let h) = r { held = h } }
       SheetDraw.draw(d, s, geo(s), lfos: lfos, held: held, sample: core.lfoSample)
     }
-    if let p = plate { PlateDraw.draw(d, p, plateGeo(p), scl: scl) }
+    if let p = plate { PlateDraw.draw(d, p, plateGeo(p), scl: scl, mix: mix, lv: levels.lv, current: onMap ? nil : world?.slot) }
     if legendOpen { Legend.draw(d, title: "L E G E N D A", rows: w.legend, W: W, H: H, top: top, safeBot: safeBot) }
   }
 }

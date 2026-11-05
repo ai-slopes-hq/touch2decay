@@ -30,6 +30,18 @@ struct Plate {
   }
 
   // лад под пальцем в содержимом scale; .outside — не на строке и не на тонике
+  // вкладка mix: окно из visibleRows строк; scroll сдвигает список вверх
+  static func maxScroll(rows n: Int) -> CGFloat { CGFloat(max(0, n - Mixer.visibleRows)) * Mixer.rowH }
+  enum MixHit: Equatable { case mute(Int), fader(Mixer.Key), none }
+  static func mixHit(_ g: PlateGeo, scroll: CGFloat, keys: [Mixer.Key], x: CGFloat, y: CGFloat) -> MixHit {
+    let y0 = g.top + 8
+    guard y >= y0, y < y0 + CGFloat(Mixer.visibleRows) * Mixer.rowH else { return .none }
+    let i = Int(floor((y - y0 + scroll) / Mixer.rowH))
+    guard keys.indices.contains(i) else { return .none }
+    if case .world(let s) = keys[i], x > g.mixTx1 + 40 { return .mute(s) }
+    return x >= g.mixTx0 - 70 ? .fader(keys[i]) : .none
+  }
+
   static func sclPick(_ g: PlateGeo, x: CGFloat, y: CGFloat) -> SclPick {
     let L = g.scl
     if x >= L.rx && x < L.rx + 2 * L.cw && y >= L.top && y < L.top + CGFloat(L.rows) * PlateGeo.itemH {
@@ -50,6 +62,7 @@ struct PlateGeo {
   let x, w, bottom, stripTop, top: CGFloat       // полоса вкладок [stripTop, top), содержимое [top, bottom]
   let tabs: [(tab: PlateTab, rect: CGRect)]
   let scl: SclGeo
+  let mixTx0, mixTx1, mixMx: CGFloat                // вкладка mix: дорожка фейдера и кружок mute
 
   // rows — строки содержимого (fx: строки веера, scale: игнорируется); extra — панель LFO под веером
   static func make(_ p: Plate, W: CGFloat, H: CGFloat, safeBot: CGFloat, rows: Int, extra: CGFloat = 0,
@@ -60,20 +73,22 @@ struct PlateGeo {
     switch p.tab {
     case .fx: body = 52 + CGFloat(rows) * itemH + extra
     case .scale: body = CGFloat(n) * itemH + 16
-    case .mix, .sys: body = 16 + CGFloat(rows) * itemH
+    case .mix: body = 16 + CGFloat(Mixer.visibleRows) * Mixer.rowH
+    case .sys: body = 16 + CGFloat(rows) * itemH
     }
     let top = bottom - body, stripTop = top - stripH
     let cw = tonW, rx = x + w - 2 * cw, ch = CGFloat(n) * itemH / 6
     let tw = W / CGFloat(max(1, ts.count))
     let rects = ts.enumerated().map { (tab: $1, rect: CGRect(x: CGFloat($0) * tw, y: stripTop, width: tw, height: stripH)) }
     return PlateGeo(x: x, w: w, bottom: bottom, stripTop: stripTop, top: top, tabs: rects,
-                    scl: SclGeo(rows: n, top: top + 8, bx: x, rx: rx, cw: cw, ch: ch))
+                    scl: SclGeo(rows: n, top: top + 8, bx: x, rx: rx, cw: cw, ch: ch),
+                    mixTx0: x + 118, mixTx1: x + w - 80, mixMx: x + w - 16)
   }
 }
 
 enum PlateDraw {
   // fx рисует SheetDraw (панель от g.top); здесь — полоса вкладок и содержимое scale
-  static func draw(_ d: Draw, _ p: Plate, _ g: PlateGeo, scl: Scl) {
+  static func draw(_ d: Draw, _ p: Plate, _ g: PlateGeo, scl: Scl, mix: Mix = .def, lv: [Float] = [], current: Int? = nil) {
     d.reading {
       let c = d.g
       c.setFillColor(d.paper(0.97)); c.fill(CGRect(x: 0, y: g.stripTop, width: d.W, height: g.top - g.stripTop))
@@ -90,6 +105,44 @@ enum PlateDraw {
       c.setStrokeColor(d.ink(0.35)); c.setLineWidth(1)
       c.beginPath(); c.move(to: CGPoint(x: 0, y: g.top + 0.5)); c.addLine(to: CGPoint(x: d.W, y: g.top + 0.5)); c.strokePath()
       if p.tab == .scale { drawScale(d, g, scl) }
+      if p.tab == .mix { drawMix(d, p, g, mix, lv, current) }
+    }
+  }
+
+  private static func drawMix(_ d: Draw, _ p: Plate, _ g: PlateGeo, _ mix: Mix, _ lv: [Float], _ current: Int?) {
+    let c = d.g, keys = Mixer.rows(current: current), y0 = g.top + 8, h = CGFloat(Mixer.visibleRows) * Mixer.rowH
+    c.saveGState()
+    c.clip(to: CGRect(x: 0, y: y0, width: d.W, height: h))
+    for (i, k) in keys.enumerated() {
+      let y = y0 + CGFloat(i) * Mixer.rowH + Mixer.rowH / 2 - p.scroll
+      if y < y0 - Mixer.rowH || y > y0 + h + Mixer.rowH { continue }
+      switch k {
+      case .world(let s):
+        guard let wd = Worlds.info(s) else { continue }
+        let m = mix.mute[s] == true, t = mix.fader(s), lvl = s < lv.count ? lv[s] : 0
+        d.mapText(wd.roman, g.x, y, 12, 0.5); d.mapText(wd.title, g.x + 30, y, 13, m ? 0.35 : s == current ? 1 : 0.85)
+        Mixer.fader(d, g.mixTx0, g.mixTx1, y, t, m ? 0 : lvl, !m)
+        d.text(Mix.faderText(t), g.mixTx1 + 8, y, 11, 0.5)
+        d.ring(g.mixMx, y, 8, m ? 0.9 : 0.4, 1)
+        if m {
+          c.setStrokeColor(d.ink(0.9)); c.beginPath()
+          c.move(to: CGPoint(x: g.mixMx - 5.5, y: y + 5.5)); c.addLine(to: CGPoint(x: g.mixMx + 5.5, y: y - 5.5)); c.strokePath()
+        } else if lvl > 0.003 { d.dot(g.mixMx, y, 2 + 2.5 * min(max(CGFloat(lvl) * 6, 0), 1), 0.7) }
+      case .master(let m):
+        d.mapText(m.label, g.x, y, 13, 0.85)
+        Mixer.fader(d, g.mixTx0, g.mixTx1, y, mix[m], 0, true)
+        d.text(m.text(mix[m]), g.mixTx1 + 8, y, 11, 0.55)
+        if m == .lpf {
+          c.setStrokeColor(d.ink(0.3)); c.setLineWidth(1); c.beginPath()
+          c.move(to: CGPoint(x: g.x, y: y - Mixer.rowH / 2 + 0.5)); c.addLine(to: CGPoint(x: g.x + g.w, y: y - Mixer.rowH / 2 + 0.5)); c.strokePath()
+        }
+      }
+    }
+    c.restoreGState()
+    let mx = Plate.maxScroll(rows: keys.count)
+    if mx > 0 {   // тонкая полоса прокрутки у правого края
+      let th = h * h / (h + mx), ty = y0 + (h - th) * p.scroll / mx
+      c.setFillColor(d.ink(0.3)); c.fill(CGRect(x: d.W - 5, y: ty, width: 1.5, height: th))
     }
   }
 

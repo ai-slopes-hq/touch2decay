@@ -60,4 +60,18 @@ final class MixTests: XCTestCase {
     XCTAssertEqual(g.tx0, g.x + 136); XCTAssertEqual(g.tx1, g.x + g.w - 58); XCTAssertEqual(g.mx, g.x + g.w - 26)
     XCTAssertEqual(g.w, 370); XCTAssertEqual(g.mr.map(\.m), MixM.allCases)
   }
+
+  func testMixRowsCurrentFirst() {
+    let ws = Worlds.all.map(\.slot).sorted(), cur = ws[3]
+    let r = Mixer.rows(current: cur)
+    XCTAssertEqual(r.first, .world(cur))
+    XCTAssertEqual(Array(r.prefix(ws.count)), [.world(cur)] + ws.filter { $0 != cur }.map { .world($0) })
+    XCTAssertEqual(Array(r.suffix(4)), MixM.allCases.map { .master($0) })
+  }
+
+  func testMixRowsOnMapKeepOrder() {
+    let ws = Worlds.all.map(\.slot).sorted()
+    XCTAssertEqual(Array(Mixer.rows(current: nil).prefix(ws.count)), ws.map { .world($0) })
+    XCTAssertEqual(Mixer.rows(current: nil).count, ws.count + 4)
+  }
 }

@@ -692,6 +692,53 @@ final class HostTests: XCTestCase {
     XCTAssertNotNil(host.plate, "после выбора плашка остаётся: можно выбрать и тонику")
   }
 
+  // ---------- вкладка mix ----------
+  private func openMix() { host.openPlate(); host.selectTab(.mix) }
+  private func mixG() -> PlateGeo { PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34, rows: 0) }
+  private func mixRowY(_ i: Int, scroll: CGFloat = 0) -> CGFloat { mixG().top + 8 + CGFloat(i) * Mixer.rowH + Mixer.rowH / 2 - scroll }
+  private func drag(_ x: CGFloat, _ y: CGFloat, dx: CGFloat, dy: CGFloat) {
+    let f = finger(0, x, y); host.down(f); var m = f; m.x += dx; m.y += dy; m.moved = true; host.move(m); host.up(m)
+  }
+
+  func testVerticalDragScrollsHorizontalDragMovesFader() {
+    openMix()
+    drag(mixG().mixTx0 + 40, mixRowY(0), dx: 2, dy: -60)
+    XCTAssertEqual(host.plate?.scroll, 60); XCTAssertNil(host.mix.g[10], "вертикаль — скролл, фейдер на месте")
+    drag(mixG().mixTx0 + 40, mixRowY(0, scroll: 60), dx: 30, dy: 3)
+    XCTAssertEqual(host.plate?.scroll, 60, "горизонталь не скроллит")
+    let span = mixG().mixTx1 - mixG().mixTx0
+    XCTAssertEqual(host.mix.fader(10), Mix.faderDef + Double(30 / span), accuracy: 1e-9)
+    XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, host.mix.gain(10), accuracy: 1e-12)
+  }
+
+  func testDoubleTapFaderResetsDefault() {
+    openMix()
+    drag(mixG().mixTx0 + 40, mixRowY(0), dx: 30, dy: 0)
+    XCTAssertNotNil(host.mix.g[10])
+    tap(mixG().mixTx0 + 40, mixRowY(0)); tap(mixG().mixTx0 + 40, mixRowY(0))
+    XCTAssertNil(host.mix.g[10])
+  }
+
+  func testMuteRingSendsZeroFader() {
+    openMix()
+    tap(mixG().mixMx, mixRowY(0))
+    XCTAssertEqual(host.mix.mute[10], true); XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, 0)
+    tap(mixG().mixMx, mixRowY(0))
+    XCTAssertEqual(host.mix.mute[10], false)
+  }
+
+  func testMasterSectionReachableByScroll() {
+    openMix()
+    let n = Mixer.rows(current: 10).count, mx = Plate.maxScroll(rows: n)
+    drag(100, mixRowY(0), dx: 0, dy: -10000)
+    XCTAssertEqual(host.plate?.scroll, mx, "зажато предельным сдвигом")
+    let y = mixRowY(n - 1, scroll: mx)
+    XCTAssertLessThan(y, mixG().bottom)
+    let before = host.mix[.ceil]
+    drag(mixG().mixTx0 + 40, y, dx: -30, dy: 0)
+    XCTAssertLessThan(host.mix[.ceil], before)
+  }
+
   func testFxTabRowDragUsesSheetValue() {
     openFx()
     let r = finger(0, 100, rowY("b"))

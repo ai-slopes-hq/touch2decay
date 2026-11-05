@@ -12,6 +12,14 @@ enum Mixer {
   }
 
   enum Key: Hashable { case world(Int), master(MixM) }
+  static let visibleRows = 6, rowH: CGFloat = 40         // вкладка mix плашки: шесть строк в окне, остальные — прокруткой
+
+  // строки вкладки mix: текущий мир первым, остальные по порядку слота, затем мастер
+  static func rows(current: Int?) -> [Key] {
+    let ws = Worlds.all.map(\.slot).sorted()
+    let order = current.map { c in [c] + ws.filter { $0 != c } } ?? ws
+    return order.map { Key.world($0) } + MixM.allCases.map { Key.master($0) }
+  }
   enum Hit: Equatable { case back, mute(Int), fader(Key), none }
 
   // mixGeo: коробка по центру, под scope (top + 40), строки миров по возрастанию слота, дальше мастер
@@ -41,10 +49,26 @@ enum Mixer {
   }
 
   // mixMove: положение ручки — база на касании + сдвиг пальца по дорожке, зажато в 0…1
-  static func value(_ g: Geo, v0: Double, dx: CGFloat) -> Double { min(max(v0 + Double(dx / (g.tx1 - g.tx0)), 0), 1) }
+  static func value(_ g: Geo, v0: Double, dx: CGFloat) -> Double { slide(v0, dx, span: g.tx1 - g.tx0) }
+  static func slide(_ v0: Double, _ dx: CGFloat, span: CGFloat) -> Double { min(max(v0 + Double(dx / span), 0), 1) }
 
   // уровень канала → доля полосы: −48…+6 дБ
-  private static func levelK(_ lvl: Float) -> CGFloat { min(max((20 * CGFloat(log10(lvl)) + 48) / 54, 0), 1) }
+  static func levelK(_ lvl: Float) -> CGFloat { min(max((20 * CGFloat(log10(lvl)) + 48) / 54, 0), 1) }
+
+  // дорожка: двойная линия, засечка нуля, уровень — светлая полоса, ручка — черта
+  static func fader(_ d: Draw, _ tx0: CGFloat, _ tx1: CGFloat, _ y: CGFloat, _ t: Double, _ lvl: Float, _ on: Bool) {
+    let g = d.g, L = tx1 - tx0
+    g.setStrokeColor(d.ink(0.3)); g.setLineWidth(1); g.beginPath()
+    g.move(to: CGPoint(x: tx0, y: y - 1.5)); g.addLine(to: CGPoint(x: tx1, y: y - 1.5))
+    g.move(to: CGPoint(x: tx0, y: y + 1.5)); g.addLine(to: CGPoint(x: tx1, y: y + 1.5)); g.strokePath()
+    if lvl > 0.001 { let k = levelK(lvl); g.setFillColor(d.ink(0.28 + 0.4 * k)); g.fill(CGRect(x: tx0, y: y - 1, width: L * k, height: 2)) }
+    let z = tx0 + L * CGFloat(Mix.faderDef)
+    g.setStrokeColor(d.ink(0.35)); g.beginPath()
+    g.move(to: CGPoint(x: z, y: y - 6)); g.addLine(to: CGPoint(x: z, y: y - 3)); g.move(to: CGPoint(x: z, y: y + 3)); g.addLine(to: CGPoint(x: z, y: y + 6)); g.strokePath()
+    let hx = tx0 + L * CGFloat(t)
+    g.setStrokeColor(d.ink(on ? 0.95 : 0.35)); g.setLineWidth(2); g.beginPath()
+    g.move(to: CGPoint(x: hx, y: y - 8)); g.addLine(to: CGPoint(x: hx, y: y + 8)); g.strokePath(); g.setLineWidth(1)
+  }
 
   static func draw(_ d: Draw, _ M: Geo, mix: Mix, lv: [Float]) {
     d.reading {
@@ -52,19 +76,7 @@ enum Mixer {
       g.setFillColor(d.paper(0.96)); g.fill(CGRect(x: x, y: top, width: w, height: M.h))
       d.hairBox(x, top, w, M.h, 0.6); d.hairBox(x + 3, top + 3, w - 6, M.h - 6, 0.25)
       d.mapText("mixer", x + w / 2, top + 20, 16, 0.9, align: .center); d.mapText("‹ concordia", x + 14, top + 20, 11, 0.5)
-      // дорожка: двойная линия, засечка нуля, уровень — светлая полоса, ручка — черта
-      func fader(_ y: CGFloat, _ t: Double, _ lvl: Float, _ on: Bool) {
-        g.setStrokeColor(d.ink(0.3)); g.setLineWidth(1); g.beginPath()
-        g.move(to: CGPoint(x: tx0, y: y - 1.5)); g.addLine(to: CGPoint(x: tx1, y: y - 1.5))
-        g.move(to: CGPoint(x: tx0, y: y + 1.5)); g.addLine(to: CGPoint(x: tx1, y: y + 1.5)); g.strokePath()
-        if lvl > 0.001 { let k = levelK(lvl); g.setFillColor(d.ink(0.28 + 0.4 * k)); g.fill(CGRect(x: tx0, y: y - 1, width: L * k, height: 2)) }
-        let z = tx0 + L * CGFloat(Mix.faderDef)
-        g.setStrokeColor(d.ink(0.35)); g.beginPath()
-        g.move(to: CGPoint(x: z, y: y - 6)); g.addLine(to: CGPoint(x: z, y: y - 3)); g.move(to: CGPoint(x: z, y: y + 3)); g.addLine(to: CGPoint(x: z, y: y + 6)); g.strokePath()
-        let hx = tx0 + L * CGFloat(t)
-        g.setStrokeColor(d.ink(on ? 0.95 : 0.35)); g.setLineWidth(2); g.beginPath()
-        g.move(to: CGPoint(x: hx, y: y - 8)); g.addLine(to: CGPoint(x: hx, y: y + 8)); g.strokePath(); g.setLineWidth(1)
-      }
+      func fader(_ y: CGFloat, _ t: Double, _ lvl: Float, _ on: Bool) { Mixer.fader(d, tx0, tx1, y, t, lvl, on) }
       let sz: CGFloat = M.rh > 30 ? 13 : 12
       for r in M.rows {
         guard let wd = Worlds.info(r.slot) else { continue }

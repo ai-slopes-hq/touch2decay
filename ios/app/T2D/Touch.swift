@@ -4,6 +4,7 @@ import T2DCore
 // константы касаний — как host/touch.js (мс и пиксели)
 enum Touch {
   static let tapMs = 220.0, tapMove: CGFloat = 14, dtapMs = 320.0, holdMs = 420.0, holdMove: CGFloat = 10
+  static let slop: CGFloat = 8                           // смещение, с которого жест решает: вертикаль — скролл, горизонталь — ведение
   static let cornerPt: CGFloat = 44                     // правый нижний угол: касание миру не идёт (его ловит Stage)
 }
 
