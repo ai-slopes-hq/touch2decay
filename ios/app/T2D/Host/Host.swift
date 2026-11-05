@@ -35,7 +35,16 @@ final class Host {
     didSet { guard scl != oldValue else { return }; pushScale(); if link.scale { markPrefs() } }   // не общий — в prefs свой лад не пишем (там лад карты)
   }
   private var prefsScl = Scl.off                           // лад из prefs.json: общий (link.scale) и стартовый на карте
-  private(set) var legendOpen = false, sclOpen = false
+  private(set) var legendOpen = false
+  var sclOpen: Bool { plate?.tab == .scale }
+  private(set) var lastTab = PlateTab.fx                      // плашка открывается на вкладке, где закрыли
+  private(set) var plate: Plate? {                            // плашка с вкладками: fx-вкладка держит Sheet мира
+    didSet {
+      if let p = plate, p.tab == .fx, oldValue?.tab != .fx, let w = world, let fx = w.fx { sheet = Sheet(spec: fx, slot: w.slot) }
+      else if oldValue?.tab == .fx, plate?.tab != .fx { sheet = nil }
+      if let p = plate { lastTab = p.tab }
+    }
+  }
   private(set) var sheet: Sheet? {                         // открытая плашка: забирает касания целиком
     didSet { lfos = sheet == nil ? [] : core.lfoSnap(); pending.removeAll() }   // снимок свежий с открытия
   }
@@ -53,7 +62,7 @@ final class Host {
   private var diceAt = -1e9                                    // мс: кость крутится 400 мс после броска
 
   // у пальца, начатого на хосте, своя цель до подъёма — миру он не уходит
-  private enum Route { case world(Int), btn(Btn), title, list, sheet(SheetHit), edge, corner, eat, mix(Mixer.Key, Double) }   // mix: строка и её база на касании
+  private enum Route { case world(Int), btn(Btn), title, list(PlateGeo), sheet(SheetHit), edge, corner, eat, mix(Mixer.Key, Double) }   // mix: строка и её база на касании
   private var routes: [ObjectIdentifier: Route] = [:]
   private var volF: (id: ObjectIdentifier, v0: Double, y0: CGFloat)?
   private var playF: (id: ObjectIdentifier, bpm0: Double, x0: CGFloat, drag: Bool)?   // play в руках: тап или протяжка вбок (bpm)
@@ -163,6 +172,7 @@ final class Host {
     guard !nav.busy(now) else { return nil }               // во время перехода касания съедены
     if settings == .mixer { return mixerDown(f) }
     if settings != .off { settingsDown(f); return nil }    // открытые настройки забирают касание целиком
+    if plate != nil { return plateRoute(f) }
     switch bar.hit(f.x, f.y, titleW: 0, enabled: mapEnabled) {
     case .btn(let b): return .btn(b)
     case .title: return nil                                // имя карты — не кнопка
@@ -255,8 +265,8 @@ final class Host {
   private func route(_ f: Finger) -> Route {
     guard let w = world else { return .eat }
     if legendOpen { return .title }
+    if plate != nil { return plateRoute(f) }
     if let s = sheet { return .sheet(sheetHit(s, geo(s), x: f.x, y: f.y, fxBtn: bar.pos(.fx))) }
-    if sclOpen { return .list }
     switch bar.hit(f.x, f.y, titleW: titleW) {
     case .title: return .title
     case .btn(let b): return .btn(b)
@@ -306,7 +316,7 @@ final class Host {
     case .title:
       if legendOpen { legendOpen = false }
       else if bar.hit(f.x, f.y, titleW: titleW) == .title { legendOpen = true }
-    case .list: pick(bar.sclPick(f.x, f.y))
+    case .list(let g): pick(Plate.sclPick(g, x: f.x, y: f.y))
     case .btn(let b):
       if b == .vol { volF = nil; savePrefs() }
       else if b == .play { let dragged = playF?.drag == true; playF = nil; if !dragged, hitsBtn(f, b) { press(b) } }
@@ -338,7 +348,6 @@ final class Host {
     for slot in s.sorted() { undo.commit(slot: slot, scl: scl) }
   }
 
-  func openScaleList() { sclOpen = true }
   func openSettings(_ s: Settings) { settings = s }   // до удаления concordia (Task 7) — вход для тестов и -shot
 
   // ---------- хедер на карте ----------
@@ -392,9 +401,10 @@ final class Host {
       for v in views.values { v.tempo?.play(on) }
     case .recycle: recycleAll()
     case .undo: undoRecycle()
-    case .fx, .vol, .dice, .back: break   // fx — плашка (Task 4)
+    case .fx: openPlate()
+    case .vol, .dice, .back: break
     }
-  }   // до плашки (Task 4) — единственный вход в список ладов
+  }
 
   private func press(_ b: Btn) {
     if onMap { pressMap(b); return }
@@ -403,7 +413,7 @@ final class Host {
     case .dice: w.dice(); diceAt = now * 1000; syncModelsToMaster()
     case .recycle: w.clear()
     case .undo: undoStep()
-    case .fx: if let fx = w.fx { sheet = Sheet(spec: fx, slot: w.slot) }
+    case .fx: openPlate()
     case .back: goMap()
     case .play:   // тап: часы мира; нет часов — заглушить мир, как корзина (отмена вернёт)
       if let t = w.tempo { t.play(!t.playing) } else { w.clear() }
@@ -411,8 +421,36 @@ final class Host {
     }
   }
 
+  // ---------- плашка с вкладками ----------
+  private var plateTabs: [PlateTab] { Plate.tabs(hasFx: world?.fx != nil, onMap: onMap) }
+  func openPlate() {
+    let t = plateTabs
+    plate = Plate(tab: t.contains(lastTab) ? lastTab : t[0])
+  }
+  func selectTab(_ t: PlateTab) { if plateTabs.contains(t) { plate = Plate(tab: t) } }
+
+  private func plateGeo(_ p: Plate) -> PlateGeo {
+    var rows = 0, extra: CGFloat = 0
+    if p.tab == .fx, let s = sheet { rows = s.spec.rows.count; extra = s.spec.lfo != nil && s.lfoKey != nil ? 196 : 0 }
+    return PlateGeo.make(p, W: W, H: H, safeBot: safeBot, rows: rows, extra: extra, tabs: plateTabs)
+  }
+
+  // касание при открытой плашке: вкладка — переключить, мимо — закрыть, содержимое — fx (Sheet) или лад
+  private func plateRoute(_ f: Finger) -> Route {
+    guard let p = plate else { return .eat }
+    let g = plateGeo(p)
+    switch Plate.hit(g, x: f.x, y: f.y) {
+    case .close: plate = nil; return .eat
+    case .tab(let t): selectTab(t); return .eat
+    case .none: return .eat
+    case .content:
+      if p.tab == .fx, let s = sheet { return .sheet(sheetHit(s, geo(s), x: f.x, y: f.y, fxBtn: bar.pos(.fx))) }
+      return p.tab == .scale ? .list(g) : .eat
+    }
+  }
+
   // ---------- карта ↔ мир ----------
-  private func closeOverlays() { sheet = nil; legendOpen = false; sclOpen = false; settings = .off }
+  private func closeOverlays() { plate = nil; sheet = nil; legendOpen = false; settings = .off }
 
   // тап по карточке: переход 520 мс; режим .world и tick мира — по концу (Nav.step)
   // internal — для теста; из кода зовёт тап по карточке
@@ -422,7 +460,7 @@ final class Host {
       if let from = lastSlot { perScl[from] = scl }
       if let s = perScl[slot] { scl = s; core.scale(s) }
     }
-    lastSlot = slot; settings = .off; recycleStash = nil
+    lastSlot = slot; settings = .off; recycleStash = nil; plate = nil
     views[slot]?.enter()
     nav.anim = (now, false, slot)
   }
@@ -488,7 +526,7 @@ final class Host {
   private func sheetDown(_ h: SheetHit, _ f: Finger) {
     guard let s = sheet else { return }
     switch h {
-    case .close: sheet = nil
+    case .close: plate = nil; sheet = nil
     case .off:
       if let k = s.lfoKey, let l = s.spec.lfo, let c = code(s, k) {
         core.lfoOff(slot: s.slot, obj: l.obj, key: c); pending[LfoKey(slot: s.slot, obj: l.obj, key: c)] = nil
@@ -545,7 +583,7 @@ final class Host {
   private func pick(_ p: SclPick) {
     var s = scl
     switch p {
-    case .outside: sclOpen = false; return
+    case .outside: return                                  // мимо строк плашки — ничего
     case .off: s.on = false
     case .scale(let i): s.on = true; s.idx = i
     case .root(let r): s.on = true; s.root = r
@@ -568,7 +606,7 @@ final class Host {
   // только -shot: состояние сцены без касаний (список ладов и легенда открываются жестом, снимку нужен готовый кадр)
   func shotState(scl s: Scl, sclOpen: Bool = false, legendOpen: Bool = false) {
     scl = s; core.scale(s)
-    self.sclOpen = sclOpen; self.legendOpen = legendOpen
+    plate = sclOpen ? Plate(tab: .scale) : nil; self.legendOpen = legendOpen
   }
 
   // только -shot: плашка открыта без касаний (FX мира или звезда id), при lfoKey — с панелью LFO этой строки
@@ -655,7 +693,7 @@ final class Host {
   }
 
   func barState(_ w: World) -> TopBar.State {
-    var st = TopBar.State(title: w.title, vol: mix.fader(w.slot), volHeld: volF != nil, scl: scl, sclOpen: sclOpen,
+    var st = TopBar.State(title: w.title, vol: mix.fader(w.slot), volHeld: volF != nil, scl: scl, sclOpen: false,
                           canUndo: undo.depth(slot: w.slot) > 0, fxArc: w.fx?.arc?(), fxHeld: fxHeld,
                           backHeld: held(.back), diceHeld: held(.dice), diceAt: diceAt)
     st.playing = w.tempo?.playing ?? true
@@ -670,7 +708,7 @@ final class Host {
       // только -shot: peek с замороженным k — время кадра подменяем (иначе он кончится за 420 мс)
       let t = nav.anim == nil ? nav.peek.flatMap { p in nav.freeze.map { p.t0 + $0 * Nav.peekDur } } ?? now : now
       MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, now: t)
-      if !nav.busy(now) { bar.draw(d, mapBarState(), now: now * 1000) }
+      if !nav.busy(now) { bar.draw(d, mapBarState(), now: now * 1000); if let p = plate { PlateDraw.draw(d, p, plateGeo(p), scl: scl) } }
       if settings == .concordia && !nav.busy(now) {
         Concordia.draw(d, cBox, link: link, stable: audioPref.stable, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
       }
@@ -686,6 +724,7 @@ final class Host {
       for r in routes.values { if case .sheet(let h) = r { held = h } }
       SheetDraw.draw(d, s, geo(s), lfos: lfos, held: held, sample: core.lfoSample)
     }
+    if let p = plate { PlateDraw.draw(d, p, plateGeo(p), scl: scl) }
     if legendOpen { Legend.draw(d, title: "L E G E N D A", rows: w.legend, W: W, H: H, top: top, safeBot: safeBot) }
   }
 }

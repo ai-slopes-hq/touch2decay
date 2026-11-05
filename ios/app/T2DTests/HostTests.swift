@@ -137,7 +137,7 @@ final class HostTests: XCTestCase {
     XCTAssertTrue(host.legendOpen)
     tap(195, 400)
     XCTAssertFalse(host.legendOpen); XCTAssertFalse(world.acted, "легенда съела тап")
-    host.openScaleList()   // кнопки scl больше нет: список откроет плашка (Task 4)
+    host.openPlate()                                           // у фейкового мира веера нет — плашка на scale
     XCTAssertTrue(host.sclOpen)
     tap(50, 400)
     XCTAssertFalse(host.sclOpen); XCTAssertFalse(world.acted, "тап мимо списка миру не идёт")
@@ -147,8 +147,9 @@ final class HostTests: XCTestCase {
 
   func testDimmedEatsTouch() {
     let p = bar.pos(.fx)
-    let f = finger(0, p.x, p.y); host.down(f); host.move(f); host.up(f)   // у мира нет веера: кнопка тусклая, тап съеден
-    XCTAssertFalse(world.acted)
+    let f = finger(0, p.x, p.y); host.down(f); host.move(f); host.up(f)   // у мира нет веера: fx открывает плашку на scale, миру не идёт
+    XCTAssertFalse(world.acted); XCTAssertEqual(host.plate?.tab, .scale)
+    tap(50, 100); XCTAssertNil(host.plate)
     let e = finger(0, 5, 300); host.down(e); host.move(e); host.up(e)    // левая полоса x < 14 под верхней строкой
     XCTAssertFalse(world.acted, "левый край съедается, как headHit в вебе")
     let e2 = finger(0, 20, 300); host.down(e2); host.up(e2)
@@ -178,13 +179,13 @@ final class HostTests: XCTestCase {
   }
 
   func testScalePickSendsScale() {
-    host.openScaleList()   // кнопки scl больше нет: список откроет плашка (Task 4)
-    let L = bar.sclList
-    tap(L.bx + 20, L.top + TopBar.itemH * 3.5)                 // строка 3: off, major, minor, dorian → idx 2
+    host.openPlate()
+    let L = sclGeo()
+    tap(L.bx + 20, L.top + PlateGeo.itemH * 3.5)               // строка 3: off, major, minor, dorian → idx 2
     XCTAssertEqual(core.scales.last, Scl(on: true, idx: 2, root: 0)); XCTAssertEqual(host.scl, core.scales.last)
-    tap(L.rx + L.cw * 0.5 + L.cw, L.top + L.ch * 1.5)          // вторая колонка, ряд 1 → тоника 7
+    tap(L.rx + L.cw * 1.5, L.top + L.ch * 1.5)                 // вторая колонка, ряд 1 → тоника 7
     XCTAssertEqual(core.scales.last, Scl(on: true, idx: 2, root: 7))
-    tap(L.bx + 20, L.top + TopBar.itemH * 0.5)                 // off
+    tap(L.bx + 20, L.top + PlateGeo.itemH * 0.5)               // off
     XCTAssertEqual(core.scales.last?.on, false)
     XCTAssertFalse(world.acted)
   }
@@ -224,8 +225,8 @@ final class HostTests: XCTestCase {
   func testReinitReappliesScene() {
     host.reapply(); answer("w0", now: 1)
     tap(100, 400); answer("w1", now: 2)
-    host.openScaleList()   // кнопки scl больше нет: список откроет плашка (Task 4)
-    tap(bar.sclList.bx + 20, bar.sclList.top + TopBar.itemH * 1.5)   // major
+    host.openPlate()
+    tap(sclGeo().bx + 20, sclGeo().top + PlateGeo.itemH * 1.5)       // major
     tap(50, 400)                                                     // закрыть список
     let live = host.scl
     XCTAssertTrue(live.on, "лад выбран после последнего ответа снимка")
@@ -511,10 +512,11 @@ final class HostTests: XCTestCase {
 
   func testGoMapClosesOverlays() {
     openFx()
+    XCTAssertNotNil(host.sheet)
     host.shotState(scl: Scl(on: true, idx: 1, root: 0), sclOpen: true, legendOpen: true)
-    XCTAssertNotNil(host.sheet); XCTAssertTrue(host.legendOpen); XCTAssertTrue(host.sclOpen)
+    XCTAssertTrue(host.legendOpen); XCTAssertTrue(host.sclOpen)
     host.goMap()
-    XCTAssertNil(host.sheet); XCTAssertFalse(host.legendOpen); XCTAssertFalse(host.sclOpen)
+    XCTAssertNil(host.sheet); XCTAssertNil(host.plate); XCTAssertFalse(host.legendOpen); XCTAssertFalse(host.sclOpen)
     XCTAssertNotNil(host.snaps[10])
     XCTAssertEqual(host.snaps[10]?.width, Int((390 * Draw.scale).rounded()))
   }
@@ -612,7 +614,7 @@ final class HostTests: XCTestCase {
     return SheetSpec(title: "FX", hint: "", rows: rows, get: { _ in 0.5 }, set: { [world] k, v in world.sets.append((k, v)) },
                      text: { _ in "" }, lfo: SheetLfo(obj: -1, keys: ["a", "b", "c"], shape: 1))
   }
-  private func openFx() { world.fx = fxSpec(); tap(bar.pos(.fx).x, bar.pos(.fx).y) }
+  private func openFx() { world.fx = fxSpec(); tap(bar.pos(.fx).x, bar.pos(.fx).y); host.selectTab(.fx) }   // плашка помнит вкладку — fx выбираем явно
   private func geo() -> SheetGeo { SheetGeo.make(host.sheet!, W: 390, H: 844, safeBot: 34) }
   private func rowY(_ k: String) -> CGFloat { let g = geo(); return g.rows.first { $0.k == k }!.y + 23 }
   private func tilde(_ k: String) { tap(geo().lfoX, rowY(k)) }
@@ -651,10 +653,57 @@ final class HostTests: XCTestCase {
   func testFxOpensAndClosesSheet() {
     world.fx = nil
     tap(bar.pos(.fx).x, bar.pos(.fx).y)
-    XCTAssertNil(host.sheet, "у мира без веера плашки нет")
+    XCTAssertNil(host.sheet, "у мира без веера fx-вкладки нет"); XCTAssertEqual(host.plate?.tab, .scale)
+    tap(bar.pos(.fx).x, bar.pos(.fx).y); XCTAssertNil(host.plate)
     openFx(); XCTAssertNotNil(host.sheet)
-    tap(bar.pos(.fx).x, bar.pos(.fx).y); XCTAssertNil(host.sheet)
-    openFx(); tap(195, geo().top - 20); XCTAssertNil(host.sheet)
+    tap(bar.pos(.fx).x, bar.pos(.fx).y); XCTAssertNil(host.sheet); XCTAssertNil(host.plate)
+    openFx(); tap(195, geo().top - 60); XCTAssertNil(host.sheet); XCTAssertNil(host.plate)
+  }
+
+  private func sclGeo() -> PlateGeo.SclGeo {
+    PlateGeo.make(Plate(tab: .scale), W: 390, H: 844, safeBot: 34, rows: 0).scl
+  }
+  private func tabTap(_ t: PlateTab, rows: Int = 3) {
+    let tabs = Plate.tabs(hasFx: world.fx != nil, onMap: false)
+    let g = PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34, rows: rows, tabs: tabs)
+    let r = g.tabs.first { $0.tab == t }!.rect
+    tap(r.midX, r.midY)
+  }
+
+  func testPlateRemembersLastTab() {
+    openFx(); XCTAssertEqual(host.plate?.tab, .fx)
+    tabTap(.scale); XCTAssertEqual(host.plate?.tab, .scale); XCTAssertNil(host.sheet, "вкладка scale — без веера")
+    tap(bar.pos(.fx).x, bar.pos(.fx).y); XCTAssertNil(host.plate)
+    tap(bar.pos(.fx).x, bar.pos(.fx).y)
+    XCTAssertEqual(host.plate?.tab, .scale, "открылась на вкладке, где закрыли")
+    tabTap(.fx); XCTAssertNotNil(host.sheet)
+  }
+
+  func testTouchesDoNotReachFieldWhilePlateOpen() {
+    openFx()
+    tap(100, 100); tap(100, rowY("a")); tap(380, 300)
+    XCTAssertEqual(world.downs, 0); XCTAssertEqual(world.ups, 0)
+  }
+
+  func testScalePickSetsCoreScale() {
+    host.openPlate()
+    tap(sclGeo().bx + 20, sclGeo().top + PlateGeo.itemH * 1.5)
+    XCTAssertEqual(core.scales.last, Scl(on: true, idx: 0, root: 0))
+    XCTAssertNotNil(host.plate, "после выбора плашка остаётся: можно выбрать и тонику")
+  }
+
+  func testFxTabRowDragUsesSheetValue() {
+    openFx()
+    let r = finger(0, 100, rowY("b"))
+    host.down(r); var m = r; m.x = 140; host.move(m); host.up(m)
+    XCTAssertEqual(world.sets.last?.0, "b")
+  }
+
+  func testMapFxButtonOpensPlateWithoutFx() {
+    host = makeHost()                                          // карта
+    world.fx = fxSpec()
+    tap(bar.pos(.fx).x, bar.pos(.fx).y)
+    XCTAssertEqual(host.plate?.tab, .scale, "на карте fx-вкладки нет")
   }
 
   func testSheetEatsTouches() {
