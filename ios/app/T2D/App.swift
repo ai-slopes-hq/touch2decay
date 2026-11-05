@@ -8,7 +8,7 @@ import SwiftUI
 //   concordia — тап по солнцу на карте; mixer — карта → солнце → строка mixer, фейдер Arcadia сдвинут влево и мир заглушён (как nav-mixer-set веба);
 //   audio — go(10), через 1 с тап по кнопке громкости: панель audio;
 //   monochord | monochord-sheet | monochord-earth-sheet | monochord-wind | monochord-fan — go(7), см. shotMono;
-//   horologium | horologium-ring-sheet | horologium-hub-sheet | horologium-fan — go(9), см. shotHoro.
+//   horologium | horologium-ring-sheet | horologium-hub-sheet | horologium-fan | horologium-pads — go(9), см. shotHoro.
 //   arcadia | arcadia-land | arcadia-held | arcadia-held-rim | arcadia-sheet | arcadia-fan — go(12), см. shotArc;
 //   tria | tria-lux | tria-fall | tria-held | tria-sheet | tria-fan — go(11), см. shotTria;
 //   inferno | inferno-held | inferno-sheet | inferno-fx | inferno-storm | inferno-fan — go(5), см. shotInferno;
@@ -99,7 +99,7 @@ struct T2DApp: App {
     case "audio": shotAudio(); return
     case "oceanus", "oceanus-sheet", "oceanus-luna", "oceanus-fan": shotOcean(T2DApp.shotName); return
     case "monochord", "monochord-sheet", "monochord-earth-sheet", "monochord-wind", "monochord-fan": shotMono(T2DApp.shotName); return
-    case "horologium", "horologium-ring-sheet", "horologium-hub-sheet", "horologium-fan": shotHoro(T2DApp.shotName); return
+    case "horologium", "horologium-ring-sheet", "horologium-hub-sheet", "horologium-fan", "horologium-pads": shotHoro(T2DApp.shotName); return
     case "arcadia", "arcadia-land", "arcadia-held", "arcadia-held-rim", "arcadia-sheet", "arcadia-fan": shotArc(T2DApp.shotName); return
     case "tria", "tria-lux", "tria-fall", "tria-held", "tria-sheet", "tria-fan": shotTria(T2DApp.shotName); return
     case "inferno", "inferno-held", "inferno-sheet", "inferno-fx", "inferno-storm", "inferno-fan": shotInferno(T2DApp.shotName); return
@@ -242,13 +242,16 @@ struct T2DApp: App {
   }
 
   // Horologium: horologium — кольцо II включено, ход RUN [1], кадр через 1.5 с; -ring-sheet — плашка кольца IV, -hub-sheet — плашка ступицы,
-  // -fan — веер FX с LFO на materia (полоса random); сид init 7
+  // -fan — веер FX с LFO на materia (полоса random); -pads — ряд пэдов: кольца II, IV, VII включены, ход; сид init 7
   private func shotHoro(_ name: String) {
     host.go(HorologiumView.slotN)
     let core = AppCore(slot: HorologiumView.slotN), q = DispatchQueue.main
     switch name {
     case "horologium-ring-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(horo.ringSpec(3)) }
     case "horologium-hub-sheet": q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(horo.hubSpec()) }
+    case "horologium-pads":
+      for i in [0, 2, 5] { core.action(HorologiumView.Act.ring, i, [0, 1], touchTime: 0) }
+      core.action(HorologiumView.Act.run, 0, [1], touchTime: 0)
     case "horologium-fan":
       q.asyncAfter(deadline: .now() + 1.5) { host.shotSheet(horo.fx!, lfoKey: "materia"); host.shotLfo(rate: 1, depth: 0.5) }
     default:

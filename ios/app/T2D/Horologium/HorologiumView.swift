@@ -22,6 +22,7 @@ final class HorologiumView: World {
     LegendRow(glyph: .double, gesture: "double tap a ring", does: "undertone 1/n"),
     LegendRow(glyph: .drag, gesture: "drag along a ring", does: "its length"),
     LegendRow(glyph: .hold, gesture: "hold a ring", does: "its sheet"),
+    LegendRow(glyph: .tap, gesture: "tap a pad", does: "its ring sounds on / off · hold — its sheet"),
     LegendRow(glyph: .tap, gesture: "tap the hub", does: "run / stop · hold — tempo"),
     LegendRow(glyph: .tap, gesture: "tap the sun", does: "map of worlds"),
   ]
@@ -39,7 +40,7 @@ final class HorologiumView: World {
   private var now = 0.0
   let dr = HoroDrawState()                                 // кеш стены и буферы кадра (HoroDraw.swift)
 
-  enum Kind { case hub, ring, none }
+  enum Kind { case hub, ring, pad, none }
   struct Hold {
     var kind: Kind
     var i = 0
@@ -101,6 +102,7 @@ final class HorologiumView: World {
     for (k, var t) in holds where !t.sheet && !t.moved && now - t.t0 > Touch.holdMs / 1000 {
       switch t.kind {
       case .ring: t.sheet = true; holds[k] = t; openSheet?(ringSpec(t.i))
+      case .pad: t.sheet = true; holds[k] = t; openSheet?(ringSpec(t.i))
       case .hub: t.sheet = true; holds[k] = t; openSheet?(hubSpec())
       default: break
       }
@@ -118,7 +120,11 @@ final class HorologiumView: World {
     if inCorner(f) { return }
     let G = geo, tt = stamp(f)
     if hypot(f.x - G.cx, f.y - G.cy) < G.r0 - 6 { holds[f.id] = Hold(kind: .hub, x0: f.x, y0: f.y, t0: now, ts: tt); return }
-    guard let i = G.ringAt(f.x, f.y) else { holds[f.id] = Hold(kind: .none); return }
+    guard let i = G.ringAt(f.x, f.y) else {
+      if let p = G.padAt(CGPoint(x: f.x, y: f.y)) { holds[f.id] = Hold(kind: .pad, i: p, x0: f.x, y0: f.y, t0: now, ts: tt) }
+      else { holds[f.id] = Hold(kind: .none) }
+      return
+    }
     if let l = lastRingTap, l.i == i, tt - l.t < Touch.dtapMs / 1000 {   // двойной тап — унтертон (и включает)
       lastRingTap = nil
       core.action(Act.ring, i, [1, mirror.rings[i].under ? 0 : 1], touchTime: f.touchTime)
@@ -151,6 +157,8 @@ final class HorologiumView: World {
     switch t.kind {
     case .hub where !t.moved && !t.sheet:
       core.action(Act.run, 0, [mirror.run ? 0 : 1], touchTime: f.touchTime)   // тап — пуск / стоп
+    case .pad where !t.moved && !t.sheet:
+      ringOn(t.i, !mirror.rings[t.i].on, f)                // тап по пэду — on кольца, без плашки и без двойного тапа
     case .ring where !t.moved && !t.sheet:
       lastRingTap = (t.i, ts); ringOn(t.i, !mirror.rings[t.i].on, f)
     default: break

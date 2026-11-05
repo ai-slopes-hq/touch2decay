@@ -168,6 +168,21 @@ extension HorologiumView {
     } else { g.setFillColor(d.ink(0.9)); disc(g, G.cx, G.cy, 3.2) }
   }
 
+  // ряд пэдов: hairline-кружок, цифра кольца, точка у включённого; под пэдом — инструмент курсивом; вспышка — по ringHit
+  private func drawPads(_ d: Draw, _ now: Double) {
+    let g = d.g, G = geo
+    g.setLineWidth(1)
+    for i in 0..<Horo.nr {
+      let r = mirror.rings[i], on = r.on, x = G.padX(i), y = G.padY, hit = cl(1 - (now - ringHit[i]) / 0.26)
+      let held = holds.values.contains { $0.kind == .pad && $0.i == i }
+      g.setStrokeColor(d.ink(on ? 0.7 + 0.25 * hit : held ? 0.5 : 0.25)); arc(g, x, y, G.padR)
+      if on && hit > 0.05 { g.setStrokeColor(d.ink(0.35 * hit)); arc(g, x, y, G.padR + 2.5) }
+      d.mapText(Horo.roman[i + 2], x, y - 2, 12, on ? 0.95 : 0.32, align: .center, italic: false)
+      if on { g.setFillColor(d.ink(0.9)); disc(g, x, y + 8, 1.6) }
+      d.reading { d.mapText(Horo.instNames[r.inst], x, y + G.padR + 13, 10, on ? 0.7 : 0.3, align: .center) }
+    }
+  }
+
   // порядок кадра — view.js:232-248: стена → кольца → стрелки → отношение → подпись длины → солнце
   func frame(_ d: Draw, _ now: Double, sun: Bool) {
     let g = d.g, G = geo, P = pVis(now: now), Fm = mirror.F
@@ -184,6 +199,7 @@ extension HorologiumView {
       let r = mirror.rings[i]
       d.reading { d.mapText("\(Horo.roman[r.n]) · \(t.sent) / 16", G.cx, G.cy + G.R + 14, 12, 0.85, align: .center, italic: true) }
     }
+    drawPads(d, now)
     guard sun else { return }
     d.quarterSun(G.sun.x, G.sun.y, G.sun.r, side: -1, now: now * 1000, col: theme.ink, disc: theme.bg)
   }

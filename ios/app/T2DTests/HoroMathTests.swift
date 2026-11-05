@@ -84,16 +84,33 @@ final class HoroMathTests: XCTestCase {
 
   func testGeo() {
     let G = HoroGeo(W: 390, H: 844, topY: 59, safeBot: 34)
-    XCTAssertEqual(G.R, 169.51, accuracy: 0.01)
-    XCTAssertEqual(G.cy, 260.51, accuracy: 0.01)
-    XCTAssertEqual(G.r0, 28.82, accuracy: 0.01)
-    XCTAssertEqual(G.dr, 16.96, accuracy: 0.01)
+    XCTAssertEqual(G.R, 175.5, accuracy: 0.01)
+    XCTAssertEqual(G.cy, 266.5, accuracy: 0.01)
+    XCTAssertEqual(G.r0, 29.835, accuracy: 0.01)
+    XCTAssertEqual(G.dr, 17.666, accuracy: 0.01)
     XCTAssertEqual(G.sun.x, 390, accuracy: 0.01)
     XCTAssertEqual(G.sun.y, 61, accuracy: 0.01)
     XCTAssertEqual(G.sun.r, 42, accuracy: 0.01)
     XCTAssertEqual(G.ringAt(G.cx, G.cy - G.ringR(3)), 3)
     XCTAssertNil(G.ringAt(G.cx, G.cy))
     XCTAssertNil(G.ringAt(G.cx + G.R + 20, G.cy))
+  }
+
+  func testPadAtCenters() {
+    for (W, H, safe) in [(390.0, 844.0, 34.0), (375.0, 667.0, 0.0)] {
+      let G = HoroGeo(W: CGFloat(W), H: CGFloat(H), topY: 59, safeBot: CGFloat(safe))
+      XCTAssertGreaterThanOrEqual(G.padStep, 44)
+      for i in 0..<8 {
+        XCTAssertEqual(G.padAt(CGPoint(x: G.padX(i), y: G.padY)), i)
+        XCTAssertEqual(G.padAt(CGPoint(x: G.padX(i) + G.padStep * 0.49, y: G.padY)), i)
+        XCTAssertLessThanOrEqual(G.padX(i) + G.padStep / 2, CGFloat(W)); XCTAssertGreaterThanOrEqual(G.padX(i) - G.padStep / 2, 0)
+      }
+      XCTAssertNil(G.padAt(CGPoint(x: G.cx, y: G.padY - 60)))
+      XCTAssertNil(G.padAt(CGPoint(x: G.padX(0) - G.padStep, y: G.padY)))
+      XCTAssertGreaterThan(G.padY - 22, G.ty + 21 + 8, "пэды ниже строки отношения")
+      XCTAssertLessThanOrEqual(G.bot, CGFloat(H - safe))
+      XCTAssertNil(G.ringAt(G.padX(3), G.padY))
+    }
   }
 
   func testMirrorParse() {

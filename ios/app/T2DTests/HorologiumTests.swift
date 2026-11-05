@@ -199,6 +199,38 @@ final class HorologiumTests: XCTestCase {
     view.tick(now: 5.6, dt: 0.016); XCTAssertTrue(opened.isEmpty)
   }
 
+  // ---------- пэды ----------
+  private func padPt(_ i: Int) -> CGPoint { CGPoint(x: G.padX(i), y: G.padY) }
+
+  func testPadTapTogglesOn() {
+    setMirror()
+    tap(f1, padPt(3), at: 5)
+    XCTAssertEqual(rec.acts.count, 1); XCTAssertEqual([rec.acts[0].kind, rec.acts[0].i], [0, 3]); XCTAssertEqual(rec.acts[0].a, [0, 1])
+    XCTAssertTrue(opened.isEmpty)
+    rec.acts = []; setMirror(on: [3], now: 6)
+    tap(f1, padPt(3), at: 7); XCTAssertEqual(rec.acts[0].a, [0, 0])
+    rec.acts = []; tap(f1, padPt(3), at: 7.1); XCTAssertEqual(rec.acts.count, 1, "быстрый второй тап по пэду — одно переключение, не унтертон"); XCTAssertEqual(rec.acts[0].a, [0, 0])
+  }
+
+  func testPadHoldOpensSheet() {
+    setMirror(); view.tick(now: 5, dt: 0.016)
+    view.down(finger(f1, padPt(5), t0: 5, now: 5))
+    view.tick(now: 5.3, dt: 0.016); XCTAssertTrue(opened.isEmpty)
+    view.tick(now: 5.5, dt: 0.016)
+    XCTAssertEqual(opened.count, 1); XCTAssertEqual(opened[0].title, "circulus VII")
+    view.up(finger(f1, padPt(5), t0: 5, now: 5.9))
+    XCTAssertTrue(rec.acts.isEmpty, "отпускание после плашки on не меняет")
+  }
+
+  func testPadDoesNotStealRingOrHub() {
+    setMirror()
+    tap(f1, onRing(2, 0.3), at: 5); XCTAssertEqual([rec.acts[0].kind, rec.acts[0].i], [0, 2])
+    rec.acts = []; tap(f1, hub, at: 6); XCTAssertEqual(rec.acts[0].kind, 2)
+    rec.acts = []; tap(f1, CGPoint(x: G.cx, y: G.padY - 60), at: 7); XCTAssertTrue(rec.acts.isEmpty, "пустое место между отношением и пэдами")
+  }
+
+  func testPadsDrawNoCrash() { setMirror(on: [1, 4], now: 1); render(view, now: 1) }
+
   // ---------- ступица ----------
   func testHubTap() {
     setMirror(run: false)
@@ -258,11 +290,12 @@ final class HorologiumTests: XCTestCase {
   }
   func testInstCaptionOnlyWhileHeld() {                    // кольцо V (i = 3) — inst 3, static
     setMirror(on: [3])
-    XCTAssertFalse(said(now: 1).contains("static"))
+    func n(_ t: Double) -> Int { said(now: t).filter { $0 == "static" }.count }   // одна подпись — у пэда, вторая — у кольца в руке
+    XCTAssertEqual(n(1), 1)
     view.down(finger(f1, onRing(3, 0.3), t0: 1, now: 1))
-    XCTAssertTrue(said(now: 1.1).contains("static"))
+    XCTAssertEqual(n(1.1), 2)
     view.up(finger(f1, onRing(3, 0.3), t0: 1, now: 1.15))
-    XCTAssertFalse(said(now: 1.2).contains("static"))
+    XCTAssertEqual(n(1.2), 1)
   }
   func testNoLimen() { setMirror(run: true, F: 2, on: [0, 1]); XCTAssertFalse(said(now: 1).contains("limen")) }
 
@@ -303,11 +336,11 @@ final class HorologiumTests: XCTestCase {
 
   func testLegend() {
     let l = view.legend
-    XCTAssertEqual(l.count, 6)
-    XCTAssertEqual(l.map(\.glyph), [.tap, .double, .drag, .hold, .tap, .tap])
-    XCTAssertEqual(l.map(\.gesture), ["tap a ring", "double tap a ring", "drag along a ring", "hold a ring", "tap the hub", "tap the sun"])
+    XCTAssertEqual(l.count, 7)
+    XCTAssertEqual(l.map(\.glyph), [.tap, .double, .drag, .hold, .tap, .tap, .tap])
+    XCTAssertEqual(l.map(\.gesture), ["tap a ring", "double tap a ring", "drag along a ring", "hold a ring", "tap a pad", "tap the hub", "tap the sun"])
     XCTAssertEqual(l.map(\.does), ["it sounds: n of its steps, the n-th harmonic", "undertone 1/n", "its length", "its sheet",
-                                   "run / stop · hold — tempo", "map of worlds"])
+                                   "its ring sounds on / off · hold — its sheet", "run / stop · hold — tempo", "map of worlds"])
     XCTAssertEqual(view.title, "Horologium"); XCTAssertEqual(view.sub, "numeri · horae")
   }
   // ---------- рисование ----------
