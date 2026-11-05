@@ -17,7 +17,7 @@ export const noteName = (f) => { const m = Math.round(12 * Math.log2(f / 55)); r
 
 export function createModel({ scale = { on: false, root: 0 }, rng = Math.random } = {}) {
   const rings = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: [4, 5, 6].includes(i + 2), under: false, phi: 0, lvl: 0.8 }));
-  const fx = { aequalis: 0, materia: 0.35, concursus: 0.4, chance: 1, hall: 0.35 };
+  const fx = { aequalis: 0, materia: 0.35, concursus: 0.4, chance: 1, hall: 0 };   // 05.11: hall 0 по умолчанию, как в ядре
   const clock = { run: false, u: 0, uT: 0, bpm: 100, strip: false };   // u — во сколько октав быстрее темпа (оборот колеса = такт); uT — куда успокаивается (шкала tempus)
   const pend = { th: 0, ph: 0, spin: false, held: false };
   const state = { rings, fx, clock, pend };

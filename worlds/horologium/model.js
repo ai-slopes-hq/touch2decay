@@ -24,7 +24,7 @@ export const HEAD = FX_KEYS.length + 10, M = { run: 5, u: 6, uT: 7, bpm: 8, stri
 
 export function createModel({ scale = { on: false, root: 0 }, rng = Math.random, send = () => 0 } = {}) {
   const rings = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: [4, 5, 6].includes(i + 2), under: false, phi: 0, lvl: 0.8, inst: i }));
-  const fx = { aequalis: 0, materia: 0.35, concursus: 0.4, chance: 1, hall: 0.35 };
+  const fx = { aequalis: 0, materia: 0.35, concursus: 0.4, chance: 1, hall: 0 };
   const clock = { run: false, u: 0, uT: 0, bpm: 100, strip: false };   // u — во сколько октав быстрее темпа (оборот колеса = такт); uT — куда успокаивается
   const pend = { th: 0, ph: 0, spin: false, held: false };
   const wheel = { P: 0, F: 0, strikes: 0, locked: false };   // колесо — из зеркала ядра

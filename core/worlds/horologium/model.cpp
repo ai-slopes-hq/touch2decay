@@ -9,7 +9,7 @@
 namespace horologium {
 
 const char* const FX_NAMES[NFX] = {"aequalis", "materia", "concursus", "chance", "hall"};
-const double FX_DEF[NFX] = {0, 0.35, 0.4, 1, 0.35};
+const double FX_DEF[NFX] = {0, 0.35, 0.4, 1, 0};   // hall 0 по умолчанию (автор, 05.11)
 // волшебные наборы колец (n) — MAGIC в model.js
 static const int MAGIC[][5] = {{2, 3}, {3, 4}, {4, 5, 6}, {3, 4, 5}, {2, 3, 5}, {4, 5, 6, 7}, {5, 7, 9}, {6, 7, 8, 9}, {8, 9}, {2, 3, 4, 5, 6}, {5, 6}, {4, 5}};
 static const int MAGIC_N[] = {2, 2, 3, 3, 3, 4, 3, 4, 2, 5, 2, 2};
