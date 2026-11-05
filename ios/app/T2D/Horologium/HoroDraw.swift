@@ -1,9 +1,9 @@
 import UIKit
 
-// рисование Horologium (view.js:120-250): стена в кеше, кольца, часовая стрелка и стрелка-солнце, шкала tempus, маятник.
+// рисование Horologium (view.js:120-250): стена в кеше, кольца, часовая стрелка и стрелка-солнце.
 // Состояние кадра — в HoroDrawState (расширения не хранят поля)
 final class HoroDrawState {
-  struct WallKey: Equatable { var W, H, sc, cy, R, sy: CGFloat }
+  struct WallKey: Equatable { var W, H, sc, cy, R: CGFloat }
   var wall: CGImage?, wallKey: WallKey?, wallBuilds = 0
   var slots: [(j: Int, a: Double, hit: Bool)] = []           // гнёзда кольца — буфер кадра, выделен раз
   var gaps: [Double] = []                                    // углы гнёзд с ударом по возрастанию — для числа кольца
@@ -18,17 +18,17 @@ extension HorologiumView {
   private func disc(_ g: CGContext, _ x: CGFloat, _ y: CGFloat, _ r: CGFloat) { g.fillEllipse(in: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)) }
   private func cl(_ x: Double) -> CGFloat { CGFloat(Horo.clamp(x)) }
 
-  // стена: обод, деления, цифры часов, шкала tempus, ось маятника; ключ — W×H×масштаб|cy|R|strip.y (view.js:123-146)
+  // стена: обод, деления, цифры часов; ключ — W×H×масштаб|cy|R (view.js:123-146)
   func wallImage() -> CGImage? {
     let sc = Draw.scale, G = geo
-    let key = HoroDrawState.WallKey(W: G.W, H: G.H, sc: sc, cy: G.cy, R: G.R, sy: G.strip.y)
+    let key = HoroDrawState.WallKey(W: G.W, H: G.H, sc: sc, cy: G.cy, R: G.R)
     if let w = dr.wall, key == dr.wallKey { return w }
     dr.wallKey = key; dr.wallBuilds += 1
     guard let g = CGContext(data: nil, width: Int((G.W * sc).rounded()), height: Int((G.H * sc).rounded()), bitsPerComponent: 8, bytesPerRow: 0,
                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { dr.wall = nil; return nil }
     g.translateBy(x: 0, y: CGFloat(g.height)); g.scaleBy(x: sc, y: -sc)   // начало слева сверху
     let d = Draw(g: g, W: G.W, H: G.H); d.setTheme(theme)
-    let tau = HorologiumView.tau, cx = G.cx, cy = G.cy, R = G.R, S = G.strip
+    let tau = HorologiumView.tau, cx = G.cx, cy = G.cy, R = G.R
     g.setFillColor(theme.bg.cgColor); g.fill(CGRect(x: 0, y: 0, width: G.W, height: G.H))
     g.setLineWidth(1)
     g.setStrokeColor(d.ink(0.85)); arc(g, cx, cy, R)
@@ -46,16 +46,6 @@ extension HorologiumView {
     }
     g.setStrokeColor(d.ink(0.12)); g.setLineDash(phase: 0, lengths: [1, 3]); g.beginPath()   // «раз»: здесь все кольца сходятся
     g.move(to: CGPoint(x: cx, y: cy - G.r0 + 4)); g.addLine(to: CGPoint(x: cx, y: cy - R + 10)); g.strokePath(); g.setLineDash(phase: 0, lengths: [])
-    g.setStrokeColor(d.ink(0.5)); g.beginPath()                               // шкала tempus: от ритма к тону
-    g.move(to: CGPoint(x: S.x0, y: S.y)); g.addLine(to: CGPoint(x: S.x1, y: S.y)); g.strokePath()
-    g.beginPath()
-    for k in 0...40 {
-      let px = S.x0 + (S.x1 - S.x0) * CGFloat(k) / 40, l: CGFloat = k % 5 != 0 ? 3 : 6
-      g.move(to: CGPoint(x: px, y: S.y)); g.addLine(to: CGPoint(x: px, y: S.y + l))
-    }
-    g.strokePath()
-    d.mapText("rhythmus", S.x0, S.y - 9, 10.5, 0.45, align: .left); d.mapText("tonus", S.x1, S.y - 9, 10.5, 0.45, align: .right)
-    g.setFillColor(d.ink(0.7)); disc(g, G.piv.x, G.piv.y, 3)
     dr.wall = g.makeImage()
     return dr.wall
   }
@@ -172,41 +162,13 @@ extension HorologiumView {
     if ck > 0 && Fm <= 4 { g.setStrokeColor(d.ink(0.5 * ck)); g.beginPath(); ray(g, G.cx, G.cy, CGFloat(concA), G.R - 4); g.strokePath() }
     g.setFillColor(theme.bg.cgColor); disc(g, G.cx, G.cy, G.r0 - 8)   // ступица: тап — пуск, держишь — темп
     g.setStrokeColor(d.ink(mirror.run ? 0.8 : 0.5)); arc(g, G.cx, G.cy, G.r0 - 8)
-    if !mirror.run && !pend.held {
+    if !mirror.run {
       g.setFillColor(d.ink(0.8)); let s: CGFloat = 5
       g.beginPath(); g.move(to: CGPoint(x: G.cx - s * 0.6, y: G.cy - s)); g.addLine(to: CGPoint(x: G.cx + s, y: G.cy)); g.addLine(to: CGPoint(x: G.cx - s * 0.6, y: G.cy + s)); g.closePath(); g.fillPath()
     } else { g.setFillColor(d.ink(0.9)); disc(g, G.cx, G.cy, 3.2) }
   }
 
-  // маятник: веер при быстром качании, расплыв при броске через верх (view.js:209-225)
-  private func drawPendulum(_ d: Draw) {
-    let g = d.g, G = geo, tau = HorologiumView.tau, px = G.piv.x, py = G.piv.y, L = G.L
-    let rate = mirror.run && !pend.held ? Horo.z * mirror.F / 2 : 0
-    g.setLineWidth(1)
-    if pend.spin && rate > 3 {                            // крутится — расплылся
-      g.setStrokeColor(d.ink(0.1)); arc(g, px, py, L)
-      for j in 0..<7 {
-        let a = CGFloat(pend.th) + CGFloat(j) / 7 * tau, ex = px + sin(a) * L, ey = py + cos(a) * L
-        g.setStrokeColor(d.ink(0.12)); g.beginPath(); g.move(to: CGPoint(x: px, y: py)); g.addLine(to: CGPoint(x: ex, y: ey)); g.strokePath()
-        arc(g, ex, ey, G.bob)
-      }
-      return
-    }
-    if rate > 2.5 && !pend.spin {                         // качается быстро — веером
-      let A = CGFloat(acos(1 - min(1.9, Horo.eOfU(mirror.u))))
-      g.setStrokeColor(d.ink(0.1))
-      for s in horoFan {
-        let a = s * A; g.beginPath(); g.move(to: CGPoint(x: px, y: py)); g.addLine(to: CGPoint(x: px + sin(a) * L, y: py + cos(a) * L)); g.strokePath()
-      }
-    }
-    let b = G.bobXY(pend.th)
-    g.setStrokeColor(d.ink(0.65)); g.beginPath(); g.move(to: CGPoint(x: px, y: py)); g.addLine(to: b); g.strokePath()
-    g.setFillColor(theme.bg.cgColor); disc(g, b.x, b.y, G.bob)
-    g.setStrokeColor(d.ink(pend.held ? 1 : 0.9)); arc(g, b.x, b.y, G.bob)
-    g.setStrokeColor(d.ink(0.35)); arc(g, b.x, b.y, G.bob - 4)
-  }
-
-  // порядок кадра — view.js:232-248: стена → кольца → стрелки → отношение → шкала → маятник → подпись фазы → солнце
+  // порядок кадра — view.js:232-248: стена → кольца → стрелки → отношение → подпись длины → солнце
   func frame(_ d: Draw, _ now: Double, sun: Bool) {
     let g = d.g, G = geo, P = pVis(now: now), Fm = mirror.F
     if let w = wallImage() {
@@ -218,13 +180,6 @@ extension HorologiumView {
     let rt = Horo.ratio(mirror.rings, F: Fm)
     d.mapText(rt.a, G.cx, G.ty, 19, 0.95, align: .center)
     d.mapText(rt.b, G.cx, G.ty + 21, 12, 0.6, align: .center)
-    let S = G.strip
-    if Fm > 0.01 {
-      let mx = G.stripX(Fm)
-      g.setFillColor(d.ink(0.95)); g.beginPath(); g.move(to: CGPoint(x: mx, y: S.y - 3)); g.addLine(to: CGPoint(x: mx - 5, y: S.y - 11)); g.addLine(to: CGPoint(x: mx + 5, y: S.y - 11)); g.closePath(); g.fillPath()
-      d.mapText("\(Fm < 10 ? String(format: "%.2f", Fm) : String(Int(Horo.clamp(Horo.jsRound(Fm), 0, 1e6)))) / s", mx, S.y - 20, 11, 0.75, align: .center)
-    }
-    drawPendulum(d)
     if let i = lenHeld(), let t = holds.values.first(where: { $0.kind == .ring && $0.ph }) {
       let r = mirror.rings[i]
       d.reading { d.mapText("\(Horo.roman[r.n]) · \(t.sent) / 16", G.cx, G.cy + G.R + 14, 12, 0.85, align: .center, italic: true) }
@@ -233,5 +188,3 @@ extension HorologiumView {
     d.quarterSun(G.sun.x, G.sun.y, G.sun.r, side: -1, now: now * 1000, col: theme.ink, disc: theme.bg)
   }
 }
-
-private let horoFan: [CGFloat] = [-1, -0.5, 0, 0.5, 1]   // веер маятника: доли амплитуды

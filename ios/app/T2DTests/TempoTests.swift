@@ -56,14 +56,14 @@ final class TempoTests: XCTestCase {
     buf = mirror(horo); check(horologium(), play: 2, bpm: 5)
   }
 
-  func testHorologiumStopSendsRunZeroWithMirrorU() {
-    buf = mirror(horo, [(5, 1), (6, 2.5)])           // run = 1, u = 2.5
+  func testHorologiumPlayStopSendOneArgument() {
+    buf = mirror(horo, [(5, 1)])                     // run = 1
     let v = horologium(); v.refresh(now: 1)
     v.play(true)
-    XCTAssertEqual(rec.acts.last?.a, [1, 2.5])
+    XCTAssertEqual(rec.acts.last?.a, [1])
     v.play(false)
     XCTAssertEqual(rec.acts.last?.kind, 2)
-    XCTAssertEqual(rec.acts.last?.a, [0, 2.5])
+    XCTAssertEqual(rec.acts.last?.a, [0])
     XCTAssertTrue(v.playing)                         // своих значений нет: пока зеркало не сменилось
   }
 
@@ -77,14 +77,14 @@ final class TempoTests: XCTestCase {
     buf = mirror(mono); let m = monochord(); m.refresh(now: 1); XCTAssertFalse(m.armed)
     buf = mirror(mono, [(9, 1)]); m.refresh(now: 2); XCTAssertFalse(m.armed)       // auto идёт — всё равно false
     buf = mirror(horo); let h = horologium(); h.refresh(now: 1); XCTAssertFalse(h.armed)
-    buf = mirror(horo, [(15 + 6 * 2, 1)]); h.refresh(now: 2); XCTAssertTrue(h.armed)
+    buf = mirror(horo, [(11 + 7 * 2, 1)]); h.refresh(now: 2); XCTAssertTrue(h.armed)
   }
 
   func testMonochordAndHorologiumReadFromMirror() {
     buf = mirror(mono, [(9, 1), (10, 123)])
     let m = monochord(); m.refresh(now: 1)
     XCTAssertTrue(m.playing); XCTAssertEqual(m.bpm, 123)
-    buf = mirror(horo, [(5, 1), (8, 140)])
+    buf = mirror(horo, [(5, 1), (6, 140)])
     let h = horologium(); h.refresh(now: 1)
     XCTAssertTrue(h.playing); XCTAssertEqual(h.bpm, 140)
   }

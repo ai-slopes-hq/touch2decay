@@ -2,15 +2,13 @@ import Foundation
 
 // кольцо зеркала: n — номер (II…IX), on / under — звучит / унтертон, phi — фаза (доля оборота), lvl — громкость (core/worlds/horologium/world.hpp)
 struct HoroRing {
-  var n = 2, on = false, under = false, phi = 0.0, lvl = 0.0, inst = 0, len = 16   // len — длина кольца в шагах 1…16
+  var n = 2, on = false, under = false, phi = 0.0, lvl = 0.0, inst = 0, len = 16, flt = 0.5   // len — длина кольца в шагах 1…16; flt — фильтр 0…1, 0.5 = байпас
 }
 
-// константы и чистая математика Horologium (worlds/horologium/model.js, view.js): шкала скорости, имена нот, отношение колец
+// константы и чистая математика Horologium (worlds/horologium/model.js, view.js): имена нот, отношение колец
 enum Horo {
   static let instNames = ["kick", "blip", "click", "static", "ultra", "zap", "bit", "stutter"]   // inst 0…7, порядок Inst в ядре
-  static let nr = 8, z = 4.0                       // кольца II…IX; спуск: четыре прохода маятника за оборот
-  static let et = 0.0447, om0 = 2 * Double.pi * 0.8   // энергия маятника на темпе (размах 0.3 рад); его собственная частота
-  static let flo = 0.05, fhi = 120.0               // шкала tempus: обороты в секунду, логарифмически
+  static let nr = 8                                // кольца II…IX
   static let roman = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
   static let notes = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
   static let names: [([Double], String)] = [([1, 2], "diapason"), ([2, 3], "diapente"), ([3, 4], "diatessaron"), ([4, 5], "ditonus"),
@@ -55,9 +53,6 @@ enum Horo {
     if (L == 16 && raw > 16) || (L == 1 && raw < 1) { return (L, L, 0) }
     return (L, len0, d)
   }
-
-  static func uOfE(_ e: Double) -> Double { clamp(0.9 * log2(e / et), -3, 8) }
-  static func eOfU(_ u: Double) -> Double { et * pow(2, u / 0.9) }
 
   static func noteName(_ f: Double) -> String {
     let m = Int(jsRound(12 * log2(f / 55)))
