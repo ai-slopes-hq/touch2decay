@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-// плашка с вкладками (fx · scale · mix · sys): каркас, геометрия, попадания, рисование.
-// Содержимое fx — Sheet (его геометрия и касания), scale — список ладов и тоники; mix и sys приходят позже.
+// плашка с вкладками (transport · fx · scale · mix · sys): каркас, геометрия, попадания, рисование.
+// Содержимое fx — Sheet (его геометрия и касания), scale — список ладов и тоники, mix — фейдеры, sys — настройки, transport — темп и действия.
 
 enum SclPick: Equatable { case off, scale(Int), root(Int), outside }
 

@@ -1324,4 +1324,21 @@ final class HostTests: XCTestCase {
     tapTr(.dice)
     XCTAssertEqual(world.dices + world2.dices, 0); XCTAssertFalse(host.transportState().diceOn)
   }
+
+  func testPlayDisabledInBarWithoutClock() {
+    world.hasClock = false
+    XCTAssertFalse(host.barState(world).enabled.contains(.play), "нет часов — кнопка play погашена")
+    XCTAssertTrue(host.barState(world).enabled.contains(.transport))
+  }
+
+  func testMasterVolumeSavedOnMixRowRelease() {
+    tapBtn(.vol)
+    let g = PlateGeo.make(host.plate!, W: 390, H: 844, safeBot: 34 + TopBar.barH, rows: 0)
+    let f0 = finger(0, g.mixTx0 + 40, g.top + 8 + Mixer.rowH * 1.5, now: 5)
+    host.down(f0)
+    var f = f0; f.x += 60; f.moved = true; f.touchTime = 5.1; host.move(f)
+    XCTAssertNil(store.loadPrefs()?.vol, "пока палец на фейдере — не пишем")
+    host.up(f)
+    XCTAssertEqual(store.loadPrefs()?.vol ?? -1, host.vol, accuracy: 1e-12, "громкость сохранена по подъёму пальца")
+  }
 }

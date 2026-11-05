@@ -221,7 +221,7 @@ final class Host {
     if legendOpen { return .title }
     if plate != nil { return plateRoute(f) }
     if let s = sheet { return .sheet(sheetHit(s, geo(s), x: f.x, y: f.y, fxBtn: bar.pos(.fx))) }
-    switch bar.hit(f.x, f.y, titleW: titleW) {
+    switch bar.hit(f.x, f.y, titleW: titleW, enabled: barEnabled) {
     case .title: return .title
     case .btn(let b): return .btn(b)
     case nil: break
@@ -258,7 +258,7 @@ final class Host {
       if hitsBtn(f, b) { press(b) }
     case .tr(let r, _): if r != .bpm, hypot(f.x - f.x0, f.y - f.y0) <= Touch.tapMove, plate.map({ Plate.transportHit(plateGeo($0), x: f.x, y: f.y) == r }) == true { transportAct(r) }
     case .corner: if world?.cornerHit(f.x, f.y) == true { goMap() }   // на подъёме с повторным попаданием, как кнопки
-    case .mixRow: if mixF?.mode == 1 { applyMix(); markPrefs() }; mixF = nil
+    case .mixRow(let k, _): if mixF?.mode == 1 { applyMix(); markPrefs(); if k == .volume { savePrefs() } }; mixF = nil   // громкость мастера — сразу, как раньше жест vol
     case .edge, .eat: break
     }
     endGesture()
@@ -286,7 +286,9 @@ final class Host {
   // ---------- хедер на карте ----------
   private var recycleStash: [(slot: Int, w: String, scl: Scl)]?   // состояния миров до последнего recycle на карте; один шаг отмены
   private var mapEnabled: Set<Btn> { [.play, .transport, .vol, .fx] }
-  private func hitsBtn(_ f: Finger, _ b: Btn) -> Bool { bar.hit(f.x, f.y, titleW: onMap ? 0 : titleW, enabled: onMap ? mapEnabled : Set(Btn.allCases)) == .btn(b) }
+  // кнопки бара, которые ловят касание: на карте — mapEnabled; в мире без часов play погашен
+  private var barEnabled: Set<Btn> { onMap ? mapEnabled : world?.tempo == nil ? Set(Btn.allCases).subtracting([.play]) : Set(Btn.allCases) }
+  private func hitsBtn(_ f: Finger, _ b: Btn) -> Bool { bar.hit(f.x, f.y, titleW: onMap ? 0 : titleW, enabled: barEnabled) == .btn(b) }
 
   func mapBarState() -> TopBar.State {
     var st = TopBar.State(title: "Universum", held: heldBtns)
@@ -419,7 +421,7 @@ final class Host {
   private func plateRoute(_ f: Finger) -> Route {
     guard let p = plate else { return .eat }
     let g = plateGeo(p)
-    if case .btn(let b)? = bar.hit(f.x, f.y, titleW: 0, enabled: onMap ? mapEnabled : Set(Btn.allCases)), b != .back || !onMap { return .btn(b) }   // кнопки бара работают и при плашке
+    if case .btn(let b)? = bar.hit(f.x, f.y, titleW: 0, enabled: barEnabled), b != .back || !onMap { return .btn(b) }   // кнопки бара работают и при плашке
     switch Plate.hit(g, x: f.x, y: f.y) {
     case .close: plate = nil; return .eat
     case .tab(let t): selectTab(t); return .eat
@@ -723,6 +725,7 @@ final class Host {
   func barState(_ w: World) -> TopBar.State {
     var st = TopBar.State(title: w.title, held: heldBtns)
     st.playing = w.tempo?.playing ?? false
+    st.enabled = barEnabled
     return st
   }
 
