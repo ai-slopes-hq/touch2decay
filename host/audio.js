@@ -63,6 +63,10 @@ export const SDK_WORLDS = [10, 15, 8, 7, 9, 12, 11, 2, 13, 4, 5, 1];  // сло�
 let coreVer = '0', coreBytes = null;                     // байты t2d.wasm — качаются один раз, на каждый новый контекст — копия
 export function setCoreVer(v) { coreVer = v; }
 export let core = null;
+// мастер-темп хоста (ядро: Host::masterBpm): помним последний, чтобы новый узел после перезапуска звука получил его сразу
+let masterBpmNow = 0;
+export const masterBpm = () => masterBpmNow;
+export function setMasterBpm(bpm) { if (!(bpm > 0)) return; masterBpmNow = bpm; if (core) core.send({ t: 'master', bpm }); }
 // MIDI-часы живут в ядре (core/sdk/transport.hpp): сетка долей {t0, p} (секунды контекста) — в каждом зеркале и с событиями; события
 // часов (пуск, стоп, темп, доля, launch) — подписчикам onClock (host/midi.js решает, кого запускать). Ядра нет / не готово — сетки нет.
 const clockSubs = [];
@@ -76,6 +80,7 @@ function buildCore(c, masterIn) {
   k.dry = Object.fromEntries(SDK_WORLDS.map((s) => [s, gainNode(1)]));
   k.send = (m) => { k.sent++; if (k.node) k.node.port.postMessage(m); else k.queue.push(m); return k.sent; };
   k.listen = (fn) => { k.subs.push(fn); };
+  if (masterBpmNow > 0) k.send({ t: 'master', bpm: masterBpmNow });   // новый узел — тот же мастер-темп
   if (!coreBytes) coreBytes = fetch(`t2d.wasm?v=${coreVer}`).then((r) => { if (!r.ok) throw new Error(`t2d.wasm ${r.status}`); return r.arrayBuffer(); });
   Promise.all([c.audioWorklet.addModule(`t2d-worklet.js?v=${coreVer}`), coreBytes]).then(([, buf]) => {
     if (core !== k) return;                              // пока грузилось, звук перезапустили — этот узел уже не нужен

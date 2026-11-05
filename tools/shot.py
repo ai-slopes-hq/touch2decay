@@ -209,11 +209,9 @@ async def sc_audiopanel(p):                         # тап по громкос
     assert await p.js('()=>t2d.worlds[13].tempo.playing()') != on0, 'stop / play toggles the clock'
     await p.tap(cx, row['stop']); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>t2d.worlds[13].tempo.playing()') == on0
-    await p.js('()=>{ t2d.link.clock = true }')          # общий темп: у всех миров
     pid = await p.hold(cx, row['tempo'], ms=60); await p.drag(pid, cx, row['tempo'], cx - 40, row['tempo'], steps=6); await p.up(); await p.pg.wait_for_timeout(100)
     b13, b4 = await p.js('()=>[t2d.worlds[13].tempo.get(), t2d.worlds[4].tempo.get()]')
-    assert b13 == b4, f'shared tempo — every world: {b13} {b4}'
-    await p.js('()=>{ t2d.link.clock = false }')
+    assert b13 == b4, f'one tempo — every world: {b13} {b4}'
     await p.tap(30, 500); await p.pg.wait_for_timeout(150)
     assert not await p.js('()=>t2d.audioPanel'), 'tap outside — the panel closes'
     pid = await p.hold(b['x'], b['y'], ms=60); await p.drag(pid, b['x'], b['y'], b['x'], b['y'] + 60, steps=8); await p.up(); await p.pg.wait_for_timeout(150)
@@ -985,11 +983,11 @@ async def sc_startmap(p):                          # карта — старто
         q = await p.js(f'()=>t2d.mapPanel({w})'); assert q[0] >= 0 and q[0] + q[2] <= W and q[1] > 0 and q[1] + q[3] < H, f'card {w} on screen {q}'
     sun = await p.js('()=>t2d.mapSun()'); await p.tap(sun['x'], sun['y']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.nav.settings'), 'tap the sun on the map — concordia'
-    c0 = await p.js('()=>t2d.link.clock')
+    c0 = await p.js('()=>t2d.link.scale')
     await p.tap(sun['x'], sun['y'] + 30 + 46); await p.pg.wait_for_timeout(100)
-    assert await p.js('()=>t2d.link.clock') != c0, 'tap a row — toggled'
+    assert await p.js('()=>t2d.link.scale') != c0, 'tap a row — toggled'
     await p.shot('concordia')
-    if not await p.js('()=>t2d.link.clock'): await p.tap(sun['x'], sun['y'] + 30 + 46); await p.pg.wait_for_timeout(100)
+    if not await p.js('()=>t2d.link.scale'): await p.tap(sun['x'], sun['y'] + 30 + 46); await p.pg.wait_for_timeout(100)
     await p.tap(20, sun['y'] - 40); await p.pg.wait_for_timeout(100)
     assert not await p.js('()=>t2d.nav.settings'), 'tap outside — closed'
     q = await p.js('()=>t2d.mapPanel(2)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)   # II — Cymatica
@@ -1001,7 +999,6 @@ async def sc_startmap(p):                          # карта — старто
     await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(200)
     assert await p.js('()=>t2d.cym.seq.playing && !t2d.nat.seq.playing'), 'shared tempo only — play in Cymatica does not start Natura'
     await p.tap(g['playX'], g['ty']); await p.pg.wait_for_timeout(200)
-    await p.js('()=>{t2d.link.clock = false}')
 
 
 async def sc_legenda(p):                           # тап по заголовку мира — легенда жестов; любое касание — закрыть

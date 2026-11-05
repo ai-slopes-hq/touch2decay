@@ -1,24 +1,24 @@
-// общие настройки (тап по солнцу на карте): связать часы (темп и пуск/стоп) и/или лад всех миров
+// общие настройки (тап по солнцу на карте): общий лад, stable audio, restart audio, микшер (темп — один на все миры, без настройки)
 import { audioPref, ctx, restartAt, restartAudio, saveAudioPref } from './audio.js';
 import { mapSunY } from './deck.js';
 import { dot, g, H, hairBox, ink, mapText, paper, ring, safeBot, W } from './draw.js';
 import { reading } from './fonts.js';
-import { midiOn } from './midi.js';
 import { nav, worlds } from './registry.js';
 import { clamp } from './util.js';
-export const link = { clock: false, scale: true };
-try { Object.assign(link, JSON.parse(localStorage.getItem('t2d-link') || '{}')); } catch (_) { /* приватный режим */ }
+export { tempoFrom } from './tempo.js';
+export const link = { scale: true };
+try { const sv = JSON.parse(localStorage.getItem('t2d-link') || '{}'); if (typeof sv.scale === 'boolean') link.scale = sv.scale; }   // прежний ключ clock — игнорируем
+ catch (_) { /* приватный режим */ }
 const saveLink = () => { try { localStorage.setItem('t2d-link', JSON.stringify(link)); } catch (_) { /* приватный режим */ } };
 export const perScl = {};                                      // свой лад у каждого мира, когда лад не общий
 // stable audio — больший буфер (latencyHint playback); звук перезапускается
 export function toggleStable() { audioPref.stable = !audioPref.stable; saveAudioPref(); if (ctx) restartAudio(); }
-export function tempoFrom(n, bpm) { if (link.clock) for (const [k, w] of Object.entries(worlds)) if (+k !== n && w.tempo) w.tempo.set(bpm); }
 export function transportFrom() { /* общие часы — только темп: пуск и стоп у каждого мира свои (автор) */ }
 
 function settingsBox() {
-  const w = Math.min(260, W - 40), h = 252, x = W / 2 - w / 2, y = Math.min(H - safeBot - h - 10, mapSunY() + 30);
-  return { x, y, w, h, rows: [{ key: 'clock', label: 'shared tempo', sub: 'one bpm in every sequencer', y: y + 46 }, { key: 'scale', label: 'shared scale', sub: 'one scale in every world', y: y + 90 },
-    { key: 'stable', label: 'stable audio', sub: 'larger buffer — for USB interfaces', y: y + 134 }, { key: 'restart', label: 'restart audio', sub: 'after plugging an interface', y: y + 178 }, { key: 'mixer', label: 'mixer', sub: 'every world · low-pass, compressor, ceiling', y: y + 222 }] };
+  const w = Math.min(260, W - 40), h = 208, x = W / 2 - w / 2, y = Math.min(H - safeBot - h - 10, mapSunY() + 30);
+  return { x, y, w, h, rows: [{ key: 'scale', label: 'shared scale', sub: 'one scale in every world', y: y + 46 },
+    { key: 'stable', label: 'stable audio', sub: 'larger buffer — for USB interfaces', y: y + 90 }, { key: 'restart', label: 'restart audio', sub: 'after plugging an interface', y: y + 134 }, { key: 'mixer', label: 'mixer', sub: 'every world · low-pass, compressor, ceiling', y: y + 178 }] };
 }
 export const drawSettings = reading(drawSettings0);
 function drawSettings0() {
@@ -44,7 +44,7 @@ function drawSettings0() {
     }
     const on = r.key === 'stable' ? audioPref.stable : link[r.key];
     mapText(r.label, S.x + 16, r.y - 6, 15, on ? 0.95 : 0.6, 'left');
-    mapText(r.key === 'clock' && midiOn() ? 'midi clock' : r.sub, S.x + 16, r.y + 10, 11, 0.45, 'left');
+    mapText(r.sub, S.x + 16, r.y + 10, 11, 0.45, 'left');
     ring(bx, r.y, 9, on ? 0.9 : 0.45, 1.1);
     if (on) dot(bx, r.y, 4.5, 0.9);
   }

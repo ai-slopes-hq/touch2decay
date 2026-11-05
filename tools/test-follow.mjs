@@ -1,4 +1,4 @@
-// Cymatica: сетка MIDI-часов уходит в ядро раньше узора (пуск встаёт на узел): без браузера, подделка AudioContext. Шаги Natura и Portus по сетке — в ядре (sdk_test).
+// Cymatica: LOCK из JS не уходит (сетку читает ядро): без браузера, подделка AudioContext. Шаги Natura и Portus по сетке — в ядре (sdk_test).
 //   node --test tools/test-follow.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,20 +18,17 @@ const fakeCtx = (starts, rec) => {
 };
 // Natura и Portus ставят шаги в ядре — core/tests/sdk_test.cpp (naturaWorld, portusWorld); Monochordum — tools/test-mono-core.mjs
 
-// ---------- Cymatica: сетка уходит в ядро раньше узора (пуск встаёт на узел) ----------
-test('cymatica: play sends the lock before the PLAY message', async () => {
+// ---------- Cymatica: сетку читает ядро само (clk_->grid), из JS LOCK не уходит ----------
+test('cymatica: play sends no LOCK — the core reads the master grid itself', async () => {
   const sent = [];
   const cym = { model: await import('../worlds/cymatica/model.js'), engine: await import('../worlds/cymatica/engine.js') };
-  let grid = null;                                      // сетки при сборке нет — появляется к пуску
-  const ticks = [];
   const core = { dry: { 2: node() }, ready: true, listen() {}, send: (m) => { sent.push(m); return sent.length; } };
-  const T = { onTick: (fn) => ticks.push(fn), send: () => node(), core, midiGrid: () => grid, ctx: { currentTime: 1 } };
+  const T = { onTick: () => {}, send: () => node(), core, midiGrid: () => ({ t0: 1, p: 0.5 }), ctx: { currentTime: 1 } };
   const model = cym.model.createModel(), engine = cym.engine.createEngine(T, model, 'test');
   model.listen(engine.on);
   engine.build(fakeCtx([], []), node()); engine.start();
-  sent.length = 0; grid = { t0: 1, p: 0.5 }; model.play(true);
+  sent.length = 0; model.play(true);
   const LOCK = 4, SEQ = 8;                              // коды action — worlds/cymatica/bridge.js
-  const i = sent.findIndex((m) => m.t === 'action' && m.kind === LOCK), j = sent.findIndex((m) => m.t === 'action' && m.kind === SEQ);
-  assert.ok(i >= 0 && j >= 0 && i < j, `lock at ${i}, seq at ${j}`);
-  assert.deepEqual(sent[i].abs, [1]);                   // t0 — во времени контекста: worklet переведёт во время ядра
+  assert.ok(sent.some((m) => m.t === 'action' && m.kind === SEQ), 'seq goes to the core');
+  assert.ok(!sent.some((m) => m.t === 'action' && m.kind === LOCK), 'no lock from JS');
 });

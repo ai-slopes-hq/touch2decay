@@ -1,6 +1,6 @@
 // панель «audio» — тап по кнопке громкости (тянуть — по-прежнему громкость): tempo мира, stop, restart audio, stable audio, midi clock (где есть Web MIDI)
 import { audioPref, ctx, restartAt, restartAudio } from './audio.js';
-import { link, tempoFrom, toggleStable } from './concordia.js';
+import { tempoFrom, toggleStable } from './concordia.js';
 import { dot, g, hairBox, ink, mapText, paper, ring, text, W } from './draw.js';
 import { reading } from './fonts.js';
 import { cur, nav } from './registry.js';
@@ -47,7 +47,7 @@ export function panelDown(f) {
   else if (k === 'midi') toggleWebMidi();
   return true;
 }
-export function panelMove(f) {                  // tempo: тянешь вбок; общий темп — у всех миров
+export function panelMove(f) {                  // tempo: тянешь вбок; темп один — у всех миров и в мастере ядра
   if (f.ui !== 'ap') return false;
   const t = clockOf(cur());
   if (f.hit.key !== 'tempo' || !t || f.bpm0 == null) return true;
@@ -65,14 +65,13 @@ function drawAudioPanel0() {
   const bx = P.x + P.w - 26;
   for (const r of P.rows) {
     const on = held && held.hit.key === r.k;
-    if (r.k === 'tempo') {                      // дорожка: засечка — где темп; правее — bpm (общий — «all»)
+    if (r.k === 'tempo') {                      // дорожка: засечка — где темп; правее — bpm
       text(r.label, P.x + 16, r.y, 14, t ? (on ? 1 : 0.8) : 0.3);
       g.strokeStyle = ink(t ? 0.3 : 0.12); g.lineWidth = 1; g.beginPath(); g.moveTo(P.tx0, r.y - 1.5); g.lineTo(P.tx1, r.y - 1.5); g.moveTo(P.tx0, r.y + 1.5); g.lineTo(P.tx1, r.y + 1.5); g.stroke();
       if (!t) { text('—', P.x + P.w - 16, r.y, 13, 0.3, 400, 'right'); continue; }
       const [lo, hi] = bpmRange(t), bpm = t.get(), px = P.tx0 + ((bpm - lo) / (hi - lo)) * (P.tx1 - P.tx0);
       g.strokeStyle = ink(on ? 1 : 0.85); g.lineWidth = 2; g.beginPath(); g.moveTo(px, r.y - 7); g.lineTo(px, r.y + 7); g.stroke(); g.lineWidth = 1;
-      text(`${bpm} bpm`, P.x + P.w - 16, r.y - (link.clock ? 6 : 0), 13, 0.75, 400, 'right');
-      if (link.clock) mapText('all worlds', P.x + P.w - 16, r.y + 9, 10, 0.45, 'right');
+      text(`${bpm} bpm`, P.x + P.w - 16, r.y, 13, 0.75, 400, 'right');
       continue;
     }
     if (r.k === 'stop') {                       // часы идут — квадрат «стоп», стоят — треугольник «пуск»; без часов — заглушить мир
