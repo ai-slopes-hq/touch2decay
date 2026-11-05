@@ -71,7 +71,8 @@ private final class HWorld: World {
   var lfoBase: ((Int, Int) -> Double?)?
   var onClear: (() -> Void)?
   let tw = TW()
-  var tempo: WorldTempo? { tw }
+  var hasClock = true
+  var tempo: WorldTempo? { hasClock ? tw : nil }
   var sets: [(String, Double)] = []
   var downs = 0, moves = 0, ups = 0, cancels = 0, dices = 0, clears = 0, restoredN = 0
   func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat) {}
@@ -154,18 +155,18 @@ final class HostTests: XCTestCase {
     XCTAssertTrue(world.acted, "x ≥ 14 — уже мир")
   }
 
-  func testVolDrag() {
+  func testVolDrag() {   // в мире — канал мира; мастер на карте — Task 3
     let v = bar.pos(.vol), f0 = finger(0, v.x, v.y)
     host.down(f0)
     var f = f0; f.y = v.y - 110; host.move(f)
-    XCTAssertEqual(core.vols.last!, Vol.gain(1), accuracy: 1e-12)
-    XCTAssertEqual(host.vol, 1, accuracy: 1e-12)
+    XCTAssertEqual(host.mix.fader(10), 1, accuracy: 1e-12)
+    XCTAssertEqual(core.faders.last { $0.0 == 10 }!.1, pow(10, 6.0 / 20), accuracy: 1e-9)
     XCTAssertNil(store.loadPrefs(), "prefs — по подъёму")
     host.up(f)
-    XCTAssertEqual(store.loadPrefs()?.vol ?? -1, 1, accuracy: 1e-12)
+    XCTAssertEqual(store.loadPrefs()?.mix?.fader(10) ?? -1, 1, accuracy: 1e-12)
     // вниз от 1 на 110 pt — на 0.5 ниже
     f = f0; host.down(f); f.y += 110; host.move(f)
-    XCTAssertEqual(host.vol, 0.5, accuracy: 1e-12)
+    XCTAssertEqual(host.mix.fader(10), 0.5, accuracy: 1e-12)
     XCTAssertFalse(world.acted)
   }
 
@@ -554,10 +555,7 @@ final class HostTests: XCTestCase {
     let live = Scl(on: true, idx: 3, root: 5)
     host.shotState(scl: live)
     let v0 = host.vol
-    host.go(10)                                      // громкость — ползунок верхней строки: тянем в мире, возвращаемся на карту
-    let vp = bar.pos(.vol), f0 = finger(0, vp.x, vp.y)
-    host.down(f0); var f = f0; f.y = vp.y - 110; host.move(f); host.up(f)
-    host.goMap()
+    host.setMasterVol(0.3)                           // мастер правят на карте (Task 3); здесь — напрямую
     let v = host.vol
     XCTAssertNotEqual(v, v0, "громкость хоста сменилась")
     core.scales.removeAll(); core.vols.removeAll()
@@ -1129,85 +1127,103 @@ final class HostTests: XCTestCase {
     host.draw(drawCtx(), now: 2)
   }
 
-  // ---------- панель audio: тап по громкости ----------
-  private func panelGeo() -> AudioPanel.Geo { AudioPanel.geo(bar: bar, W: 390) }
-  private func panelRow(_ k: AudioPanel.Key) -> CGPoint {
-    let g = panelGeo(); return CGPoint(x: g.x + g.w / 2, y: g.rows.first { $0.key == k }!.y)
+  // ---------- хедер в мире: vol, play, recycle ----------
+  private func vdrag(_ b: Btn, dx: CGFloat = 0, dy: CGFloat = 0, now: Double = 5) {
+    let p = bar.pos(b), f0 = finger(0, p.x, p.y, now: now)
+    host.down(f0)
+    var f = f0; f.x += dx; f.y += dy; f.moved = true; f.touchTime = now + 0.1; host.move(f)
+    host.up(f)
   }
-  private func tapVol(at t: Double = 0, hold: Double = 0.1, n: Int = 0) {
-    let v = bar.pos(.vol), f = finger(n, v.x, v.y, now: t)
+  private func tapBtn(_ b: Btn, at t: Double = 0, hold: Double = 0.1) {
+    let v = bar.pos(b), f = finger(0, v.x, v.y, now: t)
     host.down(f)
     var u = f; u.touchTime = t + hold; host.up(u)
   }
-  private func openPanel() { tapVol(); XCTAssertTrue(host.audioPanel) }
 
-  func testVolTapOpensPanel() {
-    XCTAssertFalse(host.audioPanel)
-    tapVol(); XCTAssertTrue(host.audioPanel)
-    tapVol(at: 1); XCTAssertFalse(host.audioPanel)
+  func testVolDragChangesWorldChannelNotMaster() {
+    let master = host.vol, n = core.vols.count
+    vdrag(.vol, dy: -40)
+    XCTAssertGreaterThan(host.mix.fader(10), Mix.faderDef)
+    XCTAssertEqual(host.vol, master); XCTAssertEqual(core.vols.count, n, "мастер не тронут")
+    XCTAssertGreaterThan(core.faders.last { $0.0 == 10 }!.1, Mix.def.gain(10))
   }
 
-  func testVolDragNoPanel() {
-    let v = bar.pos(.vol), f0 = finger(0, v.x, v.y, now: 5)
-    host.down(f0)
-    var f = f0; f.y += 40; f.moved = true; f.touchTime = 5.1; host.move(f)
-    XCTAssertNotEqual(host.vol, Vol.def)
-    host.up(f)
-    XCTAssertFalse(host.audioPanel)
+  func testVolTapOpensNothing() {
+    let n = core.faders.count
+    tapBtn(.vol)
+    XCTAssertFalse(world.acted); XCTAssertNil(host.mix.g[10]); XCTAssertEqual(core.faders.count, n)
   }
 
-  func testVolLongNoPanel() {
-    tapVol(hold: 0.3)
-    XCTAssertFalse(host.audioPanel)
+  func testVolWorldChannelPersisted() {
+    vdrag(.vol, dy: -40)
+    XCTAssertEqual(store.loadPrefs()?.mix?.g[10], host.mix.fader(10))
   }
 
-  func testPanelOutsideCloses() {
-    openPanel()
-    tap(30, 600)
-    XCTAssertFalse(host.audioPanel)
-    XCTAssertFalse(world.acted, "тап мимо панели миру не идёт")
+  func testPlayTapTogglesClockForClockWorld() {
+    tapBtn(.play); XCTAssertTrue(world.tw.playing)
+    tapBtn(.play, at: 1); XCTAssertFalse(world.tw.playing)
+    XCTAssertEqual(world.clears, 0)
   }
 
-  func testPanelVolStillWorks() {
-    openPanel()
-    let v = bar.pos(.vol), f0 = finger(0, v.x, v.y, now: 5)
-    host.down(f0)
-    var f = f0; f.y -= 40; f.moved = true; f.touchTime = 5.1; host.move(f)
-    XCTAssertGreaterThan(host.vol, Vol.def)
-    host.up(f)
-    XCTAssertTrue(host.audioPanel, "протяжка громкости панель не трогает")
-    tapVol(at: 6); XCTAssertFalse(host.audioPanel, "тап по громкости при открытой панели — закрыл")
-  }
-
-  func testPanelStopClears() {
-    openPanel()
+  func testPlayTapSilencesWorldWithoutClock() {
+    world.hasClock = false
     let n = core.snaps.count
-    let p = panelRow(.stop); tap(p.x, p.y)
-    XCTAssertEqual(world.clears, 1); XCTAssertEqual(world.downs, 0)
-    XCTAssertGreaterThan(core.snaps.count, n, "как корзина: снимок для отмены")
-    XCTAssertTrue(host.audioPanel)
+    tapBtn(.play)
+    XCTAssertEqual(world.clears, 1)
+    XCTAssertGreaterThan(core.snaps.count, n, "снимок для отмены, как у корзины")
   }
 
-  func testPanelRestartAndStable() {
-    openPanel()
+  func testPlayDragSetsBpmAndDoesNotToggle() {
+    world.tw.bpm = 100; world.tw.playing = true
+    vdrag(.play, dx: 40)
+    XCTAssertGreaterThan(core.masterBpms.last ?? 0, 100); XCTAssertLessThanOrEqual(core.masterBpms.last ?? 0, 200)
+    XCTAssertEqual(world.tw.bpm, core.masterBpms.last)
+    XCTAssertTrue(world.tw.playing, "протяжка не нажимает play")
+  }
+
+  func testPlayDragClampsToRange() {
+    world.tw.bpm = 190
+    vdrag(.play, dx: 300)
+    XCTAssertEqual(core.masterBpms.last, 200)
+  }
+
+  func testPlayDragIgnoredWithoutClock() {
+    world.hasClock = false
+    vdrag(.play, dx: 40)
+    XCTAssertTrue(core.masterBpms.isEmpty); XCTAssertEqual(world.clears, 0)
+  }
+
+  func testRecycleClearsWorld() {
+    tapBtn(.recycle)
+    XCTAssertEqual(world.clears, 1)
+  }
+
+  func testBarStateReflectsClockAndChannel() {
+    world.tw.playing = true
+    let s = host.barState(world)
+    XCTAssertTrue(s.playing); XCTAssertEqual(s.vol, Mix.def.fader(10))
+    XCTAssertTrue(s.enabled.contains(.play)); XCTAssertTrue(s.enabled.contains(.recycle))
+  }
+
+  // ---------- звук: stable / restart / midi (бывшие строки панели audio, теперь вкладка sys — Task 6) ----------
+  func testRestartAndStable() {
     var restarts = 0, got: [Bool] = []
     host.onRestart = { restarts += 1 }; host.onStable = { got.append($0) }
     host.tick(now: 3, dt: 0.016)
-    var p = panelRow(.restart); tap(p.x, p.y)
+    host.restartAudio()
     XCTAssertEqual(restarts, 1); XCTAssertEqual(host.restartAt, 3)
-    p = panelRow(.stable); tap(p.x, p.y)
+    host.toggleStable()
     XCTAssertEqual(got, [true]); XCTAssertTrue(host.audioPref.stable)
     XCTAssertEqual(store.loadPrefs()?.audio?.stable, true, "stable — сразу на диск")
   }
 
-  func testMidiRowTogglesAndPersists() {
-    openPanel()
+  func testMidiToggleAndPersists() {
     var got: [Bool] = []
     host.onMidi = { got.append($0) }
-    var p = panelRow(.midi); tap(p.x, p.y)
+    host.toggleMidi()
     XCTAssertEqual(got, [true]); XCTAssertTrue(host.audioPref.midi); XCTAssertTrue(host.midiClock.on)
     XCTAssertEqual(store.loadPrefs()?.audio?.midi, true, "midi — сразу на диск")
-    p = panelRow(.midi); tap(p.x, p.y)
+    host.toggleMidi()
     XCTAssertEqual(got, [true, false]); XCTAssertFalse(host.midiClock.on)
     XCTAssertEqual(store.loadPrefs()?.audio?.midi, false)
   }
@@ -1222,34 +1238,5 @@ final class HostTests: XCTestCase {
     defer { host.toggleMidi() }
     host.reapply()                                           // повторный вызов (смена частоты) не роняет и не выключает часы
     XCTAssertTrue(host.midiClock.on)
-  }
-
-  func testPanelTempoInert() {
-    openPanel()
-    let before = core.calls.count
-    let p = panelRow(.tempo), f = finger(0, p.x, p.y)
-    host.down(f); var m = f; m.x += 60; m.moved = true; host.move(m); host.up(m)
-    XCTAssertFalse(world.acted)
-    XCTAssertEqual(core.calls.count, before)
-    XCTAssertTrue(host.audioPanel)
-    XCTAssertFalse(host.audioPref.stable)
-  }
-
-  func testGoMapClosesAudioPanel() {
-    openPanel(); host.goMap(); XCTAssertFalse(host.audioPanel)
-    host = makeHost(inWorld: true); openPanel()
-    let f = finger(0, 5, 400); host.down(f)
-    var m = f; m.x = 75; m.y = 410; host.move(m); host.up(m)
-    XCTAssertEqual(host.nav.view, .map); XCTAssertFalse(host.audioPanel)
-  }
-
-  func testPanelPollsLevelsInWorld() {
-    host.tick(now: 1, dt: 0.016); let n = core.levelReads
-    openPanel(); host.tick(now: 2, dt: 0.016)
-    XCTAssertGreaterThan(core.levelReads, n)
-  }
-
-  func testPanelDrawsOpen() {
-    openPanel(); host.tick(now: 1, dt: 0.016); host.draw(drawCtx(), now: 1)
   }
 }

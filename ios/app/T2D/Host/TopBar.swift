@@ -30,6 +30,10 @@ struct TopBar {
     var diceHeld = false
     var diceAt: Double              // мс, момент броска; кость крутится 400 мс
     var playing = false             // часы идут: на кнопке пауза, иначе треугольник
+    var bpmShown: Double?           // тянут play вбок — число bpm под кнопкой
+    var volDef = Vol.def            // метка «ноль» на шкале vol
+    var volScale = (lo: Vol.lo, hi: Vol.hi)   // дБ на концах шкалы (мастер −48…+6, канал мира −36…+6)
+    var volText: (Double) -> String = Vol.text
     var enabled = Set(Btn.allCases) // неактивные кнопки притушены и не ловят касания
   }
 
@@ -118,7 +122,7 @@ struct TopBar {
     let held = s.volHeld, a: CGFloat = s.sclOpen ? 0.15 : 1
     g.setFillColor(d.paper(0.88)); g.fillEllipse(in: CGRect(x: b.x - TopBar.clrR - 1, y: b.y - TopBar.clrR - 1, width: 2 * TopBar.clrR + 2, height: 2 * TopBar.clrR + 2))
     d.ring(b.x, b.y, TopBar.clrR, (held ? 1 : 0.45) * a, 1.2)
-    let z = ly(Vol.def)
+    let z = ly(s.volDef)
     g.setStrokeColor(d.ink(0.35 * a)); g.setLineWidth(1)
     g.beginPath()
     g.move(to: CGPoint(x: b.x - 1.5, y: y0)); g.addLine(to: CGPoint(x: b.x - 1.5, y: y0 + h))
@@ -142,16 +146,16 @@ struct TopBar {
     g.move(to: CGPoint(x: b.x + 1.5, y: t0)); g.addLine(to: CGPoint(x: b.x + 1.5, y: t0 + L))
     g.strokePath()
     g.beginPath()
-    var db = Vol.lo
-    while db <= Vol.hi {   // засечки через 6 дБ, у нуля длиннее
-      let y = sy((db - Vol.lo) / (Vol.hi - Vol.lo)), l: CGFloat = db == 0 ? 9 : 5
+    var db = s.volScale.lo
+    while db <= s.volScale.hi {   // засечки через 6 дБ, у нуля длиннее
+      let y = sy((db - s.volScale.lo) / (s.volScale.hi - s.volScale.lo)), l: CGFloat = db == 0 ? 9 : 5
       g.move(to: CGPoint(x: b.x - 2.5 - l, y: y)); g.addLine(to: CGPoint(x: b.x - 2.5, y: y))
       db += 6
     }
     g.strokePath()
     g.setStrokeColor(d.ink(1)); g.setLineWidth(2)
     g.beginPath(); g.move(to: CGPoint(x: b.x - 9, y: sy(s.vol))); g.addLine(to: CGPoint(x: b.x + 9, y: sy(s.vol))); g.strokePath()
-    d.text(Vol.text(s.vol), b.x + 14, sy(s.vol), 14, 0.95)
+    d.text(s.volText(s.vol), b.x + 14, sy(s.vol), 14, 0.95)
   }
 
   // ui-top.js:92-191; возвращает ширину заголовка — её отдают в hit(titleW:)
@@ -259,6 +263,10 @@ struct TopBar {
       g.fill(CGRect(x: pl.x - 5, y: pl.y - 6, width: 3.5, height: 12)); g.fill(CGRect(x: pl.x + 1.5, y: pl.y - 6, width: 3.5, height: 12))
     } else {
       g.beginPath(); g.move(to: CGPoint(x: pl.x - 4, y: pl.y - 7)); g.addLine(to: CGPoint(x: pl.x + 6, y: pl.y)); g.addLine(to: CGPoint(x: pl.x - 4, y: pl.y + 7)); g.closePath(); g.fillPath()
+    }
+    if let bpm = s.bpmShown {   // тянут вбок — темп под кнопкой
+      g.setFillColor(d.paper(0.9)); g.fill(CGRect(x: pl.x - 34, y: pl.y + 24, width: 68, height: 22))
+      d.text("\(Int(bpm)) bpm", pl.x, pl.y + 36, 14, 0.95, align: .center)
     }
     return tw
   }
