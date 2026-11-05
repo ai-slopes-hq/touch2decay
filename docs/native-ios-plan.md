@@ -4,6 +4,7 @@
 
 ## Статус (26.10.2026)
 
+- **05.11 (позже):** бар переехал вниз (back · play · transport · vol · fx), плашка всплывает над ним, вкладки transport · fx · scale · mix · sys в стиле fx; vol и bpm — фейдеры в плашке (`docs/superpowers/specs/2026-11-05-bottom-bar-design.md`); приёмка автором на iPhone — впереди.
 - **05.11:** сквозной хедер и плашка с вкладками fx · scale · mix · sys (`docs/superpowers/specs/2026-11-05-top-header-design.md`) заменили concordia, страницу микшера и панель audio; приёмка автором на iPhone — впереди.
 
 - **Готово:** фаза 1 (хост в ядре); Tenebrae, этап 1 — звук в ядре (слот 1, сверка с Web Audio); **имя, иконка, описание** — Universum, солнце, `docs/app-store.md`.

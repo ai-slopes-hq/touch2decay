@@ -96,7 +96,7 @@ struct T2DApp: App {
     case "nav": shotNav(); return
     case "peek": shotPeek(); return
     case "header": return                                   // хедер мира Firmamentum — как есть
-    case "plate-fx", "plate-scale", "plate-mix", "plate-sys": shotPlate(T2DApp.shotName); return
+    case "plate-fx", "plate-scale", "plate-mix", "plate-sys", "plate-transport": shotPlate(T2DApp.shotName); return
     case "oceanus", "oceanus-sheet", "oceanus-luna", "oceanus-fan": shotOcean(T2DApp.shotName); return
     case "monochord", "monochord-sheet", "monochord-earth-sheet", "monochord-wind", "monochord-fan": shotMono(T2DApp.shotName); return
     case "horologium", "horologium-ring-sheet", "horologium-hub-sheet", "horologium-fan", "horologium-pads": shotHoro(T2DApp.shotName); return
@@ -185,7 +185,7 @@ struct T2DApp: App {
   private func shotPlate(_ name: String) {
     host.go(FirmamentumView.slotN)
     world.dice()
-    let tab: PlateTab = name == "plate-fx" ? .fx : name == "plate-scale" ? .scale : name == "plate-mix" ? .mix : .sys
+    let tab: PlateTab = name == "plate-fx" ? .fx : name == "plate-scale" ? .scale : name == "plate-mix" ? .mix : name == "plate-transport" ? .transport : .sys
     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { host.openPlate(); host.selectTab(tab) }
   }
 

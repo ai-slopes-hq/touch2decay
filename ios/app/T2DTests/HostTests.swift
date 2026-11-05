@@ -75,7 +75,8 @@ private final class HWorld: World {
   var tempo: WorldTempo? { hasClock ? tw : nil }
   var sets: [(String, Double)] = []
   var downs = 0, moves = 0, ups = 0, cancels = 0, dices = 0, clears = 0, restoredN = 0
-  func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat) {}
+  var laidSafeBot: CGFloat?
+  func layout(W: CGFloat, H: CGFloat, topY: CGFloat, safeBot: CGFloat) { laidSafeBot = safeBot }
   var corner: ((CGFloat, CGFloat) -> Bool)?
   func cornerHit(_ x: CGFloat, _ y: CGFloat) -> Bool { corner?(x, y) ?? (x >= 300 && y >= 700) }
   func dice() { dices += 1 }
@@ -1229,6 +1230,14 @@ final class HostTests: XCTestCase {
   // ---------- нижний бар: vol → mix, transport ----------
   func testBarIsAtBottomAndWorldsLieAboveIt() {
     XCTAssertEqual(bar.pos(.fx).y, 844 - 34 - TopBar.barH / 2)
+    XCTAssertEqual(world.laidSafeBot, 34 + TopBar.barH, "мир лежит над баром")
+  }
+
+  func testMapCardsStopAboveBar() {
+    host = mapHost()
+    let b = bar.pos(.back)
+    tap(b.x, b.y); tap(195, b.y)   // под баром карточек нет: тап мимо не входит в мир
+    XCTAssertEqual(host.nav.view, .map)
   }
 
   func testVolButtonOpensMixWithVolumeRowSecondInWorld() {

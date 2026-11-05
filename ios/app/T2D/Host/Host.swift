@@ -129,8 +129,8 @@ final class Host {
   func layout(W: CGFloat, H: CGFloat, top: CGFloat, safeBot: CGFloat) {
     self.W = W; self.H = H; self.top = top; self.safeBot = safeBot + TopBar.barH
     bar = TopBar(W: W, top: top, H: H, safeBot: safeBot)
-    field = MapGeo.field(W: W, H: H, top: top, safeBot: safeBot)
-    for v in views.values { v.layout(W: W, H: H, topY: top + 44, safeBot: safeBot) }
+    field = MapGeo.field(W: W, H: H, top: top, safeBot: self.safeBot)
+    for v in views.values { v.layout(W: W, H: H, topY: top + 44, safeBot: self.safeBot) }
   }
 
   // вход сразу, без перехода — только тесты и -shot (как t2d.go веба)

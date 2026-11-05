@@ -100,8 +100,8 @@ final class Stage: UIView {
     host.draw(d, now: CACurrentMediaTime())
     if meter.visible && !panelLine.isEmpty {
       d.reading {
-        d.text(panelLine, bounds.width / 2, bounds.height - max(geoBot, 0) - 14, 11, 0.6, align: .center)
-        d.text(Meter.buildLabel(Bundle.main.infoDictionary), bounds.width / 2, bounds.height - max(geoBot, 0) - 28, 11, 0.6, align: .center)
+        d.text(panelLine, bounds.width / 2, bounds.height - max(geoBot, 0) - TopBar.barH - 14, 11, 0.6, align: .center)
+        d.text(Meter.buildLabel(Bundle.main.infoDictionary), bounds.width / 2, bounds.height - max(geoBot, 0) - TopBar.barH - 28, 11, 0.6, align: .center)
       }
     }
     if frameStart > 0 {
