@@ -1327,7 +1327,7 @@ async def sc_oceanus(p):                           # Oceanus: город поё�
     await p.shot('map-ocean')
 
 
-async def sc_horologium(p):                        # Horologium Nova: кольца — волшебные числа, ступица — ход, маятник руками, тон за limen, плашки, FX, кубик, корзина, отмена, солнце — карта
+async def sc_horologium(p):                        # Horologium Nova: кольца — волшебные числа, ступица — пуск / стоп, плашки, FX, кубик, корзина, отмена, солнце — карта
     if 9 in await p.js('()=>t2d.hidden'): print('  switched off — skipped'); return
     await p.js('()=>t2d.goMap()'); await p.pg.wait_for_timeout(900)
     q = await p.js('()=>t2d.mapPanel(9)'); await p.tap(q[0] + q[2] / 2, q[1] + q[3] / 2); await p.pg.wait_for_timeout(900)
@@ -1352,23 +1352,8 @@ async def sc_horologium(p):                        # Horologium Nova: кольц
     c = await p.js('()=>t2d.horo.ring(3, 1.1)'); await p.hold(c['x'], c['y'], ms=900); await p.up(); await p.pg.wait_for_timeout(150)
     assert await p.js('()=>T2D.sheetOpen'), 'hold a ring — its sheet'
     await p.shot('horologium-sheet'); await p.tap(200, 120); await p.pg.wait_for_timeout(150)
-    b = await p.js('()=>t2d.horo.bob()'); pid = await p.hold(b['x'], b['y'], ms=500); await p.up(); await p.pg.wait_for_timeout(150)
-    assert not await p.js('()=>t2d.horo.clock.run'), 'catch the pendulum and hold — it stops'
-    G = await p.js('()=>t2d.horo.geo()'); px, py, L = G['piv']['x'], G['piv']['y'], G['L']
-    b = await p.js('()=>t2d.horo.bob()'); pid = await p.hold(b['x'], b['y'], ms=60)
-    for k in range(3):
-        await p.drag(pid, px - 50, py + L * 0.95, px + 50, py + L * 0.95, steps=8); await p.drag(pid, px + 50, py + L * 0.95, px - 50, py + L * 0.95, steps=8)
-    hs = await p.js('()=>t2d.horo.handSteps'); print('  steps by hand:', hs); assert hs >= 4, f'swing it by hand — the escapement steps: {hs}'
-    await p.drag(pid, px - 50, py + L * 0.95, px + 70, py + L * 0.6, steps=3); await p.up(); await p.pg.wait_for_timeout(600)
-    u = await p.js('()=>t2d.horo.clock.u'); print('  thrown: u', round(u, 2)); assert await p.js('()=>t2d.horo.clock.run') and u > 0.5, f'throw the pendulum — faster: {u}'
-    await p.js('()=>t2d.horo.run(true, 7.5)'); await p.pg.wait_for_timeout(1200)
-    F = await p.js('()=>t2d.horo.F'); r = await p.js('()=>t2d.horo.ratio().b'); print('  over the top: F', round(F, 1), '·', r)
-    assert F > 20 and r.startswith('tonus'), f'over the top — a tone: {F} {r}'
-    await p.shot('horologium-tonus')
-    a = await p.js('()=>t2d.horo.strip(1)'); b = await p.js('()=>t2d.horo.strip(30)'); pid = await p.hold(a['x'], a['y'], ms=60); await p.drag(pid, a['x'], a['y'], b['x'], b['y'], steps=8); await p.up(); await p.pg.wait_for_timeout(3000)
-    F = await p.js('()=>t2d.horo.F'); print('  tempus scale to 30 / s, 3 s later:', round(F, 1)); assert 22 < F < 40, f'drag the tempus scale — the speed stays: {F}'
-    await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(90); await p.tap(b['x'], b['y']); await p.pg.wait_for_timeout(1500)
-    F = await p.js('()=>t2d.horo.F'); assert F < 1, f'double tap the scale — back to tempo: {F}'
+    h = await p.js('()=>t2d.horo.hub()'); await p.tap(h['x'], h['y']); await p.pg.wait_for_timeout(300)
+    assert not await p.js('()=>t2d.horo.clock.run'), 'tap the hub again — the clock stops'
     r = await p.js("()=>t2d.worlds[9].fx.sectors.length"); assert r == 5, 'FX: aequalis, materia, concursus, chance, hall'
     d = await p.js("()=>t2d.btnPos('dice')"); await p.tap(d['x'], d['y']); await p.pg.wait_for_timeout(1500)
     assert await p.js('()=>t2d.horo.rings.some(r=>r.on) && t2d.horo.clock.run'), 'dice — a magic ratio, running'

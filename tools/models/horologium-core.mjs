@@ -3,7 +3,6 @@ import { createModel as facade, SLOT, ACT } from '../../worlds/horologium/model.
 import { sdkFacade } from './sdk-facade.mjs';
 
 export { SLOT, ACT };
-const ACTIONS = ['toggleRing', 'toggleUnder', 'setPhase', 'setRing', 'setFx', 'loadFx', 'setRun', 'stop', 'setBpm', 'grab', 'swing', 'tapPendulum', 'release',
-  'holdStrip', 'dragStrip', 'freeStrip', 'resetSpeed', 'dice', 'clear', 'restore'];
+const ACTIONS = ['toggleRing', 'toggleUnder', 'setPhase', 'setRing', 'setFx', 'loadFx', 'setRun', 'stop', 'setBpm', 'dice', 'clear', 'restore'];
 
 export const createModel = (opts = {}) => sdkFacade(facade, SLOT, ACTIONS, opts);

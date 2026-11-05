@@ -1,29 +1,25 @@
-// Horologium — картинка и касания: астрономические часы — колесо-«единица» со стрелкой-солнцем, кольца II…IX, шкала tempus, маятник.
+// Horologium — картинка и касания: астрономические часы — колесо-«единица» со стрелкой-солнцем, кольца II…IX.
 // Касание → действие модели (звук не трогает); положение и скорость колеса — метры engine (из ядра); что услышано (heard) — удары колец.
-import { ROMAN, NR, Z, eOfU, euclid, rotOf, slotOf } from './model.js';
+import { ROMAN, NR, euclid, rotOf, slotOf } from './model.js';
 
 const TAU = Math.PI * 2;
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const INK = '214,180,110', BGC = '#0c0a07', PAPER = '12,10,7';
-export const FLO = 0.05, FHI = 120;                     // шкала tempus: обороты в секунду, логарифмически
 
-// ---------- геометрия: циферблат сверху, под ним отношение и шкала tempus, ниже маятник ----------
+// ---------- геометрия: циферблат сверху, под ним отношение ----------
 export function geo(T) {
   const W = T.W, H = T.H, top = T.topY + 6, bot = H - T.safeBot - 8, Ws = Math.min(W, (H - T.safeBot) * 0.62), cx = W / 2;
   const R = Math.min(Ws * 0.44, (bot - top) * 0.23), cy = top + 26 + R;
   const r0 = R * 0.17, dr = (R - 22 - r0) / (NR - 1);
-  const ty = cy + R + 46, sy = ty + 56, L = Math.max(50, Math.min(100, (bot - sy - 40) / 2 - 12)), py = Math.max(sy + 30 + L, bot - L - 26);   // маятнику есть место перекинуться через верх, не задевая шкалу
-  return { W, H, top, bot, cx, cy, R, r0, dr, Ws, ty, strip: { x0: cx - Ws * 0.4, x1: cx + Ws * 0.4, y: sy }, piv: { x: cx, y: py }, L, bob: 13, sun: { x: W, y: T.topY + 2, r: Math.min(42, W * 0.11) } };
+  const ty = cy + R + 46;
+  return { W, H, top, bot, cx, cy, R, r0, dr, Ws, ty, sun: { x: W, y: T.topY + 2, r: Math.min(42, W * 0.11) } };
 }
 export const ringR = (G, i) => G.r0 + i * G.dr;
 function ringAt(G, x, y) { const d = Math.hypot(x - G.cx, y - G.cy), i = Math.round((d - G.r0) / G.dr); return i >= 0 && i < NR && Math.abs(d - ringR(G, i)) < G.dr * 0.62 ? i : -1; }
-export const bobXY = (G, pend) => ({ x: G.piv.x + Math.sin(pend.th) * G.L, y: G.piv.y + Math.cos(pend.th) * G.L });
-export const stripX = (S, F) => S.x0 + (S.x1 - S.x0) * clamp(Math.log(F / FLO) / Math.log(FHI / FLO));
 
 export function createView(T, model, engine) {
-  const { rings, fx, clock, pend } = model.state, mOf = model.mOf;
+  const { rings, fx, clock } = model.state;
   const G0 = () => geo(T);
-  const uOfX = (S, x) => Math.log2((FLO * (FHI / FLO) ** clamp((x - S.x0) / (S.x1 - S.x0))) / model.Ft());   // шкала tempus: место → скорость
   const ringHit = new Array(NR).fill(0);                 // когда ударило кольцо (performance.now) — вспышка метки
   let conc = { t: 0, a: 0 };                              // concursus: когда кольца совпали и где — луч
   function heard(e) {
@@ -36,21 +32,9 @@ export function createView(T, model, engine) {
 
   // ---------- касания ----------
   const touches = new Map();
-  let lastRingTap = null, lastStrip = 0;
+  let lastRingTap = null;
   function down(f) {
-    const G = G0(), now = performance.now(), b = bobXY(G, pend), dp = Math.hypot(f.x - G.piv.x, f.y - G.piv.y);
-    if (Math.hypot(f.x - b.x, f.y - b.y) < G.bob + 24 || (pend.spin && Math.abs(dp - G.L) < 30)) {   // маятник: схватить
-      const th = Math.atan2(f.x - G.piv.x, f.y - G.piv.y);
-      touches.set(f.id, { kind: 'pend', x0: f.x, y0: f.y, t0: now, th, tt: now, om: 0, moved: false, was: clock.run });
-      model.grab(th);
-      return;
-    }
-    const S = G.strip;
-    if (Math.abs(f.y - S.y) < 24 && f.x > S.x0 - 14 && f.x < S.x1 + 14) {   // шкала tempus: ведёшь пальцем — скорость; двойной тап — назад к темпу
-      if (lastStrip && now - lastStrip < T.DTAP_MS) { model.resetSpeed(); lastStrip = 0; touches.set(f.id, { kind: 'none' }); return; }
-      lastStrip = now; model.holdStrip(uOfX(S, f.x));
-      touches.set(f.id, { kind: 'strip', t0: now, x0: f.x, y0: f.y, moved: false }); return;
-    }
+    const G = G0(), now = performance.now();
     const dh = Math.hypot(f.x - G.cx, f.y - G.cy);
     if (dh < G.r0 - 6) { touches.set(f.id, { kind: 'hub', t0: now, x0: f.x, y0: f.y, moved: false }); return; }
     const i = ringAt(G, f.x, f.y);
@@ -67,14 +51,6 @@ export function createView(T, model, engine) {
     if (!t || t.kind === 'none' || t.sheet) return;
     const G = G0(), now = performance.now();
     if (Math.hypot(f.x - t.x0, f.y - t.y0) > 8) t.moved = true;
-    if (t.kind === 'strip') { model.dragStrip(uOfX(G.strip, f.x)); return; }
-    if (t.kind === 'pend') {                              // ведёшь маятник: каждый проход через низ — спуск (в модели)
-      const th = Math.atan2(f.x - G.piv.x, f.y - G.piv.y), dt = Math.max(1, now - t.tt) / 1000;
-      let d = th - t.th; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU;
-      model.swing(t.th, th);
-      t.om = 0.6 * t.om + 0.4 * (d / dt); t.th = th; t.tt = now;
-      return;
-    }
     if (t.kind === 'ring' && t.moved) {                   // вдоль кольца — фаза
       const a = Math.atan2(f.x - G.cx, -(f.y - G.cy)); let d = a - t.a0; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU;
       model.setPhase(t.i, ((t.phi0 - d / TAU) % 1 + 1) % 1); t.a0 = a; t.phi0 = rings[t.i].phi; t.ph = true;
@@ -85,12 +61,6 @@ export function createView(T, model, engine) {
     touches.delete(f.id);
     if (!t) return;
     const now = performance.now();
-    if (t.kind === 'strip') { model.freeStrip(); return; }
-    if (t.kind === 'pend') {
-      if (!t.moved && now - t.t0 < 300) { model.tapPendulum(t.was); return; }   // тап — пуск / стоп
-      if (now - t.tt > 120) t.om = 0;                     // держал неподвижно — поймал
-      model.release(t.th, t.om); return;
-    }
     if (t.kind === 'hub' && !t.moved && !t.sheet) { if (clock.run) model.stop(); else model.setRun(true); return; }
     if (t.kind === 'ring' && !t.moved && !t.sheet) { lastRingTap = { i: t.i, t: now }; model.toggleRing(t.i); }
   }
@@ -123,8 +93,8 @@ export function createView(T, model, engine) {
   // ---------- рисование ----------
   const ink = (a) => `rgba(${INK},${a})`;
   let wallC = null, wallKey = '';
-  function wall(G) {                                      // неподвижное: обод, деления, цифры, шкала tempus, ось маятника
-    const key = `${G.W}x${G.H}x${T.DPR}|${G.cy}|${G.R}|${G.strip.y}`;
+  function wall(G) {                                      // неподвижное: обод, деления, цифры
+    const key = `${G.W}x${G.H}x${T.DPR}|${G.cy}|${G.R}`;
     if (wallC && key === wallKey) return wallC;
     wallKey = key;
     wallC = document.createElement('canvas');
@@ -142,11 +112,6 @@ export function createView(T, model, engine) {
     x.font = `${Math.max(9, Math.min(12, R * 0.07))}px ${T.MAP}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = ink(0.75);   // цифры, как на часах: XII наверху
     for (let k = 1; k <= 12; k++) { const a = (k / 12) * TAU, rr = R + 11; x.save(); x.translate(cx + Math.sin(a) * rr, cy - Math.cos(a) * rr); x.rotate(a); x.fillText(ROMAN[k], 0, 0); x.restore(); }
     x.strokeStyle = ink(0.12); x.setLineDash([1, 3]); x.beginPath(); x.moveTo(cx, cy - G.r0 + 4); x.lineTo(cx, cy - R + 10); x.stroke(); x.setLineDash([]);   // «раз»: здесь все кольца сходятся
-    const S = G.strip;                                    // шкала tempus: от ритма к тону
-    x.strokeStyle = ink(0.5); x.beginPath(); x.moveTo(S.x0, S.y); x.lineTo(S.x1, S.y); x.stroke();
-    x.beginPath(); for (let k = 0; k <= 40; k++) { const px = S.x0 + ((S.x1 - S.x0) * k) / 40, l = k % 5 ? 3 : 6; x.moveTo(px, S.y); x.lineTo(px, S.y + l); } x.stroke();
-    x.font = `italic 10.5px ${T.MAP}`; x.fillStyle = ink(0.45); x.textAlign = 'left'; x.fillText('rhythmus', S.x0, S.y - 9); x.textAlign = 'right'; x.fillText('tonus', S.x1, S.y - 9);
-    x.fillStyle = ink(0.7); x.beginPath(); x.arc(G.piv.x, G.piv.y, 3, 0, TAU); x.fill();
     return wallC;
   }
   function drawRings(c, G, now, P) {
@@ -207,26 +172,10 @@ export function createView(T, model, engine) {
     }
     const ck = clamp(1 - (now - conc.t) / 350);           // concursus: кольца совпали — луч
     if (ck > 0 && Fm <= 4) { c.strokeStyle = ink(0.5 * ck); c.beginPath(); c.moveTo(G.cx, G.cy); c.lineTo(G.cx + Math.sin(conc.a) * (G.R - 4), G.cy - Math.cos(conc.a) * (G.R - 4)); c.stroke(); }
-    c.fillStyle = BGC; c.beginPath(); c.arc(G.cx, G.cy, G.r0 - 8, 0, TAU); c.fill();   // ступица: тап — пуск, держишь — темп
+    c.fillStyle = BGC; c.beginPath(); c.arc(G.cx, G.cy, G.r0 - 8, 0, TAU); c.fill();   // ступица: тап — пуск / стоп, держишь — темп
     c.strokeStyle = ink(clock.run ? 0.8 : 0.5); c.beginPath(); c.arc(G.cx, G.cy, G.r0 - 8, 0, TAU); c.stroke();
-    if (!clock.run && !pend.held) { c.fillStyle = ink(0.8); const s = 5; c.beginPath(); c.moveTo(G.cx - s * 0.6, G.cy - s); c.lineTo(G.cx + s, G.cy); c.lineTo(G.cx - s * 0.6, G.cy + s); c.closePath(); c.fill(); }
+    if (!clock.run) { c.fillStyle = ink(0.8); const s = 5; c.beginPath(); c.moveTo(G.cx - s * 0.6, G.cy - s); c.lineTo(G.cx + s, G.cy); c.lineTo(G.cx - s * 0.6, G.cy + s); c.closePath(); c.fill(); }
     else { c.fillStyle = ink(0.9); c.beginPath(); c.arc(G.cx, G.cy, 3.2, 0, TAU); c.fill(); }
-  }
-  function drawPendulum(c, G) {
-    const { x: px, y: py } = G.piv, L = G.L, rate = clock.run && !pend.held ? (Z * model.Fnow()) / 2 : 0;
-    if (pend.spin && rate > 3) {                          // крутится — расплылся
-      c.strokeStyle = ink(0.1); c.beginPath(); c.arc(px, py, L, 0, TAU); c.stroke();
-      for (let j = 0; j < 7; j++) { const a = pend.th + (j / 7) * TAU; c.strokeStyle = ink(0.12); c.beginPath(); c.moveTo(px, py); c.lineTo(px + Math.sin(a) * L, py + Math.cos(a) * L); c.stroke(); c.beginPath(); c.arc(px + Math.sin(a) * L, py + Math.cos(a) * L, G.bob, 0, TAU); c.stroke(); }
-      return;
-    }
-    if (rate > 2.5 && !pend.spin) {                       // качается быстро — веером
-      const A = Math.acos(1 - Math.min(1.9, eOfU(clock.u)));
-      for (const s of [-1, -0.5, 0, 0.5, 1]) { const a = s * A; c.strokeStyle = ink(0.1); c.beginPath(); c.moveTo(px, py); c.lineTo(px + Math.sin(a) * L, py + Math.cos(a) * L); c.stroke(); }
-    }
-    const b = bobXY(G, pend);
-    c.strokeStyle = ink(0.65); c.beginPath(); c.moveTo(px, py); c.lineTo(b.x, b.y); c.stroke();
-    c.fillStyle = BGC; c.strokeStyle = ink(pend.held ? 1 : 0.9); c.beginPath(); c.arc(b.x, b.y, G.bob, 0, TAU); c.fill(); c.stroke();
-    c.strokeStyle = ink(0.35); c.beginPath(); c.arc(b.x, b.y, G.bob - 4, 0, TAU); c.stroke();
   }
   let noSun = false;
   function draw(now) {
@@ -237,11 +186,6 @@ export function createView(T, model, engine) {
     const rt = model.ratio(Fm);
     T.mapText(rt.a, G.cx, G.ty, 19, 0.95, 'center');
     T.mapText(rt.b, G.cx, G.ty + 21, 12, 0.6, 'center');
-    const S = G.strip, act = rings.filter((r) => r.on), mAvg = act.length ? act.reduce((s, r) => s + mOf(r), 0) / act.length : 4, lim = stripX(S, 20 / mAvg);   // limen: где удары сливаются в тон
-    c.strokeStyle = ink(0.35); c.setLineDash([2, 3]); c.beginPath(); c.moveTo(lim, S.y - 14); c.lineTo(lim, S.y + 14); c.stroke(); c.setLineDash([]);
-    T.mapText('limen', lim, S.y + 22, 10.5, 0.45, 'center');
-    if (Fm > 0.01) { const mx = stripX(S, Fm); c.fillStyle = ink(0.95); c.beginPath(); c.moveTo(mx, S.y - 3); c.lineTo(mx - 5, S.y - 11); c.lineTo(mx + 5, S.y - 11); c.closePath(); c.fill(); T.mapText(`${Fm < 10 ? Fm.toFixed(2) : Math.round(Fm)} / s`, mx, S.y - 20, 11, 0.75, 'center'); }
-    drawPendulum(c, G);
     for (const t of touches.values()) if (t.kind === 'ring' && t.ph) { const r = rings[t.i]; T.mapText(`${ROMAN[r.n]} · ${rotOf(r.phi, r.len)} / ${r.len}`, G.cx, G.cy + G.R + 14, 12, 0.85, 'center'); }
     if (!noSun) T.quarterSun(c, G.sun.x, G.sun.y, G.sun.r, -1, now, INK, BGC);
   }
@@ -256,8 +200,7 @@ export function createView(T, model, engine) {
     arc: () => fx.hall, save: () => ({ ...fx }), load: (o) => model.loadFx(o),
   };
   const legend = [['tap', 'tap a ring', 'it sounds: n of its steps, the n-th harmonic'], ['double', 'double tap a ring', 'undertone 1/n'], ['drag', 'drag along a ring', 'its phase'],
-    ['hold', 'hold a ring', 'its sheet'], ['throw', 'swing the pendulum', 'by hand — it ticks · throw — faster · over the top — a chord · catch — stop'],
-    ['drag', 'drag along the tempus scale', 'speed: rhythm … tone · double tap — back to tempo'], ['tap', 'tap the hub', 'run / stop · hold — tempo'], ['tap', 'tap the sun', 'map of worlds']];
+    ['hold', 'hold a ring', 'its sheet'], ['tap', 'tap the hub', 'run / stop · hold — tempo'], ['tap', 'tap the sun', 'map of worlds']];
   const corner = { hit: (f) => { const G = G0(); return f.y > G.sun.y && Math.hypot(f.x - G.sun.x, f.y - G.sun.y) < G.sun.r + 6; }, draw: () => {} };   // солнце — карта
 
   return {
