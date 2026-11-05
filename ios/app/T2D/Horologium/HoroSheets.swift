@@ -5,7 +5,7 @@ extension HorologiumView {
   static let fxKeys = ["aequalis", "materia", "concursus", "chance", "hall"]   // порядок Fx в ядре и код LFO
   static let ringKeys = ["on", "under", "phi", "lvl", "inst"]                   // порядок RingKey в RING ядра
 
-  private func pct(_ v: Double) -> String { "\(Int(Horo.jsRound(v * 100)))%" }
+  private func pct(_ v: Double) -> String { "\(v.isFinite ? Int(Horo.clamp(Horo.jsRound(v * 100), -1e6, 1e6)) : 0)%" }
 
   var fxSpec: SheetSpec {
     let keys = HorologiumView.fxKeys
@@ -54,7 +54,7 @@ extension HorologiumView {
         switch key {
         case "on": return r.on ? "yes" : "no"
         case "under": return r.under ? "1/\(r.n) · \(Horo.num2(12 / Double(r.n))) a turn" : "\(r.n) a turn"
-        case "phi": return "\(Int(Horo.jsRound(r.phi * 360)))°"
+        case "phi": return "\(Horo.rot(r.phi, r.len)) / \(r.len)"
         case "inst": return Horo.instNames[r.inst]
         default: return pct(r.lvl)
         }

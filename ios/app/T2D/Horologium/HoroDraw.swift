@@ -225,9 +225,9 @@ extension HorologiumView {
       d.mapText("\(Fm < 10 ? String(format: "%.2f", Fm) : String(Int(Horo.clamp(Horo.jsRound(Fm), 0, 1e6)))) / s", mx, S.y - 20, 11, 0.75, align: .center)
     }
     drawPendulum(d)
-    if let i = phaseHeld() {
+    if let i = lenHeld(), let t = holds.values.first(where: { $0.kind == .ring && $0.ph }) {
       let r = mirror.rings[i]
-      d.mapText("\(Horo.roman[r.n]) · \(Int(Horo.clamp(Horo.jsRound(r.phi * 360), -1e6, 1e6)))°", G.cx, G.cy + G.R + 14, 12, 0.85, align: .center)
+      d.reading { d.mapText("\(Horo.roman[r.n]) · \(t.sent) / 16", G.cx, G.cy + G.R + 14, 12, 0.85, align: .center, italic: true) }
     }
     guard sun else { return }
     d.quarterSun(G.sun.x, G.sun.y, G.sun.r, side: -1, now: now * 1000, col: theme.ink, disc: theme.bg)

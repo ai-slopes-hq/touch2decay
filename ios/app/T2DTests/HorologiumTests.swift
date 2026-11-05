@@ -129,36 +129,57 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(rec.acts[1].a, [1, 0], "унтертон уже есть — снимается")
   }
 
-  func testPhaseDrag() {
-    setMirror(phi: 0.25)
-    let p0 = onRing(3, 0.5)
+  func testLenDrag() {
+    setMirror(len: Array(repeating: 8, count: 8))
+    let p0 = onRing(3, 0.5), st = 2 * Double.pi / 16
     view.down(finger(f1, p0, t0: 5, now: 5))
-    view.move(finger(f1, onRing(3, 0.7), t0: 5, now: 5.05, p0: p0))
-    let m = Horo.mOf(view.mirror.rings[3], aequalis: 0)
-    XCTAssertEqual(m, 5)
-    var phi = 0.25 - 0.2 / (2 * .pi) * m
-    XCTAssertEqual(rec.acts.count, 1); XCTAssertEqual([rec.acts[0].kind, rec.acts[0].i], [0, 3]); XCTAssertEqual(rec.acts[0].a[0], 2)
-    XCTAssertEqual(rec.acts[0].a[1], phi, accuracy: 1e-9); XCTAssertEqual(view.phaseHeld(), 3)
-    view.move(finger(f1, onRing(3, 0.8), t0: 5, now: 5.1, p0: p0))
-    phi -= 0.1 / (2 * .pi) * m
-    XCTAssertEqual(rec.acts[1].a[1], phi, accuracy: 1e-9, "фаза копится в руке, зеркало не читается")
-    view.up(finger(f1, onRing(3, 0.8), t0: 5, now: 5.15))
-    XCTAssertEqual(rec.acts.count, 2, "подъём после фазы — без тапа"); XCTAssertNil(view.phaseHeld())
+    view.move(finger(f1, onRing(3, 0.5 + 3 * st), t0: 5, now: 5.05, p0: p0))
+    XCTAssertEqual(rec.acts.count, 1); XCTAssertEqual([rec.acts[0].kind, rec.acts[0].i], [0, 3]); XCTAssertEqual(rec.acts[0].a, [5, 11])
+    XCTAssertEqual(view.lenHeld(), 3)
+    view.move(finger(f1, onRing(3, 0.5 + 3 * st + 0.01), t0: 5, now: 5.1, p0: p0))
+    XCTAssertEqual(rec.acts.count, 1, "длина не сменилась — ничего не шлём")
+    view.up(finger(f1, onRing(3, 0.5 + 3 * st), t0: 5, now: 5.15))
+    XCTAssertEqual(rec.acts.count, 1, "подъём после жеста — без тапа")
   }
 
-  func testPhaseDragWraps() {                              // RF5: через 6 часов atan2 прыгает на 2π
-    setMirror(phi: 0.01)
-    let p0 = onRing(2, 3.0)
+  func testLenDragShorter() {
+    setMirror(len: Array(repeating: 8, count: 8))
+    let p0 = onRing(3, 0.5), st = 2 * Double.pi / 16
     view.down(finger(f1, p0, t0: 5, now: 5))
-    view.move(finger(f1, onRing(2, -3.0), t0: 5, now: 5.05, p0: p0))
-    let d = -6.0 + 2 * .pi, want = ((0.01 - d / (2 * .pi) * 4).truncatingRemainder(dividingBy: 1) + 1).truncatingRemainder(dividingBy: 1)
-    XCTAssertEqual(rec.acts.count, 1); XCTAssertEqual(rec.acts[0].a[1], want, accuracy: 1e-9)
-    XCTAssertTrue(rec.acts[0].a[1] >= 0 && rec.acts[0].a[1] < 1); XCTAssertLessThan(min(abs(rec.acts[0].a[1] - 0.01), 1 - abs(rec.acts[0].a[1] - 0.01)), 0.3, "шаг мал, не прыжок на полоборота")
-    // обратно через 12 часов: phi остаётся в [0, 1)
-    let q0 = onRing(2, 0.05)
-    view.down(finger(f2, q0, t0: 6, now: 6))
-    view.move(finger(f2, onRing(2, -0.3), t0: 6, now: 6.05, p0: q0))
-    XCTAssertTrue(rec.acts[1].a[1] >= 0 && rec.acts[1].a[1] < 1)
+    view.move(finger(f1, onRing(3, 0.5 - 2 * st), t0: 5, now: 5.05, p0: p0))
+    XCTAssertEqual(rec.acts.count, 1); XCTAssertEqual(rec.acts[0].a, [5, 6])
+  }
+
+  func testLenDragWraps() {                                // через 6 часов atan2 прыгает на 2π — длина не скачет
+    setMirror(len: Array(repeating: 8, count: 8))
+    let st = 2 * Double.pi / 16, a = Double.pi - st, p0 = onRing(2, a)
+    view.down(finger(f1, p0, t0: 5, now: 5))
+    view.move(finger(f1, onRing(2, a + 2 * st), t0: 5, now: 5.05, p0: p0))   // atan2 уже по другую сторону
+    XCTAssertEqual(rec.acts.count, 1); XCTAssertEqual(rec.acts[0].a, [5, 10])
+    view.move(finger(f1, onRing(2, a + 3 * st), t0: 5, now: 5.1, p0: p0))
+    XCTAssertEqual(rec.acts[1].a, [5, 11])
+  }
+
+  func testLenLabelOnlyWhileDragging() {
+    setMirror()
+    XCTAssertNil(view.lenHeld())
+    let p0 = onRing(3, 0.5)
+    view.down(finger(f1, p0, t0: 5, now: 5)); XCTAssertNil(view.lenHeld())
+    view.move(finger(f1, onRing(3, 0.9), t0: 5, now: 5.05, p0: p0)); XCTAssertEqual(view.lenHeld(), 3)
+    view.up(finger(f1, onRing(3, 0.9), t0: 5, now: 5.1)); XCTAssertNil(view.lenHeld())
+  }
+
+  func testSheetPhaseSteps() {
+    setMirror(on: [2], phi: 0.25, len: Array(repeating: 12, count: 8))
+    let s = view.ringSpec(2)
+    XCTAssertEqual(s.text("phi"), "3 / 12")
+  }
+
+  func testSheetGarbageLvl() {                              // NaN / 1e300 в зеркале — строка без падения
+    for v in [Double.nan, 1e300, -.infinity] {
+      setMirror(on: [2], lvl: v)
+      _ = view.ringSpec(2).text("lvl")
+    }
   }
 
   func testRingHoldSheet() {
@@ -337,7 +358,7 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(s.title, "circulus IV")
     XCTAssertEqual(s.rows.map(\.key), ["on", "under", "phi", "lvl", "inst"]); XCTAssertEqual(s.rows.map(\.label), ["sounds", "undertone", "phase", "level", "instrument"])
     XCTAssertEqual(s.rows.map(\.code), [-1, -1, 9, 10, -1]); XCTAssertEqual(s.lfo?.obj, -1); XCTAssertEqual(s.lfo?.keys, ["phi", "lvl"]); XCTAssertEqual(s.lfo?.shape, 0)
-    XCTAssertEqual(["on", "under", "phi", "lvl", "inst"].map(s.text), ["yes", "4 a turn", "90°", "80%", "click"])
+    XCTAssertEqual(["on", "under", "phi", "lvl", "inst"].map(s.text), ["yes", "4 a turn", "4 / 16", "80%", "click"])
     XCTAssertEqual(s.get("on"), 1); XCTAssertEqual(s.get("phi"), 0.25)
     s.set("under", 0.7)
     XCTAssertEqual([rec.acts[0].kind, rec.acts[0].i], [0, 2]); XCTAssertEqual(rec.acts[0].a, [1, 1])
@@ -410,7 +431,7 @@ final class HorologiumTests: XCTestCase {
     XCTAssertEqual(l.map(\.glyph), [.tap, .double, .drag, .hold, .throw, .drag, .tap, .tap])
     XCTAssertEqual(l.map(\.gesture), ["tap a ring", "double tap a ring", "drag along a ring", "hold a ring", "swing the pendulum",
                                       "drag along the tempus scale", "tap the hub", "tap the sun"])
-    XCTAssertEqual(l.map(\.does), ["it sounds: n strikes a turn, the n-th harmonic", "undertone 1/n", "its phase", "its sheet",
+    XCTAssertEqual(l.map(\.does), ["it sounds: n strikes a turn, the n-th harmonic", "undertone 1/n", "its length", "its sheet",
                                    "by hand — it ticks · throw — faster · over the top — a chord · catch — stop",
                                    "speed: rhythm … tone · double tap — back to tempo", "run / stop · hold — tempo", "map of worlds"])
     XCTAssertEqual(view.title, "Horologium"); XCTAssertEqual(view.sub, "numeri · horae")

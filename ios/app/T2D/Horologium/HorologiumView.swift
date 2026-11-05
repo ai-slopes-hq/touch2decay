@@ -19,7 +19,7 @@ final class HorologiumView: World {
   let legend: [LegendRow] = [
     LegendRow(glyph: .tap, gesture: "tap a ring", does: "it sounds: n strikes a turn, the n-th harmonic"),
     LegendRow(glyph: .double, gesture: "double tap a ring", does: "undertone 1/n"),
-    LegendRow(glyph: .drag, gesture: "drag along a ring", does: "its phase"),
+    LegendRow(glyph: .drag, gesture: "drag along a ring", does: "its length"),
     LegendRow(glyph: .hold, gesture: "hold a ring", does: "its sheet"),
     LegendRow(glyph: .throw, gesture: "swing the pendulum", does: "by hand — it ticks · throw — faster · over the top — a chord · catch — stop"),
     LegendRow(glyph: .drag, gesture: "drag along the tempus scale", does: "speed: rhythm … tone · double tap — back to tempo"),
@@ -48,7 +48,7 @@ final class HorologiumView: World {
     var x0: CGFloat = 0, y0: CGFloat = 0
     var t0 = 0.0, ts = 0.0                                 // t0 — часы тика (удержание); ts — метка касания (тап маятника, скорость броска)
     var moved = false, sheet = false, ph = false
-    var a0 = 0.0, phi0 = 0.0                               // кольцо: угол пальца и фаза в его руке
+    var a0 = 0.0, len0 = 16, turn = 0.0, sent = 16          // кольцо: угол пальца, длина в начале жеста, накопленный поворот, последняя отправленная длина
     var th = 0.0, om = 0.0, tt = 0.0, was = false          // маятник: угол, скорость броска, метка, шёл ли ход при касании
     var u = 0.0                                            // шкала: последняя скорость пальца
   }
@@ -84,7 +84,7 @@ final class HorologiumView: World {
 
   // стрелка и колесо между кадрами зеркала: P + F·Δt, как Pvis в вебе
   func pVis(now: Double) -> Double { mirror.P + mirror.F * min(0.1, now - mirrorAt) }
-  func phaseHeld() -> Int? {                               // кольцо, вдоль которого тянут: подпись фазы
+  func lenHeld() -> Int? {                                 // кольцо, вдоль которого тянут: подпись длины
     for t in holds.values where t.kind == .ring && t.ph { return t.i }
     return nil
   }
@@ -174,7 +174,7 @@ final class HorologiumView: World {
       ringOn(i, true, f)
       holds[f.id] = Hold(kind: .none); return
     }
-    holds[f.id] = Hold(kind: .ring, i: i, x0: f.x, y0: f.y, t0: now, ts: tt, a0: angle(f), phi0: mirror.rings[i].phi)
+    holds[f.id] = Hold(kind: .ring, i: i, x0: f.x, y0: f.y, t0: now, ts: tt, a0: angle(f), len0: mirror.rings[i].len, turn: 0, sent: mirror.rings[i].len)
   }
 
   func move(_ f: Finger) {
@@ -191,14 +191,13 @@ final class HorologiumView: World {
       if d > .pi { d -= 2 * .pi }; if d < -.pi { d += 2 * .pi }
       apply(pend.swing(from: t.th, to: th), f)
       t.om = 0.6 * t.om + 0.4 * (d / dt); t.th = th; t.tt = ts
-    case .ring where t.moved:                              // вдоль кольца — фаза
+    case .ring where t.moved:                              // вдоль кольца — длина
       let a = angle(f)
       var d = a - t.a0
       if d > .pi { d -= 2 * .pi }; if d < -.pi { d += 2 * .pi }
-      let m = Horo.mOf(mirror.rings[t.i], aequalis: mirror.fx[0])
-      let phi = ((t.phi0 - d / (2 * .pi) * m).truncatingRemainder(dividingBy: 1) + 1).truncatingRemainder(dividingBy: 1)
-      core.action(Act.ring, t.i, [2, phi], touchTime: f.touchTime)
-      t.a0 = a; t.phi0 = phi; t.ph = true
+      t.turn += d; t.a0 = a; t.ph = true
+      let L = Horo.lenAfter(t.len0, turned: t.turn)
+      if L != t.sent { t.sent = L; core.action(Act.ring, t.i, [5, Double(L)], touchTime: f.touchTime) }
     default: break
     }
   }
