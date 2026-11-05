@@ -27,7 +27,6 @@ class Sound {
   struct R { bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0; double hz = 110; int len = 16; };   // len — длина кольца в шагах 1…16
   // tint — окраска шумовых и металлических голосов (Model::tint()); hz кольца — Model::pitch(i)
   void set(const R* rings, double Ft, double mat, double conc, double chance, double tint);
-  void step(double d);                                  // спуск руками: доворот на d оборота за 40 мс
   void lock(double t0, double bar);                     // замок к такту (новый — фаза прыгнет к обороту)
   void unlock() { lockOn_ = false; }
   void process(float* L, float* R, int n, double now);  // пишет L, R
@@ -51,8 +50,7 @@ class Sound {
   double rnd() { return rng_.next(); }
 
   O r_[NR];
-  double sr_ = 48000, P_ = 0, F_ = 0, Ft_ = 0, glide_ = 0, mat_ = 0.35, conc_ = 0.4, chance_ = 1, tint_ = 1;
-  int glideN_ = 0;
+  double sr_ = 48000, P_ = 0, F_ = 0, Ft_ = 0, mat_ = 0.35, conc_ = 0.4, chance_ = 1, tint_ = 1;
   bool lockOn_ = false, snap_ = false;
   double t0_ = 0, bar_ = 0;
   double dc_[2] = {}, dx_[2] = {};

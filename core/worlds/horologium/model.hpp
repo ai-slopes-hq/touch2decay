@@ -1,6 +1,5 @@
 // Horologium — модель в ядре: кольца II…IX (у каждого len — длина 1…16, по умолчанию звучат II…IV), fx, ход часов. Порт tools/ref/horologium-model.js (worlds/horologium/model.js до SDK D2)
-// без маятника: где груз, бросок и проход через низ — касание и картинка, они в фасаде веба; сюда приходят итоги (пуск, u, «в руке»,
-// спуск). Ход успокаивается здесь, каждый блок (tick) — и в фоне без кадров. Скорость колеса F = bpm/240 · 2^u (0 — стоит или в руке),
+// без маятника и шкалы tempus: ход колеса — пуск и bpm. Скорость колеса F = bpm/240 (0 — стоит),
 // тоника B — 55 Гц × лад хоста. Кольцо играет ударным голосом inst (кит по умолчанию — inst = номер кольца; кубик кит не трогает). Кубик (dice) — на ГСЧ ядра (зерно мира), только для нативной стороны: веб бросает его сам, в фасаде.
 #pragma once
 #include <cmath>
@@ -18,7 +17,7 @@ extern const char* const FX_NAMES[NFX];
 extern const double FX_DEF[NFX];
 
 struct Ring { int n = 2; bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0, len = 16; };   // inst — голос кольца (Inst из drums.hpp), по умолчанию — номер кольца; len — длина кольца в шагах 1…16
-struct Clock { bool run = false, strip = false, held = false; double u = 0, uT = 0, bpm = 100; };
+struct Clock { bool run = false; double bpm = 100; };
 
 class Model {
  public:
@@ -34,15 +33,12 @@ class Model {
 
   void setRing(int i, int key, double v);
   void setFx(int k, double v) { if (k >= 0 && k < NFX && !std::isnan(v)) fx_[k] = v < 0 ? 0 : v > 1 ? 1 : v; }   // все fx — 0…1; NaN игнорируется, ±inf зажимается
-  void setRun(bool on, double u) { clock_.run = on; clock_.u = u; }
-  void setHeld(bool on) { clock_.held = on; }
+  void setRun(bool on) { clock_.run = on; }
   void setBpm(double bpm) { clock_.bpm = bpm; }
-  void setSpeed(double u, double uT, bool strip) { clock_.u = u; clock_.uT = uT; clock_.strip = strip; }
   void clear();                                         // всё в тишину; кит — по умолчанию (inst = номер кольца)
   void dice();                                          // три соседних кольца k…k+2 (k = 2…7), у каждого len и фаза-сдвиг; under общий; часы идут (как dice в model.js)
-  void tick(double dt);                                 // ход успокаивается к uT: сверху τ 6 с, снизу τ 1.5 с; палец на шкале — стоит
 
-  std::string snapshot() const;                         // тот же JSON, что у model.js: {r: [{on, under, phi, lvl, inst, len}], fx, bpm, run, u, uT}
+  std::string snapshot() const;                         // тот же JSON, что у model.js: {r: [{on, under, phi, lvl, inst, len}], fx, bpm, run}
   void restore(const std::string& js);
   bool sounding() const;
 

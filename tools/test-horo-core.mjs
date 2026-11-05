@@ -1,10 +1,10 @@
 // Сверка ядра Horologium (core/worlds/horologium → t2d.wasm, слот 9) с эталоном — прежней JS-моделью и прежним worklet колеса
-// (tools/ref, ГСЧ с зерном): колесо (P, F), ход часов u каждый блок, снимок (без inst). Звук — ударные, у него эталона нет:
+// (tools/ref, ГСЧ с зерном): колесо (P, F), снимок (без inst). Звук — ударные, у него эталона нет:
 // его проверяет core/tests/sdk_test.cpp. Плюс замок к такту MIDI и раскладка зеркала.
 //   core/build.sh && node --test tools/test-horo-core.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ACTS, DECAY, refPath, corePath, SLOT, ACT, M } from './horo-scenarios.mjs';
+import { ACTS, refPath, corePath, SLOT, ACT, M } from './horo-scenarios.mjs';
 import { loadT2d } from './t2d-core.mjs';
 
 const SR = 48000;
@@ -17,12 +17,6 @@ for (const name of Object.keys(ACTS)) {
     assert.deepEqual(strip(c.snapshot), strip(r.snapshot), `${name}: snapshot`);
   });
 }
-
-test('the clock settles in the core like the reference model: u = 4 → 0 (τ 6 s), each block the same', () => {
-  const r = refPath(DECAY, { ticks: true }), c = corePath(DECAY);
-  r.us.forEach((u, b) => assert.ok(Math.abs(c.us[b] - u) < 1e-9, `block ${b}: ${c.us[b]} vs ${u}`));
-  assert.ok(c.us[0] > 3.9 && c.us.at(-1) < 1.5, `${c.us[0]} → ${c.us.at(-1)}`);
-});
 
 // ---------- замок к такту MIDI: сетка хоста из долей (как у оболочки), колесо — оборот на такт ----------
 function lockRig(F = 0.5) {
@@ -37,7 +31,7 @@ function lockRig(F = 0.5) {
 
 test('lock: with MIDI clock, running at tempo, the wheel turns once per bar and its phase sits on the bar', () => {
   const r = lockRig(0.51);                              // свой темп чуть быстрее такта (2 %; темп часов ставит политика хоста) — замок держит фазу
-  r.c.action(SLOT, ACT.run, 0, [1, 0]);
+  r.c.action(SLOT, ACT.run, 0, [1]);
   r.c.exports.t2d_midi_msg(3, 0, 0, 0.99);
   for (let n = 0; n < 24; n++) r.beat(n, 1 + n * 0.5);
   const m = r.m(), P = m[M.P], bar = (r.t - 1) / 2;    // такт — 4 доли по 0.5 с
@@ -46,25 +40,28 @@ test('lock: with MIDI clock, running at tempo, the wheel turns once per bar and 
   assert.ok(Math.abs(err) < 0.02, `wheel ${P} vs bar ${bar} (err ${err})`);
 });
 
-test('lock: off while the speed is raised (u ≠ 0), held, or stopped; ring ratios do not change', () => {
+test('lock: needs only the run flag; retired HELD / STEP / SPEED actions change nothing', () => {
   const r = lockRig();
-  r.c.action(SLOT, ACT.run, 0, [1, 2]); r.c.action(SLOT, ACT.speed, 0, [2, 2, 0]);
   r.c.exports.t2d_midi_msg(3, 0, 0, 0.99);
   for (let n = 0; n < 8; n++) r.beat(n, 1 + n * 0.5);
-  assert.equal(r.m()[M.locked], 0, 'u = 2 — free');
-  r.c.action(SLOT, ACT.speed, 0, [0, 0, 0]);
+  assert.equal(r.m()[M.locked], 0, 'stopped — free');
+  r.c.action(SLOT, ACT.run, 0, [1]);
   for (let n = 8; n < 12; n++) r.beat(n, 1 + n * 0.5);
-  assert.equal(r.m()[M.locked], 1, 'u = 0 — locked');
-  r.c.action(SLOT, ACT.held, 0, [1]); r.run(0.1);
-  assert.equal(r.m()[M.locked], 0, 'held — free');
+  assert.equal(r.m()[M.locked], 1, 'running — locked');
+  r.c.action(SLOT, ACT.speed, 0, [2, 2, 1]); r.c.action(SLOT, ACT.held, 0, [1]); r.c.action(SLOT, ACT.step, 0, [0.3]);
+  for (let n = 12; n < 16; n++) r.beat(n, 1 + n * 0.5);
+  assert.equal(r.m()[M.locked], 1, 'retired actions — still locked');
+  assert.ok(Math.abs(r.m()[M.F] - 0.5) < 1e-6, 'wheel speed untouched');
+  r.c.action(SLOT, ACT.run, 0, [0]); r.run(0.1);
+  assert.equal(r.m()[M.locked], 0, 'stopped — free');
 });
 
-test('lock: a phase error over 0.1 revolution snaps, small ones are pulled by ±3 %', () => {
+test('lock: the phase stays on the bar after a pause (error ≤ 0.1)', () => {
   const r = lockRig(0.5);
-  r.c.action(SLOT, ACT.run, 0, [1, 0]);
+  r.c.action(SLOT, ACT.run, 0, [1]);
   r.c.exports.t2d_midi_msg(3, 0, 0, 0.99);
   for (let n = 0; n < 8; n++) r.beat(n, 1 + n * 0.5);
-  r.c.action(SLOT, ACT.step, 0, [0.3]); r.run(0.5);    // спуск руками увёл колесо на 0.3 оборота — замок прыгает назад, как только ошибка > 0.1
+  r.run(0.5);
   const m = r.m(), bar = (r.t - 1) / 2, err = ((m[M.P] - bar) % 1 + 1.5) % 1 - 0.5;
   assert.ok(Math.abs(err) <= 0.1, `err ${err}`);
 });
@@ -72,12 +69,12 @@ test('lock: a phase error over 0.1 revolution snaps, small ones are pulled by ±
 test('mirror: head layout', () => {
   const c = loadT2d(); c.init(SR, 1);
   const m = c.mirror(SLOT);
-  assert.equal(m.length, 15 + 8 * 6);
-  assert.equal(m.length, 63);
+  assert.equal(m.length, 11 + 8 * 6);
+  assert.equal(m.length, 59);
   assert.equal(m[M.bpm], 100);
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[15 + i * 6]), [1, 1, 1, 0, 0, 0, 0, 0], 'II, III, IV on');
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[15 + i * 6 + 4]), [0, 1, 2, 3, 4, 5, 6, 7], 'default kit: inst = ring');
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[15 + i * 6 + 5]), [16, 16, 16, 16, 16, 16, 16, 16], 'len 16');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[11 + i * 6]), [1, 1, 1, 0, 0, 0, 0, 0], 'II, III, IV on');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[11 + i * 6 + 4]), [0, 1, 2, 3, 4, 5, 6, 7], 'default kit: inst = ring');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[11 + i * 6 + 5]), [16, 16, 16, 16, 16, 16, 16, 16], 'len 16');
 });
 
 test('speed: reference path vs t2d.wasm, scenario all (~10 s)', () => {

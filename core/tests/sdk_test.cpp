@@ -50,6 +50,7 @@
 #include "../worlds/horologium/drums.hpp"
 #include "../worlds/horologium/model.hpp"
 #include "../worlds/horologium/sound.hpp"
+#include "../worlds/horologium/world.hpp"
 #include "../worlds/tenebrae/tone.hpp"
 #include "../worlds/tenebrae/waves.hpp"
 #include "../worlds/tenebrae/shifter.hpp"
@@ -3847,24 +3848,19 @@ static void horoOnsets() {
   horoOnsetCase(0, 16, 0, true, false);                      // II под унтертоном (S = 8)
   horoOnsetCase(7, 6, 0, false, false);                      // IX, L6: k = 6 — каждый шаг
 }
-static void horoBackward() {                                 // колесо назад: переход через начало шага 0 — один удар; прыжок замка назад — не больше одного
+static void horoRunTo(horologium::Sound& s, horologium::Sound::R* r, double target, int* b) {   // колесо вперёд, пока P не дойдёт до target (назад колесо не ходит)
   float Lb[128], Rb[128];
-  {
-    horologium::Sound s; s.prepare(48000, 1);
-    horologium::Sound::R r[8]; r[0].on = true; r[0].inst = 5; r[0].len = 16;
-    s.step(-0.45);
-    for (int b = 0; b < static_cast<int>(0.2 * 48000 / 128); b++) { s.set(r, 0, 0.35, 1, 1, 1); s.process(Lb, Rb, 128, b * 128 / 48000.0); }
-    CHECK(s.P() < -0.44 && s.P() > -0.46);
-    CHECK(s.strikes() == 1);
-  }
+  for (; s.P() < target && *b < 4000; (*b)++) { s.set(r, 2, 0.35, 1, 1, 1); s.process(Lb, Rb, 128, *b * 128 / 48000.0); }
+}
+static void horoBackward() {                                 // прыжок замка назад — не больше одного удара на кольцо
+  float Lb[128], Rb[128];
   for (int both = 0; both < 2; both++) {
     horologium::Sound s; s.prepare(48000, 1);
     horologium::Sound::R r[8]; r[0].on = true; r[0].inst = 5; r[0].len = 16;
     if (both) { r[2].on = true; r[2].inst = 5; r[2].len = 16; }
-    s.step(0.4);
     int b = 0;
-    for (; b < static_cast<int>(0.2 * 48000 / 128); b++) { s.set(r, 0, 0.35, 1, 1, 1); s.process(Lb, Rb, 128, b * 128 / 48000.0); }
-    CHECK(s.P() > 0.39 && s.P() < 0.41);
+    horoRunTo(s, r, 0.4, &b);
+    CHECK(s.P() >= 0.4 && s.P() < 0.45);
     const long s0 = s.strikes(), now = b * 128;
     s.lock(now / 48000.0, 2);                                // фаза такта 0 — колесо прыгает с 0.4 на 0
     s.set(r, 0, 0.35, 1, 1, 1); s.process(Lb, Rb, 128, now / 48000.0);
@@ -3873,15 +3869,14 @@ static void horoBackward() {                                 // колесо н�
   }
 }
 static void horoBackwardJump() {                           // замок прыгает назад на много шагов в ОДИН сэмпл: не больше одного удара на кольцо, голос и колесо конечны
-  for (double start : {0.5, -0.3}) for (int both = 0; both < 2; both++) {
+  for (double start : {0.5, 0.3}) for (int both = 0; both < 2; both++) {
     horologium::Sound s; s.prepare(48000, 1);
     horologium::Sound::R r[8]; r[0].on = true; r[0].inst = 5; r[0].len = 16;
     if (both) { r[2].on = true; r[2].inst = 5; r[2].len = 16; }
     float Lb[128], Rb[128];
-    s.step(start);
     int b = 0;
-    for (; b < static_cast<int>(0.2 * 48000 / 128); b++) { s.set(r, 0, 0.35, 1, 1, 1); s.process(Lb, Rb, 128, b * 128 / 48000.0); }
-    CHECK(std::fabs(s.P() - start) < 0.02);
+    horoRunTo(s, r, start, &b);
+    CHECK(s.P() >= start && s.P() < start + 0.05);
     s.lock(b * 128 / 48000.0, 2);                            // фаза такта 0: колесо прыгает с start на 0 (до 8 шагов назад) в первом же сэмпле
     const long s0 = s.strikes();
     float l1[1], r1[1];
@@ -4028,11 +4023,11 @@ static void horoLfo() {
   const double a[4][2] = {{1, 0.7}, {4, 0.2}, {5 + 2 * 3, 0.25}, {6 + 2 * 7, 0.3}};
   for (const auto& v : a) CHECK(t2d_app_action(9, sdk::ACT_LFO, -1, v, 2, 0) == 1);
   double m[64];
-  CHECK(horoMirror(m, 64) == 63);
+  CHECK(horoMirror(m, 64) == 59);
   NEAR(m[1], 0.7, 1e-9);                                          // fx[MATERIA]
   NEAR(m[4], 0.2, 1e-9);                                          // fx[HALL]
-  NEAR(m[15 + 6 * 3 + 2], 0.25, 1e-9);                            // кольцо 3: phi
-  NEAR(m[15 + 6 * 7 + 3], 0.3, 1e-9);                             // кольцо 7: lvl
+  NEAR(m[11 + 6 * 3 + 2], 0.25, 1e-9);                            // кольцо 3: phi
+  NEAR(m[11 + 6 * 7 + 3], 0.3, 1e-9);                             // кольцо 7: lvl
 }
 static void horoLfoIgnores() {
   double m0[64], m1[64];
@@ -4045,7 +4040,7 @@ static void horoLfoIgnores() {
   t2d_app_action(9, sdk::ACT_LFO, -1, a2, 2, 0);
   t2d_app_action(9, sdk::ACT_LFO, -1, a3, 1, 0);
   const int n1 = horoMirror(m1, 64);
-  CHECK(n0 == 63 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
+  CHECK(n0 == 59 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
 }
 static int arcMirror(double* m, int cap) {
   float L[128], R[128];
@@ -4320,15 +4315,15 @@ static void horoDice() {
   for (int w = 0; w < 2; w++) {
     t2d_app_init(48000, 5, 1e9, 1u << 9);
     t2d_app_action(9, 8, -1, nullptr, 0, 0);                      // DICE
-    CHECK(horoMirror(m[w], 64) == 63);
+    CHECK(horoMirror(m[w], 64) == 59);
   }
-  CHECK(std::memcmp(m[0], m[1], sizeof(double) * 63) == 0);       // одно зерно — одна раскладка
+  CHECK(std::memcmp(m[0], m[1], sizeof(double) * 59) == 0);       // одно зерно — одна раскладка
   const auto check = [&](const double* q, bool* under, int* first, bool* shortLen) {
     int on[8], k = 0;
     for (int i = 0; i < 8; i++) {
-      const double* r = q + 15 + 6 * i;
+      const double* r = q + 11 + 6 * i;
       if (r[0] != 0) on[k++] = i + 2;
-      CHECK(r[1] == q[15 + 1]);                                   // under у всех одинаков
+      CHECK(r[1] == q[11 + 1]);                                   // under у всех одинаков
       CHECK(r[3] == 0.8);
       CHECK(r[4] == i);                                           // кубик кит не трогает
       if (r[0] != 0) {
@@ -4343,9 +4338,9 @@ static void horoDice() {
     }
     CHECK(k == 3 && on[1] == on[0] + 1 && on[2] == on[0] + 2 && on[0] >= 2 && on[0] <= 7);   // три соседних кольца
     *first = on[0];
-    CHECK(q[5] == 1 && q[6] == 0 && q[7] == 0);                   // run, u, uT
+    CHECK(q[5] == 1);                                             // run
     CHECK(q[1] >= 0 && q[1] < 1);                                 // materia
-    *under = q[15 + 1] != 0;
+    *under = q[11 + 1] != 0;
   };
   bool u0, sl0; int f0;
   check(m[0], &u0, &f0, &sl0);
@@ -4361,6 +4356,47 @@ static void horoDice() {
   CHECK(unders > 0 && unders < 40 && shorts > 0);
   int spread = 0; for (int f = 2; f <= 7; f++) spread += firsts[f] > 0;
   CHECK(spread >= 4);                                             // начало тройки гуляет по 2…7
+}
+
+static void horoWorldRun(horologium::World& w, int blocks, sdk::Clock* clk) {
+  float L[128], R[128], sL[128], sR[128];
+  for (int b = 0; b < blocks; b++) {
+    if (clk) clk->now += 128 / 48000.0;
+    w.process(sdk::Out{L, R, sL, sR}, 128);
+    for (int k = 0; k < 128; k++) CHECK(std::isfinite(L[k]) && std::isfinite(R[k]));
+  }
+}
+static void horoRetiredActions() {                           // HELD / STEP / SPEED выведены: мир отвечает как прежде, часы и снимок не двигаются
+  Scale sc;
+  horologium::World a(sc), b(sc);
+  const double on[1] = {1}, h[1] = {1}, sp[3] = {0.7, 0.3, 1};
+  for (horologium::World* w : {&a, &b}) { w->prepare(48000, 7); w->action(horologium::RUN, -1, on, 1); horoWorldRun(*w, 50, nullptr); }
+  const std::string snap0 = a.snapshot();
+  a.action(horologium::HELD, -1, h, 1); a.action(horologium::STEP, -1, h, 1); a.action(horologium::SPEED, -1, sp, 3);
+  a.action(horologium::HELD, -1, nullptr, 0); a.action(horologium::STEP, -1, nullptr, 0); a.action(horologium::SPEED, -1, nullptr, 0);
+  CHECK(a.snapshot() == snap0);
+  NEAR(a.model().Fnow(), 100.0 / 240, 1e-12);
+  horoWorldRun(a, 50, nullptr); horoWorldRun(b, 50, nullptr);
+  double ma[64], mb[64];
+  CHECK(a.mirror(ma, 64) == 59 && b.mirror(mb, 64) == 59);
+  CHECK(std::memcmp(ma, mb, sizeof(double) * 59) == 0);          // с ними и без них — одно и то же
+  CHECK(ma[5] == 1 && ma[6] == 100);                              // run, bpm
+}
+static void horoLockNeedsRunOnly() {                         // замок к такту MIDI: сетка идёт и колесо запущено — больше ничего не нужно
+  Scale sc;
+  horologium::World w(sc);
+  sdk::Clock clk; clk.now = 1; clk.grid.on = true; clk.grid.t0 = 1; clk.grid.p = 0.5;
+  w.prepare(48000, 7); w.attach(&clk);
+  double m[64];
+  horoWorldRun(w, 4, &clk);
+  CHECK(w.mirror(m, 64) == 59 && m[5] == 0 && m[10] == 0);        // стоит — замка нет
+  const double on[1] = {1};
+  w.action(horologium::RUN, -1, on, 1);
+  horoWorldRun(w, 4, &clk);
+  CHECK(w.mirror(m, 64) == 59 && m[5] == 1 && m[10] == 1);        // run && grid.on — замок
+  clk.grid.on = false;
+  horoWorldRun(w, 4, &clk);
+  CHECK(w.mirror(m, 64) == 59 && m[10] == 0);
 }
 
 // ступени лада наружу: таблица host/scale.js
@@ -4543,7 +4579,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appMidiClock(); appMidiTime(); appMidiOverflow(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); sdkEuclid(); horoOnsets(); horoBackward(); horoBackwardJump(); horoRot(); horoLenSwitch(); horoNonFiniteTempo(); horoConcursus(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); sdkEuclid(); horoOnsets(); horoBackward(); horoBackwardJump(); horoRot(); horoLenSwitch(); horoNonFiniteTempo(); horoConcursus(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); horoRetiredActions(); horoLockNeedsRunOnly(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

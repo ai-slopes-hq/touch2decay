@@ -20,7 +20,7 @@ void Model::reset(uint32_t seed) {
   clock_ = Clock{};
 }
 
-double Model::Fnow() const { return clock_.run && !clock_.held ? Ft() * std::pow(2.0, clock_.u) : 0; }
+double Model::Fnow() const { return clock_.run ? Ft() : 0; }
 
 double Model::mOf(const Ring& r) const {
   const double m = r.under ? 12.0 / r.n : r.n;
@@ -83,20 +83,11 @@ void Model::dice() {                                    // порядок выз
     r.phi = static_cast<int>(rng_.next() * r.len) / static_cast<double>(r.len);
   }
   fx_[MATERIA] = rng_.next();
-  clock_.uT = 0; clock_.run = true; clock_.u = 0;
-}
-
-void Model::tick(double dt) {
-  Clock& c = clock_;
-  if (!c.run || c.held || c.strip) return;
-  const double d = c.u - c.uT;
-  if (d > 0) c.u -= d * dt / 6;                         // раскачанный — медленно успокаивается к своей скорости
-  else c.u -= d * dt / 1.5;                             // слабый — спуск подталкивает
-  if (std::fabs(c.u - c.uT) < 1e-3) c.u = c.uT;         // иначе u = 0 (замок к такту MIDI) не наступил бы и за час
+  clock_.run = true;
 }
 
 bool Model::sounding() const {
-  if (!clock_.run && !clock_.held) return false;
+  if (!clock_.run) return false;
   for (const Ring& r : r_) if (r.on) return true;
   return false;
 }
@@ -111,7 +102,7 @@ std::string Model::snapshot() const {
   }
   for (int k = 0; k < NFX; k++) fx.set(FX_NAMES[k], Json::num(fx_[k]));
   st.set("r", std::move(arr)); st.set("fx", std::move(fx));
-  st.set("bpm", Json::num(clock_.bpm)); st.set("run", Json::boolean(clock_.run)); st.set("u", Json::num(clock_.u)); st.set("uT", Json::num(clock_.uT));
+  st.set("bpm", Json::num(clock_.bpm)); st.set("run", Json::boolean(clock_.run));
   return st.dump();
 }
 
@@ -134,8 +125,6 @@ void Model::restore(const std::string& js) {
   }
   if (const Json* fx = st.get("fx"); fx && fx->type == Json::Obj) for (int k = 0; k < NFX; k++) { double v = fx_[k]; num(*fx, FX_NAMES[k], v); setFx(k, v); }
   num(st, "bpm", clock_.bpm); flag(st, "run", clock_.run);
-  clock_.u = 0; clock_.uT = 0;
-  num(st, "u", clock_.u); num(st, "uT", clock_.uT);
 }
 
 }  // namespace horologium

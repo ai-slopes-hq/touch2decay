@@ -16,7 +16,7 @@ void Sound::prepare(double sr, uint32_t seed) {
   rng_ = sdk::Rng(seed);
   gap_ = static_cast<int64_t>(std::ceil(MIN_GAP * sr_));
   for (int i = 0; i < NR; i++) { r_[i] = O{}; r_[i].n = i + 2; r_[i].pan = -0.7 + (1.4 * i) / (NR - 1); r_[i].inst = i; r_[i].d.prepare(sr_); }
-  P_ = F_ = Ft_ = glide_ = 0; glideN_ = 0; mat_ = 0.35; conc_ = 0.4; chance_ = 1; tint_ = 1;
+  P_ = F_ = Ft_ = 0; mat_ = 0.35; conc_ = 0.4; chance_ = 1; tint_ = 1;
   lockOn_ = snap_ = false; dc_[0] = dc_[1] = dx_[0] = dx_[1] = 0; nh_ = 0; strikes_ = attacks_ = smp_ = 0;
 }
 
@@ -42,7 +42,6 @@ void Sound::set(const R* rings, double Ft, double mat, double conc, double chanc
   tint_ = std::isfinite(tint) && tint > 0 ? tint : 1;
 }
 
-void Sound::step(double d) { glide_ += d; glideN_ = static_cast<int>(std::floor(0.04 * sr_ + 0.5)); }
 
 void Sound::lock(double t0, double bar) {
   if (!(bar > 0)) { lockOn_ = false; return; }
@@ -63,7 +62,7 @@ void Sound::process(float* L, float* R, int n, double now) {
   int na = 0;
   for (O& o : r_) if (o.on) act[na++] = &o;
   const double kF = 1 - std::exp(-1 / (0.06 * sr));
-  const bool still = Ft_ == 0 && std::fabs(F_) < 1e-12 && glideN_ == 0 && !lockOn_;   // колесо стоит — ударов не будет
+  const bool still = Ft_ == 0 && std::fabs(F_) < 1e-12 && !lockOn_;   // колесо стоит — ударов не будет
   bool quiet = (na == 0 || still) && std::fabs(dc_[0]) < 1e-9 && std::fabs(dc_[1]) < 1e-9;
   for (const O& o : r_) if (o.d.active()) quiet = false;
   if (quiet) {                                          // колец нет или колесо стоит, голоса отзвучали: идёт только колесо (его видно и по нему — замок)
@@ -75,7 +74,6 @@ void Sound::process(float* L, float* R, int n, double now) {
         if (snap_ || std::fabs(err) > 0.1) { P_ += err; snap_ = false; }
         else dP *= lockRate(err);
       }
-      if (glideN_ > 0) { const double g = glide_ / glideN_; dP += g; glide_ -= g; glideN_--; }
       P_ += dP;
       L[k] = R[k] = 0;
     }
@@ -91,7 +89,6 @@ void Sound::process(float* L, float* R, int n, double now) {
       if (snap_ || std::fabs(err) > 0.1) { P_ += err; snap_ = false; }
       else dP *= lockRate(err);
     }
-    if (glideN_ > 0) { const double g = glide_ / glideN_; dP += g; glide_ -= g; glideN_--; }
     const double P0 = P_;
     P_ += dP;
     double yl = 0, yr = 0;
