@@ -287,30 +287,30 @@ final class Host {
   private var recycleStash: [(slot: Int, w: String, scl: Scl)]?   // состояния миров до последнего recycle на карте; один шаг отмены
   private var mapEnabled: Set<Btn> { [.play, .transport, .vol, .fx] }
   // кнопки бара, которые ловят касание: на карте — mapEnabled; в мире без часов play погашен
-  private var barEnabled: Set<Btn> { onMap ? mapEnabled : world?.tempo == nil ? Set(Btn.allCases).subtracting([.play]) : Set(Btn.allCases) }
+  private var barEnabled: Set<Btn> { onMap ? mapEnabled : Set(Btn.allCases) }
   private func hitsBtn(_ f: Finger, _ b: Btn) -> Bool { bar.hit(f.x, f.y, titleW: onMap ? 0 : titleW, enabled: barEnabled) == .btn(b) }
 
   func mapBarState() -> TopBar.State {
     var st = TopBar.State(title: "Universum", held: heldBtns)
     st.enabled = mapEnabled
-    st.playing = views.values.contains { $0.tempo?.playing == true }
+    st.playing = mapPlaying
     return st
   }
   private var heldBtns: Set<Btn> { Set(Btn.allCases.filter { held($0) }) }
 
   // recycle на карте: очистить все миры. Состояния до очистки — в recycleStash (база отмены каждого мира);
   // нет базы хотя бы у одного — ничего не очищаем, иначе отмена потеряла бы мир
-  @discardableResult func recycleAll() -> Bool {
+  @discardableResult func recycleAll(_ only: [Int]? = nil) -> Bool {
+    let targets = only ?? slots
     for b in undo.pollAll() { setScene(b.slot, b.w, b.scl) }
     // на карте миры не правятся, поэтому миры из прежнего запаса остаются очищенными — их состояние до очистки не затираем
     var stash = recycleStash ?? []
-    for slot in slots where !stash.contains(where: { $0.slot == slot }) {
-      guard let b = undo.last(slot: slot) else { return false }
-      stash.append((slot, b.w, b.scl))
+    for slot in targets where !stash.contains(where: { $0.slot == slot }) {
+      if let b = undo.last(slot: slot) { stash.append((slot, b.w, b.scl)) }   // базы ещё нет — очищаем без возврата, но очищаем
     }
-    for slot in slots { views[slot]?.clear() }
-    recycleStash = stash
-    for slot in slots { undo.commit(slot: slot, scl: link.scale ? scl : (perScl[slot] ?? scl)) }   // сцены и базы — уже очищенные
+    for slot in targets { views[slot]?.clear() }
+    recycleStash = stash.isEmpty ? nil : stash
+    for slot in targets { undo.commit(slot: slot, scl: link.scale ? scl : (perScl[slot] ?? scl)) }   // сцены и базы — уже очищенные
     return true
   }
 
@@ -349,11 +349,26 @@ final class Host {
     }
   }
 
+  // play на карте: идут часы — стоп им и тишина мирам без часов (Oceanus, Tenebrae…); иначе — пуск часов
+  private var mapStopped = false
+  private var mapPlaying: Bool { !mapStopped && (views.values.contains { $0.tempo?.playing == true } || views.values.contains { $0.tempo == nil }) }
+  private func mapPlay() {
+    if mapPlaying {
+      for v in views.values { v.tempo?.play(false) }
+      let silent = slots.filter { views[$0]?.tempo == nil }
+      if !silent.isEmpty { recycleAll(silent) }
+      mapStopped = true
+    } else {
+      for v in views.values { v.tempo?.play(true) }
+      mapStopped = false
+    }
+  }
+
   // строки вкладки transport и кнопка play: один путь для карты и мира
   func transportAct(_ r: Plate.TransportRow) {
     if onMap {
       switch r {
-      case .play: let on = !views.values.contains { $0.tempo?.playing == true }; for v in views.values { v.tempo?.play(on) }
+      case .play: mapPlay()
       case .undo: undoRecycle()
       case .recycle: recycleAll()
       case .bpm, .dice: break
@@ -362,7 +377,7 @@ final class Host {
     }
     guard let w = world else { return }
     switch r {
-    case .play: if let t = w.tempo { t.play(!t.playing) }
+    case .play: if let t = w.tempo { t.play(!t.playing) } else { w.clear() }   // нет часов — заглушить мир (веб: audio-panel stop), отмена вернёт
     case .dice: w.dice(); diceAt = now * 1000; syncModelsToMaster()
     case .undo: undoStep()
     case .recycle: w.clear()
@@ -388,10 +403,10 @@ final class Host {
     var t = TransportState()
     t.diceSpin = now * 1000 - diceAt < 400
     if onMap {
-      t.playing = views.values.contains { $0.tempo?.playing == true }
+      t.playing = mapPlaying
       t.bpm = lastBpm ?? Host.masterDefault; t.canUndo = recycleStash != nil; t.diceOn = false
     } else if let w = world {
-      t.playing = w.tempo?.playing ?? false
+      t.playing = w.tempo?.playing ?? true
       if let tp = w.tempo { t.bpm = tp.bpm; t.range = tp.tempoRange }
       t.canUndo = undo.depth(slot: w.slot) > 0
     }
@@ -490,7 +505,7 @@ final class Host {
       if let from = lastSlot { perScl[from] = scl }
       if let s = perScl[slot] { scl = s; core.scale(s) }
     }
-    lastSlot = slot; recycleStash = nil; plate = nil
+    lastSlot = slot; recycleStash = nil; plate = nil; mapStopped = false
     views[slot]?.enter()
     nav.anim = (now, false, slot)
   }
@@ -724,7 +739,7 @@ final class Host {
 
   func barState(_ w: World) -> TopBar.State {
     var st = TopBar.State(title: w.title, held: heldBtns)
-    st.playing = w.tempo?.playing ?? false
+    st.playing = w.tempo?.playing ?? true
     st.enabled = barEnabled
     return st
   }

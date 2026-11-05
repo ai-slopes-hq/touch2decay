@@ -1163,10 +1163,21 @@ final class HostTests: XCTestCase {
     XCTAssertNotEqual(core.restores.last { $0.slot == 10 }?.w, "cleared10")   // второй recycle не затирает запас пустыми мирами
   }
 
-  func testRecycleRefusedWithoutBases() {
-    host = makeHost(views: [world, HWorld(11)])   // reapply не звали — баз нет
+  func testRecycleClearsEvenWithoutBases() {
+    let w2 = HWorld(11)
+    host = makeHost(views: [world, w2])   // reapply не звали — баз нет: очищаем без возврата
     tapTr(.recycle)
-    XCTAssertEqual(world.clears, 0); XCTAssertFalse(host.transportState().canUndo)
+    XCTAssertEqual(world.clears, 1); XCTAssertEqual(w2.clears, 1); XCTAssertFalse(host.transportState().canUndo)
+  }
+
+  func testMapStopSilencesClocklessWorldsAndStopsClocks() {
+    host = mapHost()
+    world.hasClock = true; world.tw.playing = true; world2.hasClock = false
+    tapTr(.play)
+    XCTAssertFalse(world.tw.playing); XCTAssertEqual(world2.clears, 1); XCTAssertEqual(world.clears, 0)
+    XCTAssertFalse(host.transportState().playing)
+    tapTr(.play, at: 2)
+    XCTAssertTrue(world.tw.playing)
   }
 
   func testUndoOnMapDisabledWithoutRecycle() {
@@ -1274,10 +1285,10 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(host.plate?.tab, .mix, "кнопка бара при плашке переключает вкладку")
   }
 
-  func testPlayTapWithoutClockDoesNothing() {
+  func testPlayTapWithoutClockSilencesWorld() {      // веб audio-panel: нет часов — стоп заглушает мир
     world.hasClock = false
     tapBtn(.play)
-    XCTAssertEqual(world.clears, 0)
+    XCTAssertEqual(world.clears, 1)
   }
 
   func testPlayButtonNeverChangesBpm() {
@@ -1327,7 +1338,8 @@ final class HostTests: XCTestCase {
 
   func testPlayDisabledInBarWithoutClock() {
     world.hasClock = false
-    XCTAssertFalse(host.barState(world).enabled.contains(.play), "нет часов — кнопка play погашена")
+    XCTAssertTrue(host.barState(world).enabled.contains(.play), "нет часов — play глушит мир")
+    XCTAssertTrue(host.barState(world).playing)
     XCTAssertTrue(host.barState(world).enabled.contains(.transport))
   }
 
