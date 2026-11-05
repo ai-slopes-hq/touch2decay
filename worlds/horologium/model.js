@@ -9,7 +9,7 @@ const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
 export const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 export const NR = 8, Z = 4;                             // кольца II…IX; спуск: четыре прохода маятника за оборот
-export const MAGIC = [[2, 3], [3, 4], [4, 5, 6], [3, 4, 5], [2, 3, 5], [4, 5, 6, 7], [5, 7, 9], [6, 7, 8, 9], [8, 9], [2, 3, 4, 5, 6], [5, 6], [4, 5]];
+export const LENS = [16, 16, 12, 8, 6];                 // длины колец кубика
 export const NAMES = [[[1, 2], 'diapason'], [[2, 3], 'diapente'], [[3, 4], 'diatessaron'], [[4, 5], 'ditonus'], [[5, 6], 'semiditonus'], [[8, 9], 'tonus'], [[4, 5, 6], 'trias harmonica'], [[10, 12, 15], 'trias mollis'], [[4, 5, 6, 7], 'septima naturalis'], [[3, 4, 5], 'trias harmonica'], [[2, 3, 4], 'diapente · diapason']];
 export const ET = 0.0447, OM0 = TAU * 0.8;              // энергия маятника на темпе (размах 0.3 рад); его собственная частота
 export const uOfE = (e) => clamp(0.9 * Math.log2(e / ET), -3, 8);
@@ -19,11 +19,13 @@ export const noteName = (f) => { const m = Math.round(12 * Math.log2(f / 55)); r
 // ядро: слот, коды action, ключи, раскладка зеркала — core/worlds/horologium/world.hpp
 export const SLOT = 9;
 export const ACT = { ring: 0, fx: 1, run: 2, held: 3, step: 4, bpm: 5, speed: 6, clear: 7 };
-export const FX_KEYS = ['aequalis', 'materia', 'concursus', 'chance', 'hall'], RING_KEYS = ['on', 'under', 'phi', 'lvl', 'inst'];
+export const FX_KEYS = ['aequalis', 'materia', 'concursus', 'chance', 'hall'], RING_KEYS = ['on', 'under', 'phi', 'lvl', 'inst', 'len'];
 export const HEAD = FX_KEYS.length + 10, M = { run: 5, u: 6, uT: 7, bpm: 8, strip: 9, held: 10, P: 11, F: 12, strikes: 13, locked: 14 };
 
+const lenOf = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(clamp(v, 1, 16)) : 16);   // мусор → 16, иначе 1…16
+
 export function createModel({ scale = { on: false, root: 0 }, rng = Math.random, send = () => 0 } = {}) {
-  const rings = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: [4, 5, 6].includes(i + 2), under: false, phi: 0, lvl: 0.8, inst: i }));
+  const rings = Array.from({ length: NR }, (_, i) => ({ n: i + 2, on: i < 3, under: false, phi: 0, lvl: 0.8, len: 16, inst: i }));
   const fx = { aequalis: 0, materia: 0.35, concursus: 0.4, chance: 1, hall: 0 };
   const clock = { run: false, u: 0, uT: 0, bpm: 100, strip: false };   // u — во сколько октав быстрее темпа (оборот колеса = такт); uT — куда успокаивается
   const pend = { th: 0, ph: 0, spin: false, held: false };
@@ -101,23 +103,23 @@ export function createModel({ scale = { on: false, root: 0 }, rng = Math.random,
   }
 
   // ---------- патч ----------
-  const scene = () => JSON.stringify({ r: rings.map(({ on, under, phi, lvl, inst }) => ({ on, under, phi, lvl, inst })), fx, bpm: clock.bpm, run: clock.run, u: clock.u, uT: clock.uT });
+  const scene = () => JSON.stringify({ r: rings.map(({ on, under, phi, lvl, inst, len }) => ({ on, under, phi, lvl, inst, len })), fx, bpm: clock.bpm, run: clock.run, u: clock.u, uT: clock.uT });
   function sendScene() { wipe = fxAt = clockAt = post({ t: 'restore', slot: SLOT, js: scene() }); ringAt.fill(wipe); }
-  function dice() {                                       // волшебное отношение, иногда — унтертонами; фаза — у одного кольца; часы идут
-    const R = rng, set = MAGIC[Math.floor(R() * MAGIC.length)], under = R() < 0.25;
-    rings.forEach((r) => { r.on = set.includes(r.n); r.under = under; r.phi = 0; r.lvl = 0.8; });
-    if (R() < 0.4) { const on = rings.filter((r) => r.on); on[Math.floor(R() * on.length)].phi = [0.25, 0.5, 0.75][Math.floor(R() * 3)]; }
+  function dice() {                                       // три соседних кольца k…k+2 (k = 2…7), у каждого len и сдвиг; under общий; часы идут
+    const R = rng, k = 2 + Math.floor(R() * 6), under = R() < 0.25;
+    rings.forEach((r) => { r.on = r.n >= k && r.n <= k + 2; r.under = under; r.phi = 0; r.lvl = 0.8; r.len = 16; });
+    for (let n = k; n <= k + 2; n++) { const r = rings[n - 2]; r.len = LENS[Math.floor(R() * LENS.length)]; r.phi = Math.floor(R() * r.len) / r.len; }   // тройка по возрастанию: длина, затем сдвиг в шагах
     fx.materia = R(); clock.uT = 0; clock.run = true; clock.u = 0;
     sendScene();
     emit({ t: 'fx' }); sendAll(); emit({ t: 'wake' });
     const A = Math.acos(1 - Math.min(1.9, eOfU(0))); pend.ph = Math.asin(clamp(pend.th / A, -1, 1));
   }
-  function clear() { rings.forEach((r, i) => { r.on = false; r.inst = i; }); clock.run = false; wipe = act(ACT.clear); ringAt.fill(wipe); clockAt = wipe; sendAll(); }
+  function clear() { rings.forEach((r, i) => { r.on = false; r.inst = i; r.len = 16; }); clock.run = false; wipe = act(ACT.clear); ringAt.fill(wipe); clockAt = wipe; sendAll(); }
   const snapshot = scene;
   function restore(js) {
     const st = JSON.parse(js);
     if (!st.r) return;                                   // снимок старого Horologium — не наш
-    st.r.forEach((q, i) => Object.assign(rings[i], { inst: i }, q));
+    st.r.forEach((q, i) => Object.assign(rings[i], { inst: i, len: 16 }, q, { len: lenOf(q.len) }));
     Object.assign(fx, st.fx); clock.bpm = st.bpm; clock.run = st.run; clock.u = st.u || 0; clock.uT = st.uT || 0;
     sendScene(); emit({ t: 'fx' }); sendAll();
   }
@@ -131,7 +133,7 @@ export function createModel({ scale = { on: false, root: 0 }, rng = Math.random,
       if (applied < ringAt[i] || applied < wipe) continue;
       const r = rings[i], o = HEAD + i * RING_KEYS.length;
       const on = m[o] !== 0, under = m[o + 1] !== 0;
-      if (r.on !== on || r.under !== under || r.phi !== m[o + 2] || r.lvl !== m[o + 3] || r.inst !== m[o + 4]) { r.on = on; r.under = under; r.phi = m[o + 2]; r.lvl = m[o + 3]; r.inst = m[o + 4]; ch = true; }
+      if (r.on !== on || r.under !== under || r.phi !== m[o + 2] || r.lvl !== m[o + 3] || r.inst !== m[o + 4] || r.len !== m[o + 5]) { r.on = on; r.under = under; r.phi = m[o + 2]; r.lvl = m[o + 3]; r.inst = m[o + 4]; r.len = m[o + 5]; ch = true; }
     }
     if (ch) emit({ t: 'rings' });
   }

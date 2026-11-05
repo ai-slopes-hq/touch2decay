@@ -4,7 +4,7 @@
 //   core/build.sh && node --test tools/models/horologium.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createModel as jsModel, uOfE, eOfU, ET, OM0, MAGIC, Z } from '../ref/horologium-model.js';
+import { createModel as jsModel, uOfE, eOfU, ET, OM0, LENS, Z } from '../ref/horologium-model.js';
 import * as facade from '../../worlds/horologium/model.js';
 import { createModel as coreModel } from './horologium-core.mjs';
 import { seeded, near } from './util.mjs';
@@ -12,7 +12,7 @@ import { seeded, near } from './util.mjs';
 const FACTORIES = { js: (o = {}) => jsModel(o), core: (o = {}) => coreModel({ ...o, ...(o.rng ? { rng: o.rng } : {}) }) };
 
 test('Horologium: чистые функции и константы фасада — те же, что у эталона', () => {
-  for (const k of ['NR', 'Z', 'ET', 'OM0', 'MAGIC', 'NAMES', 'ROMAN']) assert.deepEqual(facade[k], { NR: 8, Z, ET, OM0, MAGIC, NAMES: facade.NAMES, ROMAN: facade.ROMAN }[k], k);
+  for (const k of ['NR', 'Z', 'ET', 'OM0', 'LENS', 'NAMES', 'ROMAN']) assert.deepEqual(facade[k], { NR: 8, Z, ET, OM0, LENS, NAMES: facade.NAMES, ROMAN: facade.ROMAN }[k], k);
   for (const u of [-2, 0, 3.3]) assert.equal(facade.eOfU(u), eOfU(u));
 });
 
@@ -81,6 +81,7 @@ test('Horologium [js]: скорость в worklet — по событию, то
 for (const [name, createModel] of Object.entries(FACTORIES)) {
 test(`Horologium [${name}]: удары за оборот — обертон n, унтертон 12/n, aequalis тянет к полутону; отношение и имя`, () => {
   const m = createModel(), { rings, fx } = m.state;
+  rings.forEach((r) => { r.on = [4, 5, 6].includes(r.n); });   // умолчание — II, III, IV
   const r5 = rings[3], r7 = rings[5];
   assert.equal(m.mOf(r5), 5); r5.under = true; assert.equal(m.mOf(r5), 12 / 5);
   fx.aequalis = 1; assert.ok(near(m.mOf(r5), 2 ** (Math.round(12 * Math.log2(2.4)) / 12)));
@@ -96,14 +97,14 @@ test(`Horologium [${name}]: удары за оборот — обертон n, �
 
 test(`Horologium [${name}]: кольца — тап, двойной тап, фаза, плашка — события; снимок → restore — тот же JSON`, () => {
   const m = createModel(), ev = events(m), { rings } = m.state;
-  m.toggleRing(0); m.toggleRing(0); m.toggleUnder(1); m.setPhase(2, 0.3); m.setRing(3, 'on', 0.2); m.setRing(3, 'lvl', 0.5);
+  m.toggleRing(5); m.toggleRing(5); m.toggleUnder(1); m.setPhase(2, 0.3); m.setRing(3, 'on', 0.2); m.setRing(3, 'lvl', 0.5);
   assert.deepEqual(ev.splice(0).map((e) => e.t), ['all', 'wake', 'all', 'all', 'wake', 'rings', 'all', 'all']);
-  assert.ok(!rings[0].on && rings[1].on && rings[1].under && rings[2].phi === 0.3 && !rings[3].on && rings[3].lvl === 0.5);
+  assert.ok(!rings[5].on && rings[1].on && rings[1].under && rings[2].phi === 0.3 && !rings[3].on && rings[3].lvl === 0.5);
   m.setFx('hall', 0.6); m.loadFx({ materia: 0.9 }); assert.deepEqual(ev.splice(0).map((e) => e.t), ['fx', 'fx']);
   m.setBpm(133); m.setRun(true, 1.5); m.state.clock.uT = 0.5;
   const js = m.snapshot(), o = JSON.parse(js);
   assert.deepEqual(Object.keys(o), ['r', 'fx', 'bpm', 'run', 'u', 'uT']);
-  assert.deepEqual(Object.keys(o.r[0]).filter((k) => k !== 'inst'), ['on', 'under', 'phi', 'lvl']);   // inst — только у фасада
+  assert.deepEqual(Object.keys(o.r[0]).filter((k) => k !== 'inst'), ['on', 'under', 'phi', 'lvl', 'len']);   // inst — только у фасада
   const q = createModel(), qe = events(q);
   q.restore(js); assert.equal(q.snapshot(), js);
   assert.deepEqual(qe.map((e) => e.t), ['fx', 'all']);
@@ -111,17 +112,38 @@ test(`Horologium [${name}]: кольца — тап, двойной тап, фа
   q.clear(); assert.ok(!q.sounding() && q.state.rings.every((r) => !r.on) && !q.state.clock.run);
 });
 
-test(`Horologium [${name}]: кубик с зерном повторяем — волшебное отношение, часы идут на темпе`, () => {
+test(`Horologium [${name}]: кубик с зерном повторяем — три соседних кольца, len из набора, сдвиг целый, часы идут на темпе`, () => {
   const a = createModel({ rng: seeded(42) }), b = createModel({ rng: seeded(42) });
   a.dice(); b.dice();
   assert.equal(a.snapshot(), b.snapshot());
+  const firsts = new Set();
   for (let k = 0; k < 40; k++) {
     const m = createModel({ rng: seeded(k) }); m.dice();
-    const on = m.state.rings.filter((r) => r.on).map((r) => r.n);
-    assert.ok(MAGIC.some((s) => s.length === on.length && s.every((n, j) => n === on[j])), `${on}`);
+    const rs = m.state.rings, on = rs.filter((r) => r.on).map((r) => r.n);
+    assert.equal(on.length, 3, `${on}`);
+    assert.ok(on[0] >= 2 && on[0] <= 7 && on[1] === on[0] + 1 && on[2] === on[0] + 2, `${on}`);
+    firsts.add(on[0]);
+    assert.ok(rs.every((r) => r.under === rs[0].under && r.lvl === 0.8));
+    for (const r of rs) {
+      if (r.on) { assert.ok(LENS.includes(r.len), `len ${r.len}`); const sh = r.phi * r.len; assert.ok(Math.abs(sh - Math.round(sh)) < 1e-9 && sh >= 0 && sh <= r.len - 1, `phi ${r.phi} len ${r.len}`); }
+      else assert.ok(r.len === 16 && r.phi === 0);
+    }
     assert.ok(m.state.clock.run && m.state.clock.u === 0 && m.state.clock.uT === 0 && m.sounding());
-    assert.ok(m.state.rings.filter((r) => r.phi > 0).length <= 1);
   }
+  assert.ok(firsts.size >= 4, [...firsts].join());
+});
+
+test(`Horologium [${name}]: умолчание — звучат II, III, IV, len 16; len в снимке, старая сцена без len — 16, корзина — 16`, () => {
+  const m = createModel(), rs = m.state.rings;
+  assert.deepEqual(rs.map((r) => r.on), [true, true, true, false, false, false, false, false]);
+  assert.ok(rs.every((r) => r.len === 16 && r.phi === 0));
+  rs[3].len = 12; m.setRing(3, 'len', 12);
+  const js = m.snapshot(), o = JSON.parse(js);
+  assert.equal(o.r[3].len, 12); assert.ok(o.r.every((q, i) => q.len === (i === 3 ? 12 : 16)));
+  const q = createModel(); q.restore(js); assert.equal(q.state.rings[3].len, 12);
+  q.restore(JSON.stringify({ ...o, r: o.r.map(({ len, ...x }) => x) }));
+  assert.ok(q.state.rings.every((r) => r.len === 16), 'старая сцена без len');
+  q.restore(js); q.clear(); assert.ok(q.state.rings.every((r) => r.len === 16));
 });
 
 test(`Horologium [${name}]: после броска u доходит до uT точно (замок к такту MIDI ждёт clock.u === 0)`, () => {
@@ -134,14 +156,16 @@ test(`Horologium [${name}]: после броска u доходит до uT т�
 });
 }
 
-test('Horologium facade: inst — default kit, mirror 55, snapshot, old scene, clear', () => {
+test('Horologium facade: inst — default kit, mirror 63, snapshot, old scene, clear', () => {
   const m = facade.createModel();
   assert.deepEqual(m.state.rings.map((r) => r.inst), [0, 1, 2, 3, 4, 5, 6, 7]);
   const js = JSON.parse(m.snapshot()); assert.equal(js.r[3].inst, 3);
   m.state.rings[3].inst = 6;
   m.restore(JSON.stringify({ ...js, r: js.r.map(({ inst, ...q }) => q) }));
   assert.equal(m.state.rings[3].inst, 3, 'старая сцена без inst — умолчание');
-  const mir = new Array(55).fill(0); mir[15 + 5 * 2 + 4] = 7;   // кольцо IV — open hat
-  m.sync(mir, 1e9); assert.equal(m.state.rings[2].inst, 7);
-  m.clear(); assert.equal(m.state.rings[2].inst, 2);
+  const mir = new Array(63).fill(0); mir[15 + 6 * 2 + 4] = 7;   // кольцо IV — open hat
+  mir[15 + 6 * 2 + 5] = 12;
+  m.sync(mir, 1e9); assert.equal(m.state.rings[2].inst, 7); assert.equal(m.state.rings[2].len, 12);
+  m.clear(); assert.equal(m.state.rings[2].inst, 2); assert.equal(m.state.rings[2].len, 16);
+  assert.equal(facade.RING_KEYS.length, 6); assert.equal(facade.RING_KEYS[5], 'len');
 });

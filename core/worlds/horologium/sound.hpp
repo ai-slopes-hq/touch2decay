@@ -20,7 +20,7 @@ class Sound {
   static constexpr int HMAX = 32;
   void prepare(double sr, uint32_t seed);
   static constexpr double MIN_GAP = 1.0 / 24;           // секунд между запусками голоса одного кольца
-  struct R { bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0; double hz = 110; };
+  struct R { bool on = false, under = false; double phi = 0, lvl = 0.8; int inst = 0; double hz = 110; int len = 16; };   // len — длина кольца в шагах (читает Евклид, задача 2)
   // tint — окраска шумовых и металлических голосов (Model::tint()); hz кольца — Model::pitch(i)
   void set(const R* rings, double Ft, double mat, double conc, double chance, double aeq, double tint);
   void step(double d);                                  // спуск руками: доворот на d оборота за 40 мс

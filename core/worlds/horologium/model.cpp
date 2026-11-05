@@ -10,15 +10,12 @@ namespace horologium {
 
 const char* const FX_NAMES[NFX] = {"aequalis", "materia", "concursus", "chance", "hall"};
 const double FX_DEF[NFX] = {0, 0.35, 0.4, 1, 0};   // hall 0 по умолчанию (автор, 05.11)
-// волшебные наборы колец (n) — MAGIC в model.js
-static const int MAGIC[][5] = {{2, 3}, {3, 4}, {4, 5, 6}, {3, 4, 5}, {2, 3, 5}, {4, 5, 6, 7}, {5, 7, 9}, {6, 7, 8, 9}, {8, 9}, {2, 3, 4, 5, 6}, {5, 6}, {4, 5}};
-static const int MAGIC_N[] = {2, 2, 3, 3, 3, 4, 3, 4, 2, 5, 2, 2};
-static const int NMAGIC = 12;
-static const char* const RING_KEYS[NRK] = {"on", "under", "phi", "lvl", "inst"};
+static const int LENS[5] = {16, 16, 12, 8, 6};          // длины колец кубика — LENS в model.js
+static const char* const RING_KEYS[NRK] = {"on", "under", "phi", "lvl", "inst", "len"};
 
 void Model::reset(uint32_t seed) {
   rng_ = sdk::Rng(seed);
-  for (int i = 0; i < NR; i++) { r_[i] = Ring{}; r_[i].n = i + 2; r_[i].inst = i; r_[i].on = (i + 2 >= 4 && i + 2 <= 6); }
+  for (int i = 0; i < NR; i++) { r_[i] = Ring{}; r_[i].n = i + 2; r_[i].inst = i; r_[i].on = i < 3; }   // звучат II, III, IV
   for (int k = 0; k < NFX; k++) fx_[k] = FX_DEF[k];
   clock_ = Clock{};
 }
@@ -55,7 +52,7 @@ double Model::tint() const {
 }
 
 void Model::clear() {
-  for (int i = 0; i < NR; i++) { r_[i].on = false; r_[i].inst = i; }
+  for (int i = 0; i < NR; i++) { r_[i].on = false; r_[i].inst = i; r_[i].len = 16; }
   clock_.run = false;
 }
 
@@ -68,22 +65,22 @@ void Model::setRing(int i, int key, double v) {
     case PHI: r.phi = v; break;
     case LVL: r.lvl = v; break;
     case INST: if (std::isfinite(v)) r.inst = static_cast<int>(std::lround(std::clamp(v, 0.0, NINST - 1.0))); break;
+    case LEN: if (std::isfinite(v)) r.len = static_cast<int>(std::lround(std::clamp(v, 1.0, static_cast<double>(LEN_MAX)))); break;
     default: break;
   }
 }
 
 void Model::dice() {                                    // порядок вызовов rng_ — как в model.js
-  const int s = static_cast<int>(rng_.next() * NMAGIC);
+  const int k = 2 + static_cast<int>(rng_.next() * 6);
   const bool under = rng_.next() < 0.25;
   for (Ring& r : r_) {
-    r.on = false;
-    for (int j = 0; j < MAGIC_N[s]; j++) if (MAGIC[s][j] == r.n) r.on = true;
-    r.under = under; r.phi = 0; r.lvl = 0.8;
+    r.on = r.n >= k && r.n <= k + 2;
+    r.under = under; r.lvl = 0.8; r.phi = 0; r.len = 16;
   }
-  if (rng_.next() < 0.4) {
-    Ring* on[NR]; int k = 0;
-    for (Ring& r : r_) if (r.on) on[k++] = &r;
-    on[static_cast<int>(rng_.next() * k)]->phi = 0.25 * (1 + static_cast<int>(rng_.next() * 3));
+  for (int n = k; n <= k + 2; n++) {                    // тройка по возрастанию: длина, затем сдвиг в шагах
+    Ring& r = r_[n - 2];
+    r.len = LENS[static_cast<int>(rng_.next() * 5)];
+    r.phi = static_cast<int>(rng_.next() * r.len) / static_cast<double>(r.len);
   }
   fx_[MATERIA] = rng_.next();
   clock_.uT = 0; clock_.run = true; clock_.u = 0;
@@ -109,7 +106,7 @@ std::string Model::snapshot() const {
   Json st = Json::object(), arr = Json::array(), fx = Json::object();
   for (const Ring& r : r_) {
     Json o = Json::object();
-    o.set("on", Json::boolean(r.on)); o.set("under", Json::boolean(r.under)); o.set("phi", Json::num(r.phi)); o.set("lvl", Json::num(r.lvl)); o.set("inst", Json::num(r.inst));
+    o.set("on", Json::boolean(r.on)); o.set("under", Json::boolean(r.under)); o.set("phi", Json::num(r.phi)); o.set("lvl", Json::num(r.lvl)); o.set("inst", Json::num(r.inst)); o.set("len", Json::num(r.len));
     arr.push(std::move(o));
   }
   for (int k = 0; k < NFX; k++) fx.set(FX_NAMES[k], Json::num(fx_[k]));
@@ -127,11 +124,12 @@ void Model::restore(const std::string& js) {
   if (!arr || arr->type != Json::Arr) return;           // снимок старого Horologium — не наш
   const auto num = [](const Json& o, const char* k, double& v) { const Json* x = o.get(k); if (x && x->type == Json::Num) v = x->n; };
   const auto flag = [](const Json& o, const char* k, bool& v) { const Json* x = o.get(k); if (x && x->type == Json::Bool) v = x->b; };
-  for (int i = 0; i < NR; i++) r_[i].inst = i;          // старая сцена без inst, короткий массив, null — кит по умолчанию
+  for (int i = 0; i < NR; i++) { r_[i].inst = i; r_[i].len = 16; }   // старая сцена без inst / len, короткий массив, null — кит и длина по умолчанию
   for (int i = 0; i < NR && i < static_cast<int>(arr->a.size()); i++) {
     const Json& q = arr->a[i];
     if (q.type != Json::Obj) continue;
     if (const Json* x = q.get(RING_KEYS[INST]); x && x->type == Json::Num && std::isfinite(x->n)) setRing(i, INST, x->n);
+    if (const Json* x = q.get(RING_KEYS[LEN]); x && x->type == Json::Num) setRing(i, LEN, x->n);
     flag(q, RING_KEYS[ON], r_[i].on); flag(q, RING_KEYS[UNDER], r_[i].under); num(q, RING_KEYS[PHI], r_[i].phi); num(q, RING_KEYS[LVL], r_[i].lvl);
   }
   if (const Json* fx = st.get("fx"); fx && fx->type == Json::Obj) for (int k = 0; k < NFX; k++) { double v = fx_[k]; num(*fx, FX_NAMES[k], v); setFx(k, v); }

@@ -3649,6 +3649,35 @@ static void horoModelInst() {
   CHECK(b.ring(0).inst == 0 && b.ring(1).inst == 1 && b.ring(2).inst == 2);  // старая сцена: все кольца — умолчание (и хвост короткого массива)
   m.clear(); for (int i = 0; i < 8; i++) CHECK(m.ring(i).inst == i);   // корзина — кит по умолчанию
 }
+static void horoModelLen() {
+  Scale sc; horologium::Model m(sc);
+  using horologium::LEN;
+  m.setRing(1, LEN, 12); CHECK(m.ring(1).len == 12);
+  m.setRing(1, LEN, 7.6); CHECK(m.ring(1).len == 8);
+  m.setRing(1, LEN, 0); CHECK(m.ring(1).len == 1);
+  m.setRing(1, LEN, 99); CHECK(m.ring(1).len == 16);
+  m.setRing(1, LEN, 5);
+  m.setRing(1, LEN, NAN); CHECK(m.ring(1).len == 5);
+  m.setRing(1, LEN, INFINITY); CHECK(m.ring(1).len == 5);
+  m.setRing(1, LEN, -INFINITY); CHECK(m.ring(1).len == 5);
+  m.setRing(3, LEN, 12);
+  const std::string js = m.snapshot();
+  CHECK(js.find("\"len\":12") != std::string::npos);
+  horologium::Model b(sc); b.restore(js);
+  for (int i = 0; i < 8; i++) CHECK(b.ring(i).len == m.ring(i).len);
+  b.setRing(0, LEN, 3);
+  b.restore(R"({"r":[{"on":true,"under":false,"phi":0,"lvl":0.8},{"on":true,"len":"x"}],"fx":{},"bpm":120,"run":true})");
+  for (int i = 0; i < 8; i++) CHECK(b.ring(i).len == 16);       // старая сцена без len, мусор "x", хвост короткого массива — 16
+  b.restore(R"({"r":[{"len":0},{"len":99},{"len":7.6}],"fx":{}})");
+  CHECK(b.ring(0).len == 1 && b.ring(1).len == 16 && b.ring(2).len == 8);
+  m.clear(); for (int i = 0; i < 8; i++) CHECK(m.ring(i).len == 16);
+}
+static void horoModelDefaults() {
+  Scale sc; horologium::Model m(sc);
+  for (int i = 0; i < 8; i++) { CHECK(m.ring(i).on == (i < 3)); CHECK(m.ring(i).len == 16 && m.ring(i).phi == 0); }
+  m.setRing(5, horologium::LEN, 4); m.reset(1);
+  for (int i = 0; i < 8; i++) CHECK(m.ring(i).on == (i < 3) && m.ring(i).len == 16);
+}
 static void horoModelGarbage() {
   Scale sc; horologium::Model m(sc);
   m.setRing(1, horologium::INST, 4);
@@ -3855,11 +3884,11 @@ static void horoLfo() {
   const double a[4][2] = {{1, 0.7}, {4, 0.2}, {5 + 2 * 3, 0.25}, {6 + 2 * 7, 0.3}};
   for (const auto& v : a) CHECK(t2d_app_action(9, sdk::ACT_LFO, -1, v, 2, 0) == 1);
   double m[64];
-  CHECK(horoMirror(m, 64) == 55);
+  CHECK(horoMirror(m, 64) == 63);
   NEAR(m[1], 0.7, 1e-9);                                          // fx[MATERIA]
   NEAR(m[4], 0.2, 1e-9);                                          // fx[HALL]
-  NEAR(m[15 + 5 * 3 + 2], 0.25, 1e-9);                            // кольцо 3: phi
-  NEAR(m[15 + 5 * 7 + 3], 0.3, 1e-9);                             // кольцо 7: lvl
+  NEAR(m[15 + 6 * 3 + 2], 0.25, 1e-9);                            // кольцо 3: phi
+  NEAR(m[15 + 6 * 7 + 3], 0.3, 1e-9);                             // кольцо 7: lvl
 }
 static void horoLfoIgnores() {
   double m0[64], m1[64];
@@ -3872,7 +3901,7 @@ static void horoLfoIgnores() {
   t2d_app_action(9, sdk::ACT_LFO, -1, a2, 2, 0);
   t2d_app_action(9, sdk::ACT_LFO, -1, a3, 1, 0);
   const int n1 = horoMirror(m1, 64);
-  CHECK(n0 == 55 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
+  CHECK(n0 == 63 && n0 == n1 && std::memcmp(m0, m1, sizeof(double) * n0) == 0);
 }
 static int arcMirror(double* m, int cap) {
   float L[128], R[128];
@@ -4142,50 +4171,52 @@ static void arcPicFixture() {
   }
 }
 static void horoDice() {
-  static const int MAGIC[12][5] = {{2, 3}, {3, 4}, {4, 5, 6}, {3, 4, 5}, {2, 3, 5}, {4, 5, 6, 7}, {5, 7, 9}, {6, 7, 8, 9}, {8, 9}, {2, 3, 4, 5, 6}, {5, 6}, {4, 5}};
-  static const int MAGIC_N[12] = {2, 2, 3, 3, 3, 4, 3, 4, 2, 5, 2, 2};
+  static const int LENS[4] = {16, 12, 8, 6};
   double m[2][64];
   for (int w = 0; w < 2; w++) {
     t2d_app_init(48000, 5, 1e9, 1u << 9);
     t2d_app_action(9, 8, -1, nullptr, 0, 0);                      // DICE
-    CHECK(horoMirror(m[w], 64) == 55);
+    CHECK(horoMirror(m[w], 64) == 63);
   }
-  CHECK(std::memcmp(m[0], m[1], sizeof(double) * 55) == 0);       // одно зерно — одна раскладка
-  const auto check = [&](const double* q, bool* under, bool* phase) {
-    int on[8], k = 0, phis = 0;
+  CHECK(std::memcmp(m[0], m[1], sizeof(double) * 63) == 0);       // одно зерно — одна раскладка
+  const auto check = [&](const double* q, bool* under, int* first, bool* shortLen) {
+    int on[8], k = 0;
     for (int i = 0; i < 8; i++) {
-      const double* r = q + 15 + 5 * i;
+      const double* r = q + 15 + 6 * i;
       if (r[0] != 0) on[k++] = i + 2;
       CHECK(r[1] == q[15 + 1]);                                   // under у всех одинаков
       CHECK(r[3] == 0.8);
       CHECK(r[4] == i);                                           // кубик кит не трогает
-      if (r[2] != 0) { phis++; CHECK(r[0] != 0 && (r[2] == 0.25 || r[2] == 0.5 || r[2] == 0.75)); }
+      if (r[0] != 0) {
+        const int len = static_cast<int>(r[5]);
+        bool inSet = false;
+        for (int v : LENS) inSet = inSet || v == len;
+        CHECK(inSet);
+        const double sh = r[2] * len;                             // phi·len — целое в 0…len−1
+        CHECK(std::fabs(sh - std::round(sh)) < 1e-9 && std::round(sh) >= 0 && std::round(sh) <= len - 1);
+        if (len != 16) *shortLen = true;
+      } else CHECK(r[5] == 16 && r[2] == 0);
     }
-    CHECK(phis <= 1);
-    bool found = false;
-    for (int s = 0; s < 12; s++) {
-      if (MAGIC_N[s] != k) continue;
-      bool same = true;
-      for (int j = 0; j < k; j++) same = same && MAGIC[s][j] == on[j];
-      found = found || same;
-    }
-    CHECK(found);
+    CHECK(k == 3 && on[1] == on[0] + 1 && on[2] == on[0] + 2 && on[0] >= 2 && on[0] <= 7);   // три соседних кольца
+    *first = on[0];
     CHECK(q[5] == 1 && q[6] == 0 && q[7] == 0);                   // run, u, uT
     CHECK(q[1] >= 0 && q[1] < 1);                                 // materia
-    *under = q[15 + 1] != 0; *phase = phis > 0;
+    *under = q[15 + 1] != 0;
   };
-  bool u0, p0;
-  check(m[0], &u0, &p0);
-  int unders = 0, phases = 0;
+  bool u0, sl0; int f0;
+  check(m[0], &u0, &f0, &sl0);
+  int unders = 0, shorts = 0, firsts[10] = {};
   for (uint32_t seed = 1; seed <= 40; seed++) {
     t2d_app_init(48000, seed, 1e9, 1u << 9);
     t2d_app_action(9, 8, -1, nullptr, 0, 0);
     double q[64]; horoMirror(q, 64);
-    bool u, p;
-    check(q, &u, &p);
-    unders += u; phases += p;
+    bool u, sl; int f;
+    check(q, &u, &f, &sl);
+    unders += u; shorts += sl; firsts[f]++;
   }
-  CHECK(unders > 0 && unders < 40 && phases > 0 && phases < 40);
+  CHECK(unders > 0 && unders < 40 && shorts > 0);
+  int spread = 0; for (int f = 2; f <= 7; f++) spread += firsts[f] > 0;
+  CHECK(spread >= 4);                                             // начало тройки гуляет по 2…7
 }
 
 // ступени лада наружу: таблица host/scale.js
@@ -4368,7 +4399,7 @@ int main(int argc, char** argv) {
   shaper(); shaperOs4(); shaperChromium2(); bpbank(); noise(); infernoModel(); infernoSound(); bridgeNative(); mixWebUntouched(); mixSum(); mixMaster();
   appSpscThreads(); appTripleThreads(); appChunking(); appVsBridge(); appHeardAccumulates(); appMidiClock(); appMidiTime(); appMidiOverflow(); appOverflow(); appLatency(); appReinitRate();
   appHostOrder(); appSnapRoundtrip(); appRestoreGarbage(); appStrOverflow(); appHostVolScale(); appStrCap();
-  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
+  lfoForms(); lfoRandom(); hostLfo(); lfoApply(); lfoUnits(); lfoOff(); lfoOrder(); lfoDeadObj(); lfoSpecNan(); lfoForeign(); oceanLfo(); oceanLfoIgnores(); monoLfo(); monoLfoIgnores(); monoDice(); horoLfo(); horoModelInst(); horoModelLen(); horoModelDefaults(); horoModelGarbage(); horoSoundGarbage(); horoModelPitch(); horoModelPitchGarbage(); drumVoices(); drumGlitch(); horoLfoIgnores(); horoAttacksPerTurn(); horoCeiling(); horoKitPeak(); horoKitRms(); horoTailOff(); horoInstSwitch(); horoDice(); arcLfo(); arcLfoIgnores(); triaLfo(); triaLfoIgnores(); infLfo(); infLfoIgnores(); portusLfo(); portusLfoIgnores(); portusDice(); arcPicSame(); arcPicMeta(); arcPicRiverName(); arcName(); arcRouteSame(); arcPicFixture(); appScaleSteps(); appLfo(); appLevels(); appLevelsPreFader(); appHostFader(); appHostFaderSmooth(); appHostMaster();
   std::printf("sdk-test: %d checks, %d failed\n", checks, fails);
   return fails ? 1 : 0;
 }

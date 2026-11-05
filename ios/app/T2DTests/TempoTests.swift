@@ -77,7 +77,7 @@ final class TempoTests: XCTestCase {
     buf = mirror(mono); let m = monochord(); m.refresh(now: 1); XCTAssertFalse(m.armed)
     buf = mirror(mono, [(9, 1)]); m.refresh(now: 2); XCTAssertFalse(m.armed)       // auto идёт — всё равно false
     buf = mirror(horo); let h = horologium(); h.refresh(now: 1); XCTAssertFalse(h.armed)
-    buf = mirror(horo, [(15 + 5 * 2, 1)]); h.refresh(now: 2); XCTAssertTrue(h.armed)
+    buf = mirror(horo, [(15 + 6 * 2, 1)]); h.refresh(now: 2); XCTAssertTrue(h.armed)
   }
 
   func testMonochordAndHorologiumReadFromMirror() {

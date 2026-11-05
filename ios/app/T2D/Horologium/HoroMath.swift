@@ -2,7 +2,7 @@ import Foundation
 
 // кольцо зеркала: n — номер (II…IX), on / under — звучит / унтертон, phi — фаза (доля оборота), lvl — громкость (core/worlds/horologium/world.hpp)
 struct HoroRing {
-  var n = 2, on = false, under = false, phi = 0.0, lvl = 0.0, inst = 0
+  var n = 2, on = false, under = false, phi = 0.0, lvl = 0.0, inst = 0, len = 16   // len — длина кольца в шагах 1…16
 }
 
 // константы и чистая математика Horologium (worlds/horologium/model.js, view.js): шкала скорости, имена нот, отношение колец

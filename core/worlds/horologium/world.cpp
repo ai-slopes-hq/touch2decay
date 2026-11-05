@@ -44,7 +44,7 @@ void World::process(const sdk::Out& out, int n) {
   now_ = now + n / sr_;
   model_.tick(n / sr_);
   Sound::R r[NR];
-  for (int i = 0; i < NR; i++) { const Ring& q = model_.ring(i); r[i] = Sound::R{q.on, q.under, q.phi, q.lvl, q.inst, model_.pitch(i)}; }
+  for (int i = 0; i < NR; i++) { const Ring& q = model_.ring(i); r[i] = Sound::R{q.on, q.under, q.phi, q.lvl, q.inst, model_.pitch(i), q.len}; }
   sound_.set(r, model_.Fnow(), model_.fx(MATERIA), model_.fx(CONCURSUS), model_.fx(CHANCE), model_.fx(AEQUALIS), model_.tint());
   const Clock& c = model_.clock();
   const bool want = clk_ && clk_->grid.on && clk_->grid.p > 0 && c.run && c.u == 0 && !c.held;   // замок к такту: оборот = 4 доли
@@ -70,7 +70,7 @@ int World::mirror(double* buf, int cap) const {
   for (int k = 0; k < NFX; k++) *p++ = model_.fx(k);
   *p++ = c.run; *p++ = c.u; *p++ = c.uT; *p++ = c.bpm; *p++ = c.strip; *p++ = c.held;
   *p++ = sound_.P(); *p++ = sound_.F(); *p++ = static_cast<double>(sound_.strikes()); *p++ = locked_;
-  for (int i = 0; i < NR; i++) { const Ring& q = model_.ring(i); *p++ = q.on; *p++ = q.under; *p++ = q.phi; *p++ = q.lvl; *p++ = q.inst; }
+  for (int i = 0; i < NR; i++) { const Ring& q = model_.ring(i); *p++ = q.on; *p++ = q.under; *p++ = q.phi; *p++ = q.lvl; *p++ = q.inst; *p++ = q.len; }
   return MIRROR_N;
 }
 

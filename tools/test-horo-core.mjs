@@ -72,10 +72,12 @@ test('lock: a phase error over 0.1 revolution snaps, small ones are pulled by ±
 test('mirror: head layout', () => {
   const c = loadT2d(); c.init(SR, 1);
   const m = c.mirror(SLOT);
-  assert.equal(m.length, 15 + 8 * 5);
+  assert.equal(m.length, 15 + 8 * 6);
+  assert.equal(m.length, 63);
   assert.equal(m[M.bpm], 100);
-  assert.deepEqual([2, 3, 4].map((i) => m[15 + i * 5]), [1, 1, 1], 'IV, V, VI on');
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[15 + i * 5 + 4]), [0, 1, 2, 3, 4, 5, 6, 7], 'default kit: inst = ring');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[15 + i * 6]), [1, 1, 1, 0, 0, 0, 0, 0], 'II, III, IV on');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[15 + i * 6 + 4]), [0, 1, 2, 3, 4, 5, 6, 7], 'default kit: inst = ring');
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => m[15 + i * 6 + 5]), [16, 16, 16, 16, 16, 16, 16, 16], 'len 16');
 });
 
 test('speed: reference path vs t2d.wasm, scenario all (~10 s)', () => {

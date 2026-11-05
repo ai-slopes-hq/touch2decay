@@ -22,9 +22,9 @@ final class HorologiumTests: XCTestCase {
 
   // зеркало: fx 5, run, u, uT, bpm, strip, held, P, F, strikes, locked, затем 8 колец по 5 (on, under, phi, lvl, inst)
   private func setMirror(fx: [Double] = [0, 0.35, 0.4, 1, 0.35], run: Bool = false, u: Double = 0, uT: Double = 0, bpm: Double = 120,
-                         P: Double = 0, F: Double = 0, on: [Int] = [], under: [Int] = [], phi: Double = 0.25, lvl: Double = 0.8, inst: [Int] = Array(0..<8), now: Double = 1) {
+                         P: Double = 0, F: Double = 0, on: [Int] = [], under: [Int] = [], phi: Double = 0.25, lvl: Double = 0.8, inst: [Int] = Array(0..<8), len: [Int] = Array(repeating: 16, count: 8), now: Double = 1) {
     var b = fx + [run ? 1 : 0, u, uT, bpm, 0, 0, P, F, 0, 0]
-    for i in 0..<8 { b += [on.contains(i) ? 1 : 0, under.contains(i) ? 1 : 0, phi, lvl, Double(inst[i])] }
+    for i in 0..<8 { b += [on.contains(i) ? 1 : 0, under.contains(i) ? 1 : 0, phi, lvl, Double(inst[i]), Double(len[i])] }
     mirrorBuf = b; view.tick(now: now, dt: 0.016)
   }
   private func finger(_ o: NSObject, _ p: CGPoint, t0: Double = 0, now: Double = 0, p0: CGPoint? = nil) -> Finger {
@@ -44,19 +44,31 @@ final class HorologiumTests: XCTestCase {
   // ---------- зеркало, heard, pVis ----------
   func testMirrorParse() {
     var b: [Double] = [0.1, 0.2, 0.3, 0.4, 0.5] + [1, 2, 3, 120, 1, 1, 4.5, 6, 7, 1]
-    for i in 0..<8 { b += [1, 0, Double(i) / 10, 0.9, Double(7 - i)] }
-    let m = HoroMirror(b, n: 55)!
+    for i in 0..<8 { b += [1, 0, Double(i) / 10, 0.9, Double(7 - i), i == 3 ? 12 : 16] }
+    let m = HoroMirror(b, n: 63)!
     XCTAssertEqual(m.fx, [0.1, 0.2, 0.3, 0.4, 0.5]); XCTAssertTrue(m.run); XCTAssertEqual([m.u, m.uT, m.bpm], [2, 3, 120])
     XCTAssertTrue(m.strip); XCTAssertTrue(m.held); XCTAssertEqual([m.P, m.F, m.strikes], [4.5, 6, 7]); XCTAssertTrue(m.locked)
-    XCTAssertEqual(m.rings[3].phi, 0.3); XCTAssertEqual(m.rings[7].lvl, 0.9); XCTAssertEqual(m.rings[2].inst, 5); XCTAssertNil(HoroMirror(b, n: 54))
+    XCTAssertEqual(m.rings[3].phi, 0.3); XCTAssertEqual(m.rings[7].lvl, 0.9); XCTAssertEqual(m.rings[2].inst, 5); XCTAssertNil(HoroMirror(b, n: 62))
+    XCTAssertEqual(m.rings[3].len, 12); XCTAssertEqual(m.rings[0].len, 16); XCTAssertEqual(HoroMirror.size, 63); XCTAssertEqual(HoroMirror.ringN, 6)
+  }
+
+  func testMirrorLenGarbage() {                             // len из зеркала: нечисло → 16, иначе зажим в 1…16 без падения
+    var b: [Double] = [0.1, 0.2, 0.3, 0.4, 0.5] + [1, 2, 3, 120, 1, 1, 4.5, 6, 7, 1]
+    for _ in 0..<8 { b += [1, 0, 0, 0.9, 0, 16] }
+    var m = HoroMirror()
+    let bad: [(Double, Int)] = [(.nan, 16), (1e300, 16), (-5, 1), (0, 1), (7.6, 8), (.infinity, 16), (-.infinity, 1)]
+    for (v, want) in bad {
+      b[HoroMirror.head + 5] = v
+      XCTAssertTrue(m.load(b, n: 63)); XCTAssertEqual(m.rings[0].len, want, "len \(v)")
+    }
   }
 
   func testMirrorLoadInPlace() {
     var b: [Double] = [0.1, 0.2, 0.3, 0.4, 0.5] + [1, 2, 3, 120, 1, 1, 4.5, 6, 7, 1]
-    for i in 0..<8 { b += [1, 0, Double(i) / 10, 0.9, Double(7 - i)] }
+    for i in 0..<8 { b += [1, 0, Double(i) / 10, 0.9, Double(7 - i), i == 3 ? 12 : 16] }
     var m = HoroMirror()
-    XCTAssertTrue(m.load(b, n: 55)); XCTAssertEqual(m.fx, [0.1, 0.2, 0.3, 0.4, 0.5]); XCTAssertEqual(m.rings[3].phi, 0.3); XCTAssertEqual(m.rings[3].n, 5)
-    XCTAssertFalse(m.load(b, n: 54)); XCTAssertEqual(m.P, 4.5, "короткий буфер — прежнее состояние")
+    XCTAssertTrue(m.load(b, n: 63)); XCTAssertEqual(m.fx, [0.1, 0.2, 0.3, 0.4, 0.5]); XCTAssertEqual(m.rings[3].phi, 0.3); XCTAssertEqual(m.rings[3].n, 5)
+    XCTAssertEqual(m.rings[3].len, 12); XCTAssertFalse(m.load(b, n: 62)); XCTAssertEqual(m.P, 4.5, "короткий буфер — прежнее состояние")
   }
 
   func testHeardFlash() {
