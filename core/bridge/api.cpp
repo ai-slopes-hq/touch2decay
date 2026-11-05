@@ -111,9 +111,9 @@ T2D_API void t2d_vol(double g) { host.vol(g); }
 T2D_API void t2d_time(double t) { host.time(t); }
 T2D_API void t2d_midi_byte(int src, int status, double at) { host.midiByte(src, status, at); }
 T2D_API void t2d_midi_msg(int kind, double n, double bpm, double at) { host.midiMsg(kind, n, bpm, at); }
-T2D_API int t2d_hmirror() {                             // зеркало хоста: сетка есть, t0, p, время блока
+T2D_API int t2d_hmirror() {                             // зеркало хоста: внешний MIDI идёт (1/0), t0, p — действующая сетка (мастер или MIDI, всегда), время блока
   const sdk::Clock& c = host.clock();
-  mbuf[0] = c.grid.on ? 1 : 0; mbuf[1] = c.grid.t0; mbuf[2] = c.grid.p; mbuf[3] = c.now;
+  mbuf[0] = host.externalGrid() ? 1 : 0; mbuf[1] = c.grid.t0; mbuf[2] = c.grid.p; mbuf[3] = c.now;
   return 4;
 }
 T2D_API int t2d_hevents() { return host.events(mbuf, MBUF); }   // события часов: по 2 числа — код, bpm

@@ -64,7 +64,7 @@ class Engine {
   int heard(int slot, double* buf, int cap);                // UI: забрать записи подряд, пока влезают; длина
   bool midi(int src, int status, uint64_t mach);            // поток CoreMIDI (один!): байт реального времени в кольцо; false — полно (midi_lost)
   int hevents(double* buf, int cap);                        // UI: события часов подряд — пары (код, bpm), пока влезают; число double
-  int grid(double* out4);                                   // UI: последний снимок t2d_hmirror (on, t0, p, время блока); 4
+  int grid(double* out4);                                   // UI: последний снимок t2d_hmirror (on — внешний MIDI, t0, p — действующая сетка, время блока); 4
   void stats(t2d_app_stats_t* out);                         // UI: снимает окно (суммы и максимумы обнуляются)
 
  private:
@@ -76,7 +76,7 @@ class Engine {
   struct HeardRec { int len; double d[HEARD_REC]; };
   struct Midi { int src, status; uint64_t mach; };          // байт MIDI реального времени с меткой прихода (такты mach)
   struct HEv { double code, bpm; };                         // событие часов хоста (sdk::Follower::Ev)
-  struct Grid { double d[4]; };                             // t2d_hmirror: on, t0, p, время блока
+  struct Grid { double d[4]; };                             // t2d_hmirror: внешний MIDI, t0, p, время блока
   // мастер, который сглаживаем: частота LPF — в логарифме (ровный ход по слуху), порог компрессора в дБ, ratio, потолок в дБ
   enum { LPF_LOG, THRESHOLD_DB, RATIO, CEIL_DB, MASTER_N };
 

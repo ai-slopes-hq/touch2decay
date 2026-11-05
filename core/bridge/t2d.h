@@ -30,7 +30,7 @@ void t2d_vol(double g);
 void t2d_time(double t);                          // время начала следующего блока, с
 void t2d_midi_byte(int src, int status, double at);
 void t2d_midi_msg(int kind, double n, double bpm, double at);
-int t2d_hmirror();                                // в mbuf: сетка есть, t0, p, время блока
+int t2d_hmirror();                                // в mbuf: внешний MIDI идёт (1/0), t0, p (действующая сетка — мастер или MIDI), время блока
 int t2d_hevents();                                // в mbuf: события часов по 2 числа — код, bpm
 const float* t2d_arc_land(int which);             // карта Arcadia: 0 — высоты, 1 — озёра
 void t2d_master_lpf(double hz);

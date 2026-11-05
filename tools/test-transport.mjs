@@ -40,19 +40,18 @@ function run(bytes, until) {                            // → по блокам
     for (let i = 0; i < n; i += 2) { out.coreEv.push([EV[e[i]], e[i + 1], now]); if (e[i] === 5) out.coreLaunch.push(now); }
     x.t2d_time(now);                                    // сетка — на начало блока, как видит её эталон
     const hn = x.t2d_hmirror(), h = Array.from(mb().subarray(0, hn)), g = midi.grid();
-    out.grids.push({ now, ref: g ? [g.t0, g.p] : null, core: h[0] ? [h[1], h[2]] : null });
+    out.grids.push({ now, ref: g ? [g.t0, g.p] : null, core: h[0] ? [h[1], h[2]] : null, cur: [h[1], h[2]] });
   }
   return out;
 }
-// Сетка мира в ядре идёт всегда (мастер): пока MIDI-сетка активна — это она (как у эталона); нет сетки — мастер: по умолчанию {0, 0.6},
-// после MIDI — та же сетка, что он перенял (темп и фаза не прыгают).
+// hmirror: on — внешняя MIDI-сетка (как у эталона), t0 и p — действующая сетка: пока MIDI нет — мастер {0, 0.6}, после стопа/потери — перенятая.
 function sameGrids(o, what) {
   let held = [0, 0.6];
-  for (const { now, ref, core } of o.grids) {
-    assert.ok(core, `${what} @${now.toFixed(4)}: master grid is always on`);
-    const want = ref || held;
-    for (let k = 0; k < 2; k++) assert.ok(Math.abs(want[k] - core[k]) < (ref ? 1e-9 : 1e-6), `${what} @${now.toFixed(4)}: ${['t0', 'p'][k]} ${core[k]} vs ${want[k]}${ref ? '' : ' (master)'}`);
+  for (const { now, ref, core, cur } of o.grids) {
+    assert.equal(!!core, !!ref, `${what} @${now.toFixed(4)}: grid ${ref ? 'on' : 'off'} in the reference, ${core ? 'on' : 'off'} in the core`);
+    if (ref) for (let k = 0; k < 2; k++) assert.ok(Math.abs(ref[k] - core[k]) < 1e-9, `${what} @${now.toFixed(4)}: ${['t0', 'p'][k]} ${core[k]} vs ${ref[k]}`);
     if (ref) held = ref;
+    else for (let k = 0; k < 2; k++) assert.ok(Math.abs(held[k] - cur[k]) < 1e-6, `${what} @${now.toFixed(4)}: master ${['t0', 'p'][k]} ${cur[k]} vs ${held[k]}`);
   }
   assert.deepEqual(o.coreLaunch.map((t) => t.toFixed(6)), o.launches.map((t) => t.toFixed(6)), `${what}: launches`);
 }
@@ -61,7 +60,7 @@ test('steady clock with jitter: Start, 8 beats — same grid, one launch on the 
   const o = run([[0xFA, 0.995], ...ticks(1, 120, 8, { jitter: 0.001 })], 5.2);
   sameGrids(o, 'steady');
   assert.equal(o.launches.length, 1);
-  assert.ok(o.grids.some((g) => g.ref), 'grid appears');
+  assert.ok(o.grids.some((g) => g.core), 'grid appears');
   assert.ok(o.coreEv.some((e) => e[0] === 'start') && o.coreEv.filter((e) => e[0] === 'beat').length >= 7);
 });
 
@@ -84,13 +83,13 @@ test('late beat 20 ms, pause 0.6 s (tempo forgotten), clock lost after 1 s', () 
   t[48][1] += 0.02;                                     // доля 2 опоздала
   const o = run([[0xFA, 0.49], ...t, ...ticks(4.1, 120, 3), [0xFA, 6], ...ticks(6, 100, 3)], 10);
   sameGrids(o, 'late+lost');
-  assert.ok(o.grids.some((g) => g.now > 4.02 && g.now < 4.5 && !g.ref), 'lost after a second without beats');
+  assert.ok(o.grids.some((g) => g.now > 4.02 && g.now < 4.5 && !g.core), 'lost after a second without beats');
 });
 
 test('ticks without Start only set the tempo: no grid, no launch', () => {
   const o = run(ticks(0.5, 97, 6), 3.6);
   sameGrids(o, 'tempo only');
-  assert.ok(o.grids.every((g) => !g.ref));
+  assert.ok(o.grids.every((g) => !g.core));
   assert.ok(o.coreEv.filter((e) => e[0] === 'tempo').length >= 5);
   const bpm = o.coreEv.filter((e) => e[0] === 'tempo').pop()[1];
   assert.ok(Math.abs(bpm - 97) < 0.01, `${bpm}`);

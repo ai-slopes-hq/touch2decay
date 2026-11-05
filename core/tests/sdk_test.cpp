@@ -830,7 +830,7 @@ static void masterBpmClamp() {
 static void hostGridSelect() {
   H.prepare(48000, 1);
   H.time(0); H.process(128);
-  CHECK(H.clock().grid.on);
+  CHECK(H.clock().grid.on && !H.externalGrid());          // мир видит сетку всегда, внешней нет
   NEAR(H.clock().grid.p, 0.6, 1e-12);
   { const double t0a = H.clock().grid.t0, na = (H.clock().now - t0a) / 0.6;
     H.masterBpm(90);
@@ -844,7 +844,7 @@ static void hostGridSelect() {
   H.time(1.5);
   H.midiMsg(sdk::MidiMsg::BEAT, 1, 120, 1.5);
   H.process(128);
-  CHECK(H.clock().grid.on);
+  CHECK(H.clock().grid.on && H.externalGrid());
   NEAR(H.clock().grid.p, 0.5, 1e-9);
   NEAR(H.masterBpmNow(), 120, 1e-6);
   H.masterBpm(90); H.process(128);                       // MIDI главнее
@@ -853,10 +853,10 @@ static void hostGridSelect() {
   H.midiMsg(sdk::MidiMsg::STOP, 0, 0, 1.6);
   H.time(1.6); H.process(128);
   const double t0 = H.clock().grid.t0;
-  CHECK(H.clock().grid.on);
+  CHECK(H.clock().grid.on && !H.externalGrid());          // стоп: внешней нет, мастер идёт
   NEAR(H.clock().grid.p, 0.5, 1e-9);
   H.time(3.0); H.process(128);                           // секунда тишины — мастер идёт дальше
-  CHECK(H.clock().grid.on);
+  CHECK(H.clock().grid.on && !H.externalGrid());
   NEAR(H.clock().grid.p, 0.5, 1e-9);
   NEAR(H.clock().grid.t0, t0, 1e-12);
 }
@@ -3125,7 +3125,7 @@ static void appMidiTime() {
   CHECK(farM2.g[0] == 1 && farM2.g[1] == ref[1]);
   const MidiRun nearP = appMidiRun(950000000ll, false, false, {128}, 2000 * 128, false, true);
   const MidiRun farP2 = appMidiRun(1050000000ll, false, false, {128}, 2000 * 128, false, true);
-  CHECK(nearP.g[0] == 1);
+  CHECK(nearP.g[0] == 0);                                                 // внешней сетки нет: Follower гасит сетку из будущего
   NEAR(nearP.g[2], 0.5, 1e-3);                                            // переведена в будущее: Follower гасит сетку, мастер её перенял и идёт дальше (t0 = метка, не дефолт)
   NEAR(nearP.g[1], 0.95, 1e-3);
   CHECK(farP2.g[0] == 1);                                                 // не переведена: начало блока
@@ -3145,7 +3145,7 @@ static void appMidiOverflow() {
   double buf[16], g[4];
   CHECK(t2d_app_hevents(buf, 16) == 0);                                   // ничего не доехало до ядра
   t2d_app_grid(g);
-  CHECK(g[0] == 1 && g[1] == 0 && g[2] == 0.6);                           // MIDI не доехало — сетка мастера по умолчанию
+  CHECK(g[0] == 0 && g[1] == 0 && g[2] == 0.6);                           // MIDI не доехало — внешней нет, сетка мастера по умолчанию
   t2d_app_stats(&st);
   CHECK(st.midi_lost == 0);
 }

@@ -55,6 +55,7 @@ class Host {
   void midiByte(int src, int status, double at);        // берёт только системные реального времени (≥ 0xF8)
   void midiMsg(int kind, double n, double bpm, double at);   // kind — sdk::MidiMsg::Type
   const sdk::Clock& clock() const { return clock_; }
+  bool externalGrid() const { return follower_.grid().on; }   // идёт внешний MIDI (clock().grid всегда on: мастер или она)
   void masterBpm(double bpm);                           // темп мастер-сетки 40…200; пока идёт MIDI-сетка — игнор; NaN — не меняет
   double masterBpmNow() const { return master_.bpm; }
   int events(double* buf, int cap);                     // по 2 числа: код (sdk::Follower::Ev), bpm; очищает очередь
