@@ -15,8 +15,8 @@ void Sound::prepare(double sr, uint32_t seed) {
   sr_ = sr > 0 ? sr : 48000;
   rng_ = sdk::Rng(seed);
   gap_ = static_cast<int64_t>(std::ceil(MIN_GAP * sr_));
-  for (int i = 0; i < NR; i++) { r_[i] = O{}; r_[i].n = i + 2; r_[i].pan = -0.7 + (1.4 * i) / (NR - 1); r_[i].m = i + 2; r_[i].inst = i; r_[i].d.prepare(sr_); }
-  P_ = F_ = Ft_ = glide_ = 0; glideN_ = 0; mat_ = 0.35; conc_ = 0.4; chance_ = 1; aeq_ = 0; tint_ = 1;
+  for (int i = 0; i < NR; i++) { r_[i] = O{}; r_[i].n = i + 2; r_[i].pan = -0.7 + (1.4 * i) / (NR - 1); r_[i].inst = i; r_[i].d.prepare(sr_); }
+  P_ = F_ = Ft_ = glide_ = 0; glideN_ = 0; mat_ = 0.35; conc_ = 0.4; chance_ = 1; tint_ = 1;
   lockOn_ = snap_ = false; dc_[0] = dc_[1] = dx_[0] = dx_[1] = 0; nh_ = 0; strikes_ = attacks_ = smp_ = 0;
 }
 
@@ -28,7 +28,7 @@ int Sound::rotOf(double phi, int L) {
   return (r % L + L) % L;
 }
 
-void Sound::set(const R* rings, double Ft, double mat, double conc, double chance, double aeq, double tint) {
+void Sound::set(const R* rings, double Ft, double mat, double conc, double chance, double tint) {
   const auto unit = [](double v, double d) { return std::isnan(v) ? d : v < 0 ? 0 : v > 1 ? 1 : v; };   // второй заслон: голос не терпит NaN и бесконечного хвоста
   for (int i = 0; i < NR; i++) {
     O& o = r_[i];
@@ -38,7 +38,7 @@ void Sound::set(const R* rings, double Ft, double mat, double conc, double chanc
     o.len = rings[i].len >= 1 && rings[i].len <= 16 ? rings[i].len : 16;
     o.rot = rotOf(o.phi, o.len);
   }
-  Ft_ = std::isfinite(Ft) ? Ft : 0; mat_ = unit(mat, 0.35); conc_ = unit(conc, 0.4); chance_ = unit(chance, 1); aeq_ = unit(aeq, 0);
+  Ft_ = std::isfinite(Ft) ? Ft : 0; mat_ = unit(mat, 0.35); conc_ = unit(conc, 0.4); chance_ = unit(chance, 1);
   tint_ = std::isfinite(tint) && tint > 0 ? tint : 1;
 }
 
@@ -48,13 +48,6 @@ void Sound::lock(double t0, double bar) {
   if (!(bar > 0)) { lockOn_ = false; return; }
   if (!lockOn_) snap_ = true;
   lockOn_ = true; t0_ = t0; bar_ = bar;
-}
-
-double Sound::mOf(const O& o) const {
-  const double m = o.under ? 12.0 / o.n : o.n;
-  if (aeq_ <= 0) return m;
-  const double et = std::pow(2.0, std::floor(12 * std::log2(m) + 0.5) / 12);
-  return m * std::pow(et / m, aeq_);
 }
 
 int Sound::hits(int* buf, int cap) {
@@ -68,7 +61,7 @@ void Sound::process(float* L, float* R, int n, double now) {
   const double sr = sr_;
   O* act[NR];
   int na = 0;
-  for (O& o : r_) if (o.on) { o.m = mOf(o); act[na++] = &o; }
+  for (O& o : r_) if (o.on) act[na++] = &o;
   const double kF = 1 - std::exp(-1 / (0.06 * sr));
   const bool still = Ft_ == 0 && std::fabs(F_) < 1e-12 && glideN_ == 0 && !lockOn_;   // колесо стоит — ударов не будет
   bool quiet = (na == 0 || still) && std::fabs(dc_[0]) < 1e-9 && std::fabs(dc_[1]) < 1e-9;

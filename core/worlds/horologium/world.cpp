@@ -45,7 +45,7 @@ void World::process(const sdk::Out& out, int n) {
   model_.tick(n / sr_);
   Sound::R r[NR];
   for (int i = 0; i < NR; i++) { const Ring& q = model_.ring(i); r[i] = Sound::R{q.on, q.under, q.phi, q.lvl, q.inst, model_.pitch(i), q.len}; }
-  sound_.set(r, model_.Fnow(), model_.fx(MATERIA), model_.fx(CONCURSUS), model_.fx(CHANCE), model_.fx(AEQUALIS), model_.tint());
+  sound_.set(r, model_.Fnow(), model_.fx(MATERIA), model_.fx(CONCURSUS), model_.fx(CHANCE), model_.tint());
   const Clock& c = model_.clock();
   const bool want = clk_ && clk_->grid.on && clk_->grid.p > 0 && c.run && c.u == 0 && !c.held;   // замок к такту: оборот = 4 доли
   if (want) sound_.lock(clk_->grid.t0, 4 * clk_->grid.p); else if (locked_) sound_.unlock();
