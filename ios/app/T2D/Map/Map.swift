@@ -17,7 +17,6 @@ struct Field {
 enum MapHit: Equatable {
   case world(Int)                 // мир с нативным видом — войти
   case peek(col: Int, row: Int)   // лицо без вида или рубашка — вздрогнуть
-  case sun                        // солнце и подпись concordia — открыть настройки
   case eat                        // мимо
 }
 
@@ -34,10 +33,8 @@ enum MapGeo {
     return Field(x0: x0, y0: y0, cw: cw, ch: ch, gap: gap, sy: y0 + g / 2 * ch + (g / 2 - 1) * gap + mapEcl / 2, fw: fw, top: top)
   }
 
-  // как navDown: солнце и concordia — настройки; клетка — с зазором вправо и вниз
+  // как navDown: клетка — с зазором вправо и вниз; солнце — картинка, не кнопка
   static func hit(_ f: Field, W: CGFloat, x: CGFloat, y: CGFloat) -> MapHit {
-    let dx = x - W / 2, dy = y - f.sy   // центр эклиптики по x — середина экрана (sx = x0 + fw/2)
-    if hypot(dx, dy) < 34 || (dx > 26 && dx < 120 && abs(dy) < mapEcl / 2) { return .sun }
     for c in 0..<mapGrid {
       for r in 0..<mapGrid {
         let p = f.rect(col: c, row: r)

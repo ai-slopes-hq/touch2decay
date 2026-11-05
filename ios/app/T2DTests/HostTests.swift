@@ -838,18 +838,8 @@ final class HostTests: XCTestCase {
     tap(b.x + b.w / 2, r.y)
   }
 
-  func testSunOpensConcordia() {
-    host = makeHost(); tick(1)
-    let sy = mapField().sy
-    tap(195, sy)
-    XCTAssertEqual(host.settings, .concordia)
-    tap(5, 5); XCTAssertEqual(host.settings, .off)
-    tap(195 + 60, sy)                                        // подпись concordia
-    XCTAssertEqual(host.settings, .concordia)
-  }
-
   func testConcordiaOutsideCloses() {
-    host = makeHost(); tick(1); tap(195, mapField().sy)
+    host = makeHost(); tick(1); host.openSettings(.concordia)
     let b = box()
     tap(b.x - 8, b.y + 100)
     XCTAssertEqual(host.settings, .off)
@@ -857,12 +847,12 @@ final class HostTests: XCTestCase {
   }
 
   func testConcordiaEatsMap() {
-    host = makeHost(); tick(1); tap(195, mapField().sy)
+    host = makeHost(); tick(1); host.openSettings(.concordia)
     let p = mapField().rect(col: 3, row: 1)                  // клетка Firmamentum
     tap(p.midX, p.midY)
     XCTAssertNil(host.nav.anim, "касание мимо коробки закрыло настройки и входа не начало")
     XCTAssertEqual(host.settings, .off)
-    tap(195, mapField().sy)
+    host.openSettings(.concordia)
     let b = box()
     tap(b.x + b.w / 2, b.y + 8)                              // внутри коробки, но не на строке
     XCTAssertEqual(host.settings, .concordia); XCTAssertNil(host.nav.anim); XCTAssertNil(host.nav.peek)
@@ -918,7 +908,7 @@ final class HostTests: XCTestCase {
   }
 
   func testConcordiaToggles() {
-    host = makeHost(); tick(1); tap(195, mapField().sy)
+    host = makeHost(); tick(1); host.openSettings(.concordia)
     XCTAssertEqual(host.link, Link(scale: true))
     tapRow(.scale)
     XCTAssertEqual(host.link, Link(scale: false))
@@ -928,7 +918,7 @@ final class HostTests: XCTestCase {
   }
 
   func testStableTogglesAudioAndSaves() {
-    host = makeHost(); tick(1); tap(195, mapField().sy)
+    host = makeHost(); tick(1); host.openSettings(.concordia)
     var got: [Bool] = []; host.onStable = { got.append($0) }
     tapRow(.stable)
     XCTAssertEqual(got, [true]); XCTAssertTrue(host.audioPref.stable)
@@ -938,7 +928,7 @@ final class HostTests: XCTestCase {
   }
 
   func testStableFlashesRestart() {
-    host = makeHost(); tick(2); tap(195, mapField().sy)
+    host = makeHost(); tick(2); host.openSettings(.concordia)
     XCTAssertLessThan(host.restartAt, -1)
     tapRow(.stable)
     XCTAssertEqual(host.restartAt, 2, "stable перезапускает звук — как в вебе вспыхивает «audio restarted»")
@@ -952,7 +942,7 @@ final class HostTests: XCTestCase {
   }
 
   func testRestartCallsAudio() {
-    host = makeHost(); tick(2); tap(195, mapField().sy)
+    host = makeHost(); tick(2); host.openSettings(.concordia)
     XCTAssertLessThan(host.restartAt, -1, "до первого перезапуска вспышки нет")
     var n = 0; host.onRestart = { n += 1 }
     tapRow(.restart)
@@ -962,13 +952,13 @@ final class HostTests: XCTestCase {
 
   func testGoWorldResetsSettings() {
     host = makeHost(); tick(1)
-    tap(195, mapField().sy); tap(5, 5)                       // открыть и закрыть тапом мимо
+    host.openSettings(.concordia); tap(5, 5)                       // открыть и закрыть тапом мимо
     XCTAssertEqual(host.settings, .off)
     tapCell(3, 1); tick(2)
     XCTAssertEqual(host.nav.view, .world(10)); XCTAssertEqual(host.settings, .off)
     host.goMap(); tick(3)
     XCTAssertEqual(host.settings, .off)
-    tap(195, mapField().sy)
+    host.openSettings(.concordia)
     XCTAssertEqual(host.settings, .concordia)
     host.goWorld(10)                                         // из кода, при открытой коробке
     XCTAssertEqual(host.settings, .off)
@@ -977,7 +967,7 @@ final class HostTests: XCTestCase {
   func testPerSclWhenUnlinked() {
     let w2 = HWorld(2)
     host = makeHost(views: [world, w2]); tick(1)
-    tap(195, mapField().sy); tapRow(.scale); tap(5, 5)       // лад не общий
+    host.openSettings(.concordia); tapRow(.scale); tap(5, 5)       // лад не общий
     XCTAssertFalse(host.link.scale)
     host.go(10)
     let a = Scl(on: true, idx: 1, root: 2), b = Scl(on: true, idx: 3, root: 5)
@@ -1008,7 +998,7 @@ final class HostTests: XCTestCase {
 
   // ---------- микшер: открыт строкой mixer в concordia ----------
   private func mgeo() -> Mixer.Geo { Mixer.geo(W: 390, H: 844, top: 47, safeBot: 34) }
-  private func openMixer() { tap(195, mapField().sy); tapRow(.mixer) }
+  private func openMixer() { host.openSettings(.concordia); tapRow(.mixer) }
   private func rowY(_ slot: Int) -> CGFloat { mgeo().rows.first { $0.slot == slot }!.y }
   private func masterY(_ m: MixM) -> CGFloat { mgeo().mr.first { $0.m == m }!.y }
   // палец: касание в (x, y), сдвиг на dx; возвращает палец до подъёма
@@ -1203,6 +1193,99 @@ final class HostTests: XCTestCase {
     let s = host.barState(world)
     XCTAssertTrue(s.playing); XCTAssertEqual(s.vol, Mix.def.fader(10))
     XCTAssertTrue(s.enabled.contains(.play)); XCTAssertTrue(s.enabled.contains(.recycle))
+  }
+
+  // ---------- хедер на карте: мастер, общие play и recycle, undo recycle, солнце неактивно ----------
+  private var world2: HWorld!
+  private func mapHost() -> Host {
+    world2 = HWorld(11)
+    let h = makeHost(views: [world, world2])
+    h.reapply()
+    for sn in core.snaps { core.queue.append((sn.id, sn.slot, "w\(sn.slot)")) }   // базы отмены: «w10», «w11»
+    h.tick(now: 1, dt: 0.016)
+    return h
+  }
+
+  func testMapHeaderEnabledSet() {
+    host = mapHost()
+    let e = host.mapBarState().enabled
+    XCTAssertEqual(e, [.play, .vol, .recycle, .fx])
+    tapBtn(.recycle)
+    XCTAssertEqual(host.mapBarState().enabled, [.play, .vol, .recycle, .fx, .undo])
+    XCTAssertEqual(host.mapBarState().title, "Universum")
+  }
+
+  func testMapVolDragChangesMaster() {
+    host = mapHost()
+    let v0 = host.vol, n = core.vols.count
+    vdrag(.vol, dy: -40)
+    XCTAssertGreaterThan(host.vol, v0); XCTAssertGreaterThan(core.vols.count, n)
+    XCTAssertNil(host.mix.g[10]); XCTAssertNil(host.mix.g[11])
+  }
+
+  func testMapPlayTogglesAllClocks() {
+    host = mapHost()
+    tapBtn(.play); XCTAssertTrue(world.tw.playing); XCTAssertTrue(world2.tw.playing)
+    XCTAssertTrue(host.mapBarState().playing)
+    tapBtn(.play, at: 1); XCTAssertFalse(world.tw.playing); XCTAssertFalse(world2.tw.playing)
+    XCTAssertEqual(world.clears + world2.clears, 0)
+  }
+
+  func testMapPlayDragSetsMasterBpmEverywhere() {
+    host = mapHost()
+    vdrag(.play, dx: 40)
+    let b = core.masterBpms.last!
+    XCTAssertGreaterThan(b, 100); XCTAssertEqual(world.tw.bpm, b); XCTAssertEqual(world2.tw.bpm, b)
+    XCTAssertFalse(world.tw.playing, "протяжка не нажимает play")
+  }
+
+  func testRecycleAllThenUndoRestoresAllWorlds() {
+    host = mapHost()
+    tapBtn(.recycle)
+    XCTAssertEqual(world.clears, 1); XCTAssertEqual(world2.clears, 1)
+    tapBtn(.undo, at: 1)
+    XCTAssertEqual(core.restores.filter { $0.slot == 10 }.last?.w, "w10"); XCTAssertEqual(core.restores.filter { $0.slot == 11 }.last?.w, "w11")
+    XCTAssertEqual(world.restoredN, 1 + 1 /* reapply */ - 1); XCTAssertGreaterThanOrEqual(world2.restoredN, 1)
+    XCTAssertFalse(host.mapBarState().enabled.contains(.undo), "один шаг")
+  }
+
+  func testRecycleTwiceUndoRestoresOnlyLast() {
+    host = mapHost()
+    tapBtn(.recycle)
+    for sn in core.snaps.suffix(2) { core.queue.append((sn.id, sn.slot, "cleared\(sn.slot)")) }   // ответы на снимки после очистки
+    host.tick(now: 2, dt: 0.016)
+    tapBtn(.recycle, at: 2)
+    tapBtn(.undo, at: 3)
+    XCTAssertEqual(core.restores.last { $0.slot == 10 }?.w, "cleared10")
+  }
+
+  func testRecycleRefusedWithoutBases() {
+    host = makeHost(views: [world, HWorld(11)])   // reapply не звали — баз нет
+    tapBtn(.recycle)
+    XCTAssertEqual(world.clears, 0); XCTAssertFalse(host.mapBarState().enabled.contains(.undo))
+  }
+
+  func testUndoOnMapDisabledWithoutRecycle() {
+    host = mapHost()
+    let n = core.restores.count
+    tapBtn(.undo)
+    XCTAssertEqual(core.restores.count, n)
+  }
+
+  func testEnteringWorldDropsRecycleUndo() {
+    host = mapHost()
+    tapBtn(.recycle)
+    host.goWorld(10)
+    host.goMap()
+    XCTAssertFalse(host.mapBarState().enabled.contains(.undo))
+  }
+
+  func testSunTapDoesNothing() {
+    host = mapHost()
+    tap(195, mapField().sy)
+    XCTAssertEqual(host.settings, .off); XCTAssertEqual(host.nav.view, .map)
+    tap(195 + 60, mapField().sy)   // бывшая подпись concordia
+    XCTAssertEqual(host.settings, .off)
   }
 
   // ---------- звук: stable / restart / midi (бывшие строки панели audio, теперь вкладка sys — Task 6) ----------

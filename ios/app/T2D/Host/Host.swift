@@ -148,12 +148,11 @@ final class Host {
   private var onMap: Bool { nav.view == .map || nav.busy(now) }
 
   func down(_ f: Finger) {
-    if onMap { routes[f.id] = mapDown(f) ?? .eat; return }
-    let r = route(f)
+    let r = onMap ? (mapDown(f) ?? .eat) : route(f)
     routes[f.id] = r
     switch r {
     case .btn(.vol): volF = (f.id, volValue, f.y)
-    case .btn(.play): playF = (f.id, world?.tempo?.bpm ?? 0, f.x, false)
+    case .btn(.play): playF = (f.id, onMap ? (lastBpm ?? Host.masterDefault) : (world?.tempo?.bpm ?? 0), f.x, false)
     case .world(let s): touched.insert(s); views[s]?.down(f)
     case .sheet(let h): sheetDown(h, f)
     default: break
@@ -164,10 +163,14 @@ final class Host {
     guard !nav.busy(now) else { return nil }               // во время перехода касания съедены
     if settings == .mixer { return mixerDown(f) }
     if settings != .off { settingsDown(f); return nil }    // открытые настройки забирают касание целиком
+    switch bar.hit(f.x, f.y, titleW: 0, enabled: mapEnabled) {
+    case .btn(let b): return .btn(b)
+    case .title: return nil                                // имя карты — не кнопка
+    case nil: break
+    }
     switch MapGeo.hit(field, W: W, x: f.x, y: f.y) {
     case .world(let s): goWorld(s)
     case .peek(let c, let r): nav.peek = (now, c, r)
-    case .sun: settings = .concordia
     case .eat: break
     }
     return nil
@@ -273,11 +276,17 @@ final class Host {
       guard let d = volF, d.id == f.id else { return }
       setVol(min(max(d.v0 - Double((f.y - d.y0) / Vol.travel), 0), 1))
     case .btn(.play):
-      guard var d = playF, d.id == f.id, let t = world?.tempo, core.grid() == nil else { return }
+      guard var d = playF, d.id == f.id, core.grid() == nil else { return }
       if !d.drag && hypot(f.x - f.x0, f.y - f.y0) > Touch.tapMove { d.drag = true; playF = d }
       guard d.drag else { return }
-      let b = min(max((d.bpm0 + Double(f.x - d.x0) / 2).rounded(), t.tempoRange.lowerBound), t.tempoRange.upperBound)
-      if b != t.bpm { t.setBpm(b); tempoFrom(slot: world!.slot, b) }
+      let raw = (d.bpm0 + Double(f.x - d.x0) / 2).rounded()
+      if onMap {                                           // карта: общий темп всех миров
+        let b = min(max(raw, 40), 200)
+        if b != lastBpm { tempoFrom(slot: -1, b); for case let t? in views.values.map(\.tempo) { t.setBpm(min(max(b, t.tempoRange.lowerBound), t.tempoRange.upperBound)) } }
+      } else if let t = world?.tempo, let w = world {
+        let b = min(max(raw, t.tempoRange.lowerBound), t.tempoRange.upperBound)
+        if b != t.bpm { t.setBpm(b); tempoFrom(slot: w.slot, b) }
+      }
     case .mix(let k, let v0):
       let v = Mixer.value(mixGeo, v0: v0, dx: f.x - f.x0)
       switch k { case .world(let s): mix.g[s] = v; case .master(let m): mix[m] = v }
@@ -300,8 +309,8 @@ final class Host {
     case .list: pick(bar.sclPick(f.x, f.y))
     case .btn(let b):
       if b == .vol { volF = nil; savePrefs() }
-      else if b == .play { let dragged = playF?.drag == true; playF = nil; if !dragged, bar.hit(f.x, f.y, titleW: titleW) == .btn(b) { press(b) } }
-      else if bar.hit(f.x, f.y, titleW: titleW) == .btn(b) { press(b) }
+      else if b == .play { let dragged = playF?.drag == true; playF = nil; if !dragged, hitsBtn(f, b) { press(b) } }
+      else if hitsBtn(f, b) { press(b) }
     case .corner: if world?.cornerHit(f.x, f.y) == true { goMap() }   // на подъёме с повторным попаданием, как кнопки
     case .mix: applyMix(); markPrefs()
     case .edge, .eat: break
@@ -329,9 +338,66 @@ final class Host {
     for slot in s.sorted() { undo.commit(slot: slot, scl: scl) }
   }
 
-  func openScaleList() { sclOpen = true }   // до плашки (Task 4) — единственный вход в список ладов
+  func openScaleList() { sclOpen = true }
+  func openSettings(_ s: Settings) { settings = s }   // до удаления concordia (Task 7) — вход для тестов и -shot
+
+  // ---------- хедер на карте ----------
+  private var recycleStash: [(slot: Int, w: String, scl: Scl)]?   // состояния миров до последнего recycle на карте; один шаг отмены
+  private var mapEnabled: Set<Btn> { recycleStash == nil ? [.play, .vol, .recycle, .fx] : [.play, .vol, .recycle, .fx, .undo] }
+  private func hitsBtn(_ f: Finger, _ b: Btn) -> Bool { bar.hit(f.x, f.y, titleW: onMap ? 0 : titleW, enabled: onMap ? mapEnabled : Set(Btn.allCases)) == .btn(b) }
+
+  func mapBarState() -> TopBar.State {
+    var st = TopBar.State(title: "Universum", vol: vol, volHeld: volF != nil, scl: scl, sclOpen: false,
+                          canUndo: recycleStash != nil, fxArc: nil, fxHeld: held(.fx),
+                          backHeld: false, diceHeld: false, diceAt: -1e9)
+    st.enabled = mapEnabled
+    st.playing = views.values.contains { $0.tempo?.playing == true }
+    if let d = playF, d.drag { st.bpmShown = lastBpm ?? Host.masterDefault }
+    return st
+  }
+
+  // recycle на карте: очистить все миры. Состояния до очистки — в recycleStash (база отмены каждого мира);
+  // нет базы хотя бы у одного — ничего не очищаем, иначе отмена потеряла бы мир
+  @discardableResult func recycleAll() -> Bool {
+    for b in undo.pollAll() { setScene(b.slot, b.w, b.scl) }
+    var stash: [(slot: Int, w: String, scl: Scl)] = []
+    for slot in slots {
+      guard let b = undo.last(slot: slot) else { return false }
+      stash.append((slot, b.w, b.scl))
+    }
+    for slot in slots { views[slot]?.clear() }
+    recycleStash = stash
+    for slot in slots { undo.commit(slot: slot, scl: scl) }   // сцены и базы — уже очищенные
+    return true
+  }
+
+  // undo на карте: вернуть миры, какими были до recycle; не вернулся мир (кольцо полно) — остаётся в запасе
+  @discardableResult func undoRecycle() -> Bool {
+    guard let st = recycleStash else { return false }
+    var left: [(slot: Int, w: String, scl: Scl)] = []
+    for e in st {
+      if core.restore(slot: e.slot, e.w) {
+        views[e.slot]?.restored(); undo.base(slot: e.slot, w: e.w, scl: e.scl); setScene(e.slot, e.w, e.scl)
+      } else { left.append(e) }
+    }
+    recycleStash = left.isEmpty ? nil : left
+    syncModelsToMaster()
+    return left.isEmpty
+  }
+
+  private func pressMap(_ b: Btn) {
+    switch b {
+    case .play:   // общий play: любой мир идёт — остановить все часы, иначе запустить все
+      let on = !views.values.contains { $0.tempo?.playing == true }
+      for v in views.values { v.tempo?.play(on) }
+    case .recycle: recycleAll()
+    case .undo: undoRecycle()
+    case .fx, .vol, .dice, .back: break   // fx — плашка (Task 4)
+    }
+  }   // до плашки (Task 4) — единственный вход в список ладов
 
   private func press(_ b: Btn) {
+    if onMap { pressMap(b); return }
     guard let w = world else { return }
     switch b {
     case .dice: w.dice(); diceAt = now * 1000; syncModelsToMaster()
@@ -356,7 +422,7 @@ final class Host {
       if let from = lastSlot { perScl[from] = scl }
       if let s = perScl[slot] { scl = s; core.scale(s) }
     }
-    lastSlot = slot; settings = .off
+    lastSlot = slot; settings = .off; recycleStash = nil
     views[slot]?.enter()
     nav.anim = (now, false, slot)
   }
@@ -603,7 +669,8 @@ final class Host {
     if onMap {
       // только -shot: peek с замороженным k — время кадра подменяем (иначе он кончится за 420 мс)
       let t = nav.anim == nil ? nav.peek.flatMap { p in nav.freeze.map { p.t0 + $0 * Nav.peekDur } } ?? now : now
-      MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, settings: settings != .off, now: t)
+      MapDraw.draw(d, nav: nav, field: field, lv: levels.lv, now: t)
+      if !nav.busy(now) { bar.draw(d, mapBarState(), now: now * 1000) }
       if settings == .concordia && !nav.busy(now) {
         Concordia.draw(d, cBox, link: link, stable: audioPref.stable, restartK: CGFloat(min(1, max(0, 1 - (now - restartAt) / 0.9))))
       }
