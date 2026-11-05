@@ -5,9 +5,9 @@ import UIKit
 final class HoroDrawState {
   struct WallKey: Equatable { var W, H, sc, cy, R, sy: CGFloat }
   var wall: CGImage?, wallKey: WallKey?, wallBuilds = 0
-  var marks: [(k: Int, a: Double)] = []                      // удары кольца в этом обороте — буфер кадра, выделен раз
-  var gaps: [Double] = []                                    // углы ударов по возрастанию — для числа кольца
-  init() { marks.reserveCapacity(24); gaps.reserveCapacity(24) }
+  var slots: [(j: Int, a: Double, hit: Bool)] = []           // гнёзда кольца — буфер кадра, выделен раз
+  var gaps: [Double] = []                                    // углы гнёзд с ударом по возрастанию — для числа кольца
+  init() { slots.reserveCapacity(16); gaps.reserveCapacity(16) }
 }
 
 extension HorologiumView {
@@ -60,28 +60,33 @@ extension HorologiumView {
     return dr.wall
   }
 
-  // удары кольца в этом обороте: k и угол — в буфер кадра (view.js:147-151)
-  private func fillMarks(_ r: HoroRing, _ P: Double) {
-    dr.marks.removeAll(keepingCapacity: true)
-    let m = Horo.mOf(r, aequalis: mirror.fx[0]), P0 = P.rounded(.down)
-    var k = (P0 * m + r.phi).rounded(.up)
-    while k < (P0 + 1) * m + r.phi { dr.marks.append((Int(k), ((k - r.phi) / m - P0) * 2 * .pi)); k += 1 }
+  // гнёзда кольца: L штук по часовой от верха; бьёт ли — по Эвклиду (view.js drawRings)
+  private func fillSlots(_ r: HoroRing) {
+    dr.slots.removeAll(keepingCapacity: true)
+    let L = min(16, max(1, r.len)), k = min(r.n, L)
+    for j in 0..<L { dr.slots.append((j, Double(j) / Double(L) * 2 * .pi, Horo.euclid(j, k, L))) }
   }
 
   private func drawRings(_ d: Draw, _ now: Double, _ P: Double) {
     let g = d.g, G = geo, fast = mirror.F > 4, held = ringHeld()
     for i in 0..<Horo.nr {
-      let r = mirror.rings[i], rr = G.ringR(i), on = r.on, m = Horo.mOf(r, aequalis: mirror.fx[0])
-      let hit = cl(1 - (now - ringHit[i]) / 0.26), cur = Int((P * m + r.phi).rounded(.down))
+      let r = mirror.rings[i], rr = G.ringR(i), on = r.on
+      let hit = cl(1 - (now - ringHit[i]) / 0.26), cur = Horo.slot(r, P: P)
       g.setLineWidth(1); g.setStrokeColor(d.ink(on ? 0.5 + 0.2 * CGFloat(r.lvl) : 0.13))
       if !on { g.setLineDash(phase: 0, lengths: [2, 4]) }
       arc(g, G.cx, G.cy, rr); g.setLineDash(phase: 0, lengths: [])
       if on && r.under { g.setStrokeColor(d.ink(0.3)); arc(g, G.cx, G.cy, rr - 3) }   // унтертон — двойной обвод
-      fillMarks(r, P)
-      for q in dr.marks {
-        let x = G.cx + CGFloat(sin(q.a)) * rr, y = G.cy - CGFloat(cos(q.a)) * rr
+      fillSlots(r)
+      dr.gaps.removeAll(keepingCapacity: true)
+      for q in dr.slots {
+        let sn = CGFloat(sin(q.a)), cs = CGFloat(cos(q.a)), x = G.cx + sn * rr, y = G.cy - cs * rr
+        if !q.hit {                                       // пустое гнездо — короткая засечка; бегунок на нём ярче
+          g.setStrokeColor(d.ink(q.j == cur ? 0.45 : on ? 0.12 : 0.06)); g.beginPath()
+          g.move(to: CGPoint(x: x - sn * 1.5, y: y + cs * 1.5)); g.addLine(to: CGPoint(x: x + sn * 1.5, y: y - cs * 1.5)); g.strokePath(); continue
+        }
+        dr.gaps.append(q.a)
         if !on { g.setStrokeColor(d.ink(0.22)); arc(g, x, y, 1.8); continue }
-        let gl: CGFloat = fast ? 0.35 + 0.4 * CGFloat(r.lvl) : q.k == cur ? hit : 0
+        let gl: CGFloat = fast ? 0.35 + 0.4 * CGFloat(r.lvl) : q.j == cur ? hit : 0
         if gl > 0.05 { d.glowAt(x, y, 10 + 8 * gl, 0.35 * gl) }
         g.setFillColor(d.ink(min(1, 0.55 + 0.45 * gl)))
         if r.under {
@@ -89,8 +94,6 @@ extension HorologiumView {
         } else { disc(g, x, y, 3.1) }
       }
       var la = Double.pi + 0.35                           // число кольца — внизу слева, в просвете между метками
-      dr.gaps.removeAll(keepingCapacity: true)
-      for q in dr.marks { dr.gaps.append((q.a.truncatingRemainder(dividingBy: 2 * .pi) + 2 * .pi).truncatingRemainder(dividingBy: 2 * .pi)) }
       dr.gaps.sort()
       if !dr.gaps.isEmpty {
         var best = la, bd = 9.0
@@ -120,7 +123,7 @@ extension HorologiumView {
   // часовая стрелка — считает такты: деление за такт, круг — 12 тактов (view.js:171-183)
   private func drawHour(_ d: Draw, _ P: Double) {
     let g = d.g, G = geo, tau = HorologiumView.tau, Fh = mirror.F / 12, R = G.R * 0.58
-    let bar = ((Int(P.rounded(.down)) % 12) + 12) % 12, na = CGFloat(bar + 1) / 12 * tau, rr = G.R + 11   // цифра такта, к которому идёт стрелка, — ярче
+    let bar = P.isFinite ? Int(fmod(fmod(P.rounded(.down), 12) + 12, 12)) : 0, na = CGFloat(bar + 1) / 12 * tau, rr = G.R + 11   // цифра такта, к которому идёт стрелка, — ярче
     d.glowAt(G.cx + sin(na) * rr, G.cy - cos(na) * rr, 16, 0.25)
     d.mapText(Horo.roman[bar + 1], G.cx + sin(na) * rr, G.cy - cos(na) * rr, max(9, min(12, G.R * 0.07)), 1, align: .center, italic: false, angle: na)
     if Fh > 4 {
@@ -219,12 +222,12 @@ extension HorologiumView {
     if Fm > 0.01 {
       let mx = G.stripX(Fm)
       g.setFillColor(d.ink(0.95)); g.beginPath(); g.move(to: CGPoint(x: mx, y: S.y - 3)); g.addLine(to: CGPoint(x: mx - 5, y: S.y - 11)); g.addLine(to: CGPoint(x: mx + 5, y: S.y - 11)); g.closePath(); g.fillPath()
-      d.mapText("\(Fm < 10 ? String(format: "%.2f", Fm) : String(Int(Horo.jsRound(Fm)))) / s", mx, S.y - 20, 11, 0.75, align: .center)
+      d.mapText("\(Fm < 10 ? String(format: "%.2f", Fm) : String(Int(Horo.clamp(Horo.jsRound(Fm), 0, 1e6)))) / s", mx, S.y - 20, 11, 0.75, align: .center)
     }
     drawPendulum(d)
     if let i = phaseHeld() {
       let r = mirror.rings[i]
-      d.mapText("\(Horo.roman[r.n]) · \(Int(Horo.jsRound(r.phi * 360)))°", G.cx, G.cy + G.R + 14, 12, 0.85, align: .center)
+      d.mapText("\(Horo.roman[r.n]) · \(Int(Horo.clamp(Horo.jsRound(r.phi * 360), -1e6, 1e6)))°", G.cx, G.cy + G.R + 14, 12, 0.85, align: .center)
     }
     guard sun else { return }
     d.quarterSun(G.sun.x, G.sun.y, G.sun.r, side: -1, now: now * 1000, col: theme.ink, disc: theme.bg)

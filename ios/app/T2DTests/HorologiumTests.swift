@@ -455,4 +455,10 @@ final class HorologiumTests: XCTestCase {
     render(view, now: 2)
     XCTAssertEqual(view.wallBuilds, 1)
   }
+  func testDrawSlotsHuge() {                          // len 1 и 16, phi и P в 1e300 — кадр без падения
+    for L in [1, 16, 7] {
+      setMirror(P: 1e300, F: 1, on: [0, 1, 2, 7], under: [1], phi: 1e300, len: Array(repeating: L, count: 8))
+      render(view, now: 2)
+    }
+  }
 }

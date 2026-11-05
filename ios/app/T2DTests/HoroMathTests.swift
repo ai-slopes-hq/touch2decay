@@ -5,6 +5,34 @@ final class HoroMathTests: XCTestCase {
     (0..<Horo.nr).map { HoroRing(n: $0 + 2, on: on.contains($0 + 2), under: under.contains($0 + 2), phi: 0, lvl: 0.8) }
   }
 
+  func testEuclid() {
+    XCTAssertEqual((0..<16).filter { Horo.euclid($0, 3, 16) }.count, 3)
+    XCTAssertEqual((0..<12).filter { Horo.euclid($0, 5, 12) }.count, 5)
+    XCTAssertTrue(Horo.euclid(0, 4, 16)); XCTAssertTrue((0..<6).allSatisfy { Horo.euclid($0, 6, 6) })
+  }
+
+  func testRot() {
+    for (phi, L, want) in [(0.0, 16, 0), (3.0 / 16, 16, 3), (0.5, 12, 6), (-0.25, 16, 12), (1.0, 16, 0), (0.99, 16, 0), (.nan, 16, 0), (1e300, 16, 0), (.infinity, 8, 0)] {
+      XCTAssertEqual(Horo.rot(phi, L), want, "rot \(phi) \(L)")
+    }
+  }
+
+  func testSlot() {
+    func r(under: Bool = false, phi: Double = 0, len: Int = 16) -> HoroRing { HoroRing(n: 2, under: under, phi: phi, len: len) }
+    XCTAssertEqual(Horo.slot(r(), P: 0.5), 8); XCTAssertEqual(Horo.slot(r(len: 12), P: 1), 4)
+    XCTAssertEqual(Horo.slot(r(under: true), P: 0.5), 4); XCTAssertEqual(Horo.slot(r(phi: 3.0 / 16), P: 0), 3)
+    XCTAssertEqual(Horo.slot(r(), P: -0.01), 15); XCTAssertEqual(Horo.slot(r(), P: .nan), 0)
+    for L in [1, 7, 16] { for P in [1e300, -1e300, Double.infinity] { XCTAssertTrue((0..<L).contains(Horo.slot(r(phi: 1e300, len: L), P: P))) } }
+    XCTAssertEqual(Horo.steps(r()), 16); XCTAssertEqual(Horo.steps(r(under: true)), 8)
+  }
+
+  func testLenAfter() {
+    let step = 2 * Double.pi / 16
+    XCTAssertEqual(Horo.lenAfter(8, turned: 2.4 * step), 10); XCTAssertEqual(Horo.lenAfter(8, turned: -2.6 * step), 5)
+    XCTAssertEqual(Horo.lenAfter(3, turned: -100), 1); XCTAssertEqual(Horo.lenAfter(14, turned: 5 * step), 16)
+    XCTAssertEqual(Horo.lenAfter(8, turned: .nan), 8); XCTAssertEqual(Horo.lenAfter(8, turned: 1e300), 16)
+  }
+
   func testUOfE() {
     XCTAssertEqual(Horo.uOfE(Horo.et), 0, accuracy: 1e-12)
     XCTAssertEqual(Horo.uOfE(1e-6), -3)

@@ -21,6 +21,30 @@ enum Horo {
   // Math.round в JS — половина вверх
   static func jsRound(_ x: Double) -> Double { (x + 0.5).rounded(.down) }
 
+  // --- гнёзда: Эвклид на L шагах (model.js: euclid, rotOf, stepsOf, slotOf) ---
+  static func euclid(_ j: Int, _ k: Int, _ L: Int) -> Bool { (j * k) % L < k }   // гнездо j бьёт? (k ≤ L, L ≥ 1)
+  // фаза → сдвиг в шагах 0…L−1; нечисло → 0. Считаем в Double, к Int — только уже зажатое
+  static func rot(_ phi: Double, _ L: Int) -> Int {
+    guard phi.isFinite, L > 0 else { return 0 }
+    let l = Double(L), v = fmod(fmod((phi * l + 0.5).rounded(.down), l) + l, l)
+    return v.isFinite ? Int(min(l - 1, max(0, v))) : 0
+  }
+  static func steps(_ r: HoroRing) -> Int { r.under ? 8 : 16 }   // шагов на оборот: шестнадцатая, унтертон — восьмая
+  static func slot(_ r: HoroRing, P: Double) -> Int {
+    let L = min(16, max(1, r.len)), l = Double(L)
+    guard P.isFinite else { return 0 }
+    let v = fmod(fmod((P * Double(steps(r))).rounded(.down), l) + Double(rot(r.phi, L)), l)
+    let w = fmod(v + l, l)
+    return w.isFinite ? Int(min(l - 1, max(0, w))) : 0
+  }
+  // длина после поворота жеста на d рад по часовой: один шаг = 2π/16
+  static func lenAfter(_ len0: Int, turned d: Double) -> Int {
+    let base = min(16, max(1, len0))
+    guard d.isFinite else { return base }
+    let dn = (d / (2 * Double.pi / 16) + 0.5).rounded(.down)
+    return Int(min(16, max(1, Double(base) + min(32, max(-32, dn)))))
+  }
+
   static func uOfE(_ e: Double) -> Double { clamp(0.9 * log2(e / et), -3, 8) }
   static func eOfU(_ u: Double) -> Double { et * pow(2, u / 0.9) }
 
