@@ -1170,6 +1170,17 @@ final class HostTests: XCTestCase {
     XCTAssertEqual(world.clears, 1); XCTAssertEqual(w2.clears, 1); XCTAssertFalse(host.transportState().canUndo)
   }
 
+  func testMapPlaySkipsWorldsClearedByRecycle() {
+    host = mapHost()
+    world.hasClock = true; world.tw.playing = false; world2.hasClock = true; world2.tw.playing = false
+    tapTr(.recycle)
+    tapTr(.play, at: 2)
+    XCTAssertFalse(world.tw.playing); XCTAssertFalse(world2.tw.playing, "очищенные миры play не заводит")
+    host.goWorld(10); tick(5); host.goMap(); tick(10)
+    tapTr(.play, at: 10)
+    XCTAssertTrue(world.tw.playing); XCTAssertFalse(world2.tw.playing, "вошли в мир — он снова в игре")
+  }
+
   func testMapStopSilencesClocklessWorldsAndStopsClocks() {
     host = mapHost()
     world.hasClock = true; world.tw.playing = true; world2.hasClock = false

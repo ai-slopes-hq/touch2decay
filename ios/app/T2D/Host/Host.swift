@@ -309,6 +309,7 @@ final class Host {
       if let b = undo.last(slot: slot) { stash.append((slot, b.w, b.scl)) }   // базы ещё нет — очищаем без возврата, но очищаем
     }
     for slot in targets { views[slot]?.clear() }
+    cleared.formUnion(targets)
     recycleStash = stash.isEmpty ? nil : stash
     for slot in targets { undo.commit(slot: slot, scl: link.scale ? scl : (perScl[slot] ?? scl)) }   // сцены и базы — уже очищенные
     return true
@@ -321,6 +322,7 @@ final class Host {
     for e in st {
       if core.restore(slot: e.slot, e.w) {
         views[e.slot]?.restored(); undo.base(slot: e.slot, w: e.w, scl: e.scl); setScene(e.slot, e.w, e.scl)
+        cleared.remove(e.slot)
       } else { left.append(e) }
     }
     recycleStash = left.isEmpty ? nil : left
@@ -350,6 +352,7 @@ final class Host {
   }
 
   // play на карте: идут часы — стоп им и тишина мирам без часов (Oceanus, Tenebrae…); иначе — пуск часов
+  private var cleared: Set<Int> = []                 // миры, очищенные корзиной, пока в них не вошли заново
   private var mapPlaying: Bool { views.values.contains { $0.tempo?.playing == true } }
   private func mapPlay() {
     if mapPlaying {
@@ -357,7 +360,7 @@ final class Host {
       let silent = slots.filter { views[$0]?.tempo == nil }
       if !silent.isEmpty { recycleAll(silent) }
     } else {
-      for v in views.values { v.tempo?.play(true) }
+      for (slot, v) in views where !cleared.contains(slot) { v.tempo?.play(true) }   // очищенный мир не заводим: Monochordum со страмом по умолчанию заиграл бы пустым
     }
   }
 
@@ -377,7 +380,7 @@ final class Host {
     case .play: if let t = w.tempo { t.play(!t.playing) } else { w.clear() }   // нет часов — заглушить мир (веб: audio-panel stop), отмена вернёт
     case .dice: w.dice(); diceAt = now * 1000; syncModelsToMaster()
     case .undo: undoStep()
-    case .recycle: w.clear()
+    case .recycle: w.clear(); cleared.insert(w.slot)
     case .bpm: break
     }
   }
@@ -502,7 +505,7 @@ final class Host {
       if let from = lastSlot { perScl[from] = scl }
       if let s = perScl[slot] { scl = s; core.scale(s) }
     }
-    lastSlot = slot; recycleStash = nil; plate = nil
+    lastSlot = slot; recycleStash = nil; plate = nil; cleared.remove(slot)
     views[slot]?.enter()
     nav.anim = (now, false, slot)
   }
