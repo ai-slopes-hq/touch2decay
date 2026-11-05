@@ -30,3 +30,5 @@
 **Сцены** `ios/app/shot.sh cymatica | cym-empty | cym-play | cym-pinch | cym-steprec | cym-chance | cym-drift | cym-luna`; веб-пары — `python3 tools/shot.py worlds seq handpan cymx` (`cymatica`, `astrolabe`, `handpan-held`, `cym-steprec`, `cym-chance`, `cym-drift`, `cym-luna`).
 
 **iPhone:** натив принят автором 04.11 («отлично»).
+
+**Мастер-транспорт (05.11).** Сетка в ядре (`MasterClock`, `core/sdk/transport.hpp`) всегда включена: без MIDI идёт по `MASTER_BPM` (`T2D_H_MASTER_BPM`, зажим 40…200 при ручной смене; перенятый MIDI-темп — без зажима), с внешним MIDI перенимает его часы (признак — `hmirror` grid on = внешний MIDI). Все миры читают одну сетку, пуск мгновенный по ней; смена темпа в любом мире идёт через `tempoFrom` и меняет мастер (веб `host/tempo.js` + `setMasterBpm`, Swift `Host.tempoFrom` / `HostCore.setMasterBpm`). `restore` и кубик темп мастера не меняют. `link.clock` убран. На iPhone на слух не проверено. Cymatica читает `clk_->grid`; `LOCK` уступает хосту (в вебе и в Swift `Act.lock` не шлётся), пуск стартует на узле сетки не позже чем через шаг — осознанное решение.

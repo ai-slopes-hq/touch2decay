@@ -47,3 +47,5 @@
 **Сцены** `ios/app/shot.sh portus | portus-empty | portus-play | portus-echo | portus-star | portus-bloodmoon | portus-sheet`; веб-пары — `python3 tools/shot.py portus` (те же имена).
 
 **iPhone:** натив принят автором 04.11 («отлично»).
+
+**Мастер-транспорт (05.11).** Сетка в ядре (`MasterClock`, `core/sdk/transport.hpp`) всегда включена: без MIDI идёт по `MASTER_BPM` (`T2D_H_MASTER_BPM`, зажим 40…200 при ручной смене; перенятый MIDI-темп — без зажима), с внешним MIDI перенимает его часы (признак — `hmirror` grid on = внешний MIDI). Все миры читают одну сетку, пуск мгновенный по ней; смена темпа в любом мире идёт через `tempoFrom` и меняет мастер (веб `host/tempo.js` + `setMasterBpm`, Swift `Host.tempoFrom` / `HostCore.setMasterBpm`). `restore` и кубик темп мастера не меняют. `link.clock` убран. На iPhone на слух не проверено.
